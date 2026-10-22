@@ -154,4 +154,21 @@ assert.match(
   'Portal support header must place filters/submit at the title-end edge'
 );
 
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /common\.back/,
+  'Ticket detail must not show a redundant Back action beside the breadcrumb'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /justify-end[\s\S]*data-portal-support="reply-actions"[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
+  'Ticket detail reply actions must be right-aligned with refresh icon then send reply'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="optional-attachments"[\s\S]*data-empty="true"/,
+  'Ticket detail must quiet the empty attachments affordance'
+);
+
 console.log('portal_support_requests_contract: ok');

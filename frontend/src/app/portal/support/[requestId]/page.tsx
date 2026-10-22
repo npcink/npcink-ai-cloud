@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -9,6 +8,7 @@ import {
   PortalCard,
 } from '@/components/portal/PortalScaffold';
 import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
+import { PortalActionIcon } from '@/components/portal/PortalRowActions';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalErrorState,
@@ -362,14 +362,6 @@ export default function PortalSupportRequestDetailPage() {
             ]}
           />
         )}
-        actions={
-          <Link
-            className="text-sm font-medium text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-            href="/portal/support"
-          >
-            {t('common.back', {}, 'Back')}
-          </Link>
-        }
       />
 
       {notice ? (
@@ -438,57 +430,92 @@ export default function PortalSupportRequestDetailPage() {
 
 
       <PortalSection>
-        <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800" data-portal-support="optional-attachments">
-        <summary className="cursor-pointer text-sm font-semibold">{t('portal.support_attachments_title')} ({attachments.length})</summary>
-        <div className="mt-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {t('portal.support_attachments_title', {}, 'Attachments')}
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
-          </p>
-        </div>
         {attachments.length ? (
-          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-            {attachments.map((attachment) => (
-              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
-                  </p>
-                </div>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
-                  {t('common.download', {}, 'Download')}
+          <details
+            className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"
+            data-portal-support="optional-attachments"
+            open
+          >
+            <summary className="cursor-pointer text-sm font-semibold">
+              {t('portal.support_attachments_title', {}, 'Attachments')} ({attachments.length})
+            </summary>
+            <div className="mt-4">
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                {t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+              </p>
+              <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                {attachments.map((attachment) => (
+                  <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                      </p>
+                    </div>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
+                      {t('common.download', {}, 'Download')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                <label className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t('portal.support_attachment_choose_label', {}, 'Choose attachment')}
+                  <input
+                    className="input mt-2"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+                    onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isUploadingAttachment || !attachmentFile}
+                  onClick={() => void handleAttachmentUpload()}
+                >
+                  {isUploadingAttachment
+                    ? t('common.saving', {}, 'Saving...')
+                    : t('portal.support_attachment_upload_action', {}, 'Upload attachment')}
                 </button>
               </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-3 md:flex-row md:items-end">
-          <label className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">
-            {t('portal.support_attachment_choose_label', {}, 'Choose attachment')}
-            <input
-              className="input mt-2"
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
-              onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={isUploadingAttachment || !attachmentFile}
-            onClick={() => void handleAttachmentUpload()}
+            </div>
+          </details>
+        ) : (
+          <details
+            className="rounded-xl border border-dashed border-slate-200/80 px-4 py-2.5 text-slate-500 dark:border-slate-800 dark:text-slate-400"
+            data-portal-support="optional-attachments"
+            data-empty="true"
           >
-            {isUploadingAttachment
-              ? t('common.saving', {}, 'Saving...')
-              : t('portal.support_attachment_upload_action', {}, 'Upload attachment')}
-          </button>
-        </div>
-      </div>
-      </details>
+            <summary className="cursor-pointer text-sm font-medium text-slate-500 dark:text-slate-400">
+              {t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
+            </summary>
+            <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end">
+              <label className="flex-1 text-sm font-medium text-slate-600 dark:text-slate-300">
+                <span className="sr-only">{t('portal.support_attachment_choose_label', {}, 'Choose attachment')}</span>
+                <input
+                  className="input mt-0"
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+                  onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={isUploadingAttachment || !attachmentFile}
+                onClick={() => void handleAttachmentUpload()}
+              >
+                {isUploadingAttachment
+                  ? t('common.saving', {}, 'Saving...')
+                  : t('portal.support_attachment_upload_action', {}, 'Upload attachment')}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              {t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+            </p>
+          </details>
+        )}
 
 
       {supportRequest?.status === 'resolved' || supportRequest?.status === 'closed' ? (
@@ -514,7 +541,17 @@ export default function PortalSupportRequestDetailPage() {
             placeholder={t('portal.support_message_reply_placeholder', {}, 'Add more details for support.')}
           />
         </label>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2" data-portal-support="reply-actions">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+            data-portal-support="refresh-detail"
+            aria-label={t('common.refresh', {}, 'Refresh')}
+            title={t('common.refresh', {}, 'Refresh')}
+            onClick={() => void loadDetail()}
+          >
+            <PortalActionIcon id="recheck" />
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -526,9 +563,6 @@ export default function PortalSupportRequestDetailPage() {
               : supportRequest?.status === 'resolved' || supportRequest?.status === 'closed'
                 ? t('portal.support_message_reopen_action', {}, 'Reopen and reply')
                 : t('portal.support_message_reply_action', {}, 'Send reply')}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => void loadDetail()}>
-            {t('common.refresh', {}, 'Refresh')}
           </button>
         </div>
       </PortalSection>
