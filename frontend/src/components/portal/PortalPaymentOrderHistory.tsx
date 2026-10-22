@@ -207,7 +207,10 @@ export function PortalPaymentOrderHistory({
     );
   };
 
-  if (!isLoading && Number(counts.all || 0) === 0 && !error) {
+  const totalKnown = Number(counts.all ?? 0);
+  const bucketTotal = Number(counts.pending || 0) + Number(counts.paid || 0) + Number(counts.closed || 0);
+  const isEmptyOrders = !isLoading && !error && orders.length === 0 && totalKnown === 0 && bucketTotal === 0;
+  if (isEmptyOrders) {
     return (
       <p
         className="px-1 text-sm text-slate-500 dark:text-slate-400"
