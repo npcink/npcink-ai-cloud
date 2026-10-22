@@ -1898,39 +1898,32 @@ for (const scenario of [
       await page.getByRole('button', { name: /^Language$|^语言$/i }).click();
       await page.getByRole('option', { name: /English/i }).click();
     }
-    const group = page.locator('[data-portal-entitlement-group="knowledge"]');
-    await expect(group.getByRole('heading', { name: /^Knowledge capacity$|^知识库容量$/i })).toBeVisible();
+    // Quiet billing (#1168): knowledge tiles live in the shared quota group, not a separate
+    // "Knowledge capacity" card. Assert the resource tiles and status copy that remain.
+    const group = page.locator('[data-portal-entitlement-group="quota"]');
+    await expect(group).toBeVisible();
     const text = group.locator('[data-portal-quota-resource="vector_documents"]');
     const images = group.locator('[data-portal-quota-resource="media_images"]');
     await expect(text).toContainText(/Text knowledge capacity|文字知识库容量/i);
-    await expect(text).toContainText(/articles, pages, and comments|文章、页面和评论/i);
     await expect(images).toContainText(/Image knowledge capacity|图片知识库容量/i);
-    await expect(images).toContainText(/whether or not used in an article|含未用于文章的图片/i);
-    await expect(group).toContainText(/do not reset monthly|不按月重置/i);
+    // Detail copy lives in the ⓘ hint / overflow guidance, not as a dedicated group heading.
+    await expect(page.locator('[data-portal-billing="entitlements-help"]')).toBeVisible();
     if (scenario.unlimitedImages) {
       await expect(images).toContainText(/Unlimited|无限制/i);
       await expect(images.getByText(/^Full$|^已满$|^Over limit$|^已超限$/i)).toHaveCount(0);
     } else if (scenario.images >= 100) {
+      // Quiet billing suppresses Full/Over-limit tile badges when the package attention
+      // surface is already active; the filled bar + account status line carry the signal.
       await expect(images.locator('[style]')).toHaveAttribute('style', /width: 100%/);
-      await expect(images.getByText(scenario.images > 100 ? /^Over limit$|^已超限$/i : /^Full$|^已满$/i)).toBeVisible();
-      await expect(images).toContainText(/Existing images remain usable and refreshable|已有图片仍可使用和更新/i);
-      if (scenario.name !== 'text and image overage') {
-        await expect(text.getByText(/^Normal$|^正常$/i)).toBeVisible();
-        await expect(page.getByText(/^Image capacity needs attention$|^图片容量需处理$/i)).toBeVisible();
-      }
+      await expect(page.getByText(/Image knowledge usage is|图片知识库已使用/i)).toBeVisible();
     }
     if (scenario.text >= 100) {
-      await expect(text.getByText(scenario.text > 100 ? /^Over limit$|^已超限$/i : /^Full$|^已满$/i)).toBeVisible();
-      await expect(text).toContainText(/Existing text remains usable and updatable|已有内容仍可使用和更新/i);
-      if (scenario.name !== 'text and image overage') {
-        await expect(images.getByText(/^Normal$|^正常$/i)).toBeVisible();
-        await expect(page.getByText(/^Text capacity needs attention$|^文字容量需处理$/i)).toBeVisible();
-      }
+      await expect(text.locator('[style]')).toHaveAttribute('style', /width: 100%/);
+      await expect(page.getByText(/Text knowledge usage is|文字知识库已使用/i)).toBeVisible();
     }
     if (scenario.name === 'text and image overage') {
-      await expect(page.getByText(/^Multiple capacities need attention$|^多个容量需要处理$/i)).toBeVisible();
-      await expect(page.getByText(/文字知识库已使用 105 \/ 100.*图片知识库已使用 105 \/ 100/)).toBeVisible();
-
+      await expect(page.getByText(/文字知识库已使用 105 \/ 100/)).toBeVisible();
+      await expect(page.getByText(/图片知识库已使用 105 \/ 100/)).toBeVisible();
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     const screenshotPath = testInfo.outputPath('knowledge-capacity.png');
@@ -1940,8 +1933,8 @@ for (const scenario of [
     expect(failedRequests).toEqual([]);
     if (scenario.name === 'text and image overage') {
       await page.goto('/portal');
+      // Home attention copy now stacks both capacities in one paragraph (no disclosure click).
       await expect(page.getByText(/文字知识库已使用 105 \/ 100/)).toBeVisible();
-      await page.locator('[data-portal-home="additional-focus"] summary').click();
       await expect(page.getByText(/图片知识库已使用 105 \/ 100/)).toBeVisible();
       expect(consoleErrors).toEqual([]);
     }
