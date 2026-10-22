@@ -2299,9 +2299,10 @@ test('portal home renders a real zero entitlement balance', async ({ page }) => 
 test('[readiness:service_temporarily_unavailable] retry is bounded, support-aware, and mutation-free', async ({ page }) => {
   const calls = await installPortalMocks(page, { failInitialEntitlements: true });
   await page.goto('/portal');
-  const retryButton = page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i });
+  // Quiet home: entitlements retry is the metric action (Refetch), not a home-state badge.
+  const retryButton = page.getByRole('button', { name: /Unavailable.*Refetch|暂不可用.*重新获取/i });
   await expect(retryButton).toBeVisible();
-  await expect(page.locator('[data-portal-home-state="attention"]')).toBeVisible();
+  await expect(page.locator('[data-portal-home-state="attention"]')).toHaveCount(0);
   await expect(page.getByText(/Sites connected|网站已连接/i)).toHaveCount(0);
   await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Contact support|联系支持/i })).toHaveAttribute(
@@ -2324,7 +2325,7 @@ test('portal fault recovery keeps localized copy and hides backend details', asy
 
   await page.goto('/portal');
   await expect(page.getByText(/套餐用量暂不可用/i)).toBeVisible();
-  const retryButton = page.getByRole('button', { name: /暂不可用.*重试/i });
+  const retryButton = page.getByRole('button', { name: /暂不可用.*重新获取/i });
   await expect(retryButton).toBeVisible();
   await expect(
     page.getByText(/internal backend detail|service\.entitlements_temporarily_unavailable/i)
@@ -2340,12 +2341,15 @@ test('[readiness:quota_attention_account_scope] quota failure stays account-scop
 
   await page.goto('/portal');
 
+  const attention = page.locator('[data-portal-home="attention-focus"]');
+  await expect(attention.getByText(/AI credits need attention|AI 积分需要处理/i)).toBeVisible();
+  // Detail copy lives in the ⓘ aria-label (hidden until hover).
   await expect(
-    page.getByText(/account has reached its current usage limit|账户已达到使用额度上限/i)
-  ).toBeVisible();
+    attention.locator('[aria-label*="account has reached its current usage limit"], [aria-label*="账户已达到使用额度上限"]')
+  ).toHaveCount(1);
   await expect(page.getByRole('link', { name: /Review account usage|查看账户用量/i })).toHaveAttribute(
     'href',
-    '/portal/usage'
+    '/portal/billing#usage'
   );
   await expect(page.getByText(/internal backend detail|commercial\.quota_exceeded/i)).toHaveCount(0);
   await expect.poll(calls.accountEntitlementsRequestCount).toBe(1);
@@ -2416,7 +2420,8 @@ test.describe('portal first-user fault journeys', () => {
         'href',
         faultCase.expectedHref
       );
-      await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+      // Quiet error shell: primary recovery is the deep-link; retry reloads the page.
+      await expect(page.getByRole('button', { name: /Reload page|重新加载页面/i })).toBeVisible();
       await expect(
         page.getByText(new RegExp(`internal backend detail|${faultCase.errorCode.replaceAll('.', '\\.')}`, 'i'))
       ).toHaveCount(0);
