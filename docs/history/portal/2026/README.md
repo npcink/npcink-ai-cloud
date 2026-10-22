@@ -25,6 +25,8 @@ Current home / density layout Spec (incl. preview self-check gate):
   - 三会话讨论与取舍、#1118 部署记录、尚未实现的关键验收命令、人工验证分工与下一步
 - [Portal 安静状态 UX、面包屑与骨架屏交付复盘 — 2026-10-20](portal-status-ux-quiet-delivery-retrospective-2026-10-20.md)
   - PR `#1165`、同因不重复、ⓘ 收纳说明、骨架加载、§9 自检门禁与 e2e/合并教训
+- [Portal Phase 2 e2e 断言批次过程复盘 — 2026-10-22](portal-phase2-e2e-assertion-batches-retrospective-2026-10-22.md)
+  - `#1189`–`#1196` 分批合并、截图基线另案、工单表宽收窄与关闭会话前清理教训
 - [10月18日生产部署与未完成验收交接](../../production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)
   - 后续关键回归已实现、冻结4a已部署；旧会话归档后仍由当前会话跟进正式smoke、Addon与真实写作
 

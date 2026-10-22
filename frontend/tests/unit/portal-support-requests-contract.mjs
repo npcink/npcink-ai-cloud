@@ -85,3 +85,24 @@ assert.match(
   'Portal ticket status filters must remain available but demoted to a secondary control group'
 );
 
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="tickets-table"[\s\S]*min-w-\[720px\]/,
+  'Portal support PC tickets table must use a quieter min-width that fits quieter portal chrome'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /min-w-\[980px\]/,
+  'Portal support PC tickets table must not keep the wider 980px floor'
+);
+assert.match(
+  portalSupportPageSource,
+  /max-w-\[16rem\][\s\S]*max-w-\[10rem\]/,
+  'Portal support PC ticket title/site cells must use the narrower max-width caps'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /max-w-\[26rem\]|max-w-\[14rem\]/,
+  'Portal support PC ticket title/site cells must not keep the older wider max-width caps'
+);
+
