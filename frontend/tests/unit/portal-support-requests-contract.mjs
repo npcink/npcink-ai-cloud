@@ -197,7 +197,7 @@ assert.match(
 );
 assert.match(
   portalSupportDetailPageSource,
-  /data-portal-support="close-evaluation"[\s\S]*flex justify-end[\s\S]*support_feedback_submit_action/,
+  /data-portal-support="close-evaluation"[\s\S]*justify-end[\s\S]*support_feedback_submit_action/,
   'Close evaluation submit must be right-aligned'
 );
 
@@ -216,6 +216,43 @@ assert.match(
   readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
   /titleDisplay\?: 'visible' \| 'sr-only'/,
   'PortalWorkspaceHeader must support sr-only title for breadcrumb-led detail pages'
+);
+
+
+assert.match(
+  portalSupportDetailPageSource,
+  /statusTone\(supportRequest\.status\)[\s\S]{0,120}force|force[\s\S]{0,80}statusTone\(supportRequest\.status\)/,
+  'Ticket detail status badge must force-render so resolved is never silenced'
+);
+assert.match(
+  portalSupportPageSource,
+  /statusTone\(item\.status\)[\s\S]{0,120}force/,
+  'Ticket list status badges must force-render so resolved is never silenced'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /rounded-2xl[\s\S]*data-portal-support="composer-shell"|data-portal-support="composer-shell"[\s\S]*rounded-2xl/,
+  'Ticket composer must use a rounded shell matching bubble radius'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="refresh-detail"[\s\S]*absolute|absolute[\s\S]*data-portal-support="refresh-detail"/,
+  'Ticket refresh must sit inside the input trailing corner, not beside send'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /text-right[\s\S]*data-portal-support="reply-reopen-notice"|data-portal-support="reply-reopen-notice"[\s\S]*text-right/,
+  'Reopen hint must be right-aligned under the composer send side'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /max-w-\[30rem\][\s\S]*data-portal-support="close-evaluation"/,
+  'Close evaluation must use a narrow centered card (~30rem)'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*flex-1|flex w-full[\s\S]*feedback-resolved-segment/,
+  'Close evaluation segment must span the narrow card width'
 );
 
 console.log('portal_support_requests_contract: ok');

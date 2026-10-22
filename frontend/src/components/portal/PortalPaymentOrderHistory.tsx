@@ -207,10 +207,26 @@ export function PortalPaymentOrderHistory({
     );
   };
 
+  if (!isLoading && Number(counts.all || 0) === 0 && !error) {
+    return (
+      <p
+        className="px-1 text-sm text-slate-500 dark:text-slate-400"
+        data-portal-account="payment-orders-empty"
+      >
+        <span className="font-medium text-slate-700 dark:text-slate-200">
+          {t('portal.usage.payment_orders_title', {}, 'Payment orders')}
+        </span>
+        <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
+        {t('portal.usage.payment_orders_empty', {}, 'No payment orders yet.')}
+      </p>
+    );
+  }
+
   return (
     <details
       className="group overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-none dark:border-slate-800 dark:bg-slate-950"
       open={Number(counts.pending || 0) > 0}
+      data-portal-account="payment-orders"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
@@ -218,17 +234,15 @@ export function PortalPaymentOrderHistory({
             {t('portal.usage.payment_orders_title', {}, 'Payment orders')}
           </span>
           <span className="mt-1 block text-sm text-gray-600 dark:text-gray-400">
-            {Number(counts.all || 0) > 0
-              ? t(
-                  'portal.usage.payment_orders_summary',
-                  {
-                    pending: String(counts.pending || 0),
-                    paid: String(counts.paid || 0),
-                    closed: String(counts.closed || 0),
-                  },
-                  `${counts.pending || 0} pending, ${counts.paid || 0} paid, ${counts.closed || 0} closed`
-                )
-              : t('portal.usage.payment_orders_empty', {}, 'No payment orders yet.')}
+            {t(
+              'portal.usage.payment_orders_summary',
+              {
+                pending: String(counts.pending || 0),
+                paid: String(counts.paid || 0),
+                closed: String(counts.closed || 0),
+              },
+              `${counts.pending || 0} pending, ${counts.paid || 0} paid, ${counts.closed || 0} closed`
+            )}
           </span>
         </span>
         <span aria-hidden="true" className="shrink-0 text-lg text-slate-500 transition-transform group-open:rotate-180">⌄</span>

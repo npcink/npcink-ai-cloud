@@ -4,7 +4,6 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   PortalPageStack,
-  PortalSection,
 } from '@/components/portal/PortalScaffold';
 import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalActionIcon } from '@/components/portal/PortalRowActions';
@@ -400,6 +399,7 @@ export default function PortalSupportRequestDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <PortalStatusBadge
               status={statusTone(supportRequest.status)}
+              force
               label={t(`portal.support_status_${supportRequest.status}`, {}, supportRequest.status)}
             />
             <span className="text-sm text-slate-500 dark:text-slate-400">
@@ -482,122 +482,127 @@ export default function PortalSupportRequestDetailPage() {
       ) : null}
 
       {showFeedback ? (
-        <PortalSection data-portal-support="close-evaluation">
-          <div className="mb-3">
-            <p className="text-sm font-semibold text-slate-950 dark:text-white">
-              {t('portal.support_feedback_title', {}, 'Close evaluation')}
-            </p>
-            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              {t('portal.support_feedback_desc', {}, 'Confirm whether the issue is resolved. If not, the ticket will reopen.')}
-            </p>
-          </div>
-          {feedback ? (
-            <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
-              {t('portal.support_feedback_existing', {}, 'Feedback has been submitted. You can update it if needed.')}
-            </div>
-          ) : null}
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.support_feedback_resolved_label', {}, 'Issue status')}
+        <div className="flex justify-center" data-portal-support="close-evaluation-wrap">
+          <div
+            className="w-full max-w-[30rem] rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+            data-portal-support="close-evaluation"
+          >
+            <div className="mb-3">
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.support_feedback_title', {}, 'Close evaluation')}
               </p>
-              <div
-                className="inline-flex rounded-full border border-slate-200/90 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-900/60"
-                role="group"
-                aria-label={t('portal.support_feedback_resolved_label', {}, 'Issue status')}
-                data-portal-support="feedback-resolved-segment"
-              >
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {t('portal.support_feedback_desc', {}, 'Confirm whether the issue is resolved. If not, the ticket will reopen.')}
+              </p>
+            </div>
+            {feedback ? (
+              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
+                {t('portal.support_feedback_existing', {}, 'Feedback has been submitted. You can update it if needed.')}
+              </div>
+            ) : null}
+            <div className="space-y-3">
+              <div>
+                <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t('portal.support_feedback_resolved_label', {}, 'Issue status')}
+                </p>
+                <div
+                  className="flex w-full rounded-full border border-slate-200/90 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-900/60"
+                  role="group"
+                  aria-label={t('portal.support_feedback_resolved_label', {}, 'Issue status')}
+                  data-portal-support="feedback-resolved-segment"
+                >
+                  <button
+                    type="button"
+                    className={`flex-1 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+                      feedbackResolved
+                        ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                    aria-pressed={feedbackResolved}
+                    onClick={() => setFeedbackResolved(true)}
+                  >
+                    {t('portal.support_feedback_resolved_yes', {}, 'Resolved')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+                      !feedbackResolved
+                        ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                    aria-pressed={!feedbackResolved}
+                    onClick={() => setFeedbackResolved(false)}
+                  >
+                    {t('portal.support_feedback_resolved_no', {}, 'Not resolved')}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t('portal.support_feedback_rating_label', {}, 'Rating')}
+                </p>
+                <div
+                  className="flex items-center gap-1"
+                  role="group"
+                  aria-label={t('portal.support_feedback_rating_label', {}, 'Rating')}
+                  data-portal-support="feedback-rating-stars"
+                >
+                  {[1, 2, 3, 4, 5].map((rating) => {
+                    const active = feedbackRating >= rating;
+                    return (
+                      <button
+                        key={rating}
+                        type="button"
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-lg transition ${
+                          active
+                            ? 'text-amber-500'
+                            : 'text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400'
+                        }`}
+                        aria-label={`${rating}`}
+                        aria-pressed={feedbackRating === rating}
+                        onClick={() => setFeedbackRating(rating)}
+                      >
+                        ★
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                <span className="sr-only">{t('portal.support_feedback_comment_placeholder', {}, 'Optional note for support.')}</span>
+                <textarea
+                  className="input mt-0 min-h-[4.5rem]"
+                  value={feedbackComment}
+                  maxLength={2000}
+                  rows={2}
+                  onChange={(event) => setFeedbackComment(event.target.value)}
+                  placeholder={t('portal.support_feedback_comment_placeholder', {}, 'Optional note for support.')}
+                />
+              </label>
+              <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                    feedbackResolved
-                      ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                  aria-pressed={feedbackResolved}
-                  onClick={() => setFeedbackResolved(true)}
+                  className="btn btn-primary"
+                  disabled={isSubmittingFeedback}
+                  onClick={() => void handleFeedbackSubmit()}
                 >
-                  {t('portal.support_feedback_resolved_yes', {}, 'Resolved')}
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                    !feedbackResolved
-                      ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                  aria-pressed={!feedbackResolved}
-                  onClick={() => setFeedbackResolved(false)}
-                >
-                  {t('portal.support_feedback_resolved_no', {}, 'Not resolved')}
+                  {isSubmittingFeedback
+                    ? t('common.saving', {}, 'Saving...')
+                    : t('portal.support_feedback_submit_action', {}, 'Submit evaluation')}
                 </button>
               </div>
             </div>
-            <div>
-              <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.support_feedback_rating_label', {}, 'Rating')}
-              </p>
-              <div
-                className="flex items-center gap-1"
-                role="group"
-                aria-label={t('portal.support_feedback_rating_label', {}, 'Rating')}
-                data-portal-support="feedback-rating-stars"
-              >
-                {[1, 2, 3, 4, 5].map((rating) => {
-                  const active = feedbackRating >= rating;
-                  return (
-                    <button
-                      key={rating}
-                      type="button"
-                      className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-lg transition ${
-                        active
-                          ? 'text-amber-500'
-                          : 'text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400'
-                      }`}
-                      aria-label={`${rating}`}
-                      aria-pressed={feedbackRating === rating}
-                      onClick={() => setFeedbackRating(rating)}
-                    >
-                      ★
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
-              <span className="sr-only">{t('portal.support_feedback_comment_placeholder', {}, 'Optional note for support.')}</span>
-              <textarea
-                className="input mt-0 min-h-[4.5rem]"
-                value={feedbackComment}
-                maxLength={2000}
-                rows={2}
-                onChange={(event) => setFeedbackComment(event.target.value)}
-                placeholder={t('portal.support_feedback_comment_placeholder', {}, 'Optional note for support.')}
-              />
-            </label>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isSubmittingFeedback}
-                onClick={() => void handleFeedbackSubmit()}
-              >
-                {isSubmittingFeedback
-                  ? t('common.saving', {}, 'Saving...')
-                  : t('portal.support_feedback_submit_action', {}, 'Submit evaluation')}
-              </button>
-            </div>
           </div>
-        </PortalSection>
+        </div>
       ) : null}
 
       <div
-        className="sticky bottom-0 z-10 -mx-1 border-t border-slate-200/80 bg-white/95 px-1 pt-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90"
+        className="sticky bottom-0 z-10 pt-2"
         data-portal-support="composer"
       >
         {attachOpen ? (
           <div
-            className="mb-2 rounded-xl border border-dashed border-slate-200/90 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/50"
+            className="mb-2 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/50"
             data-portal-support="composer-attach-panel"
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -624,76 +629,83 @@ export default function PortalSupportRequestDetailPage() {
             </p>
           </div>
         ) : null}
-        <div className="flex items-end gap-2" data-portal-support="reply-actions">
-          <button
-            type="button"
-            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${
-              attachOpen
-                ? 'border-slate-400 bg-slate-100 text-slate-900 dark:border-slate-500 dark:bg-slate-800 dark:text-white'
-                : 'border-slate-200/90 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-            }`}
-            data-portal-support="composer-attach"
-            aria-expanded={attachOpen}
-            aria-label={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
-            title={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
-            onClick={() => setAttachOpen((open) => !open)}
-          >
-            <PortalActionIcon id="attach" />
-          </button>
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">{t('portal.support_message_reply_label', {}, 'Reply')}</span>
-            <textarea
-              ref={replyTextareaRef}
-              className="input max-h-36 min-h-10 resize-none py-2.5 leading-5"
-              value={reply}
-              maxLength={4000}
-              rows={1}
-              onChange={(event) => setReply(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting) {
-                  event.preventDefault();
-                  void handleReply();
-                }
-              }}
-              placeholder={t('portal.support_message_reply_placeholder', {}, 'Add more details for support.')}
-            />
-          </label>
-          <button
-            type="button"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
-            data-portal-support="refresh-detail"
-            aria-label={t('common.refresh', {}, 'Refresh')}
-            title={t('common.refresh', {}, 'Refresh')}
-            onClick={() => void loadDetail()}
-          >
-            <PortalActionIcon id="recheck" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary shrink-0"
-            disabled={isSubmitting || !reply.trim()}
-            onClick={() => void handleReply()}
-          >
-            {isSubmitting
-              ? t('common.saving', {}, 'Saving...')
-              : willReopen
-                ? t('portal.support_message_reopen_action', {}, 'Reopen and reply')
-                : t('portal.support_message_reply_action', {}, 'Send reply')}
-          </button>
+        <div
+          className="rounded-2xl border border-slate-200/90 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-950/90"
+          data-portal-support="composer-shell"
+        >
+          <div className="flex items-end gap-1.5" data-portal-support="reply-actions">
+            <button
+              type="button"
+              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                attachOpen
+                  ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+              }`}
+              data-portal-support="composer-attach"
+              aria-expanded={attachOpen}
+              aria-label={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
+              title={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
+              onClick={() => setAttachOpen((open) => !open)}
+            >
+              <PortalActionIcon id="attach" />
+            </button>
+            <div className="relative min-w-0 flex-1">
+              <label className="block">
+                <span className="sr-only">{t('portal.support_message_reply_label', {}, 'Reply')}</span>
+                <textarea
+                  ref={replyTextareaRef}
+                  className="input max-h-36 min-h-10 w-full resize-none border-0 bg-transparent py-2.5 pl-3 pr-11 leading-5 shadow-none focus:ring-0"
+                  value={reply}
+                  maxLength={4000}
+                  rows={1}
+                  onChange={(event) => setReply(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting) {
+                      event.preventDefault();
+                      void handleReply();
+                    }
+                  }}
+                  placeholder={t('portal.support_message_reply_placeholder', {}, 'Add more details for support.')}
+                />
+              </label>
+              <button
+                type="button"
+                className="absolute bottom-1.5 right-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                data-portal-support="refresh-detail"
+                aria-label={t('common.refresh', {}, 'Refresh')}
+                title={t('common.refresh', {}, 'Refresh')}
+                onClick={() => void loadDetail()}
+              >
+                <PortalActionIcon id="recheck" className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary shrink-0 rounded-full px-4"
+              disabled={isSubmitting || !reply.trim()}
+              onClick={() => void handleReply()}
+            >
+              {isSubmitting
+                ? t('common.saving', {}, 'Saving...')
+                : willReopen
+                  ? t('portal.support_message_reopen_action', {}, 'Reopen and reply')
+                  : t('portal.support_message_reply_action', {}, 'Send reply')}
+            </button>
+          </div>
+          {willReopen ? (
+            <p
+              className="mt-1.5 pr-1 text-right text-xs leading-5 text-slate-500 dark:text-slate-400"
+              data-portal-support="reply-reopen-notice"
+              role="status"
+            >
+              {t(
+                'portal.support_reply_reopens_notice',
+                {},
+                'Replying will reopen this ticket and return it to the support queue.'
+              )}
+            </p>
+          ) : null}
         </div>
-        {willReopen ? (
-          <p
-            className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400"
-            data-portal-support="reply-reopen-notice"
-            role="status"
-          >
-            {t(
-              'portal.support_reply_reopens_notice',
-              {},
-              'Replying will reopen this ticket and return it to the support queue.'
-            )}
-          </p>
-        ) : null}
       </div>
     </PortalPageStack>
   );

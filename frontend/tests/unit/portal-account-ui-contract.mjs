@@ -79,13 +79,13 @@ assert.doesNotMatch(
 
 assert.match(
   accountSource,
-  /data-portal-account="contact-info"/,
-  'account center must make contact information the primary customer-facing account surface'
+  /data-portal-account="login-security"[\s\S]*data-portal-account="contact-info"/,
+  'account center must merge sign-in and contact into one login-security surface'
 );
 assert.match(
   accountSource,
-  /<PortalWorkspaceHeader[\s\S]*currentPage="account"[\s\S]*href="\/portal\/audit"/,
-  'account center must use the shared compact header and keep recent activity as its header action'
+  /<PortalWorkspaceHeader[\s\S]*currentPage="account"[\s\S]*actionsPlacement="title-end"[\s\S]*href="\/portal\/audit"/,
+  'account center must use title-end recent activity as its header action'
 );
 assert.doesNotMatch(
   accountSource,
@@ -94,8 +94,8 @@ assert.doesNotMatch(
 );
 assert.match(
   accountSource,
-  /portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*<details[\s\S]*other_login_methods_title/,
-  'account center must avoid repeating the contact email and disclose unavailable optional login methods at low frequency'
+  /portal\.account\.login_security_title[\s\S]*portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*<details[\s\S]*other_login_methods_title/,
+  'account center must use one login-security card and disclose unavailable optional login methods at low frequency'
 );
 
 assert.match(
@@ -155,5 +155,24 @@ assert.match(
   /PortalAccountCommercePanels[\s\S]*data-portal-account="billing-commerce"|data-portal-account="billing-commerce"[\s\S]*PortalAccountCommercePanels/,
   'account center must host package management and payment orders'
 );
+
+const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
+const paymentHistorySource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalPaymentOrderHistory.tsx'), 'utf8');
+assert.match(
+  commerceSource,
+  /data-portal-account="package-summary"[\s\S]*goto-billing|data-portal-account="goto-billing"/,
+  'account commerce must keep a one-line plan summary linking to Package, not a CTA stack'
+);
+assert.doesNotMatch(
+  commerceSource,
+  /portal\.billing\.upgrade_action[\s\S]*portal\.usage\.credit_pack_buy_action[\s\S]*portal\.package\.trial_entry_action/,
+  'account commerce must not stack upgrade / buy credits / trial CTAs'
+);
+assert.match(
+  paymentHistorySource,
+  /data-portal-account="payment-orders-empty"/,
+  'account payment empty state must be a muted one-line, not a fat accordion'
+);
+
 console.log('portal_account_ui_contract: ok');
 

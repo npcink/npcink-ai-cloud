@@ -255,17 +255,18 @@ function AccountPageContent() {
       <PortalWorkspaceHeader
         title={t('portal.account.title', undefined, 'Account')}
         currentPage="account"
+        actionsPlacement="title-end"
         titleAccessory={(
           <PortalInfoHint
             detail={t(
               'portal.account.description',
               undefined,
-              'Manage sign-in contact, package changes, AI credits, and payment orders.'
+              'Manage sign-in methods, contact email, and payment history. Package changes live on the Package page.'
             )}
           />
         )}
         actions={
-          <Link href="/portal/audit" className="btn btn-secondary btn-sm">
+          <Link href="/portal/audit" className="btn btn-secondary btn-sm" data-portal-account-deeplink="audit">
             {t('portal.audit.nav_label', undefined, 'Recent activity')}
           </Link>
         }
@@ -284,43 +285,48 @@ function AccountPageContent() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
-        <PortalSection className="space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.login_methods_label', undefined, 'Login')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.login_methods_title', undefined, 'Login methods')}
-              </h2>
-            </div>
-          </div>
+      <PortalSection className="space-y-4" data-portal-account="login-security">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+            {t('portal.account.login_security_title', undefined, 'Sign-in and security')}
+          </h2>
+          <PortalInfoHint
+            detail={t(
+              'portal.account.email_login_desc',
+              undefined,
+              'Sign in with a verification code sent to the contact email shown on this page.'
+            )}
+          />
+        </div>
 
-          <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.email_login_title', undefined, 'Email verification code')}
-                  </h3>
-                  {showPrimaryIdentityBadge ? (
-                    <PortalStatusBadge
-                      label={t('portal.account.primary_identity', undefined, 'Primary identity')}
-                      status="active"
-                    />
-                  ) : null}
-                  <PortalInfoHint
-                    detail={t(
-                      'portal.account.email_login_desc',
-                      undefined,
-                      'Sign in with a verification code sent to the contact email shown on this page.'
-                    )}
-                  />
-                </div>
+        <div
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          data-portal-account="contact-info"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-slate-950 dark:text-white">
+              {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
+            </p>
+            {showPrimaryIdentityBadge ? (
+              <div className="mt-1.5">
+                <PortalStatusBadge
+                  force
+                  label={t('portal.account.primary_identity', undefined, 'Primary identity')}
+                  status="active"
+                />
               </div>
-            </div>
-          </PortalCard>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm shrink-0"
+            onClick={() => setShowEmailChange(true)}
+          >
+            {contactEmail
+              ? t('portal.account.contact_change_title', undefined, 'Change email')
+              : t('portal.account.contact_add_title', undefined, 'Add email')}
+          </button>
+        </div>
 
           {providerState === 'loading' ? (
             <PortalLoadingState message={t('common.loading')} compact />
@@ -362,6 +368,7 @@ function AccountPageContent() {
                     {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
                   </h3>
                   <PortalStatusBadge
+                    force
                     label={
                       qqProvider?.bound
                         ? t('portal.account.bound', undefined, 'Bound')
@@ -429,59 +436,9 @@ function AccountPageContent() {
             </div>
           </PortalCard>
           )}
-        </PortalSection>
-
-        <div data-portal-account="contact-info">
-          <PortalSection className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.contact_label', undefined, 'Contact')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.contact_title', undefined, 'Contact information')}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t(
-                  'portal.account.contact_desc',
-                  undefined,
-                  'This is the information used for login codes, service notices, and support follow-up.'
-                )}
-              </p>
-            </div>
-
-            <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-              <p className="text-base font-semibold text-slate-950 dark:text-white">
-                {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
-              </p>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {contactEmail
-                  ? t(
-                      'portal.account.contact_change_desc',
-                      undefined,
-                      'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
-                    )
-                  : t(
-                      'portal.account.contact_add_desc',
-                      undefined,
-                      'Add and verify an email login before removing another sign-in method.'
-                    )}
-              </p>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowEmailChange(true)}>
-                {contactEmail
-                  ? t('portal.account.contact_change_title', undefined, 'Change email')
-                  : t('portal.account.contact_add_title', undefined, 'Add email')}
-              </button>
-            </PortalCard>
-          </PortalSection>
-        </div>
-      </div>
+      </PortalSection>
 
       <div className="space-y-3" data-portal-account="billing-commerce">
-        <div className="min-w-0">
-          <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
-            {t('portal.account.commerce_title', undefined, 'Package and payments')}
-          </h2>
-        </div>
         <PortalAccountCommercePanels />
       </div>
 

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PortalCard } from '@/components/portal/PortalScaffold';
@@ -387,9 +388,6 @@ export function PortalAccountCommercePanels() {
 
 
 
-  const quotaSummary = entitlements?.quota_summary || null;
-  const creditNeedsAttention = quotaSummary?.ai_credits?.status === 'limited';
-
   if (isLoading && !entitlements && !planOffers && !creditPacks) {
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} compact />;
   }
@@ -409,69 +407,33 @@ export function PortalAccountCommercePanels() {
       ) : null}
 
       {!error && entitlements ? (
-        <div id="package-options" className="scroll-mt-24">
-          <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-2xl">
-                <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                  {t('portal.billing.manage_title', {}, 'Manage package')}
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {t(
-                    'portal.billing.manage_desc',
-                    {},
-                    'Open an option only when you need to change the package, add AI credits, or review trial eligibility.'
-                  )}
-                </p>
-                <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  {trialStatusTitle}
-                </p>
-              </div>
-              <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[25rem]">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-secondary' : 'btn-primary'}`}
-                    onClick={() => {
-                      setPackageError(null);
-                      setSelectedPackageTier(null);
-                      setShowOnlyPackageDifferences(true);
-                      setActiveCommercialDialog('package');
-                    }}
-                  >
-                    {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-                  </button>
-                  {availableCreditPacks.length > 0 ? (
-                    <button
-                      type="button"
-                      className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => {
-                        setCreditPackError(null);
-                        setSelectedCreditPackId(null);
-                        setActiveCommercialDialog('credits');
-                      }}
-                    >
-                      {t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')}
-                    </button>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-300 dark:hover:text-blue-200"
-                  onClick={() => {
-                    setPackageError(null);
-                    setActiveCommercialDialog('trial');
-                  }}
-                >
-                  {trialState === 'eligible'
-                    ? t('portal.package.trial_entry_action', { days: String(trialDays) }, `Start ${trialDays}-day trial`)
-                    : trialState === 'active'
-                      ? t('portal.package.trial_active_entry_action', {}, 'View active trial')
-                      : t('portal.package.trial_eligibility_action', {}, 'Trial eligibility')}
-                </button>
-              </div>
-            </div>
-          </PortalCard>
+        <div
+          id="package-options"
+          className="scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40"
+          data-portal-account="package-summary"
+        >
+          <p className="min-w-0 text-sm text-slate-700 dark:text-slate-200">
+            <span className="font-medium text-slate-950 dark:text-white">
+              {t('portal.account.commerce_title', {}, 'Package and payments')}
+            </span>
+            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
+            <span>
+              {currentPlanId
+                ? t(
+                    'portal.account.current_plan_summary',
+                    { plan: currentPlanId.toUpperCase() },
+                    'Current plan: {{plan}}'
+                  )
+                : trialStatusTitle}
+            </span>
+          </p>
+          <Link
+            href="/portal/billing"
+            className="shrink-0 text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+            data-portal-account="goto-billing"
+          >
+            {t('portal.account.goto_billing', {}, 'Open Package')}
+          </Link>
         </div>
       ) : null}
 

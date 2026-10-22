@@ -532,6 +532,7 @@ function PortalSupportContent() {
                       <td className="whitespace-nowrap px-3 py-4">
                         <PortalStatusBadge
                           status={statusTone(item.status)}
+                          force
                           label={t(`portal.support_status_${item.status}`, {}, item.status)}
                         />
                       </td>
@@ -565,6 +566,7 @@ function PortalSupportContent() {
                       <p className="text-sm font-semibold text-slate-950 dark:text-white">{item.title}</p>
                       <PortalStatusBadge
                         status={statusTone(item.status)}
+                        force
                         label={t(`portal.support_status_${item.status}`, {}, item.status)}
                       />
                     </div>
