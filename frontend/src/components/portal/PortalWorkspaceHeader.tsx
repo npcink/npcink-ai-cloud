@@ -58,6 +58,11 @@ type PortalWorkspaceHeaderProps = {
   titleAccessory?: React.ReactNode;
   /** Quiet trail above the title (e.g. Service / My sites / current). */
   breadcrumb?: React.ReactNode;
+  /**
+   * When breadcrumb already carries the page name (ticket detail), keep an
+   * accessible h1 but hide the large visual title to avoid duplicating the trail.
+   */
+  titleDisplay?: 'visible' | 'sr-only';
   metadata?: React.ReactNode;
   contextPanel?: React.ReactNode;
   primaryAction?: React.ReactNode;
@@ -98,6 +103,7 @@ export function PortalWorkspaceHeader({
   metricsPlacement = 'below',
   titleAccessory,
   breadcrumb,
+  titleDisplay = 'visible',
   metadata,
   contextPanel,
   primaryAction,
@@ -165,6 +171,15 @@ export function PortalWorkspaceHeader({
     </div>
   ) : null;
 
+  const hasVisibleTitleChrome = titleDisplay !== 'sr-only'
+    || Boolean(titleAccessory)
+    || (hasActions && !hasContextPanel)
+    || (metricsPlacement === 'title-end' && metrics.length > 0)
+    || Boolean(description)
+    || Boolean(eyebrowInfo)
+    || Boolean(metadata)
+    || (siteSelectorPlacement === 'inline' && Boolean(siteSelector));
+
   const summary = (
     <div
       className={cn(
@@ -188,9 +203,11 @@ export function PortalWorkspaceHeader({
           )}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]">
-              {title}
-            </h1>
+            {titleDisplay === 'sr-only' ? null : (
+              <h1 className="text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]">
+                {title}
+              </h1>
+            )}
             {titleAccessory}
             {!hasContextPanel && hasActions && actionsPlacement === 'inline' ? (
               <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div>
@@ -235,7 +252,14 @@ export function PortalWorkspaceHeader({
 
   return (
     <section
-      className="portal-workspace-header space-y-4 border-b border-slate-200/75 pb-4 dark:border-slate-800"
+      className={
+        hasVisibleTitleChrome
+          || (metricsPlacement === 'below' && metrics.length > 0)
+          || (siteSelectorPlacement === 'below' && Boolean(siteSelector))
+          || Boolean(children)
+          ? 'portal-workspace-header space-y-4 border-b border-slate-200/75 pb-4 dark:border-slate-800'
+          : 'portal-workspace-header border-b border-slate-200/75 pb-3 dark:border-slate-800'
+      }
       data-portal-workspace-header={currentPage}
     >
       {hasRenderableNode(breadcrumb) ? (
@@ -243,7 +267,8 @@ export function PortalWorkspaceHeader({
           {breadcrumb}
         </div>
       ) : null}
-      {summary}
+      {titleDisplay === 'sr-only' ? <h1 className="sr-only">{title}</h1> : null}
+      {hasVisibleTitleChrome ? summary : null}
       {metricsPlacement === 'below' && metrics.length ? (
         <PortalMetricStrip items={metrics} columnsClassName={metricsColumnsClassName} variant="header" layout={metricsLayout} />
       ) : null}

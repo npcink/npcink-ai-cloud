@@ -78,6 +78,12 @@ export function PortalActionIcon({ id, className = 'h-4 w-4' }: { id: string; cl
           <path d="M21 3v6h-6" />
         </svg>
       );
+    case 'attach':
+      return (
+        <svg {...common}>
+          <path d="M21.4 11.6 12.1 20.9a5.5 5.5 0 0 1-7.8-7.8l9.9-9.9a3.5 3.5 0 0 1 5 5l-9.9 9.9a1.5 1.5 0 0 1-2.1-2.1l8.5-8.5" />
+        </svg>
+      );
     case 'view-plan':
       return (
         <svg {...common}>

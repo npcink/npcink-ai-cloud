@@ -162,13 +162,60 @@ assert.doesNotMatch(
 );
 assert.match(
   portalSupportDetailPageSource,
-  /justify-end[\s\S]*data-portal-support="reply-actions"[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
-  'Ticket detail reply actions must be right-aligned with refresh icon then send reply'
+  /titleDisplay="sr-only"/,
+  'Ticket detail must hide the large H1 when breadcrumb already shows 工单 / title'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="ticket-description"/,
+  'Ticket detail must not keep a separate description card that duplicates the first customer bubble'
 );
 assert.match(
   portalSupportDetailPageSource,
-  /data-portal-support="optional-attachments"[\s\S]*data-empty="true"/,
-  'Ticket detail must quiet the empty attachments affordance'
+  /data-portal-support="message-thread"[\s\S]*bubble-customer[\s\S]*bubble-operator/,
+  'Ticket detail must render Q&A as left/right chat bubbles'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="system-line"/,
+  'Ticket detail must render system status changes as thin centered lines'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="composer"[\s\S]*data-portal-support="reply-actions"[\s\S]*composer-attach[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
+  'Ticket detail must use a compact composer with attach, refresh, and send'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="reply-reopen-notice"[\s\S]*border-amber-200 bg-amber-50/,
+  'Ticket detail must not keep the tall amber reopen banner'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*data-portal-support="feedback-rating-stars"/,
+  'Close evaluation must use a resolved segment and star rating instead of wide selects'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="close-evaluation"[\s\S]*flex justify-end[\s\S]*support_feedback_submit_action/,
+  'Close evaluation submit must be right-aligned'
+);
+
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="status-rules"/,
+  'Portal support list must not keep a standing ticket-status legend card'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="ticket-guide"[\s\S]*support_guide_status_summary/,
+  'Portal support must keep status meaning in the quiet title ⓘ hint'
+);
+
+assert.match(
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /titleDisplay\?: 'visible' \| 'sr-only'/,
+  'PortalWorkspaceHeader must support sr-only title for breadcrumb-led detail pages'
 );
 
 console.log('portal_support_requests_contract: ok');

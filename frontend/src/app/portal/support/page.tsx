@@ -167,24 +167,6 @@ function PortalSupportContent() {
     }
     return t('portal.support_request_other_site', {}, 'Another site');
   };
-  const supportStatusRules = [
-    {
-      key: 'open',
-      label: t('portal.support_rule_open', {}, 'Open tickets are waiting for support triage.'),
-    },
-    {
-      key: 'in_progress',
-      label: t('portal.support_rule_in_progress', {}, 'In-progress tickets are being checked by support.'),
-    },
-    {
-      key: 'resolved',
-      label: t('portal.support_rule_resolved', {}, 'Resolved tickets can receive your close evaluation.'),
-    },
-    {
-      key: 'closed',
-      label: t('portal.support_rule_closed', {}, 'If a closed issue is still not solved, reply with feedback or submit a new ticket.'),
-    },
-  ];
 
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
@@ -284,6 +266,17 @@ function PortalSupportContent() {
                     :
                   </span>{' '}
                   {t('portal.support_guide_response', {}, 'Within 1 business day.')}
+                </p>
+                <p className="mt-2">
+                  <span className="font-medium">
+                    {t('portal.support_status_rules_title', {}, 'Ticket status')}
+                    :
+                  </span>{' '}
+                  {t(
+                    'portal.support_guide_status_summary',
+                    {},
+                    'Open waits for triage; in progress is being checked; resolved accepts close evaluation; closed issues can be reopened by reply.'
+                  )}
                 </p>
               </>
             )}
@@ -620,30 +613,6 @@ function PortalSupportContent() {
         /> : null}
       </PortalSection>
 
-      <details className="rounded-[1rem] border border-slate-200/80 bg-white/70 dark:border-slate-800 dark:bg-slate-950/35" data-portal-support="status-rules">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
-          {t('portal.support_status_rules_title', {}, 'Ticket status')}
-        </summary>
-        <div className="space-y-3 border-t border-slate-200/80 p-4 dark:border-slate-800">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t(
-              'portal.support_status_rules_desc',
-              {},
-              'Use tickets for package, payment, site, usage, or account issues; support updates the status as the issue moves.'
-            )}
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {supportStatusRules.map((rule) => (
-              <div key={rule.key} className="rounded-xl border border-slate-200 bg-white/70 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300">
-                <p className="font-semibold text-slate-950 dark:text-white">
-                  {t(`portal.support_status_${rule.key}`, {}, rule.key)}
-                </p>
-                <p className="mt-1 text-xs leading-5">{rule.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </details>
     </PortalPageStack>
   );
 }
