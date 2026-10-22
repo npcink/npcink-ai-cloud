@@ -256,7 +256,7 @@ function PortalSupportContent() {
   };
 
   return (
-    <PortalPageStack>
+    <PortalPageStack className="space-y-4">
       <PortalWorkspaceHeader
         title={t('portal.support_requests_title', {}, 'Tickets')}
         currentPage="support"
@@ -431,7 +431,7 @@ function PortalSupportContent() {
       ) : null}
 
       <PortalSection>
-        <div className="mb-4 flex flex-col gap-3 border-y border-slate-200/75 py-3 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-3 flex flex-col gap-2.5 border-b border-slate-200/75 pb-3 dark:border-slate-800 lg:flex-row lg:flex-wrap lg:items-end lg:justify-start lg:gap-x-6 lg:gap-y-2" data-portal-support="list-toolbar">
           {listErrorCode === 'portal.site_selection_required' ? (
           <div className="w-full max-w-sm">
             <label htmlFor="portal-support-site-selector" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -468,7 +468,7 @@ function PortalSupportContent() {
             )}
           </div>
           ) : <p className="text-sm text-slate-500">{t('portal.support_account_scope_label')}</p>}
-          <div className="flex flex-col items-start gap-1.5 sm:items-end" data-portal-support="status-filters">
+          <div className="flex flex-col items-start gap-1.5" data-portal-support="status-filters">
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
               {t('portal.support_filter_label', {}, 'Filter by status')}
             </p>

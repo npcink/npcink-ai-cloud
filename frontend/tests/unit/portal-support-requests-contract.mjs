@@ -106,3 +106,20 @@ assert.doesNotMatch(
   'Portal support PC ticket title/site cells must not keep the older wider max-width caps'
 );
 
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="list-toolbar"[\s\S]*lg:justify-start/,
+  'Portal support list toolbar must left-align account scope with status filters'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="list-toolbar"[\s\S]*lg:justify-between/,
+  'Portal support list toolbar must not push status filters across a wide spacer'
+);
+assert.match(
+  portalSupportPageSource,
+  /PortalPageStack className="space-y-4"/,
+  'Portal support page stack must use tighter title-to-list spacing'
+);
+
+console.log('portal_support_requests_contract: ok');
