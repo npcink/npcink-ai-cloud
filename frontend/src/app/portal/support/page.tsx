@@ -9,7 +9,6 @@ import {
   PortalCard,
   PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
-import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalEmptyState,
@@ -261,20 +260,6 @@ function PortalSupportContent() {
       <PortalWorkspaceHeader
         title={t('portal.support_requests_title', {}, 'Tickets')}
         currentPage="support"
-        breadcrumb={(
-          <PortalBreadcrumb
-            aria-label={t('portal.support_breadcrumb', {}, 'Ticket location')}
-            items={[
-              {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
-                label: t('portal.support_requests_title', {}, 'Tickets'),
-              },
-            ]}
-          />
-        )}
         titleAccessory={(
           <PortalInfoHint
             data-portal-support="ticket-guide"

@@ -290,10 +290,15 @@ assert.doesNotMatch(
   /package_credit_allowance_label|site_allowance_label/,
   'Portal package header must not repeat package rights that are already shown in the rights card'
 );
+assert.doesNotMatch(
+  billingHeader,
+  /PortalBreadcrumb/,
+  'Portal package top-level header must not show a Service breadcrumb (navbar + title locate the page)'
+);
 assert.match(
   billingHeader,
-  /PortalBreadcrumb[\s\S]*metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
-  'Portal package header must use breadcrumb plus a quiet title-end metrics rail for package and period'
+  /metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
+  'Portal package header must use a quiet title-end metrics rail for package and period'
 );
 assert.match(
   billingPageSource,

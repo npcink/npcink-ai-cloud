@@ -9,7 +9,6 @@ import {
   PortalCard,
   PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
-import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
@@ -256,20 +255,6 @@ function AccountPageContent() {
       <PortalWorkspaceHeader
         title={t('portal.account.title', undefined, 'Account')}
         currentPage="account"
-        breadcrumb={(
-          <PortalBreadcrumb
-            aria-label={t('portal.account.breadcrumb', undefined, 'Account location')}
-            items={[
-              {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
-                label: t('portal.account.title', undefined, 'Account'),
-              },
-            ]}
-          />
-        )}
         titleAccessory={(
           <PortalInfoHint
             detail={t(

@@ -7,7 +7,6 @@ import {
   PortalPageStack,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
-import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
 import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSiteUsageList';
 import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
@@ -260,20 +259,6 @@ function PortalBillingContent() {
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
         currentPage="billing"
-        breadcrumb={(
-          <PortalBreadcrumb
-            aria-label={t('portal.billing.breadcrumb', {}, 'Package location')}
-            items={[
-              {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
-                label: t('portal.billing.customer_title', {}, 'Package'),
-              },
-            ]}
-          />
-        )}
         primaryAction={
           packageStatus !== 'warning' ? (
             <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
