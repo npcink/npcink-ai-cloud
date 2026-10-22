@@ -256,6 +256,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
   merge, production, or customer acceptance authority
+- [Portal Phase 2 e2e Assertion Batches Retrospective — 2026-10-22](history/portal/2026/portal-phase2-e2e-assertion-batches-retrospective-2026-10-22.md) — dated batch-merge closeout for assertion debt (#1189–#1196), support table width note, and deferred screenshot baselines; not full-suite green or Phase 3 authority
 - [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
 - [Cloud Connector Recovery Contract](cloud-connector-recovery-contract-v1.md)
 - [Site-Inactive Recovery Closeout — 2026-08-13](history/engineering/2026/site-inactive-recovery-closeout-2026-08-13.md) — dated cross-repository implementation, validation, and development-learning record
