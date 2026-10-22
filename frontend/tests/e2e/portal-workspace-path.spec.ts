@@ -2030,6 +2030,35 @@ test('portal account page hides internal identifiers and duplicate summary metri
   await expect(page.getByText(/acct_portal/i)).not.toBeVisible();
 });
 
+test('portal breadcrumbs appear only on secondary pages', async ({ page }) => {
+  await installPortalMocks(page);
+
+  await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/support');
+  await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/account');
+  await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/audit');
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
+  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Account|账号|帳號/i);
+  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Recent activity|最近活动|最近活動/i);
+
+  await page.goto('/portal/sites/site_attention');
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
+  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/My sites|我的站点|我的站點/i);
+
+  await page.goto('/portal/support/ticket_portal_e2e_open');
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
+  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Tickets|工单|工單/i);
+});
+
 test('portal audit stays a bounded support deep link', async ({ page }) => {
   await installPortalMocks(page);
 
