@@ -2119,6 +2119,8 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
   const ticketsTable = page.locator('[data-portal-support="tickets-table"]');
   await expect(ticketsTable).toBeVisible();
+  await expect(page.locator('[data-portal-support="list-toolbar"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-support="header-actions"]')).toBeVisible();
   await expect(page.getByText(/^Account scope$|^账户范围$/i)).toHaveCount(0);
   await expect(page.getByText(/^Filter by status$|^按状态筛选$/i)).toHaveCount(0);
   await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(1);

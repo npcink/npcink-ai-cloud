@@ -288,22 +288,47 @@ function PortalSupportContent() {
             )}
           />
         )}
-        primaryAction={
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 dark:bg-blue-500 dark:text-slate-950 dark:hover:bg-blue-400"
-            data-portal-support="submit-ticket"
-            disabled={listErrorCode === 'portal.site_selection_required'}
-            aria-label={t('portal.support_request_new_action', {}, 'Submit ticket')}
-            title={t('portal.support_request_new_action', {}, 'Submit ticket')}
-            onClick={() => {
-              setFormError('');
-              setShowForm(true);
-            }}
+        actions={(
+          <div
+            className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2"
+            data-portal-support="header-actions"
           >
-            <PortalActionIcon id="ticket-new" />
-          </button>
-        }
+            <div
+              className="flex flex-wrap justify-end gap-2"
+              data-portal-support="status-filters"
+              aria-label={t('portal.support_filter_label', {}, 'Filter by status')}
+            >
+              {SUPPORT_STATUSES.map((status) => (
+                <button
+                  key={status || 'all'}
+                  type="button"
+                  className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
+                  aria-pressed={statusFilter === status}
+                  onClick={() => {
+                    setOffset(0);
+                    setStatusFilter(status);
+                  }}
+                >
+                  {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 dark:bg-blue-500 dark:text-slate-950 dark:hover:bg-blue-400"
+              data-portal-support="submit-ticket"
+              disabled={listErrorCode === 'portal.site_selection_required'}
+              aria-label={t('portal.support_request_new_action', {}, 'Submit ticket')}
+              title={t('portal.support_request_new_action', {}, 'Submit ticket')}
+              onClick={() => {
+                setFormError('');
+                setShowForm(true);
+              }}
+            >
+              <PortalActionIcon id="ticket-new" />
+            </button>
+          </div>
+        )}
       />
 
       {notice ? (
@@ -435,60 +460,42 @@ function PortalSupportContent() {
       ) : null}
 
       <PortalSection>
-        <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end lg:gap-x-4" data-portal-support="list-toolbar">
-          {listErrorCode === 'portal.site_selection_required' ? (
-            <div className="w-full max-w-sm lg:mr-auto">
-              <label htmlFor="portal-support-site-selector" className="sr-only">
-                {t('portal.current_site', {}, 'Current site')}
-              </label>
-              {accountSites.length > 1 ? (
-                <select
-                  id="portal-support-site-selector"
-                  className="input h-10 py-2 text-sm"
-                  value={contextSiteId}
-                  onChange={(event) => void handleSiteChange(event.target.value)}
-                >
-                  {!contextSiteId ? (
-                    <option value="" disabled>
-                      {t('portal.select_site_placeholder', {}, 'Select a site')}
-                    </option>
-                  ) : null}
-                  {accountSites.map((site) => (
-                    <option key={site.site_id} value={site.site_id}>
-                      {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
-                  {selectedContextSite
-                    ? getPortalSiteDisplayName(selectedContextSite)
-                    : t(
-                      'portal.support_account_scope_label',
-                      {},
-                      'Account-level support (all sites)'
-                    )}
-                </p>
-              )}
-            </div>
-          ) : null}
-          <div className="flex flex-wrap justify-end gap-2" data-portal-support="status-filters" aria-label={t('portal.support_filter_label', {}, 'Filter by status')}>
-            {SUPPORT_STATUSES.map((status) => (
-              <button
-                key={status || 'all'}
-                type="button"
-                className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
-                aria-pressed={statusFilter === status}
-                onClick={() => {
-                  setOffset(0);
-                  setStatusFilter(status);
-                }}
+        {listErrorCode === 'portal.site_selection_required' ? (
+          <div className="mb-3 w-full max-w-sm" data-portal-support="site-context">
+            <label htmlFor="portal-support-site-selector" className="sr-only">
+              {t('portal.current_site', {}, 'Current site')}
+            </label>
+            {accountSites.length > 1 ? (
+              <select
+                id="portal-support-site-selector"
+                className="input h-10 py-2 text-sm"
+                value={contextSiteId}
+                onChange={(event) => void handleSiteChange(event.target.value)}
               >
-                {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-              </button>
-            ))}
+                {!contextSiteId ? (
+                  <option value="" disabled>
+                    {t('portal.select_site_placeholder', {}, 'Select a site')}
+                  </option>
+                ) : null}
+                {accountSites.map((site) => (
+                  <option key={site.site_id} value={site.site_id}>
+                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
+                {selectedContextSite
+                  ? getPortalSiteDisplayName(selectedContextSite)
+                  : t(
+                    'portal.support_account_scope_label',
+                    {},
+                    'Account-level support (all sites)'
+                  )}
+              </p>
+            )}
           </div>
-        </div>
+        ) : null}
 
         {isListLoading ? (
           <PortalLoadingState message={t('common.loading', {}, 'Loading...')} compact />

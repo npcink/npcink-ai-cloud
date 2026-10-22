@@ -76,8 +76,8 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /primaryAction=\{[\s\S]*data-portal-support="submit-ticket"[\s\S]*support_request_new_action/,
-  'Portal submit-ticket action must sit in the title info group via primaryAction'
+  /actions=\{\([\s\S]*data-portal-support="header-actions"[\s\S]*data-portal-support="status-filters"[\s\S]*data-portal-support="submit-ticket"/,
+  'Portal support header must keep status filters and submit icon in the title-end actions group'
 );
 assert.match(
   portalSupportPageSource,
@@ -106,15 +106,20 @@ assert.doesNotMatch(
   'Portal support PC ticket title/site cells must not keep the older wider max-width caps'
 );
 
-assert.match(
+assert.doesNotMatch(
   portalSupportPageSource,
-  /lg:justify-end[\s\S]*data-portal-support="list-toolbar"/,
-  'Portal support list toolbar must right-align status filter chips'
+  /data-portal-support="list-toolbar"/,
+  'Portal support must not keep an in-card list toolbar row for filters'
 );
 assert.match(
   portalSupportPageSource,
   /PortalPageStack className="space-y-3"/,
   'Portal support page stack must use tighter title-to-list spacing'
+);
+assert.match(
+  portalSupportPageSource,
+  /ml-auto[\s\S]*data-portal-support="header-actions"[\s\S]*status-filters[\s\S]*submit-ticket/,
+  'Portal support filters must sit in the header actions cluster before the submit icon'
 );
 assert.match(
   portalSupportPageSource,
