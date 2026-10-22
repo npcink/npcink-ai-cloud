@@ -2238,14 +2238,21 @@ test('[readiness:multi_site_account_context] multi-site home keeps account servi
 test('site filter scopes usage evidence without changing account package data', async ({ page }) => {
   const calls = await installPortalMocks(page);
 
-  await page.goto('/portal/usage');
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  await expect(page.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
+  // Quiet billing: Package page holds account balance; site usage is a per-site dialog.
+  await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await expect(page.locator('[data-portal-quota-resource="ai_credits"]')).toContainText(/2,419/);
 
-  await page.getByRole('combobox', { name: /Current site|当前站点/i }).selectOption('site_clear');
-  await expect.poll(() => new URL(page.url()).searchParams.get('site')).toBe('site_clear');
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  await expect(page.getByText(/6 AI credits used|共使用 6 AI 积分/i)).toBeVisible();
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_attention"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/24 AI credits used|该时间范围共使用 24 AI 积分/i)).toBeVisible();
+  await dialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/6 AI credits used|该时间范围共使用 6 AI 积分/i)).toBeVisible();
   expect(calls.accountProjectionRequests().some((request) => request.startsWith('/account/usage-summary'))).toBe(false);
   await expect.poll(() => calls.accountProjectionRequests()).toContain(
     '/account/credit-trend?window=24h&site_id=site_clear'
@@ -2256,14 +2263,12 @@ test('site filter scopes usage evidence without changing account package data', 
   expect(entitlementRequests.length).toBeGreaterThan(0);
   expect(entitlementRequests.every((request) => request === '/account/entitlements')).toBe(true);
 
-  await page.locator('[data-portal-usage="view-tabs"]')
-    .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
-    .click();
+  await dialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect.poll(() => calls.accountProjectionRequests().some((request) => (
     request.startsWith('/account/credit-events?')
     && request.includes('site_id=site_clear')
   ))).toBe(true);
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(page.locator('[data-portal-quota-resource="ai_credits"]')).toContainText(/2,419/);
 });
 
 test('[readiness:session_expired_recovery] expired session restores the requested site-filtered view', async ({ page }) => {
@@ -2515,43 +2520,27 @@ for (const navigation of [
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
     const nav = page.locator(navigation.selector);
-    const accountMenu = page.locator('[data-ui="portal-account-menu"]');
-    if (navigation.name !== 'mobile') {
-      await accountMenu.locator('summary').focus();
-      await page.keyboard.press('Enter');
-      await expect(accountMenu).toHaveAttribute('open', '');
-      await page.keyboard.press('Escape');
-      await expect(accountMenu).not.toHaveAttribute('open', '');
-      await expect(accountMenu.locator('summary')).toBeFocused();
-      await page.keyboard.press('Enter');
-    }
-    const accountNav = navigation.name === 'mobile' ? nav : accountMenu;
     await expect(nav).toBeVisible();
-    await expect(accountNav.locator('a[aria-current]')).toHaveCount(1);
-    await expect(accountNav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
+    // Audit is reached from Account; primary nav marks Account as current (not page).
+    await expect(nav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
 
-    await page.goto('/portal/usage');
-    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+    // Usage merged into Package; Package owns the page current state.
+    await page.goto('/portal/billing');
+    await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
-    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/usage');
-    if (navigation.name !== 'mobile') {
-      await accountMenu.locator('summary').focus();
-      await page.keyboard.press('Enter');
-    }
-    await expect(accountNav.locator('a[href="/portal/account"]')).not.toHaveAttribute('aria-current', 'page');
-    await accountNav.locator('a[href="/portal/account"]').focus();
-    await page.keyboard.press('Enter');
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/billing');
+    await nav.locator('a[href="/portal/account"]').click();
     await expect(page).toHaveURL(/\/portal\/account$/);
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
-    if (navigation.name !== 'mobile') await accountMenu.locator('summary').click();
-    await expect(accountNav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
   });
+
 }
 
 test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {
@@ -2562,19 +2551,22 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(page.getByRole('heading', { level: 1, name: /^(Service|服务|服務|My service|我的服务|Account service|账号服务)$/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
 
-  await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
-  await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
-
   await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const usageDialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(usageDialog).toBeVisible();
+  await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await expect(usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i })).toHaveAttribute('aria-selected', 'true');
+  await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
   await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
-  await expect(packageDialog.getByRole('link', { name: /Help & support|帮助与客服/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /^Tickets$|^工单$|Help & support|帮助与客服/i })).toBeVisible();
   await expect(packageDialog).toBeInViewport();
   await page.keyboard.press('Escape');
 
@@ -2812,11 +2804,16 @@ test('usage balance and records do not wait for the unused runtime summary', asy
     unusedSummaryRequests += 1;
     await fulfillError(route, 'proxy.portal_backend_timeout', 504);
   });
-  await page.goto('/portal/usage?view=records&site=site_clear');
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  const records = page.locator('[data-portal-usage="records-table"]');
+  await page.goto('/portal/billing');
+  await expect(page.locator('[data-portal-quota-resource="ai_credits"]')).toContainText(/2,419/);
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  // Default 24h window lists event rows (not day-grouped).
+  const records = dialog.locator('[data-portal-usage="records-table"]');
   await expect(records).toBeVisible();
-  await expect.poll(() => records.getByRole('row').count()).toBeGreaterThan(1);
+  await expect.poll(() => records.locator('[data-portal-usage="records-row"]').count()).toBeGreaterThan(0);
   expect(unusedSummaryRequests).toBe(0);
   expect(calls.accountProjectionRequests().some((request) => request.startsWith('/account/usage-summary'))).toBe(false);
 });
