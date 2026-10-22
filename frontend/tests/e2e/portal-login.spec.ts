@@ -220,6 +220,11 @@ async function installLoginFlowMocks(
       return;
     }
 
+    if (pathname === '/auth/login-options') {
+      await fulfillJson(route, { qq_available: true });
+      return;
+    }
+
     if (pathname === '/auth/qq/start') {
       qqStartReturnTo = String(url.searchParams.get('return_to') || '');
       expect(url.searchParams.get('intent')).toBe('login');
@@ -292,9 +297,13 @@ test('QQ is a first-class login entry and preserves the Portal return path', asy
   const calls = await installLoginFlowMocks(page);
 
   await page.goto('/portal/login?redirect=/portal/usage');
-  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+  // Button label is aria-only (QQ Connect mark image); wait until login-options marks QQ available.
+  const qq = page.getByRole('button', { name: /QQ 登录|QQ login/i });
+  await expect(qq).toBeVisible();
+  await qq.click();
 
   await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
+  // Legacy /portal/usage deep-link remains a valid return_to (shim → billing#usage).
   expect(calls.qqStartReturnTo()).toBe('/portal/usage');
 });
 
@@ -303,10 +312,12 @@ test('registration preserves a selected paid plan through QQ authentication', as
 
   await page.goto('/portal/register?plan=pro');
   await expect(page.getByText(/Continue with Pro after signup|注册后继续选择 Pro/i)).toBeVisible();
-  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+  const qq = page.getByRole('button', { name: /QQ 登录|QQ login/i });
+  await expect(qq).toBeVisible();
+  await qq.click();
 
   await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
-  expect(calls.qqStartReturnTo()).toBe('/portal/billing?plan=pro&action=upgrade');
+  expect(calls.qqStartReturnTo()).toBe('/portal/account?plan=pro&action=upgrade#package-options');
 });
 
 test('portal email-code login enters the dashboard after verification', async ({ page }) => {
