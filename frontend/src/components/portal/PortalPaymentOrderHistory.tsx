@@ -207,20 +207,21 @@ export function PortalPaymentOrderHistory({
     );
   };
 
-  const totalKnown = Number(counts.all ?? 0);
-  const bucketTotal = Number(counts.pending || 0) + Number(counts.paid || 0) + Number(counts.closed || 0);
-  const isEmptyOrders = !isLoading && !error && orders.length === 0 && totalKnown === 0 && bucketTotal === 0;
-  if (isEmptyOrders) {
+  // No rows / failed load with nothing to list: keep a single muted line, never a fat empty accordion.
+  if (!isLoading && orders.length === 0) {
     return (
       <p
         className="px-1 text-sm text-slate-500 dark:text-slate-400"
         data-portal-account="payment-orders-empty"
+        role={error ? 'status' : undefined}
       >
         <span className="font-medium text-slate-700 dark:text-slate-200">
           {t('portal.usage.payment_orders_title', {}, 'Payment orders')}
         </span>
         <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-        {t('portal.usage.payment_orders_empty', {}, 'No payment orders yet.')}
+        {error
+          ? error
+          : t('portal.usage.payment_orders_empty', {}, 'No payment orders yet.')}
       </p>
     );
   }
