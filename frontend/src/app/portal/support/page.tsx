@@ -504,7 +504,7 @@ function PortalSupportContent() {
         ) : listError ? null : items.length ? (
           <>
             <div className="hidden overflow-x-auto lg:block" data-portal-support="tickets-table">
-              <table className="w-full min-w-[980px] text-left text-sm">
+              <table className="w-full min-w-[720px] text-left text-sm">
                 <caption className="sr-only">
                   {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
                 </caption>
@@ -525,7 +525,7 @@ function PortalSupportContent() {
                       : null;
                     return (
                     <tr key={item.request_id} className="align-middle">
-                      <th scope="row" className="max-w-[26rem] px-3 py-4 font-normal">
+                      <th scope="row" className="max-w-[16rem] px-3 py-4 font-normal">
                         <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
                         <p className="mt-1 line-clamp-1 text-xs font-normal leading-5 text-slate-500 dark:text-slate-400">
                           {item.description}
@@ -534,7 +534,7 @@ function PortalSupportContent() {
                       <td className="whitespace-nowrap px-3 py-4 text-slate-600 dark:text-slate-300">
                         {t(`portal.support_topic_${item.topic}`, {}, item.topic)}
                       </td>
-                      <td className="max-w-[14rem] truncate px-3 py-4 text-slate-600 dark:text-slate-300">
+                      <td className="max-w-[10rem] truncate px-3 py-4 text-slate-600 dark:text-slate-300">
                         {supportRequestSiteLabel(item)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4">

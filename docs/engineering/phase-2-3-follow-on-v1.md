@@ -10,14 +10,33 @@ and [cloud-production-release-policy-v1.md](../cloud-production-release-policy-v
 Goal: make `master` e2e and long-lived M4 preview trustworthy enough that a
 green CI / M4 sync is meaningful local evidence (still not production proof).
 
-### 2.1 Portal / frontend e2e debt (~50 failing specs)
+### 2.1 Portal / frontend e2e debt
 
-- Re-run the failing Playwright specs against **current master** (local
-  Playwright webServer or M4 preview via tunnel). Prefer the narrowest shard.
+**Progress (2026-10-22 Asia/Shanghai):** assertion-alignment batches through
+[#1189](https://github.com/npcink/npcink-ai-cloud/pull/1189)–[#1196](https://github.com/npcink/npcink-ai-cloud/pull/1196)
+are **merged** on `master` (tip includes `#1196` → `3009b068`). Those PRs
+retargeted Playwright to current quiet billing / home / auth UX (Package
+dialogs, Activate CTA, QQ login-options mocks, etc.). They did **not** claim
+full-suite green.
+
+Still open under this slice:
+
+- **Login / register portal screenshot baseline** — deferred. Local drift was
+  about ~3% pixels on register; needs an intentional snapshot update plus
+  human visual acceptance. Do not regenerate casually inside an assertion PR.
+- **Residual failures** — re-scan Playwright against **current master** before
+  quoting a new failure count. Do not invent or carry forward the older
+  “~50 failing” figure as present truth.
+
+Working rules (unchanged):
+
+- Re-run failing specs against current master (local Playwright webServer or
+  M4 preview via tunnel). Prefer the narrowest shard.
 - Classify each failure: product bug vs stale assertion vs flaky timing vs
   environment-only (M4 vs local).
 - Fix in small PRs branched from latest `master` (one module per PR; respect
-  the one-unmerged-branch rule except zero file-overlap).
+  the one-unmerged-branch rule except zero file-overlap). Merge only after
+  explicit operator approval in chat — never agent-claimed merge.
 - Pre-existing master failures that reproduce unchanged on master are
   acceptable to note and continue; **stop and report** on genuinely new
   failures introduced by a PR.
