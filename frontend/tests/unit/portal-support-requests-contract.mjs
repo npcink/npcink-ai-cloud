@@ -118,8 +118,13 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /ml-auto[\s\S]*data-portal-support="header-actions"[\s\S]*status-filters[\s\S]*submit-ticket/,
+  /data-portal-support="header-actions"[\s\S]*status-filters[\s\S]*submit-ticket/,
   'Portal support filters must sit in the header actions cluster before the submit icon'
+);
+assert.match(
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /actionsPlacement === 'title-end'[\s\S]*data-portal-header-actions="title-end"/,
+  'PortalWorkspaceHeader title-end actions must use a right-edge wrapper'
 );
 assert.match(
   portalSupportPageSource,
@@ -140,6 +145,13 @@ assert.doesNotMatch(
   portalSupportPageSource,
   /: <p className="text-sm text-slate-500">\{t\('portal\.support_account_scope_label'\)\}<\/p>/,
   'Portal support must not show a standing Account scope label on the list toolbar'
+);
+
+
+assert.match(
+  portalSupportPageSource,
+  /actionsPlacement="title-end"/,
+  'Portal support header must place filters/submit at the title-end edge'
 );
 
 console.log('portal_support_requests_contract: ok');

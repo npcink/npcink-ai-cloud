@@ -261,6 +261,7 @@ function PortalSupportContent() {
       <PortalWorkspaceHeader
         title={t('portal.support_requests_title', {}, 'Tickets')}
         currentPage="support"
+        actionsPlacement="title-end"
         titleAccessory={(
           <PortalInfoHint
             data-portal-support="ticket-guide"
@@ -290,7 +291,7 @@ function PortalSupportContent() {
         )}
         actions={(
           <div
-            className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2"
+            className="flex max-w-full flex-wrap items-center justify-end gap-2"
             data-portal-support="header-actions"
           >
             <div

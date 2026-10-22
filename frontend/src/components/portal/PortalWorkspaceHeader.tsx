@@ -63,6 +63,13 @@ type PortalWorkspaceHeaderProps = {
   primaryAction?: React.ReactNode;
   secondaryActions?: React.ReactNode;
   actions?: React.ReactNode;
+  /**
+   * Where to place actions when there is no contextPanel.
+   * - `inline` (default): keep beside the title (billing / account quiet CTAs).
+   * - `title-end`: push the actions cluster to the right edge of the title row
+   *   (tickets: status filters + submit icon).
+   */
+  actionsPlacement?: 'inline' | 'title-end';
   children?: React.ReactNode;
 };
 
@@ -96,6 +103,7 @@ export function PortalWorkspaceHeader({
   primaryAction,
   secondaryActions,
   actions,
+  actionsPlacement = 'inline',
   children,
 }: PortalWorkspaceHeaderProps) {
   const { t } = useLocale();
@@ -172,13 +180,29 @@ export function PortalWorkspaceHeader({
             {eyebrow}
           </p>
         ) : null}
-        <div className={cn('flex flex-wrap items-center gap-2.5', shouldShowEyebrow ? 'mt-1.5' : '')}>
-          <h1 className="text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]">
-            {title}
-          </h1>
-          {titleAccessory}
-          {!hasContextPanel && hasActions ? (
-            <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div>
+        <div
+          className={cn(
+            'flex w-full flex-wrap items-center gap-2.5',
+            shouldShowEyebrow ? 'mt-1.5' : '',
+            actionsPlacement === 'title-end' && !hasContextPanel && hasActions ? 'justify-between' : ''
+          )}
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]">
+              {title}
+            </h1>
+            {titleAccessory}
+            {!hasContextPanel && hasActions && actionsPlacement === 'inline' ? (
+              <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div>
+            ) : null}
+          </div>
+          {!hasContextPanel && hasActions && actionsPlacement === 'title-end' ? (
+            <div
+              className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2"
+              data-portal-header-actions="title-end"
+            >
+              {resolvedActions}
+            </div>
           ) : null}
           {metricsPlacement === 'title-end' && metrics.length > 0 ? (
             <div className="min-w-0 max-w-full sm:ml-auto" data-portal-header-metrics="title-end">
