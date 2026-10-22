@@ -2484,10 +2484,17 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     );
     await expectNoPageOverflow();
 
-    await page.goto('/portal/usage');
-    await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
-    await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
+    // Usage merged into Package: records live in the per-site 站点用量 dialog.
+    await page.goto('/portal/billing');
+    await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+    await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+    const usageDialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+    await expect(usageDialog).toBeVisible();
+    await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+    await expect(usageDialog.locator('[data-portal-usage="records-table"]')).toBeVisible();
     await expectNoPageOverflow();
+    await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+    await expect(usageDialog).toHaveCount(0);
 
     await page.goto('/portal/audit');
     await expect(page.locator('[data-portal-audit="records-table"]')).toBeVisible();
@@ -2800,7 +2807,8 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     if (nextStatus === 'archived') {
       await expect(siteRow).toHaveCount(0);
     } else {
-      await expect(siteRow.getByRole('button', { name: /^(Continue connection|继续连接)$/i })).toBeEnabled();
+      // Quiet home: inactive primary CTA is Activate (not legacy Continue connection).
+      await expect(siteRow.getByRole('button', { name: /^(Activate|激活)$/i })).toBeEnabled();
     }
   });
 }
