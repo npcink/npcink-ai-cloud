@@ -771,6 +771,129 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
     )
 
 
+
+SAMPLE_EXECUTE_RUN_ID = "run_fc1f0f365b374c599f7a98d6e05adad5"
+
+
+def test_execute_route_success_log_includes_run_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Success-path application logs must carry run_id as a LogRecord field."""
+    database_url, client = _build_client(tmp_path)
+    sample_hex = SAMPLE_EXECUTE_RUN_ID.removeprefix("run_")
+
+    class _FixedUUID:
+        hex = sample_hex
+
+    monkeypatch.setattr("app.domain.runtime.service.uuid4", lambda: _FixedUUID())
+    caplog.set_level(logging.INFO, logger="app.api.routes.runtime")
+
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-abilities-toolkit/build-article-block-plan",
+        "execution_kind": "text",
+        "profile_id": "text.balanced",
+        "idempotency_key": "idem-log-run-id-success",
+        "trace_id": "tracelogrunidsuccess000000000000",
+        "input": {"messages": [{"role": "user", "content": "log run_id"}]},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-log-run-id-success",
+            nonce="nonce-log-run-id-success",
+            trace_id="tracelogrunidsuccess000000000000",
+            body=body,
+        )
+    )
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["data"]["run_id"] == SAMPLE_EXECUTE_RUN_ID
+
+    success_records = [
+        record
+        for record in caplog.records
+        if record.name == "app.api.routes.runtime"
+        and "runtime execute completed" in record.getMessage()
+    ]
+    assert success_records, "expected a success-path execute log"
+    assert getattr(success_records[-1], "run_id", None) == SAMPLE_EXECUTE_RUN_ID
+
+    dispose_engine(database_url)
+
+
+def test_execute_route_failure_log_includes_run_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When execute returns an error status, the warning log still carries run_id."""
+    sample_hex = SAMPLE_EXECUTE_RUN_ID.removeprefix("run_")
+
+    class _FixedUUID:
+        hex = sample_hex
+
+    monkeypatch.setattr("app.domain.runtime.service.uuid4", lambda: _FixedUUID())
+
+    class _AlwaysFailAdapter(OpenAIProviderAdapter):
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            raise ProviderExecutionError(
+                "provider.unavailable",
+                "forced failure for execute log coverage",
+                retryable=False,
+            )
+
+    database_url, client = _build_client(
+        tmp_path,
+        providers={"openai": _AlwaysFailAdapter()},
+    )
+    caplog.set_level(logging.WARNING, logger="app.api.routes.runtime")
+
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-abilities-toolkit/build-article-block-plan",
+        "execution_kind": "text",
+        "profile_id": "text.balanced",
+        "idempotency_key": "idem-log-run-id-failure",
+        "trace_id": "tracelogrunidfailure000000000000",
+        "input": {"messages": [{"role": "user", "content": "force fail"}]},
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-log-run-id-failure",
+            nonce="nonce-log-run-id-failure",
+            trace_id="tracelogrunidfailure000000000000",
+            body=body,
+        )
+    )
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["run_id"] == SAMPLE_EXECUTE_RUN_ID
+    assert data["status"] == "failed"
+
+    failure_records = [
+        record
+        for record in caplog.records
+        if record.name == "app.api.routes.runtime"
+        and "runtime execute failed" in record.getMessage()
+    ]
+    assert failure_records, "expected a failure-path execute log"
+    assert getattr(failure_records[-1], "run_id", None) == SAMPLE_EXECUTE_RUN_ID
+
+    dispose_engine(database_url)
+
+
 def test_execute_route_runs_and_supports_idempotency(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     payload = {

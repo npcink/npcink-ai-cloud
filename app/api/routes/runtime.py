@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.core.logging import get_logger
 from app.core.security import PUBLIC_RUNTIME_MAX_BODY_BYTES, RequestAuthContext
 from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_ABILITIES,
@@ -113,6 +114,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
 )
 
 router = APIRouter(prefix="/v1/runtime", tags=["runtime"])
+logger = get_logger(__name__)
 
 MAX_RUNTIME_JSON_DEPTH = 8
 MAX_RUNTIME_SCHEMA_JSON_DEPTH = 12
@@ -197,9 +199,7 @@ class RuntimePayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_runtime_payload_bounds(self) -> RuntimePayload:
-        if self.ability_name in CONNECTOR_RUNTIME_ABILITIES and not str(
-            self.site_id or ""
-        ).strip():
+        if self.ability_name in CONNECTOR_RUNTIME_ABILITIES and not str(self.site_id or "").strip():
             raise ValueError("connector runtime requires an explicit site_id")
         if (
             self.execution_pattern == "step_offload"
@@ -221,9 +221,7 @@ class RuntimePayload(BaseModel):
                     else None
                 )
             ),
-            allow_wordpress_ai_output_schema=(
-                self.ability_name in CONNECTOR_RUNTIME_ABILITIES
-            ),
+            allow_wordpress_ai_output_schema=(self.ability_name in CONNECTOR_RUNTIME_ABILITIES),
         )
         _validate_runtime_json_shape(self.task_backend, field_name="task_backend")
         return self
@@ -519,9 +517,7 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
     if _is_wordpress_ai_connector_payload(payload):
         input_payload = payload.input if isinstance(payload.input, dict) else {}
         operation_contract = input_payload.get("operation_contract")
-        operation_contract = (
-            operation_contract if isinstance(operation_contract, dict) else {}
-        )
+        operation_contract = operation_contract if isinstance(operation_contract, dict) else {}
         return resolve_wordpress_ai_connector_profile_id(operation_contract)
     if not payload.profile_id and payload.ability_family in {
         "text",
@@ -585,9 +581,7 @@ def _is_wordpress_ai_alt_text_payload(payload: RuntimePayload) -> bool:
         return False
     input_payload = payload.input if isinstance(payload.input, dict) else {}
     operation_contract = input_payload.get("operation_contract")
-    operation_contract = (
-        operation_contract if isinstance(operation_contract, dict) else {}
-    )
+    operation_contract = operation_contract if isinstance(operation_contract, dict) else {}
     return str(operation_contract.get("task") or "").strip() == "alt_text_suggest"
 
 
@@ -785,6 +779,19 @@ async def execute_runtime(
     success_statuses = {"queued", "running", "succeeded"}
     status = "ok" if result.status in success_statuses else "error"
     error_code = "" if result.status in success_statuses else result.error_code
+    if result.status in success_statuses:
+        logger.info(
+            "runtime execute completed status=%s",
+            result.status,
+            extra={"run_id": result.run_id, "trace_id": result.trace_id},
+        )
+    else:
+        logger.warning(
+            "runtime execute failed status=%s error_code=%s",
+            result.status,
+            result.error_code or "",
+            extra={"run_id": result.run_id, "trace_id": result.trace_id},
+        )
     return JSONResponse(
         content=build_envelope(
             status=status,
