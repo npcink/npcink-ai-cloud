@@ -29,10 +29,12 @@ const modal = read('src/components/ui/Modal.tsx');
 
 assert.match(account, /href="\/portal\/audit"/);
 assert.doesNotMatch(account, /href="\/portal\/login"/);
-assert.match(account, /portal\.account\.settings_eyebrow/);
+assert.match(account, /PortalBreadcrumb[\s\S]*portal\.account\.title/);
+assert.doesNotMatch(account, /portal\.account\.settings_eyebrow/);
 assert.match(account, /function AccountPageFallback[\s\S]*t\('common\.loading'/);
 assert.doesNotMatch(account, /Loading Account Center/);
-assert.match(audit, /portal\.audit\.records_title/);
+assert.match(audit, /data-portal-account-deeplink="audit"/);
+assert.doesNotMatch(audit, /portal\.audit\.records_title/);
 
 assert.equal(existsSync(monitoringRedirectPath), false);
 assert.equal(existsSync(sitesRedirectPath), false);
@@ -180,7 +182,9 @@ assert.match(paymentOrderHistory, /portal\.usage\.payment_order_purchase_amount/
 assert.match(paymentOrderHistory, /<details[\s\S]*portal\.usage\.payment_orders_title[\s\S]*<\/details>/);
 assert.match(paymentOrderHistory, /open=\{Number\(counts\.pending \|\| 0\) > 0\}/);
 
-assert.match(support, /<h2[^>]*>[\s\S]*portal\.support_request_list_title[\s\S]*<\/h2>/);
+assert.doesNotMatch(support, /<h2[^>]*>[\s\S]*portal\.support_request_list_title[\s\S]*<\/h2>/);
+assert.match(support, /PortalBreadcrumb[\s\S]*portal\.support_requests_title/);
+assert.doesNotMatch(support, /data-portal-support="ticket-guide"[\s\S]*rounded-xl border border-slate-200\/80 bg-slate-50/);
 assert.match(siteUsageDialog, /const creditEventPageSize = 20/);
 assert.doesNotMatch(siteUsageDialog, /setCreditLedger\(bundle\.creditLedger\)/);
 assert.match(usage, /router\.replace\(`\/portal\/billing/, 'legacy usage route must redirect into the package page');

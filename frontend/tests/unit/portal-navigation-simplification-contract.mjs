@@ -47,8 +47,8 @@ assert.equal(existsSync(monitoringPath), false, 'retired monitoring redirect rou
 assert.equal(existsSync(sitesRedirectPath), false, 'retired sites redirect route must be deleted');
 assert.match(
   auditSource,
-  /data-portal-support-deeplink="audit"/,
-  'recent activity may remain only as a support-request deep link'
+  /data-portal-account-deeplink="audit"/,
+  'recent activity may remain as an account deep link'
 );
 assert.match(
   navbarSource,

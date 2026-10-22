@@ -8,6 +8,7 @@ import {
   PortalSection,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalErrorState,
@@ -345,13 +346,31 @@ export default function PortalSupportRequestDetailPage() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.support_requests_title', {}, 'Tickets')}
         title={supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail')}
-        description={supportRequest?.description || ''}
         currentPage="support"
-        sites={session.selected_context ? [session.selected_context.site] : []}
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.support_breadcrumb', {}, 'Ticket location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.support_requests_title', {}, 'Tickets'),
+                href: '/portal/support',
+              },
+              {
+                label: supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail'),
+              },
+            ]}
+          />
+        )}
         actions={
-          <Link className="btn btn-secondary" href="/portal/support">
+          <Link
+            className="text-sm font-medium text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+            href="/portal/support"
+          >
             {t('common.back', {}, 'Back')}
           </Link>
         }
@@ -369,7 +388,7 @@ export default function PortalSupportRequestDetailPage() {
       ) : null}
 
       {supportRequest ? (
-        <PortalSection>
+        <PortalSection className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <PortalStatusBadge
@@ -384,6 +403,16 @@ export default function PortalSupportRequestDetailPage() {
               {supportRequest.updated_at ? formatDate(supportRequest.updated_at) : supportRequest.request_id}
             </span>
           </div>
+          {supportRequest.description ? (
+            <PortalCard variant="portal" className="bg-white/70 dark:bg-slate-950/35" data-portal-support="ticket-description">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                {t('portal.support_request_desc_label', {}, 'Description')}
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200 line-clamp-6">
+                {supportRequest.description}
+              </p>
+            </PortalCard>
+          ) : null}
         </PortalSection>
       ) : null}
 

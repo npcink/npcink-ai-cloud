@@ -6,7 +6,9 @@ import {
   PortalPageStack,
   PortalSection,
   PortalCard,
+  PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalIdentifier } from '@/components/portal/PortalIdentifier';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
@@ -206,19 +208,41 @@ export function PortalAuditClient() {
   }
 
   return (
-    <PortalPageStack data-portal-support-deeplink="audit">
+    <PortalPageStack data-portal-account-deeplink="audit">
       <PortalWorkspaceHeader
-        eyebrow={t('portal.audit.records_title', {}, 'Activity records')}
         title={t('portal.audit.nav_label', {}, 'Recent activity')}
-        eyebrowInfo={t(
-          'portal.audit.customer_desc_with_site',
-          { site: selectedSiteName },
-          `Review recent sign-in and service activity for ${selectedSiteName}.`
-        )}
         currentPage="audit"
+        titleAccessory={(
+          <PortalInfoHint
+            detail={t(
+              'portal.audit.customer_desc_with_site',
+              { site: selectedSiteName },
+              `Review recent sign-in and service activity for ${selectedSiteName}.`
+            )}
+          />
+        )}
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.audit.breadcrumb', {}, 'Activity location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.account.title', {}, 'Account'),
+                href: '/portal/account',
+              },
+              {
+                label: t('portal.audit.nav_label', {}, 'Recent activity'),
+              },
+            ]}
+          />
+        )}
         selectedSiteId={siteFilterId}
         sites={session.sites}
         siteSelectorMode="filter"
+        siteSelectorPlacement="inline"
         onSiteChange={(nextSiteId) => {
           const nextParams = new URLSearchParams(searchParams.toString());
           if (nextSiteId) nextParams.set('site', nextSiteId);
@@ -227,7 +251,6 @@ export function PortalAuditClient() {
           router.replace(`/portal/audit${query ? `?${query}` : ''}`, { scroll: false });
         }}
         metrics={!isLoading && !error ? [
-          { label: t('portal.audit.records_total', {}, 'Total records'), value: auditSummary?.totals?.events || 0 },
           { label: t('portal.audit.visible_records', {}, 'Visible records'), value: recentEvents.length },
           {
             label: t('portal.audit.attention_records', {}, 'Need review'),
@@ -237,15 +260,12 @@ export function PortalAuditClient() {
                 ? t('portal.audit.attention_records_desc', {}, 'Some records may need support follow-up.')
                 : t('portal.audit.no_attention_records_desc', {}, 'No issue is visible in this view.'),
           },
-          {
-            label: t('portal.updated_at', {}, 'Updated'),
-            value: auditSummary?.generated_at ? formatDate(auditSummary.generated_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
-            size: 'compact',
-          },
         ] : []}
-        metricsColumnsClassName="xl:grid-cols-4"
+        metricsColumnsClassName="sm:grid-cols-2"
+        metricsLayout="rail"
+        metricsPlacement="title-end"
         secondaryActions={
-          <button type="button" className="btn btn-secondary" onClick={() => void loadActivity(visibleLimit)}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadActivity(visibleLimit)}>
             {t('common.refresh', {}, 'Refresh')}
           </button>
         }
@@ -256,12 +276,6 @@ export function PortalAuditClient() {
 
 
       <PortalSection className="overflow-hidden p-0" hidden={isLoading || Boolean(error)}>
-        <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
-          <h2 className="text-xl font-semibold text-gray-950 dark:text-white">{t('portal.audit.records_title', {}, 'Activity records')}</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            {t('portal.audit.recent_desc', {}, 'Only recent customer-readable activity is shown here.')}
-          </p>
-        </div>
         {!isLoading && !error && recentEvents.length === 0 ? (
           <div className="p-6">
             <PortalEmptyState

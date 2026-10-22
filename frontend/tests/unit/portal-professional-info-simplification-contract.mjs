@@ -308,8 +308,8 @@ assert.match(
 );
 assert.match(
   auditSource,
-  /data-portal-support-deeplink="audit"/,
-  'Portal recent activity must stay available only as a support deep link'
+  /data-portal-account-deeplink="audit"/,
+  'Portal recent activity must stay available as an account deep link'
 );
 
 for (const expectedCopy of [

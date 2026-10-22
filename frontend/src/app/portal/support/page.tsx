@@ -7,7 +7,9 @@ import {
   PortalPageStack,
   PortalSection,
   PortalCard,
+  PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalEmptyState,
@@ -257,14 +259,49 @@ function PortalSupportContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.support_request_list_title', {}, 'Recent tickets')}
         title={t('portal.support_requests_title', {}, 'Tickets')}
-        description={t(
-          'portal.support_requests_desc',
-          {},
-          'Send billing, site, usage, or account issues to the support queue.'
-        )}
         currentPage="support"
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.support_breadcrumb', {}, 'Ticket location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.support_requests_title', {}, 'Tickets'),
+              },
+            ]}
+          />
+        )}
+        titleAccessory={(
+          <PortalInfoHint
+            data-portal-support="ticket-guide"
+            detail={(
+              <>
+                <p>
+                  <span className="font-medium">
+                    {t('portal.support_guide_categories_label', {}, 'Problem types')}
+                    :
+                  </span>{' '}
+                  {t(
+                    'portal.support_guide_categories',
+                    {},
+                    'Billing, payment, site, usage, or account issues.'
+                  )}
+                </p>
+                <p className="mt-2">
+                  <span className="font-medium">
+                    {t('portal.support_guide_response_label', {}, 'Typical first response')}
+                    :
+                  </span>{' '}
+                  {t('portal.support_guide_response', {}, 'Within 1 business day.')}
+                </p>
+              </>
+            )}
+          />
+        )}
         primaryAction={
           <button
             type="button"
@@ -278,29 +315,7 @@ function PortalSupportContent() {
             {t('portal.support_request_new_action', {}, 'Submit ticket')}
           </button>
         }
-      >
-        <div
-          className="flex flex-col gap-1 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/40 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-          data-portal-support="ticket-guide"
-        >
-          <p className="text-slate-700 dark:text-slate-200">
-            <span className="font-medium text-slate-950 dark:text-white">
-              {t('portal.support_guide_categories_label', {}, 'Problem types')}:
-            </span>{' '}
-            {t(
-              'portal.support_guide_categories',
-              {},
-              'Billing, payment, site, usage, or account issues.'
-            )}
-          </p>
-          <p className="shrink-0 text-slate-600 dark:text-slate-300">
-            <span className="font-medium text-slate-950 dark:text-white">
-              {t('portal.support_guide_response_label', {}, 'Typical first response')}:
-            </span>{' '}
-            {t('portal.support_guide_response', {}, 'Within 1 business day.')}
-          </p>
-        </div>
-      </PortalWorkspaceHeader>
+      />
 
       {notice ? (
         <div role="status" className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
@@ -431,14 +446,6 @@ function PortalSupportContent() {
       ) : null}
 
       <PortalSection>
-        <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {t('portal.support_request_list_title', {}, 'Recent tickets')}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
-          </p>
-        </div>
         <div className="mb-4 flex flex-col gap-3 border-y border-slate-200/75 py-3 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
           {listErrorCode === 'portal.site_selection_required' ? (
           <div className="w-full max-w-sm">
@@ -642,9 +649,14 @@ function PortalSupportContent() {
   );
 }
 
+function PortalSupportPageFallback() {
+  const { t } = useLocale();
+  return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
+}
+
 export default function PortalSupportPage() {
   return (
-    <Suspense fallback={<div className="min-h-[12rem]" aria-hidden="true" />}>
+    <Suspense fallback={<PortalSupportPageFallback />}>
       <PortalSupportContent />
     </Suspense>
   );
