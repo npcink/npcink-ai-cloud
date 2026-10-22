@@ -3,7 +3,7 @@
 
 Does not mutate the database. To finish an orphan, use the existing operator
 repair action ``mark_stale_running_failed`` (requires reason + evidence) via
-``POST /internal/service/runs/{run_id}/repair`` — see
+``POST /v1/runs/{run_id}/repair (site-key HMAC, scope runtime:execute)`` — see
 ``RuntimeService.repair_run``. Do not invent an automatic mark-finished path;
 that conflicts with runtime-provider-transaction-boundary-v1.
 
