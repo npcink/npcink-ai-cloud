@@ -2046,17 +2046,22 @@ test('portal breadcrumbs appear only on secondary pages', async ({ page }) => {
   await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
 
   await page.goto('/portal/audit');
-  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
-  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Account|账号|帳號/i);
-  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Recent activity|最近活动|最近活動/i);
+  const auditCrumb = page.locator('[data-portal-breadcrumb]');
+  await expect(auditCrumb).toHaveCount(1);
+  await expect(auditCrumb).toContainText(/Account|账号|帳號/i);
+  await expect(auditCrumb).toContainText(/Recent activity|最近活动|最近活動/i);
+  await expect(auditCrumb).not.toContainText(/^Service$|^服务$|^服務$/i);
+  await expect(auditCrumb.getByRole('link', { name: /Service|服务|服務/i })).toHaveCount(0);
 
   await page.goto('/portal/sites/site_attention');
   await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
   await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/My sites|我的站点|我的站點/i);
 
   await page.goto('/portal/support/ticket_portal_e2e_open');
-  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
-  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/Tickets|工单|工單/i);
+  const ticketCrumb = page.locator('[data-portal-breadcrumb]');
+  await expect(ticketCrumb).toHaveCount(1);
+  await expect(ticketCrumb).toContainText(/Tickets|工单|工單/i);
+  await expect(ticketCrumb.getByRole('link', { name: /Service|服务|服務/i })).toHaveCount(0);
 });
 
 test('portal audit stays a bounded support deep link', async ({ page }) => {

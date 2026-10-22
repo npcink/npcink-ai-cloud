@@ -226,10 +226,6 @@ export function PortalAuditClient() {
             aria-label={t('portal.audit.breadcrumb', {}, 'Activity location')}
             items={[
               {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
                 label: t('portal.account.title', {}, 'Account'),
                 href: '/portal/account',
               },

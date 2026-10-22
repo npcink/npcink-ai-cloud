@@ -353,10 +353,6 @@ export default function PortalSupportRequestDetailPage() {
             aria-label={t('portal.support_breadcrumb', {}, 'Ticket location')}
             items={[
               {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
                 label: t('portal.support_requests_title', {}, 'Tickets'),
                 href: '/portal/support',
               },
