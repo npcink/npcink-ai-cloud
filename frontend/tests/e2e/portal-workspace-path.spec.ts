@@ -2200,15 +2200,21 @@ test('[readiness:single_site_ready] one ready site shows healthy account and sit
 
   await page.goto('/portal');
   await expect(page.getByText(/1 connected|已接入 1 个/i)).toBeVisible();
-  await expect(page.locator('[data-portal-home-state="daily"]')).toBeVisible();
-  const wordpress = page.getByRole('link', { name: /Open WordPress dashboard|打开 WordPress 后台/i });
+  // Quiet home dropped data-portal-home-state; ready site still shows Connected inline on My sites.
+  await expect(page.locator('[data-portal-home-state="daily"]')).toHaveCount(0);
+  await expect(page.getByText(/^Connected$|^已接入$/i).first()).toBeVisible();
+  await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
+  // WP admin lives in the site-row overflow menu (not a home-level dashboard CTA).
+  await page.locator('[data-portal-sites="desktop-actions"] button[aria-label]').click();
+  const wordpress = page.getByRole('link', { name: /Open WordPress admin|打开 WordPress 后台/i });
   await expect(wordpress).toHaveAttribute('href', 'https://clear.example.test/wp-admin/');
   await expect(wordpress).toHaveAttribute('target', '_blank');
   await expect(wordpress).toHaveAttribute('rel', 'noopener noreferrer');
-  await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
   await page.goto('/portal/sites/site_clear');
   await expect(page.getByRole('heading', { level: 1, name: 'Clear Site' })).toBeVisible();
-  await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
+  // Quiet status badge suppresses Connected for normal/active on the site record.
+  await expect(page.getByText(/^Connected$|^已接入$/i)).toHaveCount(0);
+  await expect(page.getByText('clear.example.test').first()).toBeVisible();
 });
 
 // [readiness:multi_site_context_switch]
@@ -2830,9 +2836,17 @@ for (const theme of ['light', 'dark'] as const) {
       page.on('pageerror', (error) => pageErrors.push(error.message));
       await installPortalMocks(page, scenario.options);
       await page.goto('/portal');
-      await expect(page.locator(`[data-portal-home-state="${scenario.state}"]`)).toBeVisible();
-      // Wait for account data as well as session data before capturing the candidate.
-      await expect(page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i })).toHaveCount(scenario.state === 'attention' ? 1 : 0);
+      // Quiet home dropped data-portal-home-state; assert scenario signals instead.
+      await expect(page.locator(`[data-portal-home-state="${scenario.state}"]`)).toHaveCount(0);
+      if (scenario.state === 'setup') {
+        await expect(page.locator('[data-portal-sites="connect-guide"]')).toBeVisible();
+        await expect(page.getByText(/Not connected|尚未接入/i).first()).toBeVisible();
+      } else if (scenario.state === 'daily') {
+        await expect(page.getByText(/1 connected|已接入 1 个/i)).toBeVisible();
+      } else {
+        await expect(page.locator('[data-portal-home="attention-focus"]')).toBeVisible();
+      }
+      await expect(page.getByRole('button', { name: /Unavailable.*Refetch|暂不可用.*重新获取/i })).toHaveCount(scenario.state === 'attention' ? 1 : 0);
       if (scenario.state !== 'attention') await expect(page.getByText(/^2,419$/).first()).toBeVisible();
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -2849,11 +2863,17 @@ test('portal simple home keeps WordPress and account settings reachable on mobil
   await installPortalMocks(page, { singleReadySite: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portal');
-  await expect(page.getByRole('link', { name: /Open WordPress dashboard|打开 WordPress 后台/i })).toHaveAttribute('href', 'https://clear.example.test/wp-admin/');
+  // WP admin is in the mobile site-row overflow (Usage nav item removed; 4 primary links).
+  await page.locator('[data-portal-sites="mobile-actions"] button[aria-label]').click();
+  await expect(page.getByRole('link', { name: /Open WordPress admin|打开 WordPress 后台/i })).toHaveAttribute(
+    'href',
+    'https://clear.example.test/wp-admin/'
+  );
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Open menu|打开菜单/i }).click();
   const nav = page.locator('#portal-mobile-nav');
-  await expect(nav.getByRole('link')).toHaveCount(5);
-  await nav.getByRole('link', { name: /Account settings|账号设置/i }).click();
+  await expect(nav.getByRole('link')).toHaveCount(4);
+  await nav.getByRole('link', { name: /^Account$|^账号$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account$/);
   await expect(nav).not.toBeVisible();
 });
