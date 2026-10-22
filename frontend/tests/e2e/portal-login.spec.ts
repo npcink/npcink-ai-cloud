@@ -409,17 +409,19 @@ test('a new account offers site connection before package review', async ({ page
 
   await page.goto('/portal');
 
-  const setupChecklist = page.locator('[data-portal-home="setup-checklist"]');
-  await expect(setupChecklist).toBeVisible();
-  await expect(setupChecklist.getByRole('link')).toHaveCount(1);
-  await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
-  await expect(setupChecklist).toContainText(
-    /Connect your first site|连接您的第一个站点/i
-  );
-  await expect(setupChecklist).toContainText(
-    /Review your account package and credits above|账户套餐和额度请查看上方信息/i
-  );
-  await expect(setupChecklist.locator('a[href="#sites"]')).toHaveCount(1);
+  // Quiet home: empty-site setup lives in the sites connect-guide + header attention,
+  // not a duplicate setup-checklist (checklist is suppressed when it would only repeat
+  // the same "connect site" focus already shown above).
+  await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-home="attention-focus"]')).toBeVisible();
+  await expect(page.getByText(/Site setup still needs attention|站点接入仍需处理/i)).toBeVisible();
+  const connectGuide = page.locator('[data-portal-sites="connect-guide"]');
+  await expect(connectGuide).toBeVisible();
+  await expect(connectGuide).toContainText(/Connect a site first|请先连接站点/i);
+  await expect(connectGuide).toContainText(/npcink-cloud-addon/i);
+  // Onboarding must not push package/billing before the first site is connected.
+  await expect(page.locator('[data-portal-home="attention-focus"] a[href="/portal/billing"]')).toHaveCount(0);
+  await expect(connectGuide.locator('a[href="/portal/billing"]')).toHaveCount(0);
   const overview = page.locator('[data-portal-home="operation-overview"]');
   await expect(overview.getByText('Free', { exact: true })).toBeVisible();
   await expect(overview.getByText('300', { exact: true })).toBeVisible();
@@ -431,10 +433,16 @@ test('exhausted Free credits lead to usage review without a payment requirement'
   await installLoginFlowMocks(page, { initiallyLoggedIn: true, remainingFreeCredits: 0 });
   await page.goto('/portal');
   const followUp = page.locator('[data-portal-home="operation-overview"]');
-  await expect(page.getByText(/Free credits for this period have been used|本周期 Free 额度已用完/i)).toBeVisible();
+  const attention = followUp.locator('[data-portal-home="attention-focus"]');
+  await expect(attention.getByText(/AI credits need attention|AI 积分需要处理/i)).toBeVisible();
+  // Detail copy lives in the ⓘ tooltip/aria-label (hidden until hover).
+  await expect(
+    attention.locator('[aria-label*="本周期 Free 额度已用完"], [aria-label*="Free credits for this period have been used"]')
+  ).toHaveCount(1);
   await expect(followUp.locator('a[href="/portal/billing#package-options"]')).toHaveCount(0);
   await expect(followUp.getByRole('link', { name: '查看用量', exact: true })).toBeVisible();
-  await expect(page.locator('a[href="/portal/usage"]').first()).toBeVisible();
+  // Quiet billing: usage deep-link is billing#usage (legacy /portal/usage removed).
+  await expect(page.locator('a[href="/portal/billing#usage"]').first()).toBeVisible();
 });
 
 test('a stale Portal cookie returns to login without exposing protected navigation', async ({ page }) => {
