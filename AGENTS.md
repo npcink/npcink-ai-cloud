@@ -20,6 +20,16 @@ Paused product entrypoints (retain code; do not re-enable via settings):
 [reversible-feature-pauses-v1.md](docs/reversible-feature-pauses-v1.md),
 [seo-specialist-pause-v1.md](docs/seo-specialist-pause-v1.md).
 
+## Follow-on (Phase 2–3)
+
+After Phase 1 loop evidence: triage ~50 master Portal e2e failures, clean up
+orphan `running` inline runs (lease already prevents lockout), and polish
+Portal 502/busy UX. Production Deploy stays human-gated.
+Details: [phase-2-3-follow-on-v1.md](docs/engineering/phase-2-3-follow-on-v1.md).
+Deferred orphan root-cause remains trigger-gated in
+[deferred-engineering-triggers-v1.md](docs/deferred-engineering-triggers-v1.md)
+Reviewed Item 8.
+
 ## Product boundary
 
 Cloud owns hosted runtime execution, providers, usage/entitlement evidence,
