@@ -579,3 +579,76 @@ function PortalSupportContent() {
                     >
                       <PortalActionIcon id="view-detail" />
                     </Link>
+
+                  </div>
+                  <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400 lg:text-right">
+                    <p>{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
+                    <p className="mt-1">{supportRequestSiteLabel(item)}</p>
+                    <p className="mt-1">{item.updated_at ? formatDate(item.updated_at) : item.request_id}</p>
+                  </div>
+                </div>
+              </PortalCard>
+            ))}
+            </div>
+          </>
+        ) : (
+          <PortalEmptyState
+            title={statusFilter ? t('portal.support_filter_empty_title') : t('portal.support_request_empty_title', {}, 'No tickets yet')}
+            description={statusFilter ? t('portal.support_filter_empty_desc') : t('portal.support_request_empty_desc', {}, 'Submit a ticket when package, payment, site, or usage information needs support review.')}
+            actionButton={
+              <button type="button" className="btn btn-primary" onClick={() => statusFilter ? setStatusFilter('') : setShowForm(true)}>
+                {statusFilter ? t('portal.support_clear_filter') : t('portal.support_request_new_action', {}, 'Submit ticket')}
+              </button>
+            }
+          />
+        )}
+        {!listError ? <ListPagination
+          offset={offset}
+          limit={PAGE_SIZE}
+          total={total}
+          isLoading={isListLoading}
+          onOffsetChange={setOffset}
+          className="mt-4 px-0 pb-0"
+        /> : null}
+      </PortalSection>
+
+      <details className="rounded-[1rem] border border-slate-200/80 bg-white/70 dark:border-slate-800 dark:bg-slate-950/35" data-portal-support="status-rules">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
+          {t('portal.support_status_rules_title', {}, 'Ticket status')}
+        </summary>
+        <div className="space-y-3 border-t border-slate-200/80 p-4 dark:border-slate-800">
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {t(
+              'portal.support_status_rules_desc',
+              {},
+              'Use tickets for package, payment, site, usage, or account issues; support updates the status as the issue moves.'
+            )}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {supportStatusRules.map((rule) => (
+              <div key={rule.key} className="rounded-xl border border-slate-200 bg-white/70 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300">
+                <p className="font-semibold text-slate-950 dark:text-white">
+                  {t(`portal.support_status_${rule.key}`, {}, rule.key)}
+                </p>
+                <p className="mt-1 text-xs leading-5">{rule.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </details>
+    </PortalPageStack>
+  );
+}
+
+function PortalSupportPageFallback() {
+  const { t } = useLocale();
+  return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
+}
+
+export default function PortalSupportPage() {
+  return (
+    <Suspense fallback={<PortalSupportPageFallback />}>
+      <PortalSupportContent />
+    </Suspense>
+  );
+}
