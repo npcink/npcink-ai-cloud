@@ -7,12 +7,15 @@ import {
   PortalPageStack,
   PortalSection,
   PortalCard,
+  PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import {
+  PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
@@ -246,17 +249,36 @@ function AccountPageContent() {
     );
   }
 
+  const showPrimaryIdentityBadge = Boolean(qqProvider?.bound);
+
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.account.settings_eyebrow', undefined, 'Account settings')}
-        title={t('portal.account.title', undefined, 'Contact')}
-        description={t(
-          'portal.account.description',
-          undefined,
-          'Manage sign-in contact, package changes, AI credits, and payment orders.'
-        )}
+        title={t('portal.account.title', undefined, 'Account')}
         currentPage="account"
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.account.breadcrumb', undefined, 'Account location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.account.title', undefined, 'Account'),
+              },
+            ]}
+          />
+        )}
+        titleAccessory={(
+          <PortalInfoHint
+            detail={t(
+              'portal.account.description',
+              undefined,
+              'Manage sign-in contact, package changes, AI credits, and payment orders.'
+            )}
+          />
+        )}
         actions={
           <Link href="/portal/audit" className="btn btn-secondary btn-sm">
             {t('portal.audit.nav_label', undefined, 'Recent activity')}
@@ -297,29 +319,33 @@ function AccountPageContent() {
                   <h3 className="text-base font-semibold text-slate-950 dark:text-white">
                     {t('portal.account.email_login_title', undefined, 'Email verification code')}
                   </h3>
-                  <PortalStatusBadge
-                    label={t('portal.account.primary_identity', undefined, 'Primary identity')}
-                    status="active"
+                  {showPrimaryIdentityBadge ? (
+                    <PortalStatusBadge
+                      label={t('portal.account.primary_identity', undefined, 'Primary identity')}
+                      status="active"
+                    />
+                  ) : null}
+                  <PortalInfoHint
+                    detail={t(
+                      'portal.account.email_login_desc',
+                      undefined,
+                      'Sign in with a verification code sent to the contact email shown on this page.'
+                    )}
                   />
                 </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {t(
-                    'portal.account.email_login_desc',
-                    undefined,
-                    'Sign in with a verification code sent to the contact email shown on this page.'
-                  )}
-                </p>
               </div>
             </div>
           </PortalCard>
 
           {providerState === 'loading' ? (
-            <p role="status" className="text-sm text-slate-500">{t('common.loading')}</p>
+            <PortalLoadingState message={t('common.loading')} compact />
           ) : providerState === 'error' ? (
-            <div className="space-y-3" role="alert">
-              <p className="text-sm text-rose-700 dark:text-rose-300">{providerError}</p>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadProviders()}>{t('common.retry')}</button>
-            </div>
+            <PortalErrorState
+              title={t('error.failed_load', {}, 'Failed to load')}
+              description={providerError}
+              retryLabel={t('common.retry')}
+              onRetry={() => void loadProviders()}
+            />
           ) : !qqProvider?.configured && !qqProvider?.bound ? (
             <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
@@ -364,12 +390,14 @@ function AccountPageContent() {
                       status="warning"
                     />
                   ) : null}
+                  <PortalInfoHint
+                    detail={
+                      qqProvider?.bound
+                        ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
+                        : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')
+                    }
+                  />
                 </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {qqProvider?.bound
-                    ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
-                    : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
-                </p>
                 {qqProvider?.bound && qqProvider.binding?.display_name ? (
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
                     {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
@@ -464,23 +492,10 @@ function AccountPageContent() {
       </div>
 
       <div className="space-y-3" data-portal-account="billing-commerce">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.account.commerce_eyebrow', undefined, 'Plan & orders')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-              {t('portal.account.commerce_title', undefined, 'Package and payments')}
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Link href="/portal/account#package-options" className="btn btn-primary btn-sm">
-              {t('portal.billing.manage_title', {}, 'Manage package')}
-            </Link>
-            <Link href="/portal/account#payment-orders" className="btn btn-secondary btn-sm">
-              {t('portal.account.menu_orders', {}, 'Orders & billing')}
-            </Link>
-          </div>
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
+            {t('portal.account.commerce_title', undefined, 'Package and payments')}
+          </h2>
         </div>
         <PortalAccountCommercePanels />
       </div>

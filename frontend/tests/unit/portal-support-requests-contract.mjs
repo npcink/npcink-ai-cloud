@@ -72,7 +72,7 @@ assert.match(
 assert.match(
   portalSupportPageSource,
   /data-portal-support="ticket-guide"[\s\S]*support_guide_categories[\s\S]*support_guide_response/,
-  'Portal support must show problem category and response guidance under the title group'
+  'Portal support must keep problem category and response guidance in a quiet title ⓘ hint'
 );
 assert.match(
   portalSupportPageSource,

@@ -2034,7 +2034,7 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
   await installPortalMocks(page);
 
   await page.goto('/portal/audit');
-  await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
+  await expect(page.locator('[data-portal-account-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
   await expect(page.getByText(/activity for All sites|查看 全部站点 最近的操作/i)).toBeVisible();
   const auditTable = page.locator('[data-portal-audit="records-table"]');
