@@ -70,7 +70,9 @@ assert.match(siteRecord, /PortalBreadcrumb/, 'Site detail shows a breadcrumb abo
 assert.match(supportDetail, /PortalBreadcrumb/, 'Ticket detail keeps a Tickets / title breadcrumb');
 assert.doesNotMatch(supportDetail, /PortalBreadcrumb[\s\S]*portal\.nav_service[\s\S]*portal\.support_requests_title/, 'Ticket detail must not nest under Service');
 assert.doesNotMatch(audit, /PortalBreadcrumb[\s\S]*portal\.nav_service[\s\S]*portal\.account\.title/, 'Recent activity must not nest under Service');
-assert.match(audit, /PortalBreadcrumb/, 'Recent activity keeps a Service / Account breadcrumb');
+assert.match(audit, /PortalBreadcrumb/, 'Recent activity keeps an Account / activity breadcrumb');
+assert.match(audit, /PortalBreadcrumb[\s\S]*portal\.account\.title[\s\S]*href: '\/portal\/account'/, 'Recent activity trail starts at Account');
+assert.match(supportDetail, /PortalBreadcrumb[\s\S]*portal\.support_requests_title[\s\S]*href: '\/portal\/support'/, 'Ticket detail trail starts at Tickets');
 assert.match(siteRecord, /href:\s*'\/portal#sites'/, 'My sites crumb links to /portal#sites');
 assert.match(siteRecord, /PortalActionIcon id="rename"/);
 assert.match(
