@@ -69,6 +69,13 @@
     min-height: var(--portal-header-min-height);
   }
 
+  /* Tickets list: short title row — drop forced min-height empty band */
+  .portal-shell [data-portal-workspace-header="support"] {
+    min-height: 0;
+    padding-bottom: 0.5rem;
+    border-bottom-width: 0;
+  }
+
   .portal-shell .btn-sm,
   .portal-shell .btn.btn-sm,
   .portal-shell .portal-row-action-btn {

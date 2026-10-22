@@ -9,6 +9,7 @@ import {
   PortalCard,
   PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
+import { PortalActionIcon } from '@/components/portal/PortalRowActions';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalEmptyState,
@@ -256,7 +257,7 @@ function PortalSupportContent() {
   };
 
   return (
-    <PortalPageStack className="space-y-4">
+    <PortalPageStack className="space-y-3">
       <PortalWorkspaceHeader
         title={t('portal.support_requests_title', {}, 'Tickets')}
         currentPage="support"
@@ -290,14 +291,17 @@ function PortalSupportContent() {
         primaryAction={
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 dark:bg-blue-500 dark:text-slate-950 dark:hover:bg-blue-400"
+            data-portal-support="submit-ticket"
             disabled={listErrorCode === 'portal.site_selection_required'}
+            aria-label={t('portal.support_request_new_action', {}, 'Submit ticket')}
+            title={t('portal.support_request_new_action', {}, 'Submit ticket')}
             onClick={() => {
               setFormError('');
               setShowForm(true);
             }}
           >
-            {t('portal.support_request_new_action', {}, 'Submit ticket')}
+            <PortalActionIcon id="ticket-new" />
           </button>
         }
       />
@@ -431,63 +435,58 @@ function PortalSupportContent() {
       ) : null}
 
       <PortalSection>
-        <div className="mb-3 flex flex-col gap-2.5 border-b border-slate-200/75 pb-3 dark:border-slate-800 lg:flex-row lg:flex-wrap lg:items-end lg:justify-start lg:gap-x-6 lg:gap-y-2" data-portal-support="list-toolbar">
+        <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end lg:gap-x-4" data-portal-support="list-toolbar">
           {listErrorCode === 'portal.site_selection_required' ? (
-          <div className="w-full max-w-sm">
-            <label htmlFor="portal-support-site-selector" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-              {t('portal.current_site', {}, 'Current site')}
-            </label>
-            {accountSites.length > 1 ? (
-              <select
-                id="portal-support-site-selector"
-                className="input h-10 py-2 text-sm"
-                value={contextSiteId}
-                onChange={(event) => void handleSiteChange(event.target.value)}
-              >
-                {!contextSiteId ? (
-                  <option value="" disabled>
-                    {t('portal.select_site_placeholder', {}, 'Select a site')}
-                  </option>
-                ) : null}
-                {accountSites.map((site) => (
-                  <option key={site.site_id} value={site.site_id}>
-                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
-                {selectedContextSite
-                  ? getPortalSiteDisplayName(selectedContextSite)
-                  : t(
-                    'portal.support_account_scope_label',
-                    {},
-                    'Account-level support (all sites)'
-                  )}
-              </p>
-            )}
-          </div>
-          ) : <p className="text-sm text-slate-500">{t('portal.support_account_scope_label')}</p>}
-          <div className="flex flex-col items-start gap-1.5" data-portal-support="status-filters">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {t('portal.support_filter_label', {}, 'Filter by status')}
-            </p>
-            <div className="flex flex-wrap gap-2" aria-label={t('portal.support_filter_label', {}, 'Filter by status')}>
-              {SUPPORT_STATUSES.map((status) => (
-                <button
-                  key={status || 'all'}
-                  type="button"
-                  className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
-                  aria-pressed={statusFilter === status}
-                  onClick={() => {
-                    setOffset(0);
-                    setStatusFilter(status);
-                  }}
+            <div className="w-full max-w-sm lg:mr-auto">
+              <label htmlFor="portal-support-site-selector" className="sr-only">
+                {t('portal.current_site', {}, 'Current site')}
+              </label>
+              {accountSites.length > 1 ? (
+                <select
+                  id="portal-support-site-selector"
+                  className="input h-10 py-2 text-sm"
+                  value={contextSiteId}
+                  onChange={(event) => void handleSiteChange(event.target.value)}
                 >
-                  {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-                </button>
-              ))}
+                  {!contextSiteId ? (
+                    <option value="" disabled>
+                      {t('portal.select_site_placeholder', {}, 'Select a site')}
+                    </option>
+                  ) : null}
+                  {accountSites.map((site) => (
+                    <option key={site.site_id} value={site.site_id}>
+                      {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
+                  {selectedContextSite
+                    ? getPortalSiteDisplayName(selectedContextSite)
+                    : t(
+                      'portal.support_account_scope_label',
+                      {},
+                      'Account-level support (all sites)'
+                    )}
+                </p>
+              )}
             </div>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2" data-portal-support="status-filters" aria-label={t('portal.support_filter_label', {}, 'Filter by status')}>
+            {SUPPORT_STATUSES.map((status) => (
+              <button
+                key={status || 'all'}
+                type="button"
+                className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
+                aria-pressed={statusFilter === status}
+                onClick={() => {
+                  setOffset(0);
+                  setStatusFilter(status);
+                }}
+              >
+                {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -540,10 +539,13 @@ function PortalSupportContent() {
                       </td>
                       <td className="px-3 py-4 text-right">
                         <Link
-                          className="btn btn-secondary btn-sm"
+                          className="portal-row-action-icon inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
                           href={`/portal/support/${encodeURIComponent(item.request_id)}`}
+                          aria-label={t('portal.support_request_view_detail', {}, 'View detail')}
+                          title={t('portal.support_request_view_detail', {}, 'View detail')}
+                          data-portal-support="view-detail"
                         >
-                          {t('portal.support_request_view_detail', {}, 'View detail')}
+                          <PortalActionIcon id="view-detail" />
                         </Link>
                       </td>
                     </tr>
@@ -569,80 +571,11 @@ function PortalSupportContent() {
                       {item.description}
                     </p>
                     <Link
-                      className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
+                      className="portal-row-action-icon mt-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                       href={`/portal/support/${encodeURIComponent(item.request_id)}`}
+                      aria-label={t('portal.support_request_view_detail', {}, 'View detail')}
+                      title={t('portal.support_request_view_detail', {}, 'View detail')}
+                      data-portal-support="view-detail"
                     >
-                      {t('portal.support_request_view_detail', {}, 'View detail')}
+                      <PortalActionIcon id="view-detail" />
                     </Link>
-                  </div>
-                  <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400 lg:text-right">
-                    <p>{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
-                    <p className="mt-1">{supportRequestSiteLabel(item)}</p>
-                    <p className="mt-1">{item.updated_at ? formatDate(item.updated_at) : item.request_id}</p>
-                  </div>
-                </div>
-              </PortalCard>
-            ))}
-            </div>
-          </>
-        ) : (
-          <PortalEmptyState
-            title={statusFilter ? t('portal.support_filter_empty_title') : t('portal.support_request_empty_title', {}, 'No tickets yet')}
-            description={statusFilter ? t('portal.support_filter_empty_desc') : t('portal.support_request_empty_desc', {}, 'Submit a ticket when package, payment, site, or usage information needs support review.')}
-            actionButton={
-              <button type="button" className="btn btn-primary" onClick={() => statusFilter ? setStatusFilter('') : setShowForm(true)}>
-                {statusFilter ? t('portal.support_clear_filter') : t('portal.support_request_new_action', {}, 'Submit ticket')}
-              </button>
-            }
-          />
-        )}
-        {!listError ? <ListPagination
-          offset={offset}
-          limit={PAGE_SIZE}
-          total={total}
-          isLoading={isListLoading}
-          onOffsetChange={setOffset}
-          className="mt-4 px-0 pb-0"
-        /> : null}
-      </PortalSection>
-
-      <details className="rounded-[1rem] border border-slate-200/80 bg-white/70 dark:border-slate-800 dark:bg-slate-950/35" data-portal-support="status-rules">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
-          {t('portal.support_status_rules_title', {}, 'Ticket status')}
-        </summary>
-        <div className="space-y-3 border-t border-slate-200/80 p-4 dark:border-slate-800">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t(
-              'portal.support_status_rules_desc',
-              {},
-              'Use tickets for package, payment, site, usage, or account issues; support updates the status as the issue moves.'
-            )}
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {supportStatusRules.map((rule) => (
-              <div key={rule.key} className="rounded-xl border border-slate-200 bg-white/70 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300">
-                <p className="font-semibold text-slate-950 dark:text-white">
-                  {t(`portal.support_status_${rule.key}`, {}, rule.key)}
-                </p>
-                <p className="mt-1 text-xs leading-5">{rule.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </details>
-    </PortalPageStack>
-  );
-}
-
-function PortalSupportPageFallback() {
-  const { t } = useLocale();
-  return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
-}
-
-export default function PortalSupportPage() {
-  return (
-    <Suspense fallback={<PortalSupportPageFallback />}>
-      <PortalSupportContent />
-    </Suspense>
-  );
-}

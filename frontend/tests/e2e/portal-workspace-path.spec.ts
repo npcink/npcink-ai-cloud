@@ -2119,13 +2119,18 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
   const ticketsTable = page.locator('[data-portal-support="tickets-table"]');
   await expect(ticketsTable).toBeVisible();
+  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toHaveCount(0);
+  await expect(page.getByText(/^Filter by status$|^按状态筛选$/i)).toHaveCount(0);
   await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(1);
   await page.locator('[data-portal-support="status-rules"] summary').click();
   await expect(page.getByText(/Open tickets are waiting|待处理工单/i)).toBeVisible();
   await expect(page.getByText(/Close evaluation|关闭评价|關閉評價/i).first()).toBeVisible();
   await expect(ticketsTable.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
   await expect(ticketsTable.getByRole('cell', { name: /^Another site$|^其他站点$/i })).toBeVisible();
-  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await expect(ticketsTable.getByRole('link', { name: /View detail|查看详情|查看詳情/i })).toHaveCount(1);
+  const submitTicket = page.getByRole('button', { name: /Submit ticket|提交工单|提交工單/i });
+  await expect(submitTicket).toHaveAttribute('data-portal-support', 'submit-ticket');
+  await submitTicket.click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeVisible();
   await page.keyboard.press('Escape');
 });
@@ -2202,8 +2207,10 @@ test('single unavailable site keeps support explicitly account-scoped without a 
   });
 
   await page.goto('/portal/support');
-  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toBeVisible();
+  // Standing「账户范围」label removed; account scope is implicit (no site selector).
+  await expect(page.locator('#portal-support-site-selector')).toHaveCount(0);
   await expect(page.getByText(/^Select a site$|^选择站点$/i)).toHaveCount(0);
+  await expect(page.locator('[data-portal-support="status-filters"]')).toBeVisible();
 });
 
 test('[readiness:new_account_no_site] a new account gets a WordPress connection path instead of a dead end', async ({ page }) => {
@@ -2617,7 +2624,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(
     page.locator('[data-portal-support="ticket-cards"]').getByText(/^Another site$|^其他站点$/i)
   ).toBeVisible();
-  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await page.getByLabel(/Submit ticket|提交工单|提交工單/i).click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -76,7 +76,7 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /primaryAction=\{[\s\S]*support_request_new_action/,
+  /primaryAction=\{[\s\S]*data-portal-support="submit-ticket"[\s\S]*support_request_new_action/,
   'Portal submit-ticket action must sit in the title info group via primaryAction'
 );
 assert.match(
@@ -108,18 +108,33 @@ assert.doesNotMatch(
 
 assert.match(
   portalSupportPageSource,
-  /lg:justify-start[\s\S]*data-portal-support="list-toolbar"/,
-  'Portal support list toolbar must left-align account scope with status filters'
-);
-assert.doesNotMatch(
-  portalSupportPageSource,
-  /lg:justify-between[\s\S]*data-portal-support="list-toolbar"/,
-  'Portal support list toolbar must not push status filters across a wide spacer'
+  /lg:justify-end[\s\S]*data-portal-support="list-toolbar"/,
+  'Portal support list toolbar must right-align status filter chips'
 );
 assert.match(
   portalSupportPageSource,
-  /PortalPageStack className="space-y-4"/,
+  /PortalPageStack className="space-y-3"/,
   'Portal support page stack must use tighter title-to-list spacing'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="submit-ticket"[\s\S]*portal\.support_request_new_action[\s\S]*PortalActionIcon id="ticket-new"/,
+  'Portal submit-ticket header control must be an accessible icon button'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="view-detail"[\s\S]*PortalActionIcon id="view-detail"/,
+  'Portal ticket row detail control must be an accessible icon link'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /<p className="text-xs font-medium[\s\S]*portal\.support_filter_label/,
+  'Portal support must not show a visible Filter by status label'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /: <p className="text-sm text-slate-500">\{t\('portal\.support_account_scope_label'\)\}<\/p>/,
+  'Portal support must not show a standing Account scope label on the list toolbar'
 );
 
 console.log('portal_support_requests_contract: ok');
