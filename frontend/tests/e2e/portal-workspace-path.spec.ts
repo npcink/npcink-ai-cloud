@@ -2051,7 +2051,8 @@ test('portal site record focuses on address, status, and support actions', async
 
   await page.goto('/portal/sites/site_attention');
   await expect(page.getByRole('heading', { level: 1, name: /Attention Site/i })).toBeVisible();
-  await expect(page.getByText(/^Connected$|^已接入$/i).first()).toBeVisible();
+  // Quiet status: Connected badge is suppressed for normal/active and when attention is active.
+  await expect(page.getByText(/^Connected$|^已接入$/i)).toHaveCount(0);
   await expect(page.getByText(/Site URL not configured|未配置站点地址/i).first()).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /Service status|服务状态/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单/i })).toHaveCount(1);
@@ -2062,14 +2063,18 @@ test('portal site record focuses on address, status, and support actions', async
 
   await page.goto('/portal/sites/site_clear');
   await expect(page.getByRole('heading', { level: 1, name: /Clear Site/i })).toBeVisible();
-  await expect(page.getByText('https://clear.example.test').first()).toBeVisible();
+  // Quiet site URL display strips the scheme (host-only).
+  await expect(page.getByText('clear.example.test').first()).toBeVisible();
   await expect(page.getByText(/^Growth$/)).toHaveCount(0);
   await expect(page.getByText(/^plan_growth$/)).toHaveCount(0);
   const siteKnowledgePanel = page.locator('[data-portal-site="site-knowledge"]');
   await expect(siteKnowledgePanel.getByRole('heading', { name: /AI content knowledge|AI 内容知识|Site knowledge|站点知识/i })).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/^86$/)).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/32 searches|32 次搜索/i)).toBeVisible();
-  await expect(siteKnowledgePanel.getByText(/3 could not find|3 次未找到相关内容/i)).toBeVisible();
+  // No-answer detail is quiet: lives in the ⓘ hint aria-label, not body copy.
+  await expect(
+    siteKnowledgePanel.locator('[aria-label*="could not find related content"], [aria-label*="次未找到相关内容"]')
+  ).toHaveCount(1);
   await expect(siteKnowledgePanel.getByText(/P95|top1|embedding|vector backend|向量库|分块/i)).toHaveCount(0);
 });
 
@@ -2171,21 +2176,16 @@ test('[readiness:new_account_no_site] a new account gets a WordPress connection 
   await installPortalMocks(page, { emptySites: true });
 
   await page.goto('/portal');
-  await expect(page.locator('[data-portal-home-state="setup"]')).toBeVisible();
-  await expect(page.locator('[data-portal-sites="connect-guide"]')).toHaveCount(1);
-  await page.getByRole('link', { name: /Connect my website|连接我的网站/i }).click();
-  const connectionFlow = page.locator('[data-portal-connection-flow]');
-  await expect(connectionFlow).toHaveAttribute('data-current-step', '1');
-  await expect(connectionFlow.getByText(/Step 1 of 3|第 1 步，共 3 步/i)).toBeVisible();
-  await connectionFlow.getByRole('button', { name: /Next step|下一步/i }).click();
-  await expect(connectionFlow).toHaveAttribute('data-current-step', '2');
-  await expect(connectionFlow.getByRole('button', { name: /Previous step|上一步/i })).toBeVisible();
-  await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
+  // Quiet home dropped data-portal-home-state and the in-portal connection wizard;
+  // empty accounts get the WordPress addon connect-guide instead of a dead end.
+  await expect(page.locator('[data-portal-home-state="setup"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-connection-flow]')).toHaveCount(0);
+  const connectGuide = page.locator('[data-portal-sites="connect-guide"]');
+  await expect(connectGuide).toHaveCount(1);
+  await expect(connectGuide).toContainText(/Connect a site first|请先连接站点/i);
+  await expect(connectGuide).toContainText(/npcink-cloud-addon/i);
   await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
   await expect(page.getByText(/Not connected|尚未接入/i).first()).toBeVisible();
-  await expect(
-    page.getByText(/Npcink Cloud Addon/i).first()
-  ).toBeVisible();
   await expect(page.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(page.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toHaveCount(0);
 
