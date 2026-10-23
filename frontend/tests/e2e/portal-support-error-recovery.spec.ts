@@ -73,6 +73,9 @@ for (const copy of locales) {
             session: { state: 'active', transport: 'cookie', issued_at: '2026-10-23T00:00:00Z', expires_at: '2099-10-23T00:00:00Z', revocable: true },
           });
         }
+        if (url.pathname === '/api/portal/notifications') {
+          return ok(route, { items: [], total_count: 0, unread_count: 0, limit: 1, offset: 0, unread_only: false, fetched_at: '2026-10-23T00:00:00Z' });
+        }
         if (url.pathname === '/api/portal/support-requests') {
           if (url.searchParams.get('status') === 'open') {
             filteredRequests.push(url.search);
