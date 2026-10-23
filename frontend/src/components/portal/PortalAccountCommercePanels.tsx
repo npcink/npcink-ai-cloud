@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PortalCard } from '@/components/portal/PortalScaffold';
@@ -89,7 +88,7 @@ export function PortalAccountCommercePanels() {
   const [selectedPackageTier, setSelectedPackageTier] = useState<
     PortalPackageTier | null
   >(null);
-  const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(true);
+  const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(false);
   const [selectedCreditPackId, setSelectedCreditPackId] = useState<string | null>(null);
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
   const handledUpgradeIntentRef = useRef('');
@@ -109,7 +108,7 @@ export function PortalAccountCommercePanels() {
     handledUpgradeIntentRef.current = intentKey;
     setPackageError(null);
     setSelectedPackageTier(requestedTier);
-    setShowOnlyPackageDifferences(true);
+    setShowOnlyPackageDifferences(false);
     setActiveCommercialDialog('package');
   }, [planOffers?.items, searchParams]);
 
@@ -434,19 +433,12 @@ export function PortalAccountCommercePanels() {
               data-portal-account="upgrade-package"
               onClick={() => {
                 setPackageError(null);
-                setShowOnlyPackageDifferences(true);
+                setShowOnlyPackageDifferences(false);
                 setActiveCommercialDialog('package');
               }}
             >
               {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
             </button>
-            <Link
-              href="/portal/billing"
-              className="text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
-              data-portal-account="goto-billing"
-            >
-              {t('portal.account.goto_billing', {}, 'Open Package')}
-            </Link>
           </div>
         </div>
       ) : null}

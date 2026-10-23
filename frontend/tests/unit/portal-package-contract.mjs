@@ -55,8 +55,18 @@ const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
-  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
-  'Portal package changes must expose terms, privacy, and billing support before payment'
+  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"/,
+  'Portal package changes must expose terms and privacy before payment'
+);
+assert.doesNotMatch(
+  packagePanelSource,
+  /purchase_readiness_notice[\s\S]{0,400}portal\.nav_support_requests|purchase_readiness_notice[\s\S]{0,400}\/portal\/support\?new=1&topic=billing/,
+  'Portal package purchase footer must not put Tickets on the primary purchase path'
+);
+assert.match(
+  packagePanelSource,
+  /data-portal-package="agency-quote"[\s\S]*\/portal\/support\?new=1&topic=billing|agency_separate_title[\s\S]*\/portal\/support\?new=1&topic=billing/,
+  'Portal package billing support remains reachable from the demoted Agency quote path'
 );
 assert.match(
   creditPackDialogSource,
@@ -115,8 +125,13 @@ assert.match(
 );
 assert.match(
   accountCommerceSource,
-  /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
-  'Portal account commerce actions must prioritize credit purchase only when AI credits are the active issue'
+  /data-portal-account="package-summary"[\s\S]*upgrade-package/,
+  'Portal account commerce keeps a one-line package summary with Upgrade package as the plan entry'
+);
+assert.doesNotMatch(
+  accountCommerceSource,
+  /creditNeedsAttention|credit_pack_buy_action|trial_entry_action/,
+  'Portal account commerce must not restack buy-credits / trial CTAs (upgrades live in the package dialog)'
 );
 assert.match(
   creditPackDialogSource,

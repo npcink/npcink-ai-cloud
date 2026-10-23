@@ -160,8 +160,13 @@ const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/porta
 const paymentHistorySource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalPaymentOrderHistory.tsx'), 'utf8');
 assert.match(
   commerceSource,
-  /data-portal-account="package-summary"[\s\S]*upgrade-package[\s\S]*goto-billing/,
-  'account commerce must keep a one-line plan summary with Upgrade package + Open Package links'
+  /data-portal-account="package-summary"[\s\S]*upgrade-package/,
+  'account commerce must keep a one-line plan summary with Upgrade package'
+);
+assert.doesNotMatch(
+  commerceSource,
+  /data-portal-account="goto-billing"|portal\.account\.goto_billing/,
+  'account commerce must not keep Open Package / 前往套餐 beside the summary (upgrades live in the package dialog)'
 );
 assert.match(
   commerceSource,
