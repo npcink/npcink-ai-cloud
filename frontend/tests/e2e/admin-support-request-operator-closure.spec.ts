@@ -9,6 +9,21 @@ import {
   writeAdminVisualReceipt,
 } from './helpers/admin-visual-receipt';
 
+const pageErrors: string[] = [];
+const unhandledAdminRequests: string[] = [];
+test.beforeEach(async ({ page }) => {
+  pageErrors.length = 0;
+  unhandledAdminRequests.length = 0;
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('locale')) localStorage.setItem('locale', 'zh-CN');
+  });
+});
+test.afterEach(async () => {
+  expect(pageErrors).toEqual([]);
+  expect(unhandledAdminRequests).toEqual([]);
+});
+
 const requestId = 'sr_overdue_payment';
 const supportRequest = {
   request_id: requestId,
@@ -28,7 +43,7 @@ const supportRequest = {
 } as const;
 
 async function installSupportRequestClosureHarness(page: Page) {
-  await installAdminMocks(page);
+  await installAdminMocks(page, { unhandledAdminRequests });
   let publicReplyAttempts = 0;
   const messages = [
     {
@@ -57,7 +72,7 @@ async function installSupportRequestClosureHarness(page: Page) {
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
         items,
-        pagination: { total: items.length, limit: 20, offset: 0, has_more: false },
+        pagination: { total: items.length, limit: Number(url.searchParams.get('limit')), offset: 0, has_more: false },
         summary: {
           open: items.length,
           in_progress: 0,
@@ -148,7 +163,7 @@ test('ticket operator preserves queue context through failed and successful publ
 
   const queue = page.locator('[data-ui="support-request-table"]');
   await expect(queue).toBeVisible();
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
+  await page.getByRole('group', { name: /Ticket view|工单视图/i }).getByRole('button', { name: /^Open$|^待处理$/i }).click();
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Payment');
   await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
   await expect(page).toHaveURL(/status=open/);
@@ -233,7 +248,7 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(page).toHaveURL(/status=open/);
   await expect(page).toHaveURL(/q=Payment/);
   await expect(page).toHaveURL(new RegExp(`focus=${requestId}`));
-  await expect(page.getByLabel(/Ticket view|工单视图/i)).toHaveValue('status:open');
+  await expect(page.getByRole('group', { name: /Ticket view|工单视图/i }).getByRole('button', { name: /^Open$|^待处理$/i })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel(/Search tickets|搜索工单/i)).toHaveValue('Payment');
   await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(1);
   await expect(page.locator('[data-ui="support-request-row"]')

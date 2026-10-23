@@ -4,6 +4,24 @@ import {
   buildAdminApiErrorEnvelope,
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
+import { observeAdminBrowserEvidence, writeAdminVisualReceipt } from './helpers/admin-visual-receipt';
+
+// This base predates the English cold-start fix. Keep real Chinese hydration;
+// visual English coverage switches through the existing control after mount.
+const pageErrors: string[] = [];
+const unhandledAdminRequests: string[] = [];
+test.beforeEach(async ({ page }) => {
+  pageErrors.length = 0;
+  unhandledAdminRequests.length = 0;
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('locale')) localStorage.setItem('locale', 'zh-CN');
+  });
+});
+test.afterEach(async () => {
+  expect(pageErrors).toEqual([]);
+  expect(unhandledAdminRequests).toEqual([]);
+});
 
 type TicketFixture = {
   request_id: string;
@@ -92,15 +110,18 @@ function initialTickets(): TicketFixture[] {
   ];
 }
 
-async function installSupportQueueMocks(page: Page) {
-  await installAdminMocks(page);
-  let tickets = initialTickets();
+async function installSupportQueueMocks(page: Page, initial = initialTickets()) {
+  await installAdminMocks(page, { unhandledAdminRequests });
+  let tickets = initial;
   let requestCount = 0;
   let failQuery = '';
+  const requests: URLSearchParams[] = [];
 
   await page.route('**/api/admin/support-requests?*', async (route) => {
     requestCount += 1;
     const url = new URL(route.request().url());
+    requests.push(url.searchParams);
+    expect(url.searchParams.get('limit')).toBe('10');
     const query = (url.searchParams.get('q') || '').toLowerCase();
     if (failQuery && query === failQuery.toLowerCase()) {
       failQuery = '';
@@ -138,13 +159,14 @@ async function installSupportQueueMocks(page: Page) {
       if (sort === 'updated_at') return -updatedDifference;
       return riskRank(left) - riskRank(right) || updatedDifference;
     });
-    const items = orderedItems.slice(offset, offset + 20);
+    const limit = Number(url.searchParams.get('limit'));
+    const items = orderedItems.slice(offset, offset + limit);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
         items,
-        pagination: { total: filteredItems.length, limit: 20, offset, has_more: offset + items.length < filteredItems.length },
+        pagination: { total: filteredItems.length, limit, offset, has_more: offset + items.length < filteredItems.length },
         summary: {
           open: filteredItems.filter((ticket) => ticket.status === 'open').length,
           in_progress: filteredItems.filter((ticket) => ticket.status === 'in_progress').length,
@@ -182,6 +204,7 @@ async function installSupportQueueMocks(page: Page) {
 
   return {
     getRequestCount: () => requestCount,
+    getRequests: () => requests,
     failRequestForQuery: (query: string) => { failQuery = query; },
   };
 }
@@ -200,7 +223,6 @@ test('ticket queue persists filters and focus while retaining usable results on 
 
   const toolbarControls = [
     page.getByLabel(/Search tickets|搜索工单/i),
-    page.getByLabel(/Ticket view|工单视图/i),
     page.getByLabel(/Ticket topic|工单类型/i),
     page.getByLabel(/Sort|排序/i),
     page.getByRole('button', { name: /^Apply$|^应用$/i }),
@@ -218,18 +240,25 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(rows.nth(1)).toContainText('Site connection needs review');
   await expect(rows.nth(2)).toContainText('Usage total needs explanation');
 
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:waiting_for_operator');
+  const views = page.getByRole('group', { name: /Ticket view|工单视图/i });
+  await views.getByRole('button', { name: /Waiting for support|等待客服/i }).click();
   await expect(page).toHaveURL(/attention=waiting_for_operator/);
   await expect(rows).toHaveCount(2);
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:overdue');
+  await views.getByRole('button', { name: /^Overdue$|^已超时$/i }).click();
   await expect(page).toHaveURL(/attention=overdue/);
   await expect(rows).toHaveCount(1);
 
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
+  await views.getByRole('button', { name: /^Open$|^待处理$/i }).click();
+  await expect(page).not.toHaveURL(/attention=/);
+  await expect(views.locator('[aria-pressed="true"]')).toHaveCount(1);
   await expect(page).toHaveURL(/status=open/);
   await expect(rows).toHaveCount(2);
 
+  const requestsBeforeTyping = mocks.getRequestCount();
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Payment');
+  await page.waitForTimeout(350);
+  expect(mocks.getRequestCount()).toBe(requestsBeforeTyping);
+  await expect(page).not.toHaveURL(/q=Payment/);
   await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
   await expect(page).toHaveURL(/q=Payment/);
   await expect(rows).toHaveCount(1);
@@ -348,4 +377,145 @@ test('ticket queue keyboard flow moves focus, ignores typing, and opens detail w
   await expect(page).toHaveURL(/focus=sr_overdue_payment/);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/admin\/support-requests\/sr_overdue_payment\?return_to=/);
+});
+
+function pageTickets(count: number): TicketFixture[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...initialTickets()[index % 4],
+    request_id: `sr_page_${index}`,
+    title: `Queue sample ${String(index).padStart(2, '0')}`,
+    topic: 'general',
+    updated_at: new Date(Date.UTC(2026, 6, 12, index)).toISOString(),
+  }));
+}
+
+for (const count of [0, 1, 10, 11]) {
+  test(`ticket queue shows an honest range for ${count} results`, async ({ page }) => {
+    await installSupportQueueMocks(page, pageTickets(count));
+    await page.goto('/admin/support-requests');
+    await expect(page.locator('[data-ui="support-request-table"]')).toBeVisible();
+    await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(Math.min(count, 10));
+    const pagination = page.getByRole('navigation', { name: /Pagination|分页/i, exact: true });
+    if (count <= 10) {
+      await expect(pagination).toHaveCount(0);
+      await expect(page.locator('[data-ui="support-request-single-page-range"]')).toHaveText(
+        new RegExp(`(?:${count ? 1 : 0}-${count} of ${count}|第 ${count ? 1 : 0}–${count} 条，共 ${count} 条)`)
+      );
+    } else {
+      await expect(page.locator('[data-ui="support-request-single-page-range"]')).toHaveCount(0);
+      await expect(pagination).toContainText(/1-10 of 11|第 1–10 条，共 11 条/);
+      await expect(pagination.getByRole('button', { name: /Next page|下一页/i })).toBeEnabled();
+    }
+  });
+}
+
+test('ticket paging keeps filters and sort while clearing row focus', async ({ page }) => {
+  const mocks = await installSupportQueueMocks(page, pageTickets(21));
+  await page.goto('/admin/support-requests');
+  const rows = page.locator('[data-ui="support-request-row"]');
+  await expect(rows).toHaveCount(10);
+  await page.getByLabel(/Sort|排序/i).selectOption('updated_at');
+  await page.getByLabel(/Search tickets|搜索工单/i).fill('Queue sample');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(rows.first()).toContainText('Queue sample 20');
+  await page.getByLabel(/Search tickets|搜索工单/i).blur();
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=/);
+  const pagination = page.getByRole('navigation', { name: /Pagination|分页/i, exact: true });
+  // Keep the keyboard-owned selection: pointerdown deliberately releases it
+  // in the shared queue hook and opens the existing inspector before click.
+  const nextPage = pagination.getByRole('button', { name: /Next page|下一页/i });
+  await nextPage.focus();
+  await nextPage.press('Enter');
+  await expect(page).toHaveURL(/offset=10/);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(rows).toHaveCount(10);
+  await expect(rows.first()).toContainText('Queue sample 10');
+  await page.reload();
+  await expect(rows.first()).toContainText('Queue sample 10');
+  await expect(page.getByLabel(/Search tickets|搜索工单/i)).toHaveValue('Queue sample');
+  await expect(page.getByLabel(/Sort|排序/i)).toHaveValue('updated_at');
+  await pagination.getByRole('button', { name: /Next page|下一页/i }).click();
+  await expect(page).toHaveURL(/offset=20/);
+  await expect(rows).toHaveCount(1);
+  await expect(pagination).toContainText(/21-21 of 21|第 21–21 条，共 21 条/);
+  await expect(pagination.getByRole('button', { name: /Next page|下一页/i })).toBeDisabled();
+  await pagination.getByRole('button', { name: /Previous|上一页/i }).click();
+  await expect(page).toHaveURL(/offset=10/);
+  await expect(rows).toHaveCount(10);
+  expect(mocks.getRequests().at(-1)?.get('q')).toBe('Queue sample');
+  expect(mocks.getRequests().at(-1)?.get('sort')).toBe('updated_at');
+});
+
+test('ticket Quiet PC preview keeps real language and theme controls', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const tickets = pageTickets(11);
+  await installSupportQueueMocks(page, tickets);
+  await page.route('**/api/admin/support-requests/sr_page_*', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const request = tickets.find(item => route.request().url().endsWith(item.request_id));
+    expect(request).toBeDefined();
+    await route.fulfill({ json: buildAdminApiEnvelope({ request, messages: [], attachments: [], feedback: null }) });
+  });
+  await page.goto('/admin/support-requests');
+  const table = page.locator('[data-ui="support-request-table"]');
+  await expect(table.locator('[data-ui="support-request-row"]')).toHaveCount(10);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await page.screenshot({ path: testInfo.outputPath('support-zh-light.png'), fullPage: true });
+  // Do not call this English cold coverage: switch only after Chinese hydration.
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('option', { name: 'English', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  const views = page.getByRole('group', { name: 'Ticket view', exact: true });
+  await expect(views.locator('button')).toHaveCount(7);
+  await expect(views.locator('[aria-pressed="true"]')).toHaveCount(1);
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+    await expect(table.getByRole('button', { name: 'Inspect', exact: true }).first()).toBeVisible();
+    const tableBox = await table.boundingBox();
+    const actionBox = await table.getByRole('link', { name: 'Open conversation', exact: true }).first().boundingBox();
+    expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(tableBox!.x + tableBox!.width);
+    await page.screenshot({ path: testInfo.outputPath(`support-en-light-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  if (!await page.locator('html').evaluate(element => element.classList.contains('dark'))) {
+    await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  }
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await page.screenshot({ path: testInfo.outputPath('support-en-dark.png'), fullPage: true });
+  await views.getByRole('button', { name: 'Open', exact: true }).click();
+  await expect(page).toHaveURL(/status=open/);
+  const firstRow = table.locator('[data-ui="support-request-row"]').first();
+  const inspect = firstRow.getByRole('button', { name: 'Inspect', exact: true });
+  await inspect.click();
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(inspect).toBeFocused();
+  await firstRow.getByRole('link', { name: 'Open conversation', exact: true }).click();
+  await expect(page.locator('[data-ui="support-request-detail-workspace"]')).toBeVisible();
+  await page.getByRole('link', { name: 'Back', exact: true }).click();
+  await expect(page).toHaveURL(/status=open/);
+  await expect(firstRow.getByRole('button', { name: 'Inspect', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await writeAdminVisualReceipt({
+    page, testInfo, artifactId: 'support-quiet-controls', route: '/admin/support-requests', pageModel: 'queue',
+    testedStates: ['ready', 'filtered', 'selected', 'returned'], humanAcceptance: 'not_required',
+    pageTitle: page.getByRole('heading', { name: 'Tickets', exact: true }), workingSurface: table, browserEvidence,
+    routeRuleResults: [
+      { id: 'single-primary-action', status: 'pass', evidence: 'Explicit Apply and per-row Open conversation remain in separate working regions' },
+      { id: 'textual-status', status: 'pass', evidence: 'risk and status badges retain visible text; view pills have labels' },
+      { id: 'action-object-proximity', status: 'pass', evidence: 'Inspect and Open conversation remain beside each ticket' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'One view pill is pressed, previous is disabled on first page, next is enabled' },
+      { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes Inspect drawer and restores its trigger focus' },
+      { id: 'context-stability', status: 'pass', evidence: 'Theme and language controls retain the results; detail Back restores open view and row selection' },
+    ],
+    interactionResults: [
+      { id: 'hydrated-language-control', status: 'pass', evidence: 'Chinese cold document then real language control switched to English; no English cold claim' },
+      { id: 'pc-width-and-theme', status: 'pass', evidence: '1440 and 1280 PC views keep actions visible without document overflow; real theme control selects dark' },
+    ],
+  });
 });
