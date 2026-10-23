@@ -338,27 +338,21 @@ function AccountPageContent() {
               onRetry={() => void loadProviders()}
             />
           ) : !qqProvider?.configured && !qqProvider?.bound ? (
-            <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {t('portal.account.qq_unavailable_short', undefined, 'QQ quick login is not available in the current environment.')}
-                  </span>
-                </span>
-                <span aria-hidden="true" className="text-slate-400">⌄</span>
-              </summary>
-              <div className="mt-4 border-t border-slate-200/80 pt-4 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                <p className="font-semibold text-slate-950 dark:text-white">
-                  {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
-                </p>
-                <p className="mt-1">
-                  {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
-                </p>
-              </div>
-            </details>
+            <div
+              className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35"
+              data-portal-account="other-login-unavailable"
+            >
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {t(
+                  'portal.account.qq_unavailable_short',
+                  undefined,
+                  'QQ quick login is not available in the current environment.'
+                )}
+              </p>
+            </div>
           ) : (
           <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

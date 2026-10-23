@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { PortalCreditPackDialog } from '@/components/portal/PortalCreditPackDialog';
 import {
@@ -54,6 +54,8 @@ type PortalAccountCommercePanelsProps = {
 
 export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePanelsProps) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, refresh } = useSession();
   const catalogEnabled = isAuthenticated && surface === 'billing';
@@ -101,6 +103,29 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
   const handledUpgradeIntentRef = useRef('');
 
+  const clearCommercialActionFromUrl = () => {
+    if (surface !== 'billing') return;
+    if (!searchParams.get('action')) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('action');
+    const qs = params.toString();
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}${hash}`, { scroll: false });
+  };
+
+  const closeCommercialDialog = () => {
+    setActiveCommercialDialog(null);
+    // Keep handledUpgradeIntentRef until `action` leaves the URL so the open
+    // effect cannot re-open the dialog during router.replace.
+    clearCommercialActionFromUrl();
+  };
+
+  useEffect(() => {
+    if (surface !== 'billing') return;
+    if (searchParams.get('action')) return;
+    handledUpgradeIntentRef.current = '';
+  }, [surface, searchParams]);
+
   useEffect(() => {
     if (surface !== 'billing') return;
     const requestedTier = searchParams.get('plan');
@@ -147,7 +172,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
       await portalClient.startPlanTrial(tierId);
       await refresh();
       await loadBilling();
-      setActiveCommercialDialog(null);
+      closeCommercialDialog();
     } catch (err) {
       setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
@@ -172,7 +197,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         setPaymentOrderStatusGroup('pending');
         setPaymentOrderOffset(0);
         await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
+        closeCommercialDialog();
       } else {
         closePreparedPaymentWindow(paymentWindow);
       }
@@ -191,7 +216,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
       await portalClient.scheduleFreeDowngrade();
       await refresh();
       await loadBilling();
-      setActiveCommercialDialog(null);
+      closeCommercialDialog();
     } catch (err) {
       setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
@@ -216,7 +241,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         setPaymentOrderStatusGroup('pending');
         setPaymentOrderOffset(0);
         await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
+        closeCommercialDialog();
       } else {
         closePreparedPaymentWindow(paymentWindow);
       }
@@ -437,7 +462,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
 
       <Modal
         isOpen={activeCommercialDialog === 'package'}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
         description={t(
@@ -458,14 +483,14 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         selectedPackId={selectedCreditPackId}
         pendingPackId={creditPackPending}
         error={creditPackError}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         onSelect={setSelectedCreditPackId}
         onConfirm={handleConfirmCreditPackSelection}
       />
 
       <Modal
         isOpen={activeCommercialDialog === 'trial'}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.package.trial_dialog_title', {}, 'Trial eligibility')}
         description={t(
