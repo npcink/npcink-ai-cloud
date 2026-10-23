@@ -281,9 +281,12 @@ export function PortalAuditClient() {
         metricsLayout="rail"
         metricsPlacement="title-end"
         secondaryActions={
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadActivity()}>
-            {t('common.refresh', {}, 'Refresh')}
-          </button>
+          <>
+            {isLoading || error ? renderSiteFilterControl('portal-audit-site-filter-recovery') : null}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadActivity()}>
+              {t('common.refresh', {}, 'Refresh')}
+            </button>
+          </>
         }
       />
       {isLoading ? <PortalLoadingState message={t('common.loading')} /> : error ? (
