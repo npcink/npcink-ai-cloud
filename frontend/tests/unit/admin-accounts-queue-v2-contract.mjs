@@ -36,6 +36,10 @@ for (const key of ['admin.accounts.all_statuses', 'status.active', 'status.inact
 }
 assert.match(directorySource, /<ListPagination[\s\S]*offset=\{loadedOffset\}[\s\S]*limit=\{PAGE_SIZE\}[\s\S]*total=\{total\}/, 'valid multi-page results must keep the shared pager with successful-result scope');
 assert.match(directorySource, /new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'pending and failed URL changes must retain the displayed successful page offset');
+assert.match(directorySource, /loadedQuery\.delete\('offset'\)[\s\S]*requestedQuery\.delete\('offset'\)[\s\S]*const isRetainingDifferentQuery = hasLoaded && loadedQuery\.toString\(\) !== requestedQuery\.toString\(\)/, 'retained pagination must distinguish offset-only navigation from changed query dimensions');
+assert.match(directorySource, /if \(isRetainingDifferentQuery\) return;/, 'old result offsets must never paginate a different requested query');
+assert.match(directorySource, /isLoading=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'the shared pager must stay disabled while retaining results from another query');
+assert.match(directorySource, /action=\{isOutOfRangePage[\s\S]*disabled=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'empty-page recovery must respect the same retained-query boundary');
 assert.match(directorySource, /nextOffset === offset\) void loadAccounts\(true\)/, 'retrying a retained next page already present in the URL must issue a fresh read');
 assert.match(directorySource, /customer-directory-range[\s\S]*common.pagination_summary/, 'single and empty pages must show an honest visible range');
 assert.match(directorySource, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages need an explicit bounded recovery without misleading no-match text');

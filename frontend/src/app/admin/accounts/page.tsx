@@ -345,8 +345,14 @@ function AccountsContent() {
   // Rows and total belong to the last successful request, including while a
   // different URL page is pending or its request has failed.
   const loadedOffset = normalizeOffset(new URLSearchParams(loadedRequestKey).get('offset'));
+  const loadedQuery = new URLSearchParams(loadedRequestKey);
+  const requestedQuery = new URLSearchParams(requestKey);
+  loadedQuery.delete('offset');
+  requestedQuery.delete('offset');
+  const isRetainingDifferentQuery = hasLoaded && loadedQuery.toString() !== requestedQuery.toString();
   const isOutOfRangePage = hasLoaded && total > 0 && loadedOffset >= total && !visibleAccounts.length;
   const changePage = (nextOffset: number) => {
+    if (isRetainingDifferentQuery) return;
     if (nextOffset === offset) void loadAccounts(true);
     else updateDirectoryUrl({ offset: String(nextOffset) });
   };
@@ -429,7 +435,7 @@ function AccountsContent() {
       offset={loadedOffset}
       limit={PAGE_SIZE}
       total={total}
-      isLoading={isRefreshing}
+      isLoading={isRefreshing || isRetainingDifferentQuery}
       onOffsetChange={changePage}
     />
   ) : hasLoaded ? (
@@ -787,7 +793,7 @@ function AccountsContent() {
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  disabled={isRefreshing}
+                  disabled={isRefreshing || isRetainingDifferentQuery}
                   onClick={() => changePage(Math.min(
                     Math.max(0, loadedOffset - PAGE_SIZE),
                     Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE
