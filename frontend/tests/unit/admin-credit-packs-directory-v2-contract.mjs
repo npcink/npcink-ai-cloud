@@ -5,6 +5,7 @@ import { frontendRoot } from './_paths.mjs';
 
 const source = readFileSync(resolve(frontendRoot, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
 const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const navigationSource = readFileSync(resolve(frontendRoot, 'src/features/admin/navigation.ts'), 'utf8');
 const defaultSurfaceStart = source.indexOf('<BackofficePageStack className="space-y-5">');
 const editorStart = source.indexOf('<AdminWorkbenchDialog', defaultSurfaceStart);
 const defaultSurface = source.slice(defaultSurfaceStart, editorStart);
@@ -17,9 +18,9 @@ assert.doesNotMatch(defaultSurface, /<input|<textarea/, 'The default credit pack
 assert.doesNotMatch(defaultSurface, /common\.save|handleSaveDraft/, 'The default header and directory must not expose an ambiguous save-all action');
 assert.doesNotMatch(defaultSurface, /admin\.credit_packs_open_packages/, 'The independent AI credit pack workspace must not duplicate package-catalog navigation');
 assert.match(
-  layoutSource,
-  /href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.nav_credit_packs'[\s\S]*activePrefixes: \['\/admin\/credit-packs'\]/,
-  'AI credit pack routes must own their sidebar state'
+  navigationSource,
+  /href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.workspace_tab_credit_packs'/,
+  'AI credit pack routes must stay inside the commercial workspace tabs'
 );
 assert.match(editorSurface, /open=\{Boolean\(draft\)\}[\s\S]*isDraftDirty[\s\S]*handleSaveDraft[\s\S]*AdminConfigurationTable/, 'The shared workbench must use a configuration table and save only an explicitly changed selected pack');
 assert.match(source, /items\.map\(\(item\) => item\.pack_id === draft\.pack_id \? normalizeItem\(draft\) : normalizeItem\(item\)\)[\s\S]*saveCatalog\(nextItems\)/, 'One-pack editing must preserve the atomic complete-catalog PATCH contract');

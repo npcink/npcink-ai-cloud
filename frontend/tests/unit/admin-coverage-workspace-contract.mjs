@@ -5,6 +5,7 @@ import { frontendRoot } from './_paths.mjs';
 
 const coverageSource = readFileSync(resolve(frontendRoot, 'src/app/admin/coverage/page.tsx'), 'utf8');
 const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const navigationSource = readFileSync(resolve(frontendRoot, 'src/features/admin/navigation.ts'), 'utf8');
 const i18nSource = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
 const serviceSource = readFileSync(
   resolve(frontendRoot, '../app/domain/commercial/mixins/_admin_mixin.py'),
@@ -138,9 +139,15 @@ assert.doesNotMatch(
 );
 
 assert.match(
+  navigationSource,
+  /commercialWorkspaceTabs[\s\S]*href: '\/admin\/coverage'[\s\S]*href: '\/admin\/subscriptions'/,
+  'Service status and subscriptions must stay sibling tabs in the commercial workspace'
+);
+
+assert.match(
   layoutSource,
-  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
-  'Service risks and subscriptions must be independent top-level sidebar destinations'
+  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_commercial_records'/,
+  'The commercial workspace must own one primary sidebar entry'
 );
 
 assert.match(

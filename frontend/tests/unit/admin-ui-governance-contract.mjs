@@ -250,8 +250,13 @@ assert.match(
 );
 assert.match(
   backofficeScaffoldSource,
-  /export function BackofficePageHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
-  'the shared page header must own compact geometry, hint disclosure, action placement, and summary density while keeping the configuration alias'
+  /export function BackofficePageHeader[\s\S]*data-density="default"[\s\S]*<BackofficeInfoHint detail=\{description\}[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
+  'the shared page header must own one title row with a hint, one compact summary row, and the configuration alias'
+);
+assert.doesNotMatch(
+  backofficeScaffoldSource.match(/export function BackofficePageHeader[\s\S]*?export function BackofficeConfigurationHeader/)?.[0] ?? '',
+  /eyebrow/,
+  'the page header must not repeat parent context as an eyebrow; the breadcrumb and workspace tabs own that context'
 );
 for (const [name, source] of [
   ['vector settings', vectorSettingsPageSource],

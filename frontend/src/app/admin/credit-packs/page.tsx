@@ -216,7 +216,6 @@ export default function AdminCreditPacksPage() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeConfigurationHeader
-        eyebrow={t('admin.credit_packs_eyebrow', {}, 'Commercial catalog')}
         title={t('admin.credit_packs_title', {}, 'AI credit packs')}
         description={t(
           'admin.credit_packs_directory_desc',

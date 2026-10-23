@@ -30,7 +30,7 @@ for (const [route, model] of Object.entries(manifest.routes)) {
   if (model === 'authentication') continue;
   if (model === 'detail') {
     assert.ok(detailParents[route], `${route} needs an explicitly declared owning queue`);
-    assert.ok(primary.has(detailParents[route]), `${route} needs a findable owning queue`);
+    assert.ok(primary.has(detailParents[route]) || families.has(detailParents[route]), `${route} needs a findable owning queue`);
     const prefix = route.split('/[')[0] + '/';
     const ownPage = fromFrontendRoot(`src/app${route}/page.tsx`);
     assert.ok(sources.some(source => source.path !== ownPage && ['`', "'", '"'].some(quote => source.text.includes(quote + prefix))), `${route} needs an inbound object link outside its own page`);

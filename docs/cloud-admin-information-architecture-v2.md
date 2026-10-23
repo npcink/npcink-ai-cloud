@@ -63,20 +63,37 @@ responsive, and accessibility contracts.
 
 ## 4. Navigation Domains
 
-The primary navigation is organized into four domains.
+The shell exposes one headerless Overview entry and three labeled domains with
+eight primary entries. Routes that share an operator job are presented as
+sibling workspace tabs under one primary entry; tabs never replace route
+ownership or page models.
 
 ### 4.1 Overview
 
 - Platform overview (`/admin`)
+- The Overview group is rendered without a group heading.
+- The first working surface is the data-driven todo/exception list from the
+  overview projection; stable destination links remain as a compact secondary
+  strip.
 
 ### 4.2 Customer Operations
 
-- Customers (`/admin/accounts`)
-- Service operations (`/admin/coverage`)
-- Subscription operations (`/admin/subscriptions`)
-- Tickets (`/admin/support-requests`)
-- Package catalog (`/admin/plans`)
-- AI credit packs (`/admin/credit-packs`)
+Primary entry: Customers (`/admin/accounts`)
+
+- Customers tab: Customers (`/admin/accounts`)
+- Tickets tab: Tickets (`/admin/support-requests`)
+
+Primary entry: Commercial records (`/admin/subscriptions`)
+
+- Service status tab: Service operations (`/admin/coverage`)
+- Subscriptions tab: Subscription operations (`/admin/subscriptions`)
+- Packages tab: Package catalog (`/admin/plans`)
+- Credit packs tab: AI credit packs (`/admin/credit-packs`)
+
+The Commercial records workspace carries one quiet Phase 1 development-freeze
+note under its tabs: new commercial features are paused while existing
+packages, subscriptions, and credit records keep reading and operating
+normally. The note is informational and must not disable existing reads.
 
 Customer login identity, membership, access, and audit evidence are inspected
 inside the Customers workspace. The validation-stage product must not expose a
@@ -89,28 +106,26 @@ merged or reproduce each other's default ordering, reasons, or actions; see
 ADR-037.
 
 Subscription operations owns the commercial lifecycle and billing-evidence
-queue. It keeps its own top-level navigation entry, URL-owned filters, risk
-ordering, and detail return path instead of presenting itself as a child of
-Service operations.
-Package catalog owns package definition, limits, and package-scoped
-subscription follow-up. AI credit packs owns the purchasable credit-pack
-configuration, including price, credits, validity, visibility, and package
-fit. Each keeps its own top-level navigation entry and page model; their
-commercial relationship stays contextual rather than being expressed as
-parent-child navigation.
+queue. It keeps its own route, URL-owned filters, risk ordering, page model,
+and detail return path. Service operations, subscription operations, package
+catalog, and AI credit packs are sibling tabs under Commercial records: the
+tab grouping is presentation-level navigation, not a parent-child object
+relationship, and must not merge routes, data ownership, or each other's
+default ordering. Package catalog owns package definition, limits, and
+package-scoped subscription follow-up. AI credit packs owns the purchasable
+credit-pack configuration, including price, credits, validity, visibility, and
+package fit.
 
-### 4.3 Runtime Operations
+### 4.3 Runtime & Observability
 
-- Model suppliers (`/admin/ai-resources`)
-- Runtime profiles (`/admin/runtime-profiles`)
-- Search and images (`/admin/external-services`)
-- Vector settings (`/admin/vector-settings`)
-- Runtime diagnostics (`/admin/troubleshooting`)
+Primary entry: Observability overview (`/admin/usage-statistics`)
 
-Runtime observation (`/admin/usage-statistics`) owns the shared navigation for
-usage statistics, plugin observation, media observation, vector observation,
-and editorial-quality evidence. Plugin observation is a separate investigation
-surface from the plugin activity mode inside usage statistics.
+Primary entry: Runtime diagnostics (`/admin/troubleshooting`)
+
+Observability overview owns the shared navigation for usage statistics, plugin
+observation, media observation, vector observation, and editorial-quality
+evidence. Plugin observation is a separate investigation surface from the
+plugin activity mode inside usage statistics.
 
 Runtime diagnostics (`/admin/troubleshooting`) owns the shared navigation for
 anomaly inspection, audit evidence, Agent feedback quality, and Operations
@@ -129,10 +144,24 @@ workspace under Runtime diagnostics. It is a contextual destination for exact
 mutation receipts and bounded support filters, not another governance or final
 audit control plane.
 
-### 4.4 System
+### 4.4 Configuration
 
-- Service settings (`/admin/service-settings`)
-- Site compliance (`/admin/site-compliance`)
+Primary entry: External capabilities (`/admin/ai-resources`)
+
+- Model suppliers tab: Model suppliers (`/admin/ai-resources`)
+- Search and images tab: Search and images (`/admin/external-services`)
+- Site vector service tab: Vector settings (`/admin/vector-settings`)
+
+Primary entry: Runtime profiles (`/admin/runtime-profiles`)
+
+Primary entry: Service settings (`/admin/service-settings`)
+
+- Service settings tab: Service settings (`/admin/service-settings`)
+- Site compliance tab: Site compliance (`/admin/site-compliance`)
+
+Workspace tabs are shell-level sibling navigation. Every tab keeps its own
+route, URL-owned state, page model, and return context; a tab must not become a
+hidden query mode of another page. The global quick switcher exposes every tab.
 
 ### 4.5 Contextual Detail Routes
 
@@ -250,27 +279,27 @@ consolidation.
 | `/admin/accounts` | Customer Operations | `queue` | Customers | Canonical customer directory; no risk queue or row inspector |
 | `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Overview, commercial, credits, sites, access, and audit tabs |
 | `/admin/sites/[siteId]` | Customer Operations | `detail` | Customers | Rebuild around health, coverage, runtime, usage, keys/audit tabs |
-| `/admin/coverage` | Customer Operations | `queue` | Service operations | Canonical full-width cross-customer problem queue; needs-action default; read-only evidence opens on demand in the shared drawer |
-| `/admin/subscriptions` | Customer Operations | `queue` | Subscription operations | Independent full-width subscription lifecycle and billing-risk queue; defaults to server-filtered needs-action records, keeps normal records behind explicit All, has no default selection, and opens read-only context in the shared drawer |
-| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Subscription operations | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
-| `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
-| `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
-| `/admin/plans` | Customer Operations | `queue` | Package catalog | Canonical catalog plus shared package-management workbench |
-| `/admin/credit-packs` | Customer Operations | `configuration` | AI credit packs | Independent purchasable credit-pack directory; edit one pack at a time |
-| `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |
-| `/admin/external-services` | Runtime Operations | `configuration` | Search and images | Fixed Cloud runtime service directory for web search and stock-image sources |
-| `/admin/vector-settings` | Runtime Operations | `configuration` | Site vector service | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
-| `/admin/runtime-profiles` | Runtime Operations | `configuration` | Runtime profiles | Keep only platform-tagged Cloud hosted candidate-chain configuration; candidate selection renders only inside edit flow |
-| `/admin/troubleshooting` | Runtime Operations | `diagnostic` | Runtime diagnostics | Canonical diagnostic index |
-| `/admin/usage-statistics` | Runtime Operations | `diagnostic` | Runtime observation | Windowed runtime trends, site/function groups, separate plugin reports and editorial outcomes |
-| `/admin/audit` | Runtime Operations | `diagnostic` | Runtime diagnostics | Persistent exact service-operation evidence; no raw payload or mutation authority |
-| `/admin/plugin-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation; plugin investigation |
-| `/admin/media-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation |
-| `/admin/vector-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation |
-| `/admin/agent-feedback` | Runtime Operations | `diagnostic` | Runtime diagnostics | Read-only quality view |
-| `/admin/ai-advisor` | Runtime Operations | `diagnostic` | Runtime diagnostics | Current conclusion first; AI evaluation advanced |
-| `/admin/service-settings` | System | `configuration` | Service settings | Keep; one active configuration group at a time |
-| `/admin/site-compliance` | System | `configuration` | Public compliance | One versioned Cloud disclosure document with fact-derived defaults, save/validate, and explicit publication; never expose drafts or credentials |
+| `/admin/coverage` | Customer Operations | `queue` | Commercial records (Service status tab) | Canonical full-width cross-customer problem queue; needs-action default; read-only evidence opens on demand in the shared drawer |
+| `/admin/subscriptions` | Customer Operations | `queue` | Commercial records (Subscriptions tab) | Independent full-width subscription lifecycle and billing-risk queue; defaults to server-filtered needs-action records, keeps normal records behind explicit All, has no default selection, and opens read-only context in the shared drawer |
+| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Commercial records (Subscriptions tab) | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
+| `/admin/support-requests` | Customer Operations | `queue` | Customers (Tickets tab) | Keep; split customer conversation from internal handling |
+| `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Customers (Tickets tab) | Keep; timeline-first ticket detail |
+| `/admin/plans` | Customer Operations | `queue` | Commercial records (Packages tab) | Canonical catalog plus shared package-management workbench |
+| `/admin/credit-packs` | Customer Operations | `configuration` | Commercial records (Credit packs tab) | Independent purchasable credit-pack directory; edit one pack at a time |
+| `/admin/ai-resources` | Configuration | `queue` | External capabilities | Keep model-provider connections and model visibility together |
+| `/admin/external-services` | Configuration | `configuration` | External capabilities (Search and images tab) | Fixed Cloud runtime service directory for web search and stock-image sources |
+| `/admin/vector-settings` | Configuration | `configuration` | External capabilities (Site vector service tab) | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
+| `/admin/runtime-profiles` | Configuration | `configuration` | Runtime profiles | Keep only platform-tagged Cloud hosted candidate-chain configuration; candidate selection renders only inside edit flow |
+| `/admin/troubleshooting` | Runtime & Observability | `diagnostic` | Runtime diagnostics | Canonical diagnostic index |
+| `/admin/usage-statistics` | Runtime & Observability | `diagnostic` | Observability overview | Windowed runtime trends, site/function groups, separate plugin reports and editorial outcomes |
+| `/admin/audit` | Runtime & Observability | `diagnostic` | Runtime diagnostics | Persistent exact service-operation evidence; no raw payload or mutation authority |
+| `/admin/plugin-observability` | Runtime & Observability | `diagnostic` | Observability overview | Shared observation navigation; plugin investigation |
+| `/admin/media-observability` | Runtime & Observability | `diagnostic` | Observability overview | Shared observation navigation |
+| `/admin/vector-observability` | Runtime & Observability | `diagnostic` | Observability overview | Shared observation navigation |
+| `/admin/agent-feedback` | Runtime & Observability | `diagnostic` | Runtime diagnostics | Read-only quality view |
+| `/admin/ai-advisor` | Runtime & Observability | `diagnostic` | Runtime diagnostics | Current conclusion first; AI evaluation advanced |
+| `/admin/service-settings` | Configuration | `configuration` | Service settings (Service settings tab) | Keep; one active configuration group at a time |
+| `/admin/site-compliance` | Configuration | `configuration` | Service settings (Site compliance tab) | One versioned Cloud disclosure document with fact-derived defaults, save/validate, and explicit publication; never expose drafts or credentials |
 
 ## 7. State Model
 

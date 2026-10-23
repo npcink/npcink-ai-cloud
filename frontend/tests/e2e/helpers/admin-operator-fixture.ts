@@ -1229,6 +1229,25 @@ export async function installAdminMocks(
       return;
     }
 
+    if (pathname === '/api/admin/support-requests' && route.request().method() === 'GET') {
+      await fulfillJson(route, buildAdminApiEnvelope({
+        items: [],
+        pagination: { total: 0, limit: 20, offset: 0, has_more: false },
+        summary: {
+          open: 0,
+          in_progress: 0,
+          critical: 0,
+          warning: 0,
+          monitor: 0,
+          stable: 0,
+          waiting_for_operator: 0,
+          waiting_for_customer: 0,
+          overdue: 0,
+        },
+      }));
+      return;
+    }
+
     if (pathname === '/api/admin/accounts') {
       if (route.request().method() === 'POST') {
         const payload = route.request().postDataJSON() as Record<string, unknown>;

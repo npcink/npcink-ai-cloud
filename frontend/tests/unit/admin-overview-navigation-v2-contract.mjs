@@ -18,6 +18,10 @@ assert.equal(
 
 assert.doesNotMatch(overview, /AdminWorkspaceSplit/, 'overview must not keep supporting evidence beside the primary work surface');
 assert.doesNotMatch(overview, /secondaryActionHref|secondaryActionLabel/, 'overview header must keep one primary next action');
+assert.match(overview, /const actionItems = operatorWatchItems;/, 'the first-screen action list must come from the backend operator projection');
+assert.match(overview, /data-ui="admin-overview-action-list"[\s\S]*actionItems\.map/, 'the first screen must render one row per projected action');
+assert.match(overview, /overviewActionHref\(item\.scope\)/, 'every action row must open the queue that owns its scope');
+assert.doesNotMatch(overview, /className="group block rounded-2xl border/, 'overview must not keep static destination cards above the data-driven action list');
 assert.match(
   overview,
   /<details[\s\S]*admin\.home_extended_evidence_title[\s\S]*items=\{evidenceWindowMetrics\}/,

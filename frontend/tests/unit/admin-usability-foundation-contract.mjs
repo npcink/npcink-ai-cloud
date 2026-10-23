@@ -5,6 +5,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 const read = (path) => readFileSync(fromFrontendRoot(path), 'utf8');
 
 const layoutSource = read('src/app/admin/layout.tsx');
+const navigationSource = read('src/features/admin/navigation.ts');
 const subscriptionSource = read('src/app/admin/subscriptions/[subscriptionId]/page.tsx');
 const siteSource = read('src/app/admin/sites/[siteId]/page.tsx');
 const supportSource = [
@@ -18,9 +19,9 @@ const horizontalScrollSource = read('src/components/admin/AdminHorizontalScroll.
 const latestOperationSource = read('src/components/admin/AdminLatestOperationDialog.tsx');
 
 assert.match(
-  layoutSource,
-  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
-  'service and subscription operations must keep independent navigation contexts'
+  navigationSource,
+  /commercialWorkspaceTabs[\s\S]*href: '\/admin\/coverage'[\s\S]*href: '\/admin\/subscriptions'/,
+  'service and subscription operations must keep sibling navigation contexts'
 );
 
 assert.match(subscriptionSource, /return <AdminRouteSkeleton \/>/, 'subscription detail must use the shared route skeleton');

@@ -243,7 +243,6 @@ export default function ExternalServicesPage() {
   return (
     <BackofficePageStack data-page-model="configuration" data-external-services-page>
       <BackofficePageHeader
-        eyebrow={copy('admin.external_services.eyebrow', '运行设置', 'Runtime settings')}
         title={copy('admin.external_services.title', '搜索与图片', 'Search & images')}
         description={copy('admin.external_services.description', '从固定服务清单配置网页搜索和图库来源，无需创建供应商记录。', 'Configure web search and stock-image sources from a fixed service directory; no supplier records need to be created.')}
         secondaryAction={<Link href="/admin/troubleshooting" className="btn btn-secondary">{copy('admin.external_services.open_diagnostics', '查看运行诊断', 'Open runtime diagnostics')}</Link>}

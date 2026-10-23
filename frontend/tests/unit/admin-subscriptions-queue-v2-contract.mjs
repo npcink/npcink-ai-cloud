@@ -38,8 +38,8 @@ assert.match(source, /buildAdminQueueReturnTo[\s\S]*currentQueueHref[\s\S]*build
 assert.doesNotMatch(source, /admin\.back_to_coverage/, 'the independent subscription workspace must not offer a parent-workspace return action');
 assert.match(
   layoutSource,
-  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
-  'subscription queue and detail routes must own their sidebar state'
+  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_commercial_records'[\s\S]*activePrefixes: \['\/admin\/coverage', '\/admin\/plans', '\/admin\/credit-packs'\]/,
+  'subscription queue and detail routes must own the commercial sidebar entry'
 );
 
 assert.match(source, /params\.set\('sort', sort\)[\s\S]*params\.set\('limit'[\s\S]*<ListPagination/, 'server-filtered results must send an explicit sort and keep pagination');

@@ -480,7 +480,6 @@ export default function VectorSettingsPage() {
   return (
     <BackofficePageStack data-page-model="configuration">
       <BackofficeConfigurationHeader
-        eyebrow={copy('admin.vector_settings.eyebrow', 'Site Knowledge', 'Site Knowledge')}
         title={copy('admin.vector_settings.title', '站点向量服务', 'Site vector service')}
         description={copy(
           'admin.vector_settings.description',

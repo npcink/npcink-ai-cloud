@@ -611,7 +611,6 @@ function SiteDetailContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
-        eyebrow={t('admin.site_health')}
         title={site.site_name || site.site_id}
         description={postureDescription}
         primaryAction={site.status === 'provisioning' ? (

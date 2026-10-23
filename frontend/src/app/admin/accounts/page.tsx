@@ -417,7 +417,6 @@ function AccountsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.accounts.directory_eyebrow', {}, 'Customer operations')}
         title={t('admin.accounts.list_title', {}, 'Customers')}
         description={t(
           'admin.accounts.list_desc',

@@ -39,7 +39,7 @@ assert.match(source, /global risk ordering before pagination/, 'the queue must s
 assert.match(source, /waiting_on[\s\S]*waiting_since/, 'the queue must present the server-owned waiting object and waiting age');
 
 assert.match(source, /data-ui="support-request-row"/, 'tickets must render as compact semantic table rows');
-assert.match(source, /AdminContextDrawer[\s\S]*open=\{Boolean\(selectedRequest\) && !editRequest\}/, 'ticket inspection must open on demand without reserving queue width');
+assert.match(source, /AdminContextDrawer[\s\S]*open=\{Boolean\(selectedRequest\) && !editRequest && !keyboardFocus\}/, 'ticket inspection must open on demand without reserving queue width or stealing keyboard Enter');
 assert.match(drawerSource, /data-ui="admin-context-drawer"[\s\S]*role="dialog"[\s\S]*aria-modal="true"/, 'the shared drawer must own accessible modal behavior');
 assert.doesNotMatch(source, /xl:grid-cols-\[minmax\(0,1\.65fr\)|id="support-request-inspector"/, 'the queue must not retain a persistent inspector column');
 assert.ok(source.indexOf('support_requests_customer_submission_title') < source.indexOf('support_requests_internal_handling_title'), 'customer submission must be separated from internal handling');
