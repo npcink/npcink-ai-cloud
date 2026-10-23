@@ -29,7 +29,8 @@ assert.doesNotMatch(source, /<BackofficeIdentifier value=\{subscription\.account
 assert.match(source, /customerDisplayName[\s\S]*normalizedName === accountId[\s\S]*startsWith\('acct_'\)[\s\S]*unnamedLabel/, 'technical account identifiers must not be promoted into customer-facing row titles');
 assert.match(source, /riskLevel === 'stable'[\s\S]*'hidden'/, 'normal rows must not render an explanatory risk block when explicitly included');
 assert.match(source, /AdminInspectorDrawer[\s\S]*aria-controls="subscription-inspector"[\s\S]*id="subscription-inspector"/, 'row inspection must open the shared accessible drawer');
-assert.match(source, /focus: subscription\.subscription_id/, 'inspector focus must persist in the URL');
+assert.match(source, /onClick=\{\(\) => inspect\(subscription\.subscription_id\)\}/, 'row inspection must select its exact subscription through the shared hook');
+assert.match(source, /onFocus: \(subscriptionId\) => updateQueueUrl\(\{ focus: subscriptionId \}\)/, 'the shared hook selection must persist subscription focus in the URL');
 assert.match(source, /focusedSubscriptionId\s*\?[\s\S]*find\([\s\S]*: null/, 'the queue must not select the first subscription until the operator asks');
 assert.doesNotMatch(source, /xl:grid-cols-\[minmax\(0,1\.65fr\)/, 'the subscription queue must remain full width while the drawer is closed');
 assert.match(source, /onClose=\{\(\) => updateQueueUrl\(\{ focus: null \}\)\}/, 'closing the drawer must clear only URL-backed focus');

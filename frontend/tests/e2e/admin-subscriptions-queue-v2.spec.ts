@@ -5,6 +5,18 @@ import {
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
 
+const pageErrors: string[] = [];
+const unhandledAdminRequests: string[] = [];
+test.beforeEach(async ({ page }) => {
+  pageErrors.length = 0;
+  unhandledAdminRequests.length = 0;
+  page.on('pageerror', error => pageErrors.push(error.message));
+});
+test.afterEach(async () => {
+  expect(pageErrors).toEqual([]);
+  expect(unhandledAdminRequests).toEqual([]);
+});
+
 const SUBSCRIPTIONS = [
   {
     subscription: {
@@ -79,7 +91,7 @@ const SUBSCRIPTIONS = [
 
 test('subscription risk queue persists server filters and inspector focus while retaining data on refresh failure', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installAdminMocks(page);
+  await installAdminMocks(page, { unhandledAdminRequests });
 
   let requestCount = 0;
   let failNextRefresh = false;
@@ -290,9 +302,9 @@ test('subscription risk queue persists server filters and inspector focus while 
   expect(mobileLayout).toEqual({ viewportWidth: 390, scrollWidth: 390 });
 });
 
-test('subscription queue keyboard flow moves focus and opens detail while the freeze note stays visible', async ({ page }, testInfo) => {
+test('subscription queue keyboard flow moves focus and opens detail without a retired freeze note', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installAdminMocks(page);
+  await installAdminMocks(page, { unhandledAdminRequests });
   await page.route('**/api/admin/subscriptions?*', async (route) => {
     const url = new URL(route.request().url());
     const risk = url.searchParams.get('risk') || 'all';
@@ -328,7 +340,7 @@ test('subscription queue keyboard flow moves focus and opens detail while the fr
   });
   await page.goto('/admin/subscriptions');
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(2);
-  await expect(page.locator('[data-ui="admin-workspace-navigation-note"]')).toContainText(/开发冻结|development freeze/i);
+  await expect(page.locator('[data-ui="admin-workspace-navigation-note"]')).toHaveCount(0);
   await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
 
   const customerInput = page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i);
@@ -370,4 +382,131 @@ test('subscription queue keyboard flow moves focus and opens detail while the fr
   await expect(page).toHaveURL(/focus=sub_past_due/);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/admin\/subscriptions\/sub_past_due\?return_to=/);
+});
+
+
+test('subscription mixed input pages and applies search without opening the keyboard selection', async ({ page }, testInfo) => {
+  await installAdminMocks(page, { unhandledAdminRequests });
+  const subscriptions = Array.from({ length: 21 }, (_, index) => ({
+    ...SUBSCRIPTIONS[1],
+    subscription: { ...SUBSCRIPTIONS[1].subscription, subscription_id: `sub_pointer_${index}` },
+    account: { account_id: `acct_pointer_${index}`, name: `Queue customer ${index}` },
+  }));
+  const requests: URLSearchParams[] = [];
+  await page.route('**/api/admin/subscriptions?*', async route => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    const customer = (params.get('customer') || '').toLowerCase();
+    const matches = subscriptions.filter(item => item.account.name.toLowerCase().includes(customer));
+    const offset = Number(params.get('offset') || 0);
+    const limit = Number(params.get('limit'));
+    expect(limit).toBe(20);
+    await route.fulfill({ json: buildAdminApiEnvelope({
+      items: matches.slice(offset, offset + limit), total: matches.length,
+      summary: { critical: 0, warning: matches.length, monitor: 0, stable: 0 },
+    }) });
+  });
+  await page.goto('/admin/subscriptions');
+  const rows = page.locator('[data-ui="subscription-queue-item"]');
+  const drawer = page.locator('[data-ui="admin-inspector-drawer"]');
+  await expect(rows).toHaveCount(20);
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_0/);
+  const pagination = page.getByRole('navigation', { name: /Pagination|分页/i, exact: true });
+  await pagination.getByRole('button', { name: /Next page|下一页/i }).click();
+  await expect(page).toHaveURL(/offset=20/);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(rows).toHaveCount(1);
+  await expect(drawer).toHaveCount(0);
+  expect(requests.at(-1)?.get('offset')).toBe('20');
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_20/);
+  await pagination.getByRole('button', { name: /Previous|上一页/i }).click();
+  await expect(page).not.toHaveURL(/offset=|focus=/);
+  await expect(rows).toHaveCount(20);
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_0/);
+  const search = page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i);
+  const beforeTyping = requests.length;
+  await search.click();
+  await expect(search).toBeFocused();
+  await search.fill('Queue customer');
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_0/);
+  expect(requests).toHaveLength(beforeTyping);
+  await search.fill('Queue customer');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(page).toHaveURL(/customer=Queue\+customer/);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(rows).toHaveCount(20);
+  await expect(drawer).toHaveCount(0);
+  expect(requests.at(-1)?.get('customer')).toBe('Queue customer');
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_0/);
+  const beforeRefresh = requests.length;
+  await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅/i }).click();
+  await expect.poll(() => requests.length).toBe(beforeRefresh + 1);
+  await expect(drawer).toHaveCount(0);
+  const observedCustomers = await page.evaluateHandle(() => {
+    const customers: string[] = [];
+    const observer = new MutationObserver(() => {
+      const customer = document.querySelector('#subscription-inspector > div > p')?.textContent;
+      if (customer && customers.at(-1) !== customer) customers.push(customer);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return { customers, stop: () => observer.disconnect() };
+  });
+  await rows.nth(1).getByRole('button', { name: /^Inspect$|^检查$/i }).click();
+  await expect(page).toHaveURL(/focus=sub_pointer_1(?:&|$)/);
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText('Queue customer 1');
+  const inspectedCustomers = await observedCustomers.evaluate(state => state.customers);
+  expect(inspectedCustomers).toEqual(['Queue customer 1']);
+  await observedCustomers.evaluate(state => state.stop());
+  await drawer.getByRole('button', { name: /Next item|下一条/i }).click();
+  await expect(page).toHaveURL(/focus=sub_pointer_2(?:&|$)/);
+  await expect(drawer).toContainText('Queue customer 2');
+  await drawer.getByRole('button', { name: /Previous item|上一条/i }).click();
+  await expect(page).toHaveURL(/focus=sub_pointer_1(?:&|$)/);
+  await expect(drawer).toContainText('Queue customer 1');
+  await testInfo.attach('inspected-records', { body: JSON.stringify({ customers: inspectedCustomers }), contentType: 'application/json' });
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  await expect(page).not.toHaveURL(/focus=/);
+  await page.screenshot({ path: testInfo.outputPath('subscription-mixed-input-returned.png'), fullPage: true });
+  await page.route('**/api/admin/subscriptions/sub_pointer_1', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const item = subscriptions[1];
+    await route.fulfill({ json: buildAdminApiEnvelope({
+      subscription: item.subscription, account: item.account, covered_sites: item.covered_sites,
+      plan: { plan_id: item.subscription.plan_id, display_name: item.coverage.package_alias },
+      plan_version: { plan_version_id: item.subscription.plan_version_id },
+      billing_snapshot_status: item.billing_snapshot_status, usage_totals: { runs: 0, tokens: 0, cost_cny: 12.25 },
+    }) });
+  });
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_pointer_0/);
+  const queueUrl = new URL(page.url());
+  const expectedReturnTo = `${queueUrl.pathname}${queueUrl.search}`;
+  const detail = rows.nth(1).getByRole('link', { name: /Inspect detail|查看详情/i });
+  const detailUrl = new URL((await detail.getAttribute('href'))!, page.url());
+  expect(detailUrl.searchParams.get('return_to')).toBe(expectedReturnTo);
+  await detail.click();
+  await expect(page.getByRole('heading', { name: /Subscription detail|订阅详情/i })).toBeVisible();
+  await page.getByRole('link', { name: /Back to subscription operations|返回订阅运营/i }).click();
+  await expect(page).toHaveURL(`${queueUrl.origin}${expectedReturnTo}`);
+  // Returning to a URL-selected record retains the existing inspector behavior.
+  await expect(drawer).toContainText('Queue customer 0');
+  await page.keyboard.press('Escape');
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await page.screenshot({ path: testInfo.outputPath(`subscription-mixed-pc-${width}.png`), fullPage: true });
+  }
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('option', { name: 'English', exact: true }).click();
+  if (!await page.locator('html').evaluate(element => element.classList.contains('dark'))) {
+    await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  }
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await page.screenshot({ path: testInfo.outputPath('subscription-mixed-en-dark-1280.png'), fullPage: true });
 });

@@ -164,7 +164,7 @@ export function SupportRequestsWorkspace() {
     policy: supportReturnPolicy,
   });
 
-  const keyboardFocus = useAdminQueueKeyboard({
+  const { keyboardFocus, inspect } = useAdminQueueKeyboard({
     itemIds: items.map((item) => item.request_id),
     focusedId: focusedRequestId,
     enabled: !editRequest,
@@ -415,7 +415,7 @@ export function SupportRequestsWorkspace() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-2">
-                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; updateQueueUrl({ focus: item.request_id }); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
+                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; inspect(item.request_id); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
                         <Link
                           className="btn btn-primary btn-sm"
                           href={supportRequestDetailHref(item.request_id)}

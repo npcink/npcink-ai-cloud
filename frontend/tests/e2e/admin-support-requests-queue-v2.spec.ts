@@ -422,15 +422,14 @@ test('ticket paging keeps filters and sort while clearing row focus', async ({ p
   await page.keyboard.press('j');
   await expect(page).toHaveURL(/focus=/);
   const pagination = page.getByRole('navigation', { name: /Pagination|分页/i, exact: true });
-  // Keep the keyboard-owned selection: pointerdown deliberately releases it
-  // in the shared queue hook and opens the existing inspector before click.
   const nextPage = pagination.getByRole('button', { name: /Next page|下一页/i });
-  await nextPage.focus();
-  await nextPage.press('Enter');
+  await nextPage.click();
   await expect(page).toHaveURL(/offset=10/);
   await expect(page).not.toHaveURL(/focus=/);
   await expect(rows).toHaveCount(10);
   await expect(rows.first()).toContainText('Queue sample 10');
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toHaveCount(0);
+  expect(mocks.getRequests().at(-1)?.get('offset')).toBe('10');
   await page.reload();
   await expect(rows.first()).toContainText('Queue sample 10');
   await expect(page.getByLabel(/Search tickets|搜索工单/i)).toHaveValue('Queue sample');
@@ -518,4 +517,110 @@ test('ticket Quiet PC preview keeps real language and theme controls', async ({ 
       { id: 'pc-width-and-theme', status: 'pass', evidence: '1440 and 1280 PC views keep actions visible without document overflow; real theme control selects dark' },
     ],
   });
+});
+
+
+test('ticket mixed input keeps search and explicit inspection separate from keyboard selection', async ({ page }, testInfo) => {
+  const mocks = await installSupportQueueMocks(page);
+  await page.goto('/admin/support-requests');
+  const rows = page.locator('[data-ui="support-request-row"]');
+  const drawer = page.locator('[data-ui="admin-context-drawer"]');
+  await expect(rows).toHaveCount(4);
+  const drawerEvidence = await page.evaluateHandle(() => {
+    const openings: string[] = [];
+    const observer = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node instanceof Element && (node.matches('[data-ui="admin-context-drawer"]') || node.querySelector('[data-ui="admin-context-drawer"]'))) openings.push('drawer');
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return { openings, stop: () => observer.disconnect() };
+  });
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  const search = page.getByLabel(/Search tickets|搜索工单/i);
+  const beforeTyping = mocks.getRequestCount();
+  await search.click();
+  await expect(search).toBeFocused();
+  await search.fill('Site connection');
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  expect(mocks.getRequestCount()).toBe(beforeTyping);
+  await search.fill('Site connection');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(page).toHaveURL(/q=Site\+connection/);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(rows).toHaveCount(1);
+  await expect(drawer).toHaveCount(0);
+  expect(mocks.getRequests().at(-1)?.get('q')).toBe('Site connection');
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_open_site/);
+  const beforeRefresh = mocks.getRequestCount();
+  await page.getByRole('button', { name: /Refresh tickets|刷新工单/i }).click();
+  await expect.poll(() => mocks.getRequestCount()).toBe(beforeRefresh + 1);
+  await expect(drawer).toHaveCount(0);
+  expect(await drawerEvidence.evaluate(state => state.openings)).toEqual([]);
+  await drawerEvidence.evaluate(state => state.stop());
+  const inspect = rows.getByRole('button', { name: /^Inspect$|^检查$/i });
+  await inspect.click();
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText('Site connection needs review');
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(inspect).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('ticket-mixed-input-returned.png'), fullPage: true });
+});
+
+
+test('ticket keyboard selection A inspects only B and yields to its edit dialog', async ({ page }, testInfo) => {
+  await installSupportQueueMocks(page);
+  await page.route('**/api/admin/support-requests/sr_open_site', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    await route.fulfill({ json: buildAdminApiEnvelope({ request: initialTickets()[1], messages: [], attachments: [], feedback: null }) });
+  });
+  await page.goto('/admin/support-requests');
+  const rows = page.locator('[data-ui="support-request-row"]');
+  const drawer = page.locator('[data-ui="admin-context-drawer"]');
+  await expect(rows).toHaveCount(4);
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  const observedTitles = await page.evaluateHandle(() => {
+    const titles: string[] = [];
+    const observer = new MutationObserver(() => {
+      const title = document.querySelector('#support-request-drawer-title')?.textContent;
+      if (title && titles.at(-1) !== title) titles.push(title);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return { titles, stop: () => observer.disconnect() };
+  });
+  const secondInspect = rows.nth(1).getByRole('button', { name: /^Inspect$|^检查$/i });
+  await secondInspect.click();
+  await expect(page).toHaveURL(/focus=sr_open_site/);
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator('#support-request-drawer-title')).toHaveText('Site connection needs review');
+  const inspectedTitles = await observedTitles.evaluate(state => state.titles);
+  expect(inspectedTitles).toEqual(['Site connection needs review']);
+  await observedTitles.evaluate(state => state.stop());
+  await page.screenshot({ path: testInfo.outputPath('ticket-explicit-inspect-b.png'), fullPage: true });
+  await drawer.getByRole('button', { name: /Edit handling|编辑处理/i }).click();
+  const editor = page.getByRole('dialog', { name: /Edit internal handling|编辑内部处理/i });
+  await expect(editor).toBeVisible();
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_open_site/);
+  await page.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  await expect(secondInspect).toBeFocused();
+  await secondInspect.blur();
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  await rows.nth(1).getByRole('link', { name: /Open conversation|打开会话/i }).click();
+  await expect(page).toHaveURL(/\/admin\/support-requests\/sr_open_site\?return_to=/);
+  await page.getByRole('link', { name: /^Back$|^返回$/i }).click();
+  await expect(page).toHaveURL(/\/admin\/support-requests\?focus=sr_open_site/);
+  await expect(drawer).toContainText('Site connection needs review');
+  await testInfo.attach('inspected-records', { body: JSON.stringify({ titles: inspectedTitles }), contentType: 'application/json' });
 });
