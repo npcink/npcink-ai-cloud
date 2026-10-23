@@ -50,6 +50,7 @@ from app.core.models import (
     PlanVersion,
     PluginObservabilityEvent,
     PortalLoginCode,
+    PortalMutationIdempotencyReceipt,
     PortalOAuthState,
     Principal,
     PrincipalSiteBinding,
@@ -90,9 +91,7 @@ PORTAL_INTERNAL_IDENTITY_FIELDS = {
     "role",
     "allowed_actions",
 }
-PORTAL_QQ_INTERNAL_IDENTITY_FIELDS = (
-    PORTAL_INTERNAL_IDENTITY_FIELDS - {"allowed_actions"}
-) | {
+PORTAL_QQ_INTERNAL_IDENTITY_FIELDS = (PORTAL_INTERNAL_IDENTITY_FIELDS - {"allowed_actions"}) | {
     "member_ref",
     "member_refs",
     "site_admin_ref",
@@ -879,14 +878,16 @@ def test_commercial_order_limit_is_shared_by_account_and_preserves_replay(tmp_pa
             receipt.created_at = datetime.now(UTC) - timedelta(seconds=61)
             receipt.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         session.commit()
-    recovered = client.post(
-        requests[1][0],
-        json=requests[1][1],
-        headers=build_portal_headers(
-            principal_id=principal_id, site_id=site_id, idempotency_key="after-window"
-        ),
-    )
-    assert recovered.status_code == 200, recovered.text
+    # Retry each original rejected key, not a new key after the window expires.
+    for index, (path, payload) in enumerate(requests):
+        recovered = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"limited-{index}"
+            ),
+        )
+        assert recovered.status_code == 200, recovered.text
 
 
 def test_commercial_emergency_stop_masks_catalogs_blocks_new_writes_and_recovers(
@@ -938,28 +939,243 @@ def test_commercial_emergency_stop_masks_catalogs_blocks_new_writes_and_recovers
     restored = client.get("/portal/v1/account/plan-offers", headers=headers).json()["data"]
     assert restored["commercial_available"] is True
     assert len(restored["items"]) == 2
+    for index, (path, payload) in enumerate(
+        [
+            ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+            ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+            (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+        ]
+    ):
+        recovered = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id,
+                site_id=site_id,
+                idempotency_key=f"stopped-{index}",
+            ),
+        )
+        assert recovered.status_code == 200, recovered.text
     trial = client.post(
         "/portal/v1/account/plan-trials",
         json={"tier_id": "plus"},
         headers=build_portal_headers(
-            principal_id=principal_id, site_id=site_id, idempotency_key="trial-after-recovery"
+            principal_id=principal_id, site_id=site_id, idempotency_key="stopped-3"
         ),
     )
     assert trial.status_code == 200, trial.text
     assert trial.json()["data"]["subscription"]["status"] == "trialing"
     with get_session(database_url) as session:
-        audit = session.scalar(select(ServiceAuditEvent).where(
-            ServiceAuditEvent.account_id == "guard_stop",
-            ServiceAuditEvent.event_kind == "subscription.paid_trial.start_or_upgrade",
-        ))
+        audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.account_id == "guard_stop",
+                ServiceAuditEvent.event_kind == "subscription.paid_trial.start_or_upgrade",
+            )
+        )
         assert audit is not None
-        snapshot = session.scalar(select(AccountEntitlementSnapshot).where(
-            AccountEntitlementSnapshot.account_id == "guard_stop",
-            AccountEntitlementSnapshot.status == "active",
-        ))
+        snapshot = session.scalar(
+            select(AccountEntitlementSnapshot).where(
+                AccountEntitlementSnapshot.account_id == "guard_stop",
+                AccountEntitlementSnapshot.status == "active",
+            )
+        )
         assert snapshot is not None
         assert snapshot.plan_version_id == "plus_v1"
         assert snapshot.budgets_json["max_ai_credits_per_period"] == 3000
+
+
+@pytest.mark.parametrize("order_kind", ["subscription", "account_pack", "site_pack"])
+@pytest.mark.parametrize("receipt_state", ["missing", "expired", "unfinished"])
+@pytest.mark.parametrize("legacy_order", [False, True])
+def test_commercial_durable_order_replays_after_receipt_loss_during_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    order_kind: str,
+    receipt_state: str,
+    legacy_order: bool,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "durable_replay")
+    principal_id = str(grant["principal_id"])
+    site_id = str(grant["portal_site_id"])
+    path, payload = {
+        "subscription": ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+        "account_pack": ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+        "site_pack": (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+    }[order_kind]
+    key = "durable-original-key"
+    headers = build_portal_headers(principal_id=principal_id, site_id=site_id, idempotency_key=key)
+    created = client.post(path, json=payload, headers=headers)
+    assert created.status_code == 200, created.text
+    original_data = created.json()["data"]
+    original_id = original_data["order"]["order_id"]
+    with get_session(database_url) as session:
+        receipt = session.scalar(
+            select(PortalMutationIdempotencyReceipt).where(
+                PortalMutationIdempotencyReceipt.principal_id == principal_id,
+                PortalMutationIdempotencyReceipt.idempotency_key == key,
+            )
+        )
+        assert receipt is not None
+        if receipt_state == "missing":
+            session.delete(receipt)
+        elif receipt_state == "expired":
+            receipt.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        else:
+            receipt.state = "processing"
+            receipt.response_status = None
+            receipt.response_body_ciphertext = None
+            receipt.completed_at = None
+            receipt.claim_token = "abandoned-claim"
+            receipt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        order = session.scalar(select(PaymentOrder).where(PaymentOrder.order_id == original_id))
+        assert order is not None
+        if legacy_order:
+            metadata = dict(order.metadata_json)
+            metadata.pop("portal_request_fingerprint", None)
+            order.metadata_json = metadata
+        session.commit()
+
+    def unexpected_new_order(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("durable replay must not invoke the new-order limiter or gateway")
+
+    monkeypatch.setattr(
+        portal_routes, "enforce_portal_subscription_order_rate_limit", unexpected_new_order
+    )
+    from app.domain.commercial.mixins import _payment_mixin, _subscription_commerce_mixin
+
+    monkeypatch.setattr(_payment_mixin, "get_payment_gateway_provider", unexpected_new_order)
+    monkeypatch.setattr(
+        _subscription_commerce_mixin, "get_payment_gateway_provider", unexpected_new_order
+    )
+    client.app.state.services.settings.commercial_emergency_stop = True
+    replay = client.post(path, json=payload, headers=headers)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"] == original_data
+    changed_payload = {
+        **payload,
+        ("offer_id" if order_kind == "subscription" else "pack_id"): (
+            "plus_monthly_v1" if order_kind == "subscription" else "pack_medium"
+        ),
+    }
+    conflict = client.post(path, json=changed_payload, headers=headers)
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error_code"] == "portal.idempotency_conflict"
+    # Check the durable scope itself, independently of the newly rebuilt receipt.
+    from app.domain.commercial.audit_context import ServiceAuditContext
+    from app.domain.commercial.errors import CommercialConflictError
+    from app.domain.portal_idempotency import build_portal_business_idempotency_key
+
+    context = ServiceAuditContext(
+        trace_id="",
+        method="POST",
+        path=path,
+        idempotency_key=build_portal_business_idempotency_key(
+            principal_id=principal_id, idempotency_key=key
+        ),
+    )
+    service = CommercialService(database_url, settings=client.app.state.services.settings)
+    service.upsert_account(account_id="another_account", name="Other", bind_default_free=True)
+    for account, site in [("another_account", site_id), ("durable_replay", "another_site")]:
+        with pytest.raises(CommercialConflictError) as caught:
+            if order_kind == "subscription":
+                service.create_account_subscription_payment_order(
+                    account_id=account,
+                    site_id=site,
+                    offer_id="pro_monthly_v1",
+                    audit_context=context,
+                )
+            else:
+                service.create_credit_pack_payment_order(
+                    account_id=account,
+                    site_id=site,
+                    pack_id="pack_small",
+                    audit_context=context,
+                )
+        assert caught.value.error_code == "portal.idempotency_conflict"
+    if order_kind != "subscription":
+        from app.domain.portal_idempotency import build_portal_request_fingerprint
+
+        alternate_path = (
+            f"/portal/v1/sites/{site_id}/credit-pack-orders"
+            if order_kind == "account_pack"
+            else "/portal/v1/account/credit-pack-orders"
+        )
+        context.path = alternate_path
+        context.request_fingerprint = build_portal_request_fingerprint(
+            method="POST",
+            route=alternate_path,
+            body=payload,
+            site_id=site_id,
+        )
+        with pytest.raises(CommercialConflictError) as route_conflict:
+            service.create_credit_pack_payment_order(
+                account_id="durable_replay",
+                site_id=site_id,
+                pack_id="pack_small",
+                audit_context=context,
+            )
+        assert route_conflict.value.error_code == "portal.idempotency_conflict"
+    with get_session(database_url) as session:
+        assert session.scalar(select(func.count()).select_from(PaymentOrder)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ReplayReceipt)
+                .where(
+                    ReplayReceipt.scope_kind == "portal_order_account",
+                )
+            )
+            == 1
+        )
+
+
+def test_commercial_unfinished_claim_without_order_still_fails_closed(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "unfinished_order")
+    principal_id = str(grant["principal_id"])
+    site_id = str(grant["portal_site_id"])
+    from app.domain.portal_idempotency import (
+        build_portal_request_fingerprint,
+        claim_portal_mutation,
+    )
+
+    path = "/portal/v1/account/credit-pack-orders"
+    payload = {"pack_id": "pack_small"}
+    settings = client.app.state.services.settings
+    claim_portal_mutation(
+        database_url=database_url,
+        principal_id=principal_id,
+        idempotency_key="unfinished",
+        method="POST",
+        route=path,
+        request_fingerprint=build_portal_request_fingerprint(
+            method="POST", route=path, body=payload, site_id=site_id
+        ),
+        now=datetime.now(UTC) - timedelta(seconds=120),
+        lease_seconds=30,
+        ttl_seconds=86400,
+        settings=settings,
+    )
+    response = client.post(
+        path,
+        json=payload,
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="unfinished"
+        ),
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "portal.idempotency_indeterminate"
+    with get_session(database_url) as session:
+        assert session.scalar(select(func.count()).select_from(PaymentOrder)) == 0
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ReplayReceipt)
+                .where(ReplayReceipt.scope_kind == "portal_order_account")
+            )
+            == 0
+        )
 
 
 def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
@@ -1772,7 +1988,6 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     ) == {"action": ["npcink_cloud_addon_complete_auth"]}
 
     dispose_engine(database_url)
-
 
 
 def test_portal_addon_connection_rejects_cross_account_membership_escalation(
@@ -2715,7 +2930,6 @@ def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_ow
         assert bindings[1].released_at is None
 
     dispose_engine(database_url)
-
 
 
 def test_site_relink_policy_change_is_prospective_until_site_reset(
@@ -6275,7 +6489,6 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     dispose_engine(database_url)
 
 
-
 def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> None:
     database_url, client = _build_client(
         tmp_path,
@@ -7067,7 +7280,6 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     assert expired_session_response.json()["error_code"] == "auth.portal_session_required"
 
     dispose_engine(database_url)
-
 
 
 def test_portal_account_routes_use_selected_site_account_for_multi_account_session(

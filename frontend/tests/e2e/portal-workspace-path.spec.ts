@@ -1742,6 +1742,7 @@ test('commercial emergency stop blocks package dialogs and preserves account his
   await page.goto('/portal/billing?action=credits');
   const creditDialog = page.getByRole('dialog', { name: /AI credit packs|AI 积分包/i });
   await expect(creditDialog.getByRole('radio')).toHaveCount(0);
+  await expect(creditDialog.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
   await expect(creditDialog.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeDisabled();
   await page.goto('/portal/account');
   await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();

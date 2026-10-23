@@ -354,9 +354,10 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
     void handleCreateCreditPackOrder(selectedCreditPackId);
   };
 
+  const commercialPausedMessage = t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.');
   const commercialPausedNotice = !salesAvailable ? (
     <p role="status" className="text-sm text-slate-600 dark:text-slate-300">
-      {t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.')}
+      {commercialPausedMessage}
     </p>
   ) : null;
 
@@ -498,7 +499,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         packs={availableCreditPacks}
         selectedPackId={selectedCreditPackId}
         pendingPackId={creditPackPending}
-        error={creditPackError}
+        error={creditPackError || (!salesAvailable ? commercialPausedMessage : null)}
         onClose={() => closeCommercialDialog()}
         onSelect={setSelectedCreditPackId}
         onConfirm={handleConfirmCreditPackSelection}

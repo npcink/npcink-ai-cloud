@@ -92,9 +92,16 @@ def test_concurrent_account_order_limit_on_disposable_postgres(
     enforce_portal_subscription_order_rate_limit(request, account_id="same_account")
 
 
-@pytest.mark.parametrize("scenario", [
-    "shared_trial", "new_plus", "new_pro", "withdrawal_recovery", "stop_replay_refund",
-])
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "shared_trial",
+        "new_plus",
+        "new_pro",
+        "withdrawal_recovery",
+        "stop_replay_refund",
+    ],
+)
 def test_commerce_regressions_on_disposable_postgres(
     disposable_postgres_url: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -118,3 +125,46 @@ def test_commerce_regressions_on_disposable_postgres(
         sales.test_emergency_recovery_keeps_withdrawn_offers_and_packs_unavailable(tmp_path)
     else:
         commerce.test_emergency_stop_allows_existing_settlement_replay_and_refunds(tmp_path)
+
+
+@pytest.mark.parametrize("scenario", ["retry_limit", "stop_recovery", "unfinished"])
+def test_portal_order_recovery_on_disposable_postgres(
+    disposable_postgres_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    from tests.api import test_portal_routes as portal
+
+    monkeypatch.setattr(portal, "_sqlite_url", lambda _: disposable_postgres_url)
+    if scenario == "retry_limit":
+        portal.test_commercial_order_limit_is_shared_by_account_and_preserves_replay(tmp_path)
+    elif scenario == "stop_recovery":
+        portal.test_commercial_emergency_stop_masks_catalogs_blocks_new_writes_and_recovers(
+            tmp_path
+        )
+    else:
+        portal.test_commercial_unfinished_claim_without_order_still_fails_closed(tmp_path)
+
+
+@pytest.mark.parametrize("order_kind", ["subscription", "account_pack", "site_pack"])
+@pytest.mark.parametrize("receipt_state", ["missing", "expired", "unfinished"])
+@pytest.mark.parametrize("legacy_order", [False, True])
+def test_portal_durable_order_replay_on_disposable_postgres(
+    disposable_postgres_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    order_kind: str,
+    receipt_state: str,
+    legacy_order: bool,
+) -> None:
+    from tests.api import test_portal_routes as portal
+
+    monkeypatch.setattr(portal, "_sqlite_url", lambda _: disposable_postgres_url)
+    portal.test_commercial_durable_order_replays_after_receipt_loss_during_stop(
+        tmp_path,
+        monkeypatch,
+        order_kind,
+        receipt_state,
+        legacy_order,
+    )

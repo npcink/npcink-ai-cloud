@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -536,6 +537,62 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def _assert_commercial_order_replay(
+        self,
+        *,
+        repository: Any,
+        order: PaymentOrder,
+        account_id: str,
+        site_id: str | None,
+        provider: str,
+        purchase_kind: str,
+        item_id: str,
+        audit_context: ServiceAuditContext | None,
+    ) -> None:
+        metadata = order.metadata_json if isinstance(order.metadata_json, dict) else {}
+        pack = metadata.get("credit_pack")
+        stored_item = (
+            (pack.get("pack_id") if isinstance(pack, dict) else None)
+            if purchase_kind == "credit_pack"
+            else metadata.get("offer_id")
+        )
+        matches = (
+            order.account_id == account_id
+            and str(order.site_id or "") == str(site_id or "").strip()
+            and order.provider == provider
+            and metadata.get("purchase_kind") == purchase_kind
+            and stored_item == item_id
+        )
+        if audit_context is not None and audit_context.request_fingerprint:
+            stored_fingerprint = metadata.get("portal_request_fingerprint")
+            if stored_fingerprint:
+                matches = matches and stored_fingerprint == audit_context.request_fingerprint
+            else:
+                # Legacy orders predate durable fingerprints. Require the original
+                # route as well as the semantic order scope before safe replay.
+                events = repository.list_service_audit_events(
+                    idempotency_key=audit_context.idempotency_key,
+                    scope_id=(
+                        metadata.get("subscription_order_id")
+                        if purchase_kind == "subscription_plan"
+                        else order.order_id
+                    ),
+                    outcome="succeeded",
+                    limit=1,
+                )
+                event = events[0] if events else None
+                matches = (
+                    matches
+                    and event is not None
+                    and event.path == audit_context.path
+                    and event.method == audit_context.method
+                )
+        if not matches:
+            raise CommercialConflictError(
+                "portal.idempotency_conflict",
+                "Idempotency-Key was already used for a different order request",
+            )
+
     def create_credit_pack_payment_order(
         self,
         *,
@@ -544,6 +601,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         provider: str = "alipay",
         site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
+        new_order_guard: Callable[[], None] | None = None,
+        replay_only: bool = False,
     ) -> dict[str, object]:
         service = cast(Any, self)
         normalized_provider = self._normalize_payment_provider(provider)
@@ -554,8 +613,25 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             if idempotency_key:
                 existing = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing is not None:
+                    service._assert_commercial_order_replay(
+                        repository=repository,
+                        order=existing,
+                        account_id=account_id,
+                        site_id=site_id,
+                        provider=normalized_provider,
+                        purchase_kind="credit_pack",
+                        item_id=pack_id,
+                        audit_context=audit_context,
+                    )
                     return self._serialize_credit_pack_payment_order(existing)
+            if replay_only:
+                raise CommercialConflictError(
+                    "portal.idempotency_indeterminate",
+                    "The original Portal request requires reconciliation",
+                )
             self._assert_commercial_sales_available()
+            if new_order_guard is not None:
+                new_order_guard()
             if repository.get_account(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -601,6 +677,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "credit_expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
                 "grant_policy": "payment_success_grants_paid_credit_until_expiry",
             }
+            if audit_context is not None and audit_context.request_fingerprint:
+                metadata["portal_request_fingerprint"] = audit_context.request_fingerprint
             gateway = get_payment_gateway_provider(
                 normalized_provider,
                 config=self._payment_gateway_runtime_config(normalized_provider),

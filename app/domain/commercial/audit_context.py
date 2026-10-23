@@ -11,3 +11,4 @@ class ServiceAuditContext:
     path: str
     actor_kind: str = "internal_token"
     actor_ref: str = "internal"
+    request_fingerprint: str = ""

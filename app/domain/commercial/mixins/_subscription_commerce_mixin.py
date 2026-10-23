@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
@@ -372,6 +373,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         provider: str = "alipay",
         site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
+        new_order_guard: Callable[[], None] | None = None,
+        replay_only: bool = False,
     ) -> dict[str, object]:
         service = cast(Any, self)
         now = service.now_factory()
@@ -392,6 +395,16 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             if idempotency_key:
                 existing_payment = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing_payment is not None:
+                    service._assert_commercial_order_replay(
+                        repository=repository,
+                        order=existing_payment,
+                        account_id=account_id,
+                        site_id=site_id,
+                        provider=normalized_provider,
+                        purchase_kind="subscription_plan",
+                        item_id=offer_id,
+                        audit_context=audit_context,
+                    )
                     existing_subscription_order = (
                         repository.get_subscription_order_by_payment_order(
                             existing_payment.order_id
@@ -404,7 +417,14 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                         ),
                     }
 
+            if replay_only:
+                raise CommercialConflictError(
+                    "portal.idempotency_indeterminate",
+                    "The original Portal request requires reconciliation",
+                )
             self._assert_commercial_sales_available()
+            if new_order_guard is not None:
+                new_order_guard()
             self._ensure_standard_plan_offers_in_session(repository)
 
             service._reconcile_account_subscription_state_in_session(
@@ -496,6 +516,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "source_subscription": self._subscription_snapshot(current),
                 "created_at": service._serialize_datetime(now),
             }
+            if audit_context is not None and audit_context.request_fingerprint:
+                metadata["portal_request_fingerprint"] = audit_context.request_fingerprint
             gateway = get_payment_gateway_provider(
                 normalized_provider,
                 config=service._payment_gateway_runtime_config(normalized_provider),
