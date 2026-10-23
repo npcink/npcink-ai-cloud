@@ -230,8 +230,13 @@ export function PortalPaymentOrderHistory({
     );
   };
 
-  // No rows / failed load with nothing to list: keep a single muted line, never a fat empty accordion.
-  if (!isLoading && orders.length === 0) {
+  // Account truly has no orders: quiet one-liner. Filtered tabs with 0 rows keep
+  // the panel + status filter so the user can switch without losing structure.
+  const accountOrderTotal =
+    Number(counts.all || 0)
+    || Number(counts.pending || 0) + Number(counts.paid || 0) + Number(counts.closed || 0);
+  const accountHasOrders = accountOrderTotal > 0;
+  if (!isLoading && orders.length === 0 && !accountHasOrders && statusGroup === 'all') {
     return (
       <p
         className="px-1 text-sm text-slate-500 dark:text-slate-400"
@@ -249,10 +254,32 @@ export function PortalPaymentOrderHistory({
     );
   }
 
+  const onStatusFilterChange = (next: PortalPaymentOrderStatusGroup) => {
+    onStatusGroupChange(next);
+    onOffsetChange(0);
+    onCancelConfirmChange(null);
+  };
+  const renderStatusFilterSelect = (className: string) => (
+    <select
+      className={className}
+      value={statusGroup}
+      disabled={isLoading}
+      onChange={(event) => onStatusFilterChange(event.target.value as PortalPaymentOrderStatusGroup)}
+      data-portal-account="payment-orders-status-filter"
+      aria-label={t('portal.usage.payment_orders_filter_label', {}, 'Filter payment orders')}
+    >
+      {tabs.map((tab) => (
+        <option key={tab.id} value={tab.id}>
+          {tab.label} ({counts[tab.id] || 0})
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <details
       className="group overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-none dark:border-slate-800 dark:bg-slate-950"
-      open={Number(counts.pending || 0) > 0}
+      open
       data-portal-account="payment-orders"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
@@ -289,37 +316,18 @@ export function PortalPaymentOrderHistory({
         <span aria-hidden="true" className="shrink-0 text-lg text-slate-500 transition-transform group-open:rotate-180">⌄</span>
       </summary>
       <div className="border-t border-slate-200 px-5 pb-5 pt-3 dark:border-slate-800">
-        <div
-          role="tablist"
-          aria-label={t('portal.usage.payment_orders_filter_label', {}, 'Filter payment orders')}
-          className="inline-flex max-w-full gap-1 overflow-x-auto rounded-[0.875rem] bg-slate-100 p-1 dark:bg-slate-900"
-        >
-          {tabs.map((tab) => {
-            const selected = tab.id === statusGroup;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                className={`min-h-11 whitespace-nowrap rounded-[0.625rem] px-3 py-2 text-sm font-medium transition-colors ${
-                  selected
-                    ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300'
-                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                }`}
-                onClick={() => {
-                  onStatusGroupChange(tab.id);
-                  onOffsetChange(0);
-                  onCancelConfirmChange(null);
-                }}
-              >
-                {tab.label} <span className="tabular-nums">{counts[tab.id] || 0}</span>
-              </button>
-            );
-          })}
-        </div>
-        {error ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
-        <div className="mt-3" role="tabpanel">
+        {error ? <p className="mb-3 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
+        {/* When the table is hidden (loading / filter empty), keep the status filter reachable on desktop too. */}
+        {orders.length === 0 ? (
+          <div className="mb-3" data-portal-account="payment-orders-status-filter-bar">
+            {renderStatusFilterSelect('input h-8 w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
+          </div>
+        ) : (
+          <div className="mb-3 lg:hidden" data-portal-account="payment-orders-status-filter-bar">
+            {renderStatusFilterSelect('input h-8 w-max max-w-full py-0.5 text-xs font-medium')}
+          </div>
+        )}
+        <div role="region" aria-label={t('portal.usage.payment_orders_title', {}, 'Payment orders')}>
           {isLoading && orders.length === 0 ? (
             <PortalLoadingState message={t('portal.usage.payment_orders_loading', {}, 'Loading payment orders...')} compact />
           ) : orders.length > 0 ? (
@@ -331,8 +339,15 @@ export function PortalPaymentOrderHistory({
                   </caption>
                   <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
-                      <th scope="col" className="w-[42%] px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
-                      <th scope="col" className="w-[16%] px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
+                      <th scope="col" className="w-[40%] px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
+                      <th scope="col" className="w-[18%] px-3 py-3 font-medium normal-case tracking-normal">
+                        <span className="flex flex-col items-start gap-1.5">
+                          <span className="text-[0.65rem] font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                            {t('common.status', {}, 'Status')}
+                          </span>
+                          {renderStatusFilterSelect('input h-8 w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
+                        </span>
+                      </th>
                       <th scope="col" className="w-[14%] px-3 py-3 text-right font-medium">{t('portal.usage.payment_order_purchase_amount', {}, 'Amount')}</th>
                       <th scope="col" className="w-[18%] px-3 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
                       {hasActionableRows ? (

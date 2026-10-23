@@ -590,7 +590,7 @@ export function PortalSiteUsageDialog({
   };
   const renderFeatureFilterSelect = () => (
     <select
-      className="input h-8 min-w-32 max-w-full py-0.5 text-xs font-medium"
+      className="input h-8 w-max max-w-[10.5rem] py-0.5 text-xs font-medium"
       value={creditEventFeature}
       disabled={creditEventLoading || dayLoading}
       onChange={(event) => onFeatureFilterChange(event.target.value as PortalCreditEventFeature)}
@@ -705,15 +705,30 @@ export function PortalSiteUsageDialog({
             ))}
           </div>
         ) : selectedCreditEvent ? (
-          <div className="space-y-6" data-portal-usage="site-dialog-event-detail">
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={closeCreditEvent}
-            >
-              {t('common.back', {}, 'Back')}
-            </button>
-            <dl className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-4" data-portal-usage="site-dialog-event-detail">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                onClick={closeCreditEvent}
+                data-portal-usage="event-detail-back"
+              >
+                <span aria-hidden="true">←</span>
+                {t('common.back', {}, 'Back')}
+              </button>
+              {selectedCreditEvent.support_reference ? (
+                <p
+                  className="max-w-full truncate font-mono text-[11px] leading-5 text-slate-400 dark:text-slate-500"
+                  title={selectedCreditEvent.support_reference}
+                  data-portal-usage="event-detail-support-ref"
+                >
+                  {t('portal.usage.credit_events_support_reference', {}, 'Reference')}
+                  {' · '}
+                  {selectedCreditEvent.support_reference}
+                </p>
+              ) : null}
+            </div>
+            <dl className="grid gap-3 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</dt>
                 <dd className="mt-1 text-lg font-semibold">
@@ -726,10 +741,10 @@ export function PortalSiteUsageDialog({
               </div>
             </dl>
             <section>
-              <h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
-              <div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+              <h3 className="text-sm font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
+              <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
                 {selectedCreditEvent.components.map((component) => (
-                  <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm">
+                  <div key={component.key} className="flex justify-between gap-4 px-4 py-2.5 text-sm">
                     <span>{t(`portal.usage.credit_events_component_${component.key}`)}</span>
                     <strong>{formatCreditPoints(component.ai_credits)}</strong>
                   </div>
@@ -745,12 +760,6 @@ export function PortalSiteUsageDialog({
                 </p>
               ) : null}
             </section>
-            <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-              <summary className="cursor-pointer font-medium">{t('portal.support_information', {}, 'Support information')}</summary>
-              <p className="mt-3 break-all text-sm text-slate-500">
-                {t('portal.usage.credit_events_support_reference', {}, 'Reference')}: {selectedCreditEvent.support_reference}
-              </p>
-            </details>
           </div>
         ) : (
             <>

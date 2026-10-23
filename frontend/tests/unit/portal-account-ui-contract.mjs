@@ -94,8 +94,13 @@ assert.doesNotMatch(
 );
 assert.match(
   accountSource,
-  /portal\.account\.login_security_title[\s\S]*portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*<details[\s\S]*other_login_methods_title/,
-  'account center must use one login-security card and disclose unavailable optional login methods at low frequency'
+  /portal\.account\.login_security_title[\s\S]*portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*other-login-unavailable[\s\S]*other_login_methods_title/,
+  'account center must use one login-security card and keep unavailable optional login methods as a quiet flat note'
+);
+assert.doesNotMatch(
+  accountSource,
+  /other-login-unavailable[\s\S]*<details|other_login_methods_title[\s\S]*<details/,
+  'unavailable other login methods must not use a disclosure fold when only one option exists'
 );
 
 assert.match(
@@ -192,6 +197,26 @@ assert.match(
   paymentHistorySource,
   /data-portal-account="payment-orders-empty"/,
   'account payment empty state must be a muted one-line, not a fat accordion'
+);
+assert.match(
+  paymentHistorySource,
+  /accountHasOrders[\s\S]*statusGroup === 'all'[\s\S]*payment-orders-empty|statusGroup === 'all'[\s\S]*accountHasOrders[\s\S]*payment-orders-empty/,
+  'full-panel wipe empty state only when the account has no orders on the all tab'
+);
+assert.match(
+  paymentHistorySource,
+  /data-portal-account="payment-orders-status-filter"/,
+  'status filter must live in the status column header (and mobile fallback)'
+);
+assert.doesNotMatch(
+  paymentHistorySource,
+  /role="tablist"/,
+  'payment order status tabs move into the status column filter'
+);
+assert.match(
+  paymentHistorySource,
+  /payment_orders_filter_empty/,
+  'filtered empty keeps an in-panel empty line'
 );
 
 console.log('portal_account_ui_contract: ok');

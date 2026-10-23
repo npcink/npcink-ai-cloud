@@ -130,4 +130,27 @@ assert.match(dialog, /aria-selected=\{activeView === view\.value\}[\s\S]*?active
 assert.match(trend, /index === lastIndex \|\| \(index % labelEvery === 0 && lastIndex - index >= labelEvery\)/);
 
 assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage dialog layout');
+
+// Quiet: feature filter must not stretch the native select to the full flexible column width.
+assert.match(
+  dialog,
+  /className="input h-8 w-max max-w-\[10\.5rem\] py-0\.5 text-xs font-medium"[\s\S]*data-portal-usage="records-feature-filter"/,
+  'service-type filter select is content-sized, not column-stretched'
+);
+assert.doesNotMatch(
+  dialog,
+  /min-w-32 max-w-full py-0\.5 text-xs font-medium"[\s\S]*records-feature-filter/,
+  'service-type filter must not use min-w-32 max-w-full (stretches the popup)'
+);
+
+// Quiet event detail: text back, muted support ref, no bulky support <details>.
+assert.match(dialog, /data-portal-usage="event-detail-back"/, 'event detail uses a quiet text back control');
+assert.match(dialog, /data-portal-usage="event-detail-support-ref"/, 'run id sits as muted header meta');
+assert.doesNotMatch(
+  dialog,
+  /site-dialog-event-detail[\s\S]*?<details[\s\S]*portal\.support_information/,
+  'event detail must not keep a bulky support-information disclosure'
+);
+assert.match(dialog, /space-y-4" data-portal-usage="site-dialog-event-detail"/, 'event detail uses tighter vertical rhythm');
+
 console.log('portal_site_usage_dialog_layout_contract: ok');
