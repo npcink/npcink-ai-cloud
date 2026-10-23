@@ -25,6 +25,7 @@ specific history collection. Migrated from the `docs/` root on
 - [cloud site capacity production release retrospective 2026 08 08](cloud-site-capacity-production-release-retrospective-2026-08-08.md)
 - [cloud site connection closeout history 2026 06 29](cloud-site-connection-closeout-history-2026-06-29.md)
 - [cny budget contract cutover closeout and development retrospective 2026 07 28](cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
+- [commerce sale availability candidate 2026 10 23](commerce-sale-availability-candidate-2026-10-23.md)
 - [commercial billing payment stage summary 2026 06 23](commercial-billing-payment-stage-summary-2026-06-23.md)
 - [commercial repository decomposition closeout and development retrospective 2026 08 03](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
 - [customer account identity simplification closeout and development retrospective 2026 07 31](customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)

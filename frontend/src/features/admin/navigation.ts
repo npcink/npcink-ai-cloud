@@ -54,12 +54,7 @@ export type AdminWorkspaceNavigationGroup = {
 
 export const workspaceNavigation: readonly AdminWorkspaceNavigationGroup[] = [
   { items: customerWorkspaceTabs },
-  {
-    items: commercialWorkspaceTabs,
-    noteKey: 'admin.commercial_freeze_hint',
-    noteFallback:
-      'Phase 1 development freeze: no new commercial features are being added. Existing packages, subscriptions, and credit records still read and operate normally.',
-  },
+  { items: commercialWorkspaceTabs },
   { items: externalCapabilityTabs },
   { items: systemSettingsTabs },
 ];

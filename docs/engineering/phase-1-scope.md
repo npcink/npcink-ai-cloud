@@ -34,10 +34,17 @@ specialist tasks. Code is retained; restoration needs a reviewed source change.
 ## Out of scope for Phase 1
 
 - Second CMS platforms (Typecho / Hexo / Astro) and broad multi-platform runtime
-- Broad Admin governance / alert-ranking / commercial front-office expansion
-  before the editor loop has sufficient real evidence
+- Broad Admin governance / alert-ranking unrelated to demonstrated operator needs
 - Production Deploy without explicit human authorization
 - Manufacturing paid Provider traffic only for dashboards
+
+## Commercial development alongside Phase 1
+
+Operator decision on 2026-10-23 resumed commercial development, customer
+notifications, and bounded Admin operations. Implement independently verified
+batches in [commercial-development-next-stage-v1.md](commercial-development-next-stage-v1.md).
+This changes development scope only; it neither completes the editor loop nor
+authorizes production sales activation, real transactions, or specialist restoration.
 
 ## Loop checklist
 

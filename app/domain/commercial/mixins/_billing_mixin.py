@@ -825,7 +825,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 if str(getattr(offer, "plan_id", "") or "") == plan_id
                 and getattr(offer, "account_id", None) is None
                 and str(getattr(offer, "purchase_mode", "") or "") == "self_serve"
-                and str(getattr(offer, "status", "") or "") == "active"
+                and str(getattr(offer, "offer_id", "") or "")
+                == f"{tier_summary['tier_id']}_monthly_v1"
             ),
             None,
         )

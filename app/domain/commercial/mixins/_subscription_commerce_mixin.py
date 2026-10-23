@@ -98,6 +98,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     self_serve_only=True,
                     now=now,
                 )
+                if self._offer_plan_is_published(repository, offer)
+                and (
+                    offer.tier_id not in STANDARD_PLAN_OFFERS
+                    or offer.offer_id == STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"]
+                )
             }
             tiers: list[dict[str, object]] = []
             for tier_id in tier_order:
@@ -229,9 +234,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 offer
                 for offer in accessible_offers
                 if (
-                    offer.offer_id in canonical_standard_offer_ids
+                    (offer.offer_id in canonical_standard_offer_ids
+                     and offer.purchase_mode == PLAN_OFFER_PURCHASE_MODE_SELF_SERVE)
                     or (offer.tier_id == "agency" and offer.account_id == account_id)
                 )
+                and self._offer_plan_is_published(repository, offer)
             ]
             claim = repository.find_trial_claim(account_id=account_id)
             current = cast(Any, self)._select_primary_subscription(
@@ -412,7 +419,9 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 now=now,
             )
             offer = repository.get_plan_offer(offer_id)
-            self._assert_offer_purchasable(offer, account_id=account_id, now=now)
+            self._assert_offer_purchasable(
+                offer, repository=repository, account_id=account_id, now=now
+            )
             assert offer is not None
             current = service._select_primary_subscription(
                 repository.list_account_subscriptions(account_id)
@@ -777,10 +786,25 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                         "trial": self._serialize_trial_claim(claim),
                     }
 
-            plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
-                repository=repository,
-                tier_id=normalized_tier,
-            )
+            if normalized_tier in STANDARD_PLAN_OFFERS:
+                offer = repository.get_plan_offer(
+                    str(STANDARD_PLAN_OFFERS[normalized_tier]["offer_id"])
+                )
+                self._assert_offer_purchasable(
+                    offer, repository=repository, account_id=account_id, now=now
+                )
+                assert offer is not None
+                if not offer.trial_enabled or offer.trial_requires_approval:
+                    raise CommercialValidationError(
+                        "service.trial_not_offered",
+                        "The selected package does not offer a self-serve trial",
+                    )
+                plan_id, plan_version_id = offer.plan_id, offer.plan_version_id
+            else:
+                plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
+                    repository=repository,
+                    tier_id=normalized_tier,
+                )
             ai_credit_limit = self._resolve_trial_credit_limit(
                 tier_id=normalized_tier,
                 requested=trial_ai_credit_limit,
@@ -1421,6 +1445,19 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             return
         service = cast(Any, self)
         for tier_id in STANDARD_PLAN_OFFERS:
+            # Bootstrap missing defaults only. Reads and checkout must not undo
+            # an operator's withdrawal or retarget an existing offer.
+            offer_id = str(STANDARD_PLAN_OFFERS[tier_id]["offer_id"])
+            if repository.get_plan_offer(offer_id) is not None:
+                continue
+            plan = repository.get_plan(tier_id)
+            if plan is not None and (
+                plan.status != PLAN_STATUS_ACTIVE
+                or not repository.list_plan_versions(
+                    plan_id=tier_id, status=PLAN_VERSION_STATUS_PUBLISHED, limit=1
+                )
+            ):
+                continue
             plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
                 repository=repository,
                 tier_id=tier_id,
@@ -1445,6 +1482,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         settings = STANDARD_PLAN_OFFERS[tier_id]
         offer_id = str(settings["offer_id"])
         existing = repository.get_plan_offer(offer_id)
+        if existing is not None:
+            repository.session.refresh(existing, with_for_update=True)
         amount = (
             self._money(sales_price_cny)
             if sales_price_cny is not None
@@ -1465,7 +1504,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             amount=amount,
             currency="CNY",
             purchase_mode=PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
-            status=PLAN_OFFER_STATUS_ACTIVE,
+            status=existing.status if existing is not None else PLAN_OFFER_STATUS_ACTIVE,
             trial_enabled=(existing.trial_enabled if existing is not None else True),
             trial_days=(
                 existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS
@@ -1490,10 +1529,15 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         self,
         offer: PlanOffer | None,
         *,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
     ) -> None:
-        if offer is None or offer.status != PLAN_OFFER_STATUS_ACTIVE:
+        if (
+            offer is None
+            or offer.status != PLAN_OFFER_STATUS_ACTIVE
+            or not self._offer_plan_is_published(repository, offer)
+        ):
             raise CommercialNotFoundError(
                 "service.plan_offer_not_found",
                 "The selected package offer is not available",
@@ -1505,7 +1549,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             )
         if offer.tier_id in STANDARD_PLAN_OFFERS:
             canonical_offer_id = str(STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"])
-            if offer.account_id is not None or offer.offer_id != canonical_offer_id:
+            if (
+                offer.account_id is not None
+                or offer.offer_id != canonical_offer_id
+                or offer.purchase_mode != PLAN_OFFER_PURCHASE_MODE_SELF_SERVE
+            ):
                 raise CommercialNotFoundError(
                     "service.plan_offer_not_found",
                     "The selected package offer is not available",
@@ -1520,6 +1568,65 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "service.plan_offer_expired",
                 "The selected package offer has expired",
             )
+
+    @staticmethod
+    def _offer_plan_is_published(
+        repository: CommercialSubscriptionLifecycleRepository, offer: PlanOffer
+    ) -> bool:
+        plan = repository.get_plan(offer.plan_id)
+        version = repository.get_plan_version(offer.plan_version_id)
+        return bool(
+            plan is not None
+            and plan.status == PLAN_STATUS_ACTIVE
+            and version is not None
+            and version.plan_id == offer.plan_id
+            and version.status == PLAN_VERSION_STATUS_PUBLISHED
+        )
+
+    def update_admin_plan_sales_status(
+        self,
+        *,
+        plan_id: str,
+        status: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        if status not in {PLAN_OFFER_STATUS_ACTIVE, PLAN_OFFER_STATUS_RETIRED}:
+            raise CommercialValidationError(
+                "service.plan_offer_status_invalid", "Sales status must be active or retired"
+            )
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            repository = CommercialSubscriptionLifecycleRepository(session)
+            offer = next(
+                (item for item in repository.list_plan_offers(self_serve_only=True)
+                 if item.plan_id == plan_id and item.tier_id in STANDARD_PLAN_OFFERS
+                 and item.offer_id == STANDARD_PLAN_OFFERS[item.tier_id]["offer_id"]),
+                None,
+            )
+            if offer is None:
+                raise CommercialNotFoundError(
+                    "service.plan_offer_not_found", "Publish the package rights before selling it"
+                )
+            session.refresh(offer, with_for_update=True)
+            offer.status = status
+            if status == PLAN_OFFER_STATUS_ACTIVE:
+                self._assert_offer_purchasable(
+                    offer, repository=repository, account_id="", now=service.now_factory()
+                )
+            payload = self._serialize_plan_offer(offer)
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="plan_offer.sales_status.update",
+                outcome="succeeded",
+                plan_id=plan_id,
+                plan_version_id=offer.plan_version_id,
+                scope_kind="plan_offer",
+                scope_id=offer.offer_id,
+                payload_json=payload,
+            )
+            session.commit()
+            return payload
 
     @staticmethod
     def _resolve_subscription_order_kind(
