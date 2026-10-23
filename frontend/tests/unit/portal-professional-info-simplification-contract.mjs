@@ -256,28 +256,28 @@ assert.doesNotMatch(
 );
 assert.match(
   auditSource,
-  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAuditBundle\(\{\s*limit: AUDIT_FETCH_LIMIT,\s*siteId: requestSiteFilterId \|\| undefined,?\s*\}\)/,
   'Portal recent activity must use the account projection with an optional site query filter'
 );
 assert.match(
   auditSource,
-  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
-  'Portal recent activity must offer all-sites and single-site scopes'
+  /<select[\s\S]*value=\{siteFilterId\}[\s\S]*data-portal-audit="site-filter"[\s\S]*portal\.all_sites_option[\s\S]*<\/select>/,
+  'Portal recent activity must offer all-sites and single-site scopes through its table filter'
 );
 assert.match(
   auditSource,
-  /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setVisibleLimit\(10\)/,
+  /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setPage\(0\)/,
   'Portal recent activity must clear records and paging when the site filter changes'
 );
 assert.match(
   auditSource,
-  /portalClient\.getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
-  'Portal recent activity must use the account-level audit bundle with the requested page size and optional site filter'
+  /const AUDIT_FETCH_LIMIT = 200;[\s\S]*portalClient\.getAuditBundle\(\{\s*limit: AUDIT_FETCH_LIMIT,\s*siteId: requestSiteFilterId \|\| undefined,?\s*\}\)/,
+  'Portal recent activity must bound the account-level audit fetch and retain the optional site filter'
 );
 assert.match(
   auditSource,
-  /loadActivity\(10\)/,
-  'Portal recent activity must keep the initial account-level page bounded to 10 records'
+  /const AUDIT_PAGE_SIZE = 10;[\s\S]*auditEvents\.slice\(pageStartIndex, pageStartIndex \+ AUDIT_PAGE_SIZE\)/,
+  'Portal recent activity must display at most 10 records per page'
 );
 assert.match(
   auditSource,

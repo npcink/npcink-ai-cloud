@@ -192,8 +192,8 @@ assert.match(
 );
 assert.match(
   portalSupportDetailPageSource,
-  /data-portal-support="attachment-pending"[\s\S]*data-portal-support="attachment-pending-remove"/,
-  'Pending upload chips must expose a cancel/remove control'
+  /composerDrafts\.map\(\(draft\)[\s\S]*data-draft-local=\{!draft\.attachment_id[\s\S]*data-portal-support="attachment-remove"[\s\S]*handleComposerDraftRemove\(draft\)/,
+  'Local attachment drafts must expose the same cancel/remove control before upload'
 );
 assert.doesNotMatch(
   portalSupportDetailPageSource,

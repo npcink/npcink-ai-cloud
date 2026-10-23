@@ -38,6 +38,10 @@ export const FAMILY_SOURCES = {
     'src/app/portal/usage/page.tsx; component.key from backend credit event components',
   'portal.usage.credit_pack_':
     'PortalPaymentOrderHistory.tsx / PortalCreditPackDialog.tsx; pack.pack_id / order pack keys from backend credit pack catalog',
+  'portal.usage.site_knowledge_breakdown_title_':
+    'PortalEntitlementUsage.tsx; bounded vector_documents/media_images resource keys for site knowledge dialog titles',
+  'portal.usage.site_knowledge_breakdown_desc_':
+    'PortalEntitlementUsage.tsx; bounded vector_documents/media_images resource keys for site knowledge dialog descriptions',
   'portal.support_topic_':
     'portal/support pages and admin support workspaces; SUPPORT_REQUEST_TOPICS and backend support request topics',
   'portal.support_status_':
