@@ -1,0 +1,50 @@
+name: Snapshot refresh (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-linux-snapshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile --filter frontend...
+
+      - run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Refresh Linux baselines
+        env:
+          CI: "true"
+        run: |
+          pnpm --dir frontend exec playwright test -c playwright.config.ts \
+            tests/e2e/admin-customer-detail-v2.spec.ts \
+            tests/e2e/admin-runtime-profiles-workspace.spec.ts \
+            tests/e2e/admin-service-settings-v2.spec.ts \
+            --update-snapshots
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-snapshots
+          path: |
+            frontend/tests/e2e/admin-customer-detail-v2.spec.ts-snapshots/*-linux.png
+            frontend/tests/e2e/admin-runtime-profiles-workspace.spec.ts-snapshots/*-linux.png
+            frontend/tests/e2e/admin-service-settings-v2.spec.ts-snapshots/*-linux.png
+          if-no-files-found: error
+          retention-days: 3
