@@ -3132,7 +3132,7 @@ async def request_portal_account_deletion_code(
     if email_sender is not None:
         try:
             await run_in_threadpool(
-                email_sender.send_login_code,
+                email_sender.send_account_deletion_code,
                 recipient_email=str(issued.get("email") or ""),
                 principal_id=str(issued.get("principal_id") or ""),
                 code=str(issued.get("code") or ""),

@@ -579,3 +579,56 @@ def test_closure_commit_failure_rolls_back_identity_and_resources(portal_client,
         assert session.get(AccountUserMembership, "mem_portal_deletion").status == "active"
         assert session.get(SiteApiKey, "sakey_portal_deletion").status == "active"
         assert session.get(SiteAccountBinding, "sab_portal_deletion").released_at is None
+
+
+@pytest.mark.parametrize("delivery_failure", [False, True])
+def test_closure_request_uses_dedicated_mail_and_never_returns_code(
+    portal_client, delivery_failure, caplog,
+):
+    from types import SimpleNamespace
+
+    from app.adapters.notifications.base import PortalEmailDeliveryError
+    from app.core.models import PortalLoginCode
+    from app.core.security import verify_secret_hash
+
+    database_url, client = portal_client
+    sent = []
+
+    def send_closure(**payload):
+        sent.append(payload)
+        if delivery_failure:
+            raise PortalEmailDeliveryError("Account closure email unavailable")
+
+    def reject_login(**payload):
+        pytest.fail("Account closure must not use login email")
+
+    client.app.state.services.portal_email_sender = SimpleNamespace(
+        send_account_deletion_code=send_closure,
+        send_login_code=reject_login,
+    )
+    response = client.post(
+        "/portal/v1/account/deletion/request",
+        json={"locale": "en"},
+        headers=_headers(idempotency_key="closure-dedicated-email"),
+    )
+    assert len(sent) == 1
+    payload = sent[0]
+    assert payload["recipient_email"] == "portal-deletion@example.com"
+    assert payload["principal_id"] == PRINCIPAL_ID
+    assert payload["locale"] == "en"
+    assert payload["code"] not in response.text
+    assert payload["code"] not in caplog.text
+    if delivery_failure:
+        assert response.status_code == 502
+        assert response.json()["error_code"] == "portal.email_delivery_failed"
+    else:
+        assert response.status_code == 200
+        assert response.json()["data"]["delivery"] == "email"
+        assert response.json()["data"]["code"] == ""
+    with get_session(database_url) as session:
+        stored = session.scalar(select(PortalLoginCode))
+        assert stored.purpose == "account_deletion"
+        assert stored.code_hash != payload["code"]
+        assert verify_secret_hash(payload["code"], stored.code_hash)
+        assert session.get(Principal, PRINCIPAL_ID).status == PRINCIPAL_STATUS_ACTIVE
+        assert session.get(Account, ACCOUNT_ID).status == ACCOUNT_STATUS_ACTIVE
