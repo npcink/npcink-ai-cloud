@@ -160,13 +160,18 @@ const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/porta
 const paymentHistorySource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalPaymentOrderHistory.tsx'), 'utf8');
 assert.match(
   commerceSource,
-  /data-portal-account="package-summary"[\s\S]*goto-billing|data-portal-account="goto-billing"/,
-  'account commerce must keep a one-line plan summary linking to Package, not a CTA stack'
+  /data-portal-account="package-summary"[\s\S]*upgrade-package[\s\S]*goto-billing/,
+  'account commerce must keep a one-line plan summary with Upgrade package + Open Package links'
+);
+assert.match(
+  commerceSource,
+  /data-portal-account="upgrade-package"[\s\S]*setActiveCommercialDialog\('package'\)|setActiveCommercialDialog\('package'\)[\s\S]*upgrade-package/,
+  'Upgrade package must open the account plan upgrade dialog'
 );
 assert.doesNotMatch(
   commerceSource,
-  /portal\.billing\.upgrade_action[\s\S]*portal\.usage\.credit_pack_buy_action[\s\S]*portal\.package\.trial_entry_action/,
-  'account commerce must not stack upgrade / buy credits / trial CTAs'
+  /portal\.usage\.credit_pack_buy_action[\s\S]*portal\.package\.trial_entry_action|portal\.package\.trial_entry_action[\s\S]*portal\.usage\.credit_pack_buy_action/,
+  'account commerce must not bring back buy-credits / trial CTA stack beside the package summary'
 );
 assert.match(
   paymentHistorySource,

@@ -35,12 +35,6 @@ function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger'
   return 'neutral';
 }
 
-function authorLabel(authorKind: string, t: ReturnType<typeof useLocale>['t']): string {
-  if (authorKind === 'operator') return t('portal.support_message_author_operator', {}, 'Support');
-  if (authorKind === 'system') return t('portal.support_message_author_system', {}, 'System');
-  return t('portal.support_message_author_customer', {}, 'You');
-}
-
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -81,6 +75,7 @@ export default function PortalSupportRequestDetailPage() {
   const [feedbackResolved, setFeedbackResolved] = useState(true);
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackEditorOpen, setFeedbackEditorOpen] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
@@ -309,6 +304,7 @@ export default function PortalSupportRequestDetailPage() {
       ) return;
       setSupportRequest(response.data.request);
       setFeedback(response.data.feedback);
+      setFeedbackEditorOpen(false);
       setNotice(t('portal.support_feedback_submitted', {}, 'Feedback submitted.'));
     } catch (err) {
       if (
@@ -356,7 +352,8 @@ export default function PortalSupportRequestDetailPage() {
   }
 
   const willReopen = supportRequest?.status === 'resolved' || supportRequest?.status === 'closed';
-  const showFeedback = willReopen;
+  const showFeedbackEditor = willReopen && (!feedback || feedbackEditorOpen);
+  const showFeedbackUpdateLink = Boolean(willReopen && feedback && !feedbackEditorOpen);
 
   return (
     <PortalPageStack className="space-y-3">
@@ -432,26 +429,30 @@ export default function PortalSupportRequestDetailPage() {
             return (
               <div
                 key={message.message_id}
-                className={`flex ${isCustomer ? 'justify-end' : 'justify-start'}`}
+                className={`group flex ${isCustomer ? 'justify-end' : 'justify-start'}`}
                 data-portal-support={isCustomer ? 'bubble-customer' : 'bubble-operator'}
               >
-                <div
-                  className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
-                    isCustomer
-                      ? 'rounded-br-md bg-slate-900 text-white dark:bg-blue-500 dark:text-slate-950'
-                      : 'rounded-bl-md border border-slate-200/90 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
-                  }`}
-                >
-                  <div className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[11px] ${
-                    isCustomer ? 'text-white/70 dark:text-slate-950/70' : 'text-slate-500 dark:text-slate-400'
-                  }`}
+                <div className={`flex max-w-[78%] flex-col ${isCustomer ? 'items-end' : 'items-start'}`}>
+                  {message.created_at ? (
+                    <span
+                      className="mb-0.5 px-1 text-[11px] leading-4 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 dark:text-slate-500"
+                      data-portal-support="bubble-time"
+                    >
+                      {formatDate(message.created_at)}
+                    </span>
+                  ) : null}
+                  <div
+                    tabIndex={0}
+                    className={`rounded-2xl px-3.5 py-2.5 shadow-sm outline-none ${
+                      isCustomer
+                        ? 'rounded-br-md bg-slate-900 text-white dark:bg-blue-500 dark:text-slate-950'
+                        : 'rounded-bl-md border border-slate-200/90 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
+                    }`}
                   >
-                    <span className="font-medium">{authorLabel(message.author_kind, t)}</span>
-                    <span>{message.created_at ? formatDate(message.created_at) : ''}</span>
+                    <p className="whitespace-pre-wrap text-sm leading-6">
+                      {message.body}
+                    </p>
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6">
-                    {message.body}
-                  </p>
                 </div>
               </div>
             );
@@ -481,7 +482,19 @@ export default function PortalSupportRequestDetailPage() {
         </div>
       ) : null}
 
-      {showFeedback ? (
+      {showFeedbackUpdateLink ? (
+        <div className="flex justify-center" data-portal-support="close-evaluation-update">
+          <button
+            type="button"
+            className="text-sm font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+            onClick={() => setFeedbackEditorOpen(true)}
+          >
+            {t('portal.support_feedback_update_action', {}, 'Update evaluation')}
+          </button>
+        </div>
+      ) : null}
+
+      {showFeedbackEditor ? (
         <div className="flex justify-center" data-portal-support="close-evaluation-wrap">
           <div
             className="w-full max-w-[30rem] rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
@@ -495,11 +508,6 @@ export default function PortalSupportRequestDetailPage() {
                 {t('portal.support_feedback_desc', {}, 'Confirm whether the issue is resolved. If not, the ticket will reopen.')}
               </p>
             </div>
-            {feedback ? (
-              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
-                {t('portal.support_feedback_existing', {}, 'Feedback has been submitted. You can update it if needed.')}
-              </div>
-            ) : null}
             <div className="space-y-3">
               <div>
                 <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -580,6 +588,16 @@ export default function PortalSupportRequestDetailPage() {
                 />
               </label>
               <div className="flex items-center justify-end gap-2 pt-1">
+                {feedback ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={isSubmittingFeedback}
+                    onClick={() => setFeedbackEditorOpen(false)}
+                  >
+                    {t('common.cancel', {}, 'Cancel')}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-primary"

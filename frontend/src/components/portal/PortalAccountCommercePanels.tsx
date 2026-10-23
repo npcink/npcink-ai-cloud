@@ -427,13 +427,27 @@ export function PortalAccountCommercePanels() {
                 : trialStatusTitle}
             </span>
           </p>
-          <Link
-            href="/portal/billing"
-            className="shrink-0 text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-            data-portal-account="goto-billing"
-          >
-            {t('portal.account.goto_billing', {}, 'Open Package')}
-          </Link>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+              data-portal-account="upgrade-package"
+              onClick={() => {
+                setPackageError(null);
+                setShowOnlyPackageDifferences(true);
+                setActiveCommercialDialog('package');
+              }}
+            >
+              {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
+            </button>
+            <Link
+              href="/portal/billing"
+              className="text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+              data-portal-account="goto-billing"
+            >
+              {t('portal.account.goto_billing', {}, 'Open Package')}
+            </Link>
+          </div>
         </div>
       ) : null}
 

@@ -255,4 +255,26 @@ assert.match(
   'Close evaluation segment must span the narrow card width'
 );
 
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /bubble-customer[\s\S]{0,800}support_message_author_customer|authorLabel\(/,
+  'Ticket bubbles must not show You/Support author labels; color alone distinguishes sides'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="bubble-time"[\s\S]*group-hover:opacity-100[\s\S]*group-focus-within:opacity-100|group-hover:opacity-100[\s\S]*group-focus-within:opacity-100[\s\S]*bubble-time/,
+  'Ticket bubble timestamps must stay hidden until hover/focus'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackUpdateLink[\s\S]*close-evaluation-update[\s\S]*support_feedback_update_action/,
+  'After feedback is submitted, detail must collapse the close-eval card behind an Update evaluation link'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackEditor[\s\S]*!feedback \|\| feedbackEditorOpen|!feedback \|\| feedbackEditorOpen[\s\S]*showFeedbackEditor/,
+  'Close evaluation editor must open only when no feedback yet or the user expands Update evaluation'
+);
+
 console.log('portal_support_requests_contract: ok');
