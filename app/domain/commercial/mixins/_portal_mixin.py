@@ -2172,7 +2172,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
     ) -> tuple[Principal, Account, list[SiteAccountBinding], list[PrincipalSiteBinding]]:
         """Reject ambiguous ownership and unresolved commerce before any closure write.
 
-        Lock the identity and account in the same order on request and confirm.
+        Lock Account before Principal, matching existing member-access writes.
         No billing state is changed by this operation.
         """
 
@@ -2183,39 +2183,39 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "unresolved commercial activity; contact support otherwise.",
             )
 
-        identity = session.scalar(
-            select(Principal)
-            .where(
-                Principal.principal_id == principal_id,
+        # Discovery is deliberately unlocked. Membership writers already lock Account
+        # before Principal; taking Principal here first would invert that order.
+        candidate_account_ids = list(session.scalars(
+            select(AccountUserMembership.account_id).where(
+                AccountUserMembership.principal_id == principal_id,
+                AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
             )
-            .with_for_update()
-        )
-        if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
+        ))
+        if len(candidate_account_ids) != 1:
             reject()
-        assert identity is not None
-        memberships = list(
-            session.scalars(
-                select(AccountUserMembership)
-                .where(
-                    AccountUserMembership.principal_id == principal_id,
-                    AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
-                )
-                .with_for_update()
-            )
-        )
-        if len(memberships) != 1:
-            reject()
-        membership = memberships[0]
         account = session.scalar(
-            select(Account)
-            .where(
-                Account.account_id == membership.account_id,
-            )
-            .with_for_update()
+            select(Account).where(Account.account_id == candidate_account_ids[0]).with_for_update()
         )
         if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
             reject()
         assert account is not None
+        identity = session.scalar(
+            select(Principal).where(Principal.principal_id == principal_id).with_for_update()
+        )
+        if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
+            reject()
+        assert identity is not None
+        # Re-read after both locks: discovery is not authorization and may have
+        # become stale while waiting for Account or Principal.
+        memberships = list(session.scalars(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == principal_id,
+                AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+            ).with_for_update()
+        ))
+        if len(memberships) != 1 or memberships[0].account_id != account.account_id:
+            reject()
+        membership = memberships[0]
         owners = list(
             session.scalars(
                 select(AccountUserMembership)
