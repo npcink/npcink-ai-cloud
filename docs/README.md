@@ -19,6 +19,7 @@ as current truth.
 | 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
+| 查 e2e 基线重扫与过期断言判定经验（继承失败数字是负债、过期断言 vs 产品 bug、定向选择盲区、视觉基线不随手重生成） | [开发会话操作经验记录 — 2026-10-23](development-session-notes-2026-10-23.md) |
 | 收口可恢复暂停、音频播放与 M4 状态 | [可恢复暂停最终收口与清理 — 2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md) — 合并链、M4 accepted、历史音频播放、分支/worktree 清理与下一阶段建议 |
 | 查三仓 pause 对照（任务 id / runtime 键 / 错误码 / 冒烟行归属） | [可恢复功能暂停 v1 — Cross-repo对照](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists) — Cloud `PAUSED_*`；互链 Addon [PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) / `docs/reversible-feature-pauses-v1.md` 与 Toolbox 同名文档；**不解冻** |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
@@ -484,6 +485,7 @@ Historical evidence retained in place:
 - [Development Session Notes — 2026-09-23](development-session-notes-2026-09-23.md);
 - [Development Session Notes — 2026-09-26](development-session-notes-2026-09-26.md);
 - [Development Session Notes Compliance — 2026-09-26](development-session-notes-compliance-2026-09-26.md);
+- [Development Session Notes — 2026-10-23](development-session-notes-2026-10-23.md);
 - [Domestic Latency Observation — 2026-09-22](domestic-latency-observation-2026-09-22.md);
 - [Domestic Latency Observation Supplement — 2026-09-22](domestic-latency-observation-supplement-2026-09-22.md);
 - [External Trial Capability Note](external-trial-capability-note-2026-06-10.md);
