@@ -201,6 +201,7 @@ deleting the old decision history.
 - [LAN-first M4 Operation Routing](decisions/060-lan-first-m4-operation-routing.md) — current operator priority: office LAN, then Pgy, then Tailscale; select and pin the SSH host before each operation while keeping direct/relay transfer mode separate
 - [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
 - [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
+- [Preview sync ≠ deploy session closeout — 2026-10-23](history/m4/2026/preview-sync-ne-deploy-session-closeout-2026-10-23.md) — dated #1200 / sync≠deploy lesson, natural Cron & quota evidence index, #1183 promote gate, portal §1.10 fold-in; not runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
 - [Internal Readiness Final Handoff — 2026-08-18](history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
@@ -254,6 +255,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
 - [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
+- [Account Site Knowledge usage breakdown v1](portal-site-knowledge-usage-contract-v1.md) — Portal account usage detail `source_type` filter contract (text/media/video/pdf); read-only; not a metering redesign
 - [Site Monitoring Observability](site-monitoring-observability-v1.md) — implemented read-only Cloud health telemetry for Portal site owners and Admin cross-site aggregation
 - [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
