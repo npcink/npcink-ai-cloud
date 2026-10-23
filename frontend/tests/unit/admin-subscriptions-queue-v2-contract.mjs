@@ -21,7 +21,20 @@ assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\
 
 assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
-assert.match(source, /data-ui="subscription-filter-toolbar"[\s\S]*risk_filter_label[\s\S]*status_filter_label[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'risk, lifecycle, customer, package, expiry, and sort controls must share one toolbar');
+assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the existing explicit search toolbar');
+assert.match(source, /const PAGE_SIZE = 10;/, 'subscription pages have a fixed ten-row limit');
+assert.match(source, /BackofficeFilterPill[\s\S]*aria-pressed=\{appliedRisk === risk\}[\s\S]*aria-pressed=\{appliedStatus === status\}/, 'each named filter group preserves its independent selected state');
+assert.match(source, /setLoadedRequestKey\(requestKey\)[\s\S]*new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'displayed range belongs to the last successful request');
+assert.match(source, /loadedQuery\.delete\('offset'\)[\s\S]*requestedQuery\.delete\('offset'\)[\s\S]*const isRetainingDifferentQuery = hasLoaded && loadedQuery\.toString\(\) !== requestedQuery\.toString\(\)/, 'retained pagination must distinguish offset-only navigation from changed query dimensions');
+assert.match(source, /if \(isRetainingDifferentQuery\) return;/, 'old result offsets must never paginate a different requested query');
+assert.match(source, /isLoading=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'the shared pager must stay disabled while retaining another query');
+assert.match(source, /action=\{isOutOfRangePage[\s\S]*disabled=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'empty-page recovery must respect the retained-query boundary');
+assert.match(source, /nextOffset === offset[\s\S]*updateQueueUrl\(\{ focus: null \}\)[\s\S]*void loadSubscriptions\(true\)/, 'same-URL next-page retries issue a real request');
+assert.match(source, /ListPagination[\s\S]*offset=\{loadedOffset\}[\s\S]*subscription-queue-range[\s\S]*common.pagination_summary/, 'shared multi-page pagination and honest zero/single ranges remain');
+assert.match(source, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages offer explicit bounded recovery');
+assert.doesNotMatch(source, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination/, 'no URL page-size contract or copied pager');
+for (const key of ['summary_critical_metric', 'summary_warning_metric', 'summary_monitor_metric', 'summary_stable_metric', 'common.updated_at']) assert.ok(source.includes(key), `preserve summary/freshness ${key}`);
+
 assert.doesNotMatch(source, /function subscriptionRiskLevel|function subscriptionPriority|subscriptions\]\.sort|subscriptions\)\.sort/, 'the browser must not rebuild subscription risk or global ordering');
 assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'subscriptions must render as a responsive task list');
 assert.doesNotMatch(source, /<table/, 'the primary subscription queue must not depend on a desktop table');
