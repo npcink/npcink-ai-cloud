@@ -19,6 +19,40 @@ retargeted Playwright to current quiet billing / home / auth UX (Package
 dialogs, Activate CTA, QQ login-options mocks, etc.). They did **not** claim
 full-suite green.
 
+**Measured baseline (2026-10-23 Asia/Shanghai):** a full local Playwright run
+against `master` `244cab8f` (clean detached worktree, `pnpm run build` plus the
+`playwright.config.ts` webServer) produced **261 passed / 3 failed / 2 skipped**
+in 5.3m. The older “~50 failing” figure was **not** reproduced and must not be
+quoted as present truth. `master` `6f651189` is the only commit on top of that
+baseline and touches no frontend or e2e file, so the numbers still describe the
+current tip.
+
+- The CI-gated selection (“Critical frontend paths”: `admin-operator-path`,
+  `admin-navigation`, `admin-acceptance-matrix`, `admin-ai-advisor-pc-v2`, the
+  four-title `portal-workspace-path` grep, and the changed-visual selection) is
+  green on the same tree. None of the three failures below are inside it.
+- The 2 skips are intentional gates, not debt: `agent-workflow-metadata-smoke`
+  requires `NPCINK_CLOUD_FRONTEND_BASE_URL`, and `setup-first-install` requires
+  the dedicated `NPCINK_CLOUD_SETUP_STATE_OVERRIDE=pending` lane.
+
+Residual failures, each re-run to confirm it reproduces deterministically:
+
+- `frontend/tests/e2e/admin-account-site-runtime.spec.ts` expected the backend
+  prose `runtime evidence unavailable`, but the UI renders the localized
+  load-failure copy. **Stale assertion**: since
+  [#1119](https://github.com/npcink/npcink-ai-cloud/pull/1119)
+  `resolveUiErrorMessage` treats backend prose as diagnostic data rather than
+  product copy. Realigned in this change (test-only edit).
+- `frontend/tests/e2e/portal-workspace-path.spec.ts` expected the audit scope
+  description as page text. **Stale assertion**: since
+  [#1198](https://github.com/npcink/npcink-ai-cloud/pull/1198) that description
+  moved into the quiet header ⓘ hint, whose copy mounts only while the hint is
+  open. Realigned in this change (test-only edit).
+- `frontend/tests/e2e/portal-login.spec.ts` failed the `portal-register-current`
+  screenshot baseline with ≈3% drift (35 680 px). **Deferred by design**:
+  darwin-only baseline, and the spec is outside the CI e2e selection, so no
+  `-linux` baseline exists.
+
 Still open under this slice:
 
 - **Login / register portal screenshot baseline** — deferred. Local drift was
