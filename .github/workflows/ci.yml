@@ -1180,7 +1180,9 @@ jobs:
         if: needs.classify.outputs.frontend_e2e_required == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
-        run: pnpm --dir frontend exec playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci-configure-ubuntu-archive.py
+          pnpm --dir frontend exec playwright install --with-deps chromium
 
       # The admin operator-path spec runs in full: title-filter selection hid
       # return-context link drift from CI for seven weeks until #1020.

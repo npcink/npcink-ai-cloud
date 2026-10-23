@@ -22,6 +22,7 @@ CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
 PRODUCTION_CI_EVIDENCE = ROOT / "scripts" / "production-ci-evidence.py"
 PRODUCTION_RELEASE_PLAN = ROOT / "scripts" / "production-release-plan.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+UBUNTU_ARCHIVE = ROOT / "scripts" / "ci-configure-ubuntu-archive.py"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
 
@@ -34,6 +35,137 @@ def _classify(*paths: str) -> dict[str, str]:
         check=True,
     )
     return dict(line.split("=", 1) for line in completed.stdout.splitlines())
+
+
+# runner-images ubuntu24/20261012.334 configure-apt-sources.sh creates this
+# mirrorlist and replaces the archive URI in ubuntu.sources with mirror+file.
+RUNNER_MIRRORS = (
+    "http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n"
+    "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
+    "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
+)
+ARCHIVE_STANZA = (
+    "Types: deb\n"
+    "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n"
+    "Suites: noble noble-updates noble-backports\n"
+    "Components: main universe restricted multiverse\n"
+    "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+)
+SECURITY_STANZA = (
+    "Types: deb\n"
+    "URIs: http://security.ubuntu.com/ubuntu/\n"
+    "Suites: noble-security\n"
+    "Components: main universe restricted multiverse\n"
+    "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+)
+
+
+def _archive_fixture(tmp_path: Path, archive: str, security: str = SECURITY_STANZA) -> Path:
+    sources = tmp_path / "sources.list.d"
+    sources.mkdir()
+    (sources / "ubuntu.sources").write_text(archive + "\n" + security)
+    (sources / "microsoft-prod.list").write_text(
+        "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] "
+        "https://packages.microsoft.com/ubuntu/24.04/prod noble main\n"
+    )
+    (tmp_path / "apt-mirrors.txt").write_text(RUNNER_MIRRORS)
+    return sources / "ubuntu.sources"
+
+
+def _configure_archive(apt_root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [shutil.which("python3") or "python3", str(UBUNTU_ARCHIVE), "--apt-root", str(apt_root)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "mirror+file:/etc/apt/apt-mirrors.txt",
+        "http://azure.archive.ubuntu.com/ubuntu/",
+        "http://archive.ubuntu.com/ubuntu/",
+        "https://archive.ubuntu.com/ubuntu",
+    ],
+)
+@pytest.mark.parametrize("shared_security_mirrorlist", [False, True])
+def test_ci_ubuntu_archive_preserves_security_and_other_sources(
+    tmp_path: Path, uri: str, shared_security_mirrorlist: bool
+) -> None:
+    archive = ARCHIVE_STANZA.replace("mirror+file:/etc/apt/apt-mirrors.txt", uri)
+    security = SECURITY_STANZA
+    if shared_security_mirrorlist:
+        security = security.replace(
+            "http://security.ubuntu.com/ubuntu/", "mirror+file:/etc/apt/apt-mirrors.txt"
+        )
+    source = _archive_fixture(tmp_path, archive, security)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert source.read_text() == archive.replace(uri, "https://archive.ubuntu.com/ubuntu") + (
+        "\n" + security
+    )
+    for path, content in before.items():
+        if path != source:
+            assert path.read_bytes() == content
+    once = source.read_bytes()
+    assert _configure_archive(tmp_path).returncode == 0
+    assert source.read_bytes() == once
+
+
+@pytest.mark.parametrize(
+    "archive,mirrors",
+    [
+        (
+            ARCHIVE_STANZA.replace("mirror+file:/etc/apt/apt-mirrors.txt", "https://unknown.test"),
+            RUNNER_MIRRORS,
+        ),
+        (ARCHIVE_STANZA.replace("noble-backports", "noble-security"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("URIs:", "URIs: x\nURIs:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("Suites:", " Suites:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("Signed-By:", "Unknown-Key:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA, RUNNER_MIRRORS + "https://unknown.test/ubuntu priority:0\n"),
+        (ARCHIVE_STANZA, "http://azure.archive.ubuntu.com/ubuntu/ priority:1\n"),
+        (SECURITY_STANZA, RUNNER_MIRRORS),
+        # Validate every stanza before writing even when the first was supported.
+        (ARCHIVE_STANZA + "\n" + ARCHIVE_STANZA.replace("URIs:", "Other:"), RUNNER_MIRRORS),
+    ],
+)
+def test_ci_ubuntu_archive_unknown_layout_fails_without_writes(
+    tmp_path: Path, archive: str, mirrors: str
+) -> None:
+    _archive_fixture(tmp_path, archive)
+    (tmp_path / "apt-mirrors.txt").write_text(mirrors)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 1
+    assert "Ubuntu archive selection failed" in result.stderr
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+def test_ci_ubuntu_archive_is_scoped_to_original_e2e_install_step() -> None:
+    workflow = CI_WORKFLOW.read_text()
+    step = workflow.split("      - name: Install Playwright Chromium\n", 1)[1].split(
+        "      # The admin operator-path", 1
+    )[0]
+    assert "if: needs.classify.outputs.frontend_e2e_required == 'true'" in step
+    assert "PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers" in step
+    assert step.index("sudo python3 scripts/ci-configure-ubuntu-archive.py") < step.index(
+        "pnpm --dir frontend exec playwright install --with-deps chromium"
+    )
+    assert workflow.count("sudo python3 scripts/ci-configure-ubuntu-archive.py") == 1
+
+
+def test_ci_ubuntu_archive_missing_deb822_layout_fails(tmp_path: Path) -> None:
+    # Legacy/unknown layouts must not be rewritten by a broad sources.list sed.
+    legacy = tmp_path / "sources.list"
+    legacy.write_text("deb http://azure.archive.ubuntu.com/ubuntu noble main\n")
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 1
+    assert legacy.read_text() == "deb http://azure.archive.ubuntu.com/ubuntu noble main\n"
+    assert list(tmp_path.iterdir()) == [legacy]
 
 
 def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
