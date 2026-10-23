@@ -27,20 +27,42 @@ export type PortalBillingSiteUsageListProps = {
   sites: readonly Site[] | null | undefined;
   t: TranslateFn;
   onSelectSite: (site: Site) => void;
+  /** Temporary focus flash after「查看本期用量」scroll; quiet ring/bg only. */
+  highlight?: boolean;
 };
 
 export function PortalBillingSiteUsageList({
   sites,
   t,
   onSelectSite,
+  highlight = false,
 }: PortalBillingSiteUsageListProps) {
   const visibleSites = getVisiblePortalSites(sites);
+  const isSingleSite = visibleSites.length === 1;
+  const listDescription = isSingleSite
+    ? t(
+        'portal.billing.site_usage_list_desc_single',
+        {},
+        'Review usage trends and AI credit records.',
+      )
+    : t(
+        'portal.billing.site_usage_list_desc',
+        {},
+        'Choose a site to review its trend and AI credit records.',
+      );
 
   return (
     <section
       id="site-usage"
-      className="scroll-mt-24 space-y-3"
+      className={[
+        'scroll-mt-24 space-y-3 rounded-xl p-1 -m-1 transition-[box-shadow,background-color] duration-500',
+        highlight
+          ? 'bg-blue-50/80 shadow-[0_0_0_2px_rgba(96,165,250,0.75)] dark:bg-blue-950/40 dark:shadow-[0_0_0_2px_rgba(59,130,246,0.55)]'
+          : 'bg-transparent shadow-none',
+      ].join(' ')}
       data-portal-billing="site-usage-list"
+      data-portal-billing-highlight={highlight ? 'true' : undefined}
+      data-portal-billing-site-count={String(visibleSites.length)}
     >
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
@@ -48,11 +70,7 @@ export function PortalBillingSiteUsageList({
             {t('portal.billing.site_usage_list_title', {}, 'Site usage')}
           </h2>
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t(
-              'portal.billing.site_usage_list_desc',
-              {},
-              'Choose a site to review its trend and AI credit records.',
-            )}
+            {listDescription}
           </p>
         </div>
       </div>
@@ -64,8 +82,9 @@ export function PortalBillingSiteUsageList({
       ) : (
         <div
           role="list"
-          className="grid gap-2 sm:grid-cols-2"
+          className={isSingleSite ? 'grid gap-2' : 'grid gap-2 sm:grid-cols-2'}
           aria-label={t('portal.billing.site_usage_list_title', {}, 'Site usage')}
+          data-portal-billing-site-layout={isSingleSite ? 'single' : 'multi'}
         >
           {visibleSites.map((site) => {
             const label = siteConnectionLabel(site, t);

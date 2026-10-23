@@ -583,20 +583,52 @@ export function PortalSiteUsageDialog({
   const pageEnd = Math.min(creditEventOffset + creditEventPageSize, creditEventCount);
   const hasPreviousPage = creditEventOffset > 0;
   const hasNextPage = creditEventOffset + creditEventPageSize < creditEventCount;
+  const onFeatureFilterChange = (value: PortalCreditEventFeature) => {
+    setCreditEventFeature(value);
+    setCreditEventOffset(0);
+    setDrillDay(null);
+  };
+  const renderFeatureFilterSelect = () => (
+    <select
+      className="input h-8 !w-max max-w-[10.5rem] py-0.5 text-xs font-medium"
+      value={creditEventFeature}
+      disabled={creditEventLoading || dayLoading}
+      onChange={(event) => onFeatureFilterChange(event.target.value as PortalCreditEventFeature)}
+      data-portal-usage="records-feature-filter"
+      aria-label={t('portal.usage.credit_events_feature_label', {}, 'Service')}
+    >
+      <option value="">{t('portal.usage.credit_events_feature_all', {}, 'All services')}</option>
+      {PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES.map((feature) => (
+        <option key={feature} value={feature}>
+          {t(`portal.usage.credit_ledger_feature_${feature}_title`)}
+        </option>
+      ))}
+    </select>
+  );
   const renderEventTable = (items: PortalCreditEvent[], timeMode: 'time' | 'datetime', nested: boolean) => (
+
                         <div data-portal-usage={nested ? 'records-day-calls' : 'records-table'}>
                           <table className="w-full table-fixed text-left text-sm">
                             <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
                             <colgroup>
                               <col className="w-40" />
-                              <col />
+                              <col className="w-52" />
                               <col className="w-36" />
                               <col className="w-8" />
                             </colgroup>
                             <thead className={nested ? 'sr-only' : 'border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400'}>
                               <tr>
                                 <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_ledger_time')}</th>
-                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_events_feature_label')}</th>
+                                <th scope="col" className="px-2 py-2 font-medium">
+                                  {nested ? (
+                                    t('portal.usage.credit_events_feature_label')
+                                  ) : (
+                                    <span className="flex flex-wrap items-center gap-2">
+                                      <span>{t('portal.usage.credit_events_feature_label')}</span>
+                                      {renderFeatureFilterSelect()}
+                                    </span>
+                                  )}
+                                </th>
                                 <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.credit_events_points_column')}</th>
                                 <th scope="col" className="px-0 py-2"><span className="sr-only">{t('common.view_details')}</span></th>
                               </tr>
@@ -651,7 +683,11 @@ export function PortalSiteUsageDialog({
       title={dialogTitle}
       description={dialogDescription}
       size="2xl"
-      className="h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      className={
+        selectedCreditEvent
+          ? 'rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]'
+          : 'h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]'
+      }
     >
       <div className="flex min-h-full flex-col gap-4" data-portal-billing="site-usage-dialog">
         {!siteId ? (
@@ -673,15 +709,30 @@ export function PortalSiteUsageDialog({
             ))}
           </div>
         ) : selectedCreditEvent ? (
-          <div className="space-y-6" data-portal-usage="site-dialog-event-detail">
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={closeCreditEvent}
-            >
-              {t('common.back', {}, 'Back')}
-            </button>
-            <dl className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-4" data-portal-usage="site-dialog-event-detail">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                onClick={closeCreditEvent}
+                data-portal-usage="event-detail-back"
+              >
+                <span aria-hidden="true">←</span>
+                {t('common.back', {}, 'Back')}
+              </button>
+              {selectedCreditEvent.support_reference ? (
+                <p
+                  className="max-w-full truncate font-mono text-[11px] leading-5 text-slate-400 dark:text-slate-500"
+                  title={selectedCreditEvent.support_reference}
+                  data-portal-usage="event-detail-support-ref"
+                >
+                  {t('portal.usage.credit_events_support_reference', {}, 'Reference')}
+                  {' · '}
+                  {selectedCreditEvent.support_reference}
+                </p>
+              ) : null}
+            </div>
+            <dl className="grid gap-3 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</dt>
                 <dd className="mt-1 text-lg font-semibold">
@@ -694,10 +745,10 @@ export function PortalSiteUsageDialog({
               </div>
             </dl>
             <section>
-              <h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
-              <div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+              <h3 className="text-sm font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
+              <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
                 {selectedCreditEvent.components.map((component) => (
-                  <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm">
+                  <div key={component.key} className="flex justify-between gap-4 px-4 py-2.5 text-sm">
                     <span>{t(`portal.usage.credit_events_component_${component.key}`)}</span>
                     <strong>{formatCreditPoints(component.ai_credits)}</strong>
                   </div>
@@ -713,12 +764,6 @@ export function PortalSiteUsageDialog({
                 </p>
               ) : null}
             </section>
-            <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-              <summary className="cursor-pointer font-medium">{t('portal.support_information', {}, 'Support information')}</summary>
-              <p className="mt-3 break-all text-sm text-slate-500">
-                {t('portal.usage.credit_events_support_reference', {}, 'Reference')}: {selectedCreditEvent.support_reference}
-              </p>
-            </details>
           </div>
         ) : (
             <>
@@ -846,27 +891,15 @@ export function PortalSiteUsageDialog({
               >
                 {activeView === 'records' ? (
                   <div className="space-y-4">
-                    <label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      <span>{t('portal.usage.credit_events_feature_label', {}, 'Service')}</span>
-                      <select
-                        className="input h-9 w-auto min-w-40 py-1"
-                        value={creditEventFeature}
-                        disabled={creditEventLoading}
-                        onChange={(event) => {
-                          setCreditEventFeature(event.target.value as PortalCreditEventFeature);
-                          setCreditEventOffset(0);
-                          setDrillDay(null);
-                        }}
-                        data-portal-usage="records-feature-filter"
-                      >
-                        <option value="">{t('portal.usage.credit_events_feature_all', {}, 'All services')}</option>
-                        {PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES.map((feature) => (
-                          <option key={feature} value={feature}>
-                            {t(`portal.usage.credit_ledger_feature_${feature}_title`)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {!(
+                      (isDayMode && !drillDay && dayRows && !dayError)
+                      || (isDayMode && drillDay && Boolean(drillItems && drillPageItems.length > 0))
+                      || (!isDayMode && !creditEventError && creditEventItems.length > 0)
+                    ) ? (
+                      <div className="flex flex-wrap items-center gap-2" data-portal-usage="records-feature-filter-fallback">
+                        {renderFeatureFilterSelect()}
+                      </div>
+                    ) : null}
                     {bucketFilter ? (
                       <div className="flex items-center gap-2 text-sm" data-portal-usage="records-bucket-filter">
                         <span className="text-slate-500 dark:text-slate-400">{t('portal.usage.bucket_filter_label', {}, 'Time slot')}</span>
@@ -979,7 +1012,10 @@ export function PortalSiteUsageDialog({
                                 <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.day_calls_column', {}, 'Calls')}</th>
                                 <th scope="col" className="px-2 py-2 font-medium" data-portal-usage="records-day-mix-column">
                                   <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                    <span className="text-slate-500 dark:text-slate-400">{t('portal.usage.day_mix_column', {}, 'Service mix')}</span>
+                                    <span className="flex flex-wrap items-center gap-2 text-slate-500 dark:text-slate-400">
+                                      <span>{t('portal.usage.day_mix_column', {}, 'Service mix')}</span>
+                                      {renderFeatureFilterSelect()}
+                                    </span>
                                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-normal" data-portal-usage="records-day-mix-legend">
                                       {dayMixSegments.map((segment) => (
                                         <span key={segment.key} className="inline-flex items-center gap-1 whitespace-nowrap">

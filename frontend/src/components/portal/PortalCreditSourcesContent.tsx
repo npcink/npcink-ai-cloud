@@ -123,7 +123,7 @@ export function PortalCreditSourcesContent({
       ) : sourceLedgerItems.length > 0 ? (
         <>
           <div className="hidden overflow-x-auto lg:block" data-portal-usage="sources-table">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full text-left text-sm">
               <caption className="sr-only">{t('portal.usage.sources_title', {}, 'Credit sources')}</caption>
               <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800">
                 <tr>

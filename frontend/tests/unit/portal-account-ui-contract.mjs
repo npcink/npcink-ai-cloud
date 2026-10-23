@@ -79,13 +79,13 @@ assert.doesNotMatch(
 
 assert.match(
   accountSource,
-  /data-portal-account="contact-info"/,
-  'account center must make contact information the primary customer-facing account surface'
+  /data-portal-account="login-security"[\s\S]*data-portal-account="contact-info"/,
+  'account center must merge sign-in and contact into one login-security surface'
 );
 assert.match(
   accountSource,
-  /<PortalWorkspaceHeader[\s\S]*currentPage="account"[\s\S]*href="\/portal\/audit"/,
-  'account center must use the shared compact header and keep recent activity as its header action'
+  /<PortalWorkspaceHeader[\s\S]*currentPage="account"[\s\S]*actionsPlacement="title-end"[\s\S]*href="\/portal\/audit"/,
+  'account center must use title-end recent activity as its header action'
 );
 assert.doesNotMatch(
   accountSource,
@@ -94,8 +94,13 @@ assert.doesNotMatch(
 );
 assert.match(
   accountSource,
-  /portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*<details[\s\S]*other_login_methods_title/,
-  'account center must avoid repeating the contact email and disclose unavailable optional login methods at low frequency'
+  /portal\.account\.login_security_title[\s\S]*portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*other-login-unavailable[\s\S]*other_login_methods_title/,
+  'account center must use one login-security card and keep unavailable optional login methods as a quiet flat note'
+);
+assert.doesNotMatch(
+  accountSource,
+  /other-login-unavailable[\s\S]*<details|other_login_methods_title[\s\S]*<details/,
+  'unavailable other login methods must not use a disclosure fold when only one option exists'
 );
 
 assert.match(
@@ -152,8 +157,67 @@ assert.match(
 
 assert.match(
   accountSource,
-  /PortalAccountCommercePanels[\s\S]*data-portal-account="billing-commerce"|data-portal-account="billing-commerce"[\s\S]*PortalAccountCommercePanels/,
-  'account center must host package management and payment orders'
+  /PortalAccountCommercePanels[\s\S]*surface="account"|surface="account"[\s\S]*PortalAccountCommercePanels/,
+  'account center must host payment-order commerce with surface=account'
 );
+assert.match(
+  accountSource,
+  /data-portal-account="payment-orders-section"/,
+  'account center keeps a dedicated payment-orders mount region'
+);
+
+const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
+const paymentHistorySource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalPaymentOrderHistory.tsx'), 'utf8');
+assert.doesNotMatch(
+  commerceSource,
+  /data-portal-account="package-summary"|data-portal-account="upgrade-package"/,
+  'account commerce must not render the plan summary row or Upgrade package CTA'
+);
+assert.doesNotMatch(
+  commerceSource,
+  /data-portal-account="goto-billing"|portal\.account\.goto_billing/,
+  'account commerce must not keep Open Package / 前往套餐'
+);
+assert.match(
+  commerceSource,
+  /surface === 'account'[\s\S]*paymentOrdersCard/,
+  'account surface renders payment orders only'
+);
+assert.match(
+  commerceSource,
+  /surface === 'billing'[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/,
+  'billing surface hosts the package dialog without an account summary row'
+);
+assert.doesNotMatch(
+  commerceSource,
+  /portal\.usage\.credit_pack_buy_action[\s\S]*portal\.package\.trial_entry_action|portal\.package\.trial_entry_action[\s\S]*portal\.usage\.credit_pack_buy_action/,
+  'account commerce must not bring back buy-credits / trial CTA stack on the account surface'
+);
+assert.match(
+  paymentHistorySource,
+  /data-portal-account="payment-orders-empty"/,
+  'account payment empty state must be a muted one-line, not a fat accordion'
+);
+assert.match(
+  paymentHistorySource,
+  /accountHasOrders[\s\S]*statusGroup === 'all'[\s\S]*payment-orders-empty|statusGroup === 'all'[\s\S]*accountHasOrders[\s\S]*payment-orders-empty/,
+  'full-panel wipe empty state only when the account has no orders on the all tab'
+);
+assert.match(
+  paymentHistorySource,
+  /data-portal-account="payment-orders-status-filter"/,
+  'payment orders must expose the shared status filter'
+);
+assert.match(
+  paymentHistorySource,
+  /role="tablist"[\s\S]*role="tab"[\s\S]*aria-selected=\{selected\}/,
+  'payment order status pills must expose the selected tab accessibly'
+);
+assert.match(
+  paymentHistorySource,
+  /payment_orders_filter_empty/,
+  'filtered empty keeps an in-panel empty line'
+);
+
 console.log('portal_account_ui_contract: ok');
 

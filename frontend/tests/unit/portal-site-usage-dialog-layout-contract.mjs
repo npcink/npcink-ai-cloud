@@ -18,7 +18,8 @@ assert.doesNotMatch(dialog, /onWindowChange=/, 'embedded trend must not render i
 assert.match(dialog, /range !== '1h'[\s\S]*startAt[\s\S]*endAt/, '1h records use an explicit start/end range');
 
 // 2. Fixed height, inner scroll, sticky header.
-assert.match(dialog, /className="h-\[min\(90vh,48rem\)\]/, 'dialog height must be fixed, not max-h');
+assert.match(dialog, /h-\[min\(90vh,48rem\)\]/, 'list/trend dialog height stays fixed');
+assert.match(dialog, /selectedCreditEvent\s*\?[\s\S]{0,80}rounded-\[18px\]/, 'event detail drops fixed tall height');
 assert.match(dialog, /sticky -top-4 z-20[^"]*bg-white[^"]*"\s*data-portal-usage="site-dialog-header"/, 'summary/range/tabs header must stick');
 
 // 3. Units + punctuation.
@@ -96,6 +97,22 @@ assert.doesNotMatch(dialog, /requestAnimationFrame\(\(\) => scrollContainer\(\)\
 assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
 assert.match(dialog, /records-feature-filter/, 'service filter stays');
+assert.match(
+  dialog,
+  /credit_events_feature_label[\s\S]*renderFeatureFilterSelect\(\)[\s\S]*credit_events_points_column/,
+  'hour/event table keeps the service filter in the 服务类型 header'
+);
+assert.match(
+  dialog,
+  /records-day-mix-column[\s\S]*day_mix_column[\s\S]*renderFeatureFilterSelect\(\)/,
+  'day-agg table keeps the service filter in the 服务构成 header'
+);
+assert.doesNotMatch(
+  dialog,
+  /label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700[\s\S]*credit_events_feature_label[\s\S]*records-feature-filter/,
+  'no duplicate above-table 服务类型 filter'
+);
+assert.match(dialog, /records-feature-filter-fallback/, 'empty/loading states keep a compact filter fallback');
 assert.match(i18n, /'portal\.usage\.day_calls_column': '调用次数'[\s\S]*'portal\.usage\.day_total_column': '合计 AI 积分'/);
 
 // C. Chart bars open records for that bucket with a removable chip.
@@ -114,4 +131,27 @@ assert.match(dialog, /aria-selected=\{activeView === view\.value\}[\s\S]*?active
 assert.match(trend, /index === lastIndex \|\| \(index % labelEvery === 0 && lastIndex - index >= labelEvery\)/);
 
 assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage dialog layout');
+
+// Quiet: feature filter must not stretch the native select to the full flexible column width.
+assert.match(
+  dialog,
+  /className="input h-8 !w-max max-w-\[10\.5rem\] py-0\.5 text-xs font-medium"[\s\S]*data-portal-usage="records-feature-filter"/,
+  'service-type filter select is content-sized, not column-stretched'
+);
+assert.doesNotMatch(
+  dialog,
+  /min-w-32 max-w-full py-0\.5 text-xs font-medium"[\s\S]*records-feature-filter/,
+  'service-type filter must not use min-w-32 max-w-full (stretches the popup)'
+);
+
+// Quiet event detail: text back, muted support ref, no bulky support <details>.
+assert.match(dialog, /data-portal-usage="event-detail-back"/, 'event detail uses a quiet text back control');
+assert.match(dialog, /data-portal-usage="event-detail-support-ref"/, 'run id sits as muted header meta');
+assert.doesNotMatch(
+  dialog,
+  /site-dialog-event-detail[\s\S]*?<details[\s\S]*portal\.support_information/,
+  'event detail must not keep a bulky support-information disclosure'
+);
+assert.match(dialog, /space-y-4" data-portal-usage="site-dialog-event-detail"/, 'event detail uses tighter vertical rhythm');
+
 console.log('portal_site_usage_dialog_layout_contract: ok');

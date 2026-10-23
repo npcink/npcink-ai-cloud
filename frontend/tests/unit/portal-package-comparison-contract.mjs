@@ -23,6 +23,21 @@ assert.match(commerceSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{
 assert.match(packagePanelSource, /package_comparison_title[\s\S]*package_only_differences[\s\S]*<table/);
 assert.match(
   packagePanelSource,
+  /hasIdenticalComparisonRows[\s\S]*comparisonTiers\.length >= 2[\s\S]*size === 1/,
+  'only-differences control requires at least one identical row across tiers'
+);
+assert.match(
+  packagePanelSource,
+  /hasIdenticalComparisonRows \? \([\s\S]*data-portal-package="only-differences"[\s\S]*\) : null/,
+  'only-differences checkbox is hidden when every row already differs'
+);
+assert.match(
+  packagePanelSource,
+  /showOnlyDifferences && !hasIdenticalComparisonRows[\s\S]*onShowOnlyDifferencesChange\(false\)/,
+  'stale only-differences state clears when identical rows disappear'
+);
+assert.match(
+  packagePanelSource,
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
 );
 assert.match(i18nSource, /'portal\.billing\.compare_site_limit': 'Active sites'/);
@@ -40,6 +55,9 @@ assert.match(packagePanelSource, /compare_not_included/);
 assert.match(packagePanelSource, /compare_unconfigured[\s\S]*compare_unconfigured_desc/);
 assert.doesNotMatch(packagePanelSource, /value == null \? '—'/, 'unknown rights must be explained instead of rendered as an ambiguous dash');
 assert.match(packagePanelSource, /agency_separate_title[\s\S]*request_agency_quote/);
+assert.match(packagePanelSource, /data-portal-package="agency-quote"/);
+assert.match(packagePanelSource, /package_select_tier[\s\S]*package_confirm_continue|package_confirm_continue[\s\S]*package_select_tier/);
+assert.match(packagePanelSource, /data-portal-package-confirm=\{selectedChoice \? 'ready' : 'idle'\}|data-portal-package-confirm/);
 
 const packageChoicesStart = packagePanelSource.indexOf('const packageChoices');
 const packageChoicesEnd = packagePanelSource.indexOf('const selectedChoice', packageChoicesStart);
@@ -63,6 +81,8 @@ for (const key of [
   'portal.billing.compare_not_included',
   'portal.billing.compare_unconfigured',
   'portal.billing.compare_unconfigured_desc',
+  'portal.billing.package_select_tier',
+  'portal.billing.package_confirm_continue',
 ]) {
   assert.equal((i18nSource.match(new RegExp(`'${key.replaceAll('.', '\\.')}'`, 'g')) || []).length, 2);
 }

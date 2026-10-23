@@ -15,7 +15,6 @@ import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader
 import {
   PortalEmptyState,
   PortalErrorState,
-  PortalErrorReference,
   PortalLoadingState,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
@@ -28,7 +27,11 @@ import {
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { ApiError } from '@/lib/errors';
-import { getPortalSiteDisplayName } from '@/lib/portal-site-display';
+import {
+  getPortalSiteDisplayName,
+  getPortalSiteSecondaryLabel,
+  getVisiblePortalSites,
+} from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
 const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
@@ -46,6 +49,8 @@ const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
 };
 
 const SUCCESSFUL_AUDIT_OUTCOMES = new Set(['success', 'succeeded', 'ok', 'completed']);
+const AUDIT_PAGE_SIZE = 10;
+const AUDIT_FETCH_LIMIT = 200;
 
 type ActivityReadError = { message: string; reference: string };
 
@@ -70,34 +75,49 @@ export function PortalAuditClient() {
   const [auditEvents, setAuditEvents] = useState<PortalAuditEvent[]>([]);
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<ActivityReadError | null>(null);
-  const [loadMoreError, setLoadMoreError] = useState<ActivityReadError | null>(null);
+  const [page, setPage] = useState(0);
 
-  const [visibleLimit, setVisibleLimit] = useState(10);
   const siteFilterIdRef = useRef(siteFilterId);
   const requestVersionRef = useRef(0);
-  const recentEvents = useMemo(() => auditEvents, [auditEvents]);
+  const totalEvents = Math.max(
+    Number(auditSummary?.totals?.events || 0),
+    auditEvents.length,
+  );
+  const pageCount = Math.max(1, Math.ceil(Math.max(totalEvents, 1) / AUDIT_PAGE_SIZE));
+  const safePage = Math.min(page, Math.max(0, pageCount - 1));
+  const pageStartIndex = safePage * AUDIT_PAGE_SIZE;
+  const pageEvents = useMemo(
+    () => auditEvents.slice(pageStartIndex, pageStartIndex + AUDIT_PAGE_SIZE),
+    [auditEvents, pageStartIndex],
+  );
   const attentionEventCount = useMemo(() => {
-    return recentEvents.filter((event) => !isSuccessfulAuditOutcome(event.outcome)).length;
-  }, [recentEvents]);
+    return auditEvents.filter((event) => !isSuccessfulAuditOutcome(event.outcome)).length;
+  }, [auditEvents]);
+  const pageRangeStart = auditEvents.length === 0 ? 0 : pageStartIndex + 1;
+  const pageRangeEnd = Math.min(pageStartIndex + AUDIT_PAGE_SIZE, auditEvents.length);
+  const hasPreviousPage = safePage > 0;
+  const hasNextPage = pageStartIndex + AUDIT_PAGE_SIZE < auditEvents.length;
 
-  const loadActivity = useCallback(async (limit: number, loadingMore = false) => {
+  const onSiteFilterChange = useCallback((nextSiteId: string) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextSiteId) nextParams.set('site', nextSiteId);
+    else nextParams.delete('site');
+    const query = nextParams.toString();
+    router.replace(`/portal/audit${query ? `?${query}` : ''}`, { scroll: false });
+  }, [router, searchParams]);
+
+  const loadActivity = useCallback(async () => {
     const requestSiteFilterId = siteFilterIdRef.current;
     if (!isAuthenticated) return;
     const requestVersion = ++requestVersionRef.current;
-    if (loadingMore) {
-      setIsLoadingMore(true);
-    } else {
-      setIsLoading(true);
-    }
-    if (loadingMore) {
-      setLoadMoreError(null);
-    } else {
-      setError(null);
-    }
+    setIsLoading(true);
+    setError(null);
     try {
-      const bundle = await portalClient.getAuditBundle({ limit, siteId: requestSiteFilterId || undefined });
+      const bundle = await portalClient.getAuditBundle({
+        limit: AUDIT_FETCH_LIMIT,
+        siteId: requestSiteFilterId || undefined,
+      });
       if (
         requestVersion !== requestVersionRef.current
         || requestSiteFilterId !== siteFilterIdRef.current
@@ -114,22 +134,13 @@ export function PortalAuditClient() {
         t,
         t('audit.load_error', {}, 'Failed to load audit data')
       );
-      const failure = { message, reference: err instanceof ApiError ? err.requestId || err.traceId : '' };
-      if (loadingMore) {
-        setLoadMoreError(failure);
-      } else {
-        setError(failure);
-      }
+      setError({ message, reference: err instanceof ApiError ? err.requestId || err.traceId : '' });
     } finally {
       if (
         requestVersion !== requestVersionRef.current
         || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
-      if (loadingMore) {
-        setIsLoadingMore(false);
-      } else {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   }, [isAuthenticated, t]);
 
@@ -138,20 +149,22 @@ export function PortalAuditClient() {
     requestVersionRef.current += 1;
     setAuditEvents([]);
     setAuditSummary(null);
-    setVisibleLimit(10);
+    setPage(0);
     setError(null);
-    setLoadMoreError(null);
-    setIsLoadingMore(false);
     setIsLoading(Boolean(isAuthenticated));
   }, [siteFilterId, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    void loadActivity(10);
+    void loadActivity();
     return () => {
       requestVersionRef.current += 1;
     };
   }, [isAuthenticated, loadActivity, siteFilterId]);
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   const translateOutcome = (outcome: string) => {
     if (isSuccessfulAuditOutcome(outcome)) {
@@ -189,10 +202,6 @@ export function PortalAuditClient() {
     return t('portal.audit.generic_activity', {}, 'Account activity');
   };
 
-  const loadMoreLabel = loadMoreError
-    ? t('common.retry')
-    : t('portal.audit.load_more', {}, 'Load more activity');
-
   if (sessionLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -206,6 +215,28 @@ export function PortalAuditClient() {
       />
     );
   }
+
+  const visibleSites = getVisiblePortalSites(session.sites);
+  const renderSiteFilterControl = (domId: string) => (
+    <select
+      id={domId}
+      className="input h-8 !w-max max-w-[12rem] py-0.5 text-xs font-medium normal-case tracking-normal"
+      value={siteFilterId}
+      onChange={(event) => onSiteFilterChange(event.target.value)}
+      data-portal-audit="site-filter"
+      aria-label={t('portal.site_filter_label', {}, 'Site filter')}
+    >
+      <option value="">{t('portal.all_sites_option', {}, 'All sites')}</option>
+      {siteFilterId && !visibleSites.some((site) => site.site_id === siteFilterId) ? (
+        <option value={siteFilterId}>{t('portal.site_filter_unavailable', {}, 'Selected site is unavailable')}</option>
+      ) : null}
+      {visibleSites.map((site) => (
+        <option key={site.site_id} value={site.site_id}>
+          {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <PortalPageStack data-portal-account-deeplink="audit">
@@ -226,10 +257,6 @@ export function PortalAuditClient() {
             aria-label={t('portal.audit.breadcrumb', {}, 'Activity location')}
             items={[
               {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
                 label: t('portal.account.title', {}, 'Account'),
                 href: '/portal/account',
               },
@@ -239,19 +266,8 @@ export function PortalAuditClient() {
             ]}
           />
         )}
-        selectedSiteId={siteFilterId}
-        sites={session.sites}
-        siteSelectorMode="filter"
-        siteSelectorPlacement="inline"
-        onSiteChange={(nextSiteId) => {
-          const nextParams = new URLSearchParams(searchParams.toString());
-          if (nextSiteId) nextParams.set('site', nextSiteId);
-          else nextParams.delete('site');
-          const query = nextParams.toString();
-          router.replace(`/portal/audit${query ? `?${query}` : ''}`, { scroll: false });
-        }}
         metrics={!isLoading && !error ? [
-          { label: t('portal.audit.visible_records', {}, 'Visible records'), value: recentEvents.length },
+          { label: t('portal.audit.visible_records', {}, 'Visible records'), value: auditEvents.length },
           {
             label: t('portal.audit.attention_records', {}, 'Need review'),
             value: attentionEventCount,
@@ -265,19 +281,24 @@ export function PortalAuditClient() {
         metricsLayout="rail"
         metricsPlacement="title-end"
         secondaryActions={
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadActivity(visibleLimit)}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadActivity()}>
             {t('common.refresh', {}, 'Refresh')}
           </button>
         }
       />
       {isLoading ? <PortalLoadingState message={t('common.loading')} /> : error ? (
-        <PortalErrorState title={t('error.failed_load')} description={error.message} supportReference={error.reference} retryLabel={t('common.retry')} onRetry={() => void loadActivity(visibleLimit)} />
+        <PortalErrorState title={t('error.failed_load')} description={error.message} supportReference={error.reference} retryLabel={t('common.retry')} onRetry={() => void loadActivity()} />
       ) : null}
 
-
       <PortalSection className="overflow-hidden p-0" hidden={isLoading || Boolean(error)}>
-        {!isLoading && !error && recentEvents.length === 0 ? (
+        {!isLoading && !error && auditEvents.length === 0 ? (
           <div className="p-6">
+            <div className="mb-4 flex flex-wrap items-center gap-2" data-portal-audit="site-filter-empty">
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                {t('portal.site_filter_label', {}, 'Site filter')}
+              </span>
+              {renderSiteFilterControl('portal-audit-site-filter-empty')}
+            </div>
             <PortalEmptyState
               title={t('portal.audit.empty_title', {}, 'No activity in this view')}
               description={t(
@@ -298,14 +319,22 @@ export function PortalAuditClient() {
                 </caption>
                 <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <tr>
-                    <th scope="col" className="px-6 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
+                    <th scope="col" className="px-6 py-3 font-medium">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>{t('portal.audit.time_column', {}, 'Time')}</span>
+                        <span className="inline-flex items-center gap-1.5 normal-case tracking-normal">
+                          <span className="sr-only">{t('portal.site_filter_label', {}, 'Site filter')}</span>
+                          {renderSiteFilterControl('portal-audit-site-filter-table')}
+                        </span>
+                      </span>
+                    </th>
                     <th scope="col" className="px-4 py-3 font-medium">{t('audit.event_type', {}, 'Activity')}</th>
                     <th scope="col" className="px-4 py-3 font-medium">{t('audit.outcome', {}, 'Result')}</th>
                     <th scope="col" className="px-6 py-3 text-right font-medium">{t('common.details', {}, 'Details')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                  {recentEvents.map((event) => {
+                  {pageEvents.map((event) => {
                     const traceId = getAuditTraceId(event);
                     const showSupportInformation = !isSuccessfulAuditOutcome(event.outcome) || Boolean(traceId);
                     return (
@@ -356,78 +385,97 @@ export function PortalAuditClient() {
               </table>
             </div>
 
-            <div className="divide-y divide-gray-200 dark:divide-gray-800 lg:hidden">
-            {recentEvents.map((event) => {
-              const traceId = getAuditTraceId(event);
-              const showSupportInformation = !isSuccessfulAuditOutcome(event.outcome) || Boolean(traceId);
-              return (
-              <article key={event.event_id} className="px-6 py-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{translateEventKind(event.event_kind)}</span>
-                      <PortalStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
-                    </div>
-                    <p className="text-sm text-gray-500">{formatDate(event.created_at)}</p>
-                    {showSupportInformation ? (
-                      <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-500 dark:bg-slate-900/60 dark:text-gray-400">
-                      <summary className="cursor-pointer font-medium text-gray-600 dark:text-gray-300">
-                        {t('portal.support_information', {}, 'Support information')}
-                      </summary>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        <div>
-                          <span className="block font-medium text-gray-600 dark:text-gray-300">Event ID</span>
-                          <PortalIdentifier value={String(event.event_id)} full />
-                        </div>
-                        {traceId ? (
-                          <div>
-                            <span className="block font-medium text-gray-600 dark:text-gray-300">
-                              {t('audit.trace_id', {}, 'Trace ID')}
-                            </span>
-                            <PortalIdentifier value={traceId} full />
-                          </div>
-                        ) : null}
+            <div className="lg:hidden">
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 px-6 py-3 dark:border-slate-800" data-portal-audit="site-filter-mobile">
+                <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  {t('portal.site_filter_label', {}, 'Site filter')}
+                </span>
+                {renderSiteFilterControl('portal-audit-site-filter-mobile')}
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-800">
+              {pageEvents.map((event) => {
+                const traceId = getAuditTraceId(event);
+                const showSupportInformation = !isSuccessfulAuditOutcome(event.outcome) || Boolean(traceId);
+                return (
+                <article key={event.event_id} className="px-6 py-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{translateEventKind(event.event_kind)}</span>
+                        <PortalStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
                       </div>
-                      </details>
+                      <p className="text-sm text-gray-500">{formatDate(event.created_at)}</p>
+                      {showSupportInformation ? (
+                        <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-500 dark:bg-slate-900/60 dark:text-gray-400">
+                        <summary className="cursor-pointer font-medium text-gray-600 dark:text-gray-300">
+                          {t('portal.support_information', {}, 'Support information')}
+                        </summary>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <span className="block font-medium text-gray-600 dark:text-gray-300">Event ID</span>
+                            <PortalIdentifier value={String(event.event_id)} full />
+                          </div>
+                          {traceId ? (
+                            <div>
+                              <span className="block font-medium text-gray-600 dark:text-gray-300">
+                                {t('audit.trace_id', {}, 'Trace ID')}
+                              </span>
+                              <PortalIdentifier value={traceId} full />
+                            </div>
+                          ) : null}
+                        </div>
+                        </details>
+                      ) : null}
+                    </div>
+                    {!isSuccessfulAuditOutcome(event.outcome) ? (
+                      <PortalCard className="max-w-md border-amber-200 bg-amber-50/70 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                        {t('portal.audit.support_hint', {}, 'Contact support with the site name and activity time.')}
+                      </PortalCard>
                     ) : null}
                   </div>
-                  {!isSuccessfulAuditOutcome(event.outcome) ? (
-                    <PortalCard className="max-w-md border-amber-200 bg-amber-50/70 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
-                      {t('portal.audit.support_hint', {}, 'Contact support with the site name and activity time.')}
-                    </PortalCard>
-                  ) : null}
-                </div>
-              </article>
-              );
-            })}
+                </article>
+                );
+              })}
+              </div>
             </div>
           </>
         )}
-        {recentEvents.length > 0
-        && recentEvents.length < Number(auditSummary?.totals?.events || 0)
-        && (visibleLimit < 200 || isLoadingMore || Boolean(loadMoreError)) ? (
-          <div className="border-t border-gray-200 px-6 py-4 text-center dark:border-gray-800">
-            {loadMoreError ? (
-              <div className="mb-3">
-                <p className="text-sm text-red-700 dark:text-red-300">{loadMoreError.message}</p>
-                <PortalErrorReference reference={loadMoreError.reference} />
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={isLoadingMore}
-              onClick={() => {
-                const nextLimit = loadMoreError ? visibleLimit : Math.min(200, visibleLimit + 20);
-                setVisibleLimit(nextLimit);
-                void loadActivity(nextLimit, true);
-              }}
-            >
-              {isLoadingMore
-                ? t('common.loading', {}, 'Loading...')
-                : loadMoreLabel}
-            </button>
-          </div>
+        {auditEvents.length > 0 ? (
+          <nav
+            className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-slate-950"
+            aria-label={t('common.pagination', {}, 'Pagination')}
+            data-portal-audit="records-pagination"
+          >
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t(
+                'common.pagination_summary',
+                {
+                  start: String(pageRangeStart),
+                  end: String(pageRangeEnd),
+                  total: String(auditEvents.length),
+                },
+                `${pageRangeStart}-${pageRangeEnd} of ${auditEvents.length}`,
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={!hasPreviousPage}
+                onClick={() => setPage((current) => Math.max(0, current - 1))}
+              >
+                {t('common.previous', {}, 'Previous')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={!hasNextPage}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                {t('common.next_page', {}, 'Next page')}
+              </button>
+            </div>
+          </nav>
         ) : null}
       </PortalSection>
     </PortalPageStack>

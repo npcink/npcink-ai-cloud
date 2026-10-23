@@ -80,7 +80,10 @@ from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
     resolve_site_relink_policy,
 )
-from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
+from app.domain.site_knowledge.metrics import (
+    ACCOUNT_USAGE_SOURCE_TYPES,
+    SiteKnowledgeObservabilityService,
+)
 from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
@@ -122,6 +125,34 @@ def _portal_commercial_sales_guard(
         except PortalBearerTokenError as error:
             return _portal_login_code_rate_limit_response(request, error)
     return None
+
+
+class PortalSiteKnowledgeUsageItem(BaseModel):
+    site_id: str
+    site_name: str
+    status: str
+    used: int = Field(ge=0, description="Count in the response metering_unit; not bytes or chunks.")
+    last_indexed_at: str
+    indexed_document_count: int | None = Field(default=None, description="Text alias of used.")
+
+
+class PortalSiteKnowledgeUsageData(BaseModel):
+    source_type: Literal["text", "media", "video", "pdf"]
+    metering_unit: Literal["document", "image", "video", "pdf"]
+    total_used: int
+    items: list[PortalSiteKnowledgeUsageItem]
+    generated_at: str
+    sites: list[PortalSiteKnowledgeUsageItem] | None = None
+    total_indexed_document_count: int | None = None
+    indexed_document_limit: int | None = None
+
+
+class PortalSiteKnowledgeUsageResponse(BaseModel):
+    status: str
+    error_code: str
+    message: str
+    data: PortalSiteKnowledgeUsageData
+    meta: dict[str, str]
 
 
 class PortalSessionSitePayload(BaseModel):
@@ -238,6 +269,7 @@ class PortalSupportRequestPayload(BaseModel):
 
 class PortalSupportRequestMessagePayload(BaseModel):
     body: str = Field(default="", max_length=4000)
+    attachment_ids: list[str] = Field(default_factory=list)
 
 
 class PortalSupportRequestAttachmentPayload(BaseModel):
@@ -3578,8 +3610,25 @@ async def get_portal_account_usage_summary(
     )
 
 
-@router.get("/account/site-knowledge-usage")
-async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
+@router.get(
+    "/account/site-knowledge-usage",
+    response_model=PortalSiteKnowledgeUsageResponse,
+    response_model_exclude_none=True,
+    responses={400: {"description": "Unsupported source_type"}},
+)
+async def get_portal_account_site_knowledge_usage(
+    request: Request,
+    source_type: str = Query(
+        default="text",
+        max_length=32,
+        json_schema_extra={"enum": list(ACCOUNT_USAGE_SOURCE_TYPES)},
+        description=(
+            "Usage bucket to aggregate: text (default, all non-media documents), "
+            "media (indexed images); video/pdf are reserved and return empty items. "
+            "Unknown values return 400."
+        ),
+    ),
+) -> Any:
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=False,
@@ -3603,28 +3652,36 @@ async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
     )
     if isinstance(site_ids, JSONResponse):
         return site_ids
+    normalized_source_type = str(source_type).strip().lower()
+    if normalized_source_type not in ACCOUNT_USAGE_SOURCE_TYPES:
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="portal.site_knowledge_usage.source_type_invalid",
+            message="source_type must be one of: text, media, video, pdf",
+        )
     commercial_service = _get_commercial_service(request)
-    quota_summary = await run_in_threadpool(
-        commercial_service.get_portal_account_quota_summary,
-        account_id
+    result = await run_in_threadpool(
+        SiteKnowledgeObservabilityService(
+            commercial_service.database_url
+        ).get_account_document_breakdown,
+        site_ids=site_ids,
+        source_type=normalized_source_type,
     )
-    vector_limit = next(
-        (
-            int(item.get("limit") or 0)
-            for item in _object_list(quota_summary.get("resource_limits"))
-            if str(item.get("key") or "") == "vector_documents"
-        ),
-        0,
-    )
-    result = await run_in_threadpool(SiteKnowledgeObservabilityService(
-        commercial_service.database_url
-    ).get_account_document_breakdown, site_ids=site_ids)
-    result.update(
-        {
-            "generated_at": datetime.now(UTC).isoformat(),
-            "indexed_document_limit": vector_limit,
-        }
-    )
+    result["generated_at"] = datetime.now(UTC).isoformat()
+    if normalized_source_type == "text":
+        quota_summary = await run_in_threadpool(
+            commercial_service.get_portal_account_quota_summary,
+            account_id
+        )
+        result["indexed_document_limit"] = next(
+            (
+                int(item.get("limit") or 0)
+                for item in _object_list(quota_summary.get("resource_limits"))
+                if str(item.get("key") or "") == "vector_documents"
+            ),
+            0,
+        )
     return _portal_route_envelope(
         message="portal account site knowledge usage loaded",
         data=result,
@@ -4336,6 +4393,7 @@ async def create_portal_support_request_message(
             principal_id=auth.principal_id,
             request_id=request_id,
             body=payload.body,
+            attachment_ids=list(payload.attachment_ids or []),
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -4441,6 +4499,59 @@ async def get_portal_support_request_attachment(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal support request attachment loaded",
+        data=result,
+    )
+
+
+@router.delete("/support-requests/{request_id}/attachments/{attachment_id}")
+async def delete_portal_support_request_attachment(
+    request: Request,
+    request_id: str,
+    attachment_id: str,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_support_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).delete_portal_support_request_attachment,
+            principal_id=auth.principal_id,
+            request_id=request_id,
+            attachment_id=attachment_id,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request attachment deleted",
         data=result,
     )
 

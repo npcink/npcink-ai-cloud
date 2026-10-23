@@ -55,8 +55,18 @@ const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
-  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
-  'Portal package changes must expose terms, privacy, and billing support before payment'
+  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"/,
+  'Portal package changes must expose terms and privacy before payment'
+);
+assert.doesNotMatch(
+  packagePanelSource,
+  /purchase_readiness_notice[\s\S]{0,400}portal\.nav_support_requests|purchase_readiness_notice[\s\S]{0,400}\/portal\/support\?new=1&topic=billing/,
+  'Portal package purchase footer must not put Tickets on the primary purchase path'
+);
+assert.match(
+  packagePanelSource,
+  /data-portal-package="agency-quote"[\s\S]*\/portal\/support\?new=1&topic=billing|agency_separate_title[\s\S]*\/portal\/support\?new=1&topic=billing/,
+  'Portal package billing support remains reachable from the demoted Agency quote path'
 );
 assert.match(
   creditPackDialogSource,
@@ -113,10 +123,20 @@ assert.match(
   /active_sites[\s\S]*package_status_site_label/,
   'Portal package status must classify active-site capacity as a site limit'
 );
+assert.doesNotMatch(
+  accountCommerceSource,
+  /data-portal-account="package-summary"|data-portal-account="upgrade-package"/,
+  'Portal account commerce must not keep a plan summary row; upgrade lives on the package page dialog'
+);
 assert.match(
   accountCommerceSource,
-  /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
-  'Portal account commerce actions must prioritize credit purchase only when AI credits are the active issue'
+  /surface === 'billing'[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/,
+  'Portal package dialog is hosted on the billing surface of commerce panels'
+);
+assert.doesNotMatch(
+  accountCommerceSource,
+  /creditNeedsAttention|trial_entry_action/,
+  'Portal account commerce must not restack trial CTAs beside payment orders'
 );
 assert.match(
   creditPackDialogSource,
@@ -130,8 +150,8 @@ assert.match(
 );
 assert.match(
   paymentOrderHistorySource,
-  /<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*role="tablist"[\s\S]*<\/details>/,
-  'Portal package page must keep the payment summary visible and fold lower-priority order actions behind disclosure'
+  /const renderStatusFilter = \(\) =>[\s\S]*role="tablist"[\s\S]*<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*\{renderStatusFilter\(\)\}[\s\S]*<\/details>/,
+  'Account payment history must keep its summary and status pills inside the order disclosure'
 );
 assert.equal(
   (accountCommerceSource.match(/const paymentOrdersCard =/g) || []).length,
@@ -145,13 +165,18 @@ assert.equal(
 );
 assert.match(
   accountPageSource,
-  /PortalAccountCommercePanels/,
-  'Portal account page must host manage-package and payment-orders commerce panels'
+  /PortalAccountCommercePanels[\s\S]*surface="account"/,
+  'Portal account page must host payment-orders commerce panels'
+);
+assert.match(
+  billingPageSource,
+  /PortalAccountCommercePanels[\s\S]*surface="billing"/,
+  'Portal billing/plan page hosts the package change dialog via commerce panels'
 );
 assert.doesNotMatch(
   billingPageSource,
-  /const paymentOrdersCard =|id="package-options"/,
-  'Portal billing/plan page must not keep manage-package or payment-orders blocks'
+  /const paymentOrdersCard =/,
+  'Portal billing/plan page must not keep payment-orders blocks inline'
 );
 assert.match(
   paymentReturnNoticeSource,
@@ -290,10 +315,15 @@ assert.doesNotMatch(
   /package_credit_allowance_label|site_allowance_label/,
   'Portal package header must not repeat package rights that are already shown in the rights card'
 );
+assert.doesNotMatch(
+  billingHeader,
+  /PortalBreadcrumb/,
+  'Portal package top-level header must not show a Service breadcrumb (navbar + title locate the page)'
+);
 assert.match(
   billingHeader,
-  /PortalBreadcrumb[\s\S]*metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
-  'Portal package header must use breadcrumb plus a quiet title-end metrics rail for package and period'
+  /metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
+  'Portal package header must use a quiet title-end metrics rail for package and period'
 );
 assert.match(
   billingPageSource,

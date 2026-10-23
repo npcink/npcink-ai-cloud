@@ -894,7 +894,7 @@ async function installPortalMocks(
       await fulfillJson(route, {
         account_id: 'acct_portal',
         principal_id: 'principal_portal',
-        trial: { available: true, trial_days: 14 },
+        trial: { available: true, trial_days: 14, allowed_tiers: ['plus', 'pro'] },
         comparison_tiers: [
           {
             tier_id: 'free', label: 'Free', plan_id: 'free', plan_version_id: 'free_v1',
@@ -1732,24 +1732,36 @@ async function installPortalMocks(
   };
 }
 
-test('commercial emergency stop disables purchase and trial CTAs and recovers', async ({ page }, testInfo) => {
+test('commercial emergency stop blocks package dialogs and preserves account history, then recovers', async ({ page }, testInfo) => {
   const options = { commercialEmergencyStop: true };
   const state = await installPortalMocks(page, options);
-  await page.goto('/portal/account');
-  const commerce = page.locator('[data-portal-account="commerce"]');
-  await expect(commerce.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
-  const actions = commerce.locator('#package-options button');
-  await expect(actions).toHaveCount(3);
-  for (const action of await actions.all()) await expect(action).toBeDisabled();
-  await expect(commerce.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await page.goto('/portal/billing?action=upgrade');
+  const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
+  await expect(packageDialog.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toHaveCount(0);
+  await expect(packageDialog.getByRole('button', { name: /Trial eligibility|试用资格/i })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('commercial-paused.png'), fullPage: true });
+
+  await page.goto('/portal/billing?action=credits');
+  const creditDialog = page.getByRole('dialog', { name: /AI credit packs|AI 积分包/i });
+  await expect(creditDialog.getByRole('radio')).toHaveCount(0);
+  await expect(creditDialog.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeDisabled();
+  await page.goto('/portal/account');
+  await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Trial eligibility|试用资格/i })).toHaveCount(0);
   expect(state.portalStateMutationRequestCount()).toBe(0);
+
   options.commercialEmergencyStop = false;
-  await page.reload();
-  await expect(commerce.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toBeEnabled();
-  await expect(commerce.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeEnabled();
-  for (const action of await actions.all()) await expect(action).toBeEnabled();
+  await page.goto('/portal/billing?action=upgrade');
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
+  await packageDialog.getByRole('button', { name: /Trial eligibility|试用资格/i }).click();
+  const trialDialog = page.getByRole('dialog', { name: /Trial eligibility|试用资格/i });
+  await expect(trialDialog.getByRole('button', { name: /Start 14-day Pro trial|开始 14 天 Pro 试用/i })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('commercial-restored.png'), fullPage: true });
+  await page.goto('/portal/billing?action=credits');
+  await creditDialog.getByRole('radio', { name: /Small AI credit pack|小 AI 积分包/i }).click();
+  await expect(creditDialog.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeEnabled();
+  expect(state.portalStateMutationRequestCount()).toBe(0);
 });
 
 test('portal workspace interaction path: account overview to site detail and service pages', async ({
@@ -1846,8 +1858,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await usageDialog.getByRole('button', { name: /Content writing|内容生成/i }).first().click();
   await expect(usageDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
-  await usageDialog.getByText(/Support information|支持信息/i).click();
-  await expect(usageDialog.getByText(/run_portal_001/i)).toBeVisible();
+  await expect(usageDialog.locator('[data-portal-usage="event-detail-support-ref"]')).toContainText('run_portal_001');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
 
@@ -1859,12 +1870,12 @@ test('portal workspace interaction path: account overview to site detail and ser
   });
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
-  await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade/);
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
-  const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
+  const packageConfirmButton = packageDialog.getByRole('button', { name: /^Confirm and continue$|^确认并继续$/i });
   await expect(packageConfirmButton).toBeInViewport();
+  await expect(packageConfirmButton).toBeDisabled();
   await expect(packageDialog.getByRole('heading', { name: /Compare package rights|套餐权益对比/i })).toBeVisible();
   await expect(packageDialog.locator('[data-comparison-state="unconfigured"]')).toContainText(/To confirm|待确认/i);
   await expect(packageDialog.getByText(/published package does not currently define|已发布套餐尚未定义/i)).toBeVisible();
@@ -1872,22 +1883,31 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
   await expect(packageDialog.getByText(/¥29\.00/)).toBeVisible();
   await expect(packageDialog.getByText(/¥208\.80/)).toHaveCount(0);
+  await packageDialog.getByRole('radio', { name: /Pro/i }).click();
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toHaveAttribute('aria-checked', 'true');
+  await expect(packageDialog.locator('[data-portal-package="confirm"]')).toBeEnabled();
   await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/portal\/billing(?:\?[^#]*)?$/);
+  await page.goto('/portal/account');
+  await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
   await expect(page.getByText(/^Payment orders$|^支付订单$/i)).toBeVisible();
   await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await page.getByRole('tab', { name: /Pending|待支付/i }).click();
   await expect(page.getByRole('tab', { name: /Pending|待支付/i })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('link', { name: /Continue payment|继续支付/i })).toBeVisible();
   await expect(page.getByText(/Complete payment before|前完成支付/i).first()).toBeVisible();
-  const paymentPopupPromise = page.waitForEvent('popup');
-  await page.getByRole('button', { name: /Buy credits|购买 AI 积分/i }).click();
+  await page.goto('/portal/billing?action=credits');
   const creditDialog = page.getByRole('dialog', { name: /AI credit packs|AI 积分包/i });
   await expect(creditDialog.getByText(/Valid for 180 days|支付后 180 天内有效/i).first()).toBeVisible();
   await creditDialog.getByRole('radio', { name: /Small AI credit pack|小 AI 积分包/i }).click();
+  const paymentPopupPromise = page.waitForEvent('popup');
   await creditDialog.getByRole('button', { name: /Buy credits|购买 AI 积分/i }).click();
   const paymentPopup = await paymentPopupPromise;
   await paymentPopup.waitForURL('https://pay.example.com/pay_credit_pack_new_tab');
   await expect(page.getByText(/Alipay opened in a new tab|支付宝已在新标签页打开/i)).toBeVisible();
   await paymentPopup.close();
+  await page.goto('/portal/account');
+  await page.getByRole('tab', { name: /Pending|待支付/i }).click();
   const creditPackOrder = page.locator('[data-payment-order-id="pay_pending_visible"]');
   await expect(creditPackOrder.getByText(/Small AI credit pack|小 AI 积分包/i)).toBeVisible();
   await expect(creditPackOrder.getByText(/Waiting for payment confirmation|等待支付确认/i)).toHaveCount(1);
@@ -2062,13 +2082,58 @@ test('portal account page hides internal identifiers and duplicate summary metri
   await expect(page.getByText(/acct_portal/i)).not.toBeVisible();
 });
 
+test('portal breadcrumbs appear only on secondary pages', async ({ page }) => {
+  await installPortalMocks(page);
+
+  await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/support');
+  await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/account');
+  await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(0);
+
+  await page.goto('/portal/audit');
+  const auditCrumb = page.locator('[data-portal-breadcrumb]');
+  await expect(auditCrumb).toHaveCount(1);
+  await expect(auditCrumb).toContainText(/Account|账号|帳號/i);
+  await expect(auditCrumb).toContainText(/Recent activity|最近活动|最近活動/i);
+  await expect(auditCrumb).not.toContainText(/^Service$|^服务$|^服務$/i);
+  await expect(auditCrumb.getByRole('link', { name: /Service|服务|服務/i })).toHaveCount(0);
+
+  await page.goto('/portal/sites/site_attention');
+  await expect(page.locator('[data-portal-breadcrumb]')).toHaveCount(1);
+  await expect(page.locator('[data-portal-breadcrumb]')).toContainText(/My sites|我的站点|我的站點/i);
+
+  await page.goto('/portal/support/ticket_portal_e2e_open');
+  const ticketCrumb = page.locator('[data-portal-breadcrumb]');
+  await expect(ticketCrumb).toHaveCount(1);
+  await expect(ticketCrumb).toContainText(/Tickets|工单|工單/i);
+  await expect(ticketCrumb.getByRole('link', { name: /Service|服务|服務/i })).toHaveCount(0);
+});
+
 test('portal audit stays a bounded support deep link', async ({ page }) => {
   await installPortalMocks(page);
 
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-account-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
-  await expect(page.getByText(/activity for All sites|查看 全部站点 最近的操作/i)).toBeVisible();
+  // The audit scope copy moved into the quiet header info hint (#1198).
+  const auditScopeHint = page
+    .locator('[data-portal-workspace-header="audit"] [data-portal-info-hint="trigger"]')
+    .first();
+  await expect(auditScopeHint).toHaveAttribute(
+    'aria-label',
+    /activity for All sites|查看 全部站点 最近的操作/i
+  );
+  await auditScopeHint.hover();
+  await expect(page.locator('[data-portal-info-hint="panel"]')).toContainText(
+    /activity for All sites|查看 全部站点 最近的操作/i
+  );
   const auditTable = page.locator('[data-portal-audit="records-table"]');
   await expect(auditTable).toBeVisible();
   await expect(auditTable.locator('tbody tr')).toHaveCount(10);
@@ -2117,13 +2182,20 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
   const ticketsTable = page.locator('[data-portal-support="tickets-table"]');
   await expect(ticketsTable).toBeVisible();
+  await expect(page.locator('[data-portal-support="list-toolbar"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-support="header-actions"]')).toBeVisible();
+  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toHaveCount(0);
+  await expect(page.getByText(/^Filter by status$|^按状态筛选$/i)).toHaveCount(0);
   await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(1);
   await page.locator('[data-portal-support="status-rules"] summary').click();
   await expect(page.getByText(/Open tickets are waiting|待处理工单/i)).toBeVisible();
   await expect(page.getByText(/Close evaluation|关闭评价|關閉評價/i).first()).toBeVisible();
   await expect(ticketsTable.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
   await expect(ticketsTable.getByRole('cell', { name: /^Another site$|^其他站点$/i })).toBeVisible();
-  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await expect(ticketsTable.getByRole('link', { name: /View detail|查看详情|查看詳情/i })).toHaveCount(1);
+  const submitTicket = page.getByRole('button', { name: /Submit ticket|提交工单|提交工單/i });
+  await expect(submitTicket).toHaveAttribute('data-portal-support', 'submit-ticket');
+  await submitTicket.click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeVisible();
   await page.keyboard.press('Escape');
 });
@@ -2200,8 +2272,10 @@ test('single unavailable site keeps support explicitly account-scoped without a 
   });
 
   await page.goto('/portal/support');
-  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toBeVisible();
+  // Standing「账户范围」label removed; account scope is implicit (no site selector).
+  await expect(page.locator('#portal-support-site-selector')).toHaveCount(0);
   await expect(page.getByText(/^Select a site$|^选择站点$/i)).toHaveCount(0);
+  await expect(page.locator('[data-portal-support="status-filters"]')).toBeVisible();
 });
 
 test('[readiness:new_account_no_site] a new account gets a WordPress connection path instead of a dead end', async ({ page }) => {
@@ -2615,7 +2689,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(
     page.locator('[data-portal-support="ticket-cards"]').getByText(/^Another site$|^其他站点$/i)
   ).toBeVisible();
-  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await page.getByLabel(/Submit ticket|提交工单|提交工單/i).click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -23,13 +23,15 @@ const workspaceHeader = read('src/components/portal/PortalWorkspaceHeader.tsx');
 const home = read('src/app/portal/page.tsx');
 const siteRecord = read('src/app/portal/sites/[siteId]/page.tsx');
 const support = read('src/app/portal/support/page.tsx');
+const supportDetail = read('src/app/portal/support/[requestId]/page.tsx');
 const usage = read('src/app/portal/usage/page.tsx');
 const siteUsageDialog = read('src/components/portal/PortalSiteUsageDialog.tsx');
 const modal = read('src/components/ui/Modal.tsx');
 
 assert.match(account, /href="\/portal\/audit"/);
 assert.doesNotMatch(account, /href="\/portal\/login"/);
-assert.match(account, /PortalBreadcrumb[\s\S]*portal\.account\.title/);
+assert.doesNotMatch(account, /PortalBreadcrumb/, 'Account top-level page must not show a Service breadcrumb');
+assert.doesNotMatch(account, /portal\.account\.breadcrumb/);
 assert.doesNotMatch(account, /portal\.account\.settings_eyebrow/);
 assert.match(account, /function AccountPageFallback[\s\S]*t\('common\.loading'/);
 assert.doesNotMatch(account, /Loading Account Center/);
@@ -65,6 +67,12 @@ assert.doesNotMatch(siteRecord, /contactStatusLabel/);
 assert.match(siteRecord, /getPortalSiteUrlDisplay/, 'Site detail metadata must use short URL display');
 assert.match(siteRecord, /data-portal-site="rename"/, 'Site detail title row must expose rename');
 assert.match(siteRecord, /PortalBreadcrumb/, 'Site detail shows a breadcrumb above the title');
+assert.match(supportDetail, /PortalBreadcrumb/, 'Ticket detail keeps a Tickets / title breadcrumb');
+assert.doesNotMatch(supportDetail, /PortalBreadcrumb[\s\S]*portal\.nav_service[\s\S]*portal\.support_requests_title/, 'Ticket detail must not nest under Service');
+assert.doesNotMatch(audit, /PortalBreadcrumb[\s\S]*portal\.nav_service[\s\S]*portal\.account\.title/, 'Recent activity must not nest under Service');
+assert.match(audit, /PortalBreadcrumb/, 'Recent activity keeps an Account / activity breadcrumb');
+assert.match(audit, /PortalBreadcrumb[\s\S]*portal\.account\.title[\s\S]*href: '\/portal\/account'/, 'Recent activity trail starts at Account');
+assert.match(supportDetail, /PortalBreadcrumb[\s\S]*portal\.support_requests_title[\s\S]*href: '\/portal\/support'/, 'Ticket detail trail starts at Tickets');
 assert.match(siteRecord, /href:\s*'\/portal#sites'/, 'My sites crumb links to /portal#sites');
 assert.match(siteRecord, /PortalActionIcon id="rename"/);
 assert.match(
@@ -157,15 +165,19 @@ for (const [name, source] of [
 ]) {
   assert.match(source, /<PortalWorkspaceHeader/, `${name} must use the shared Portal workspace header`);
 }
-assert.match(paymentOrderHistory, /role="tab"[\s\S]*min-h-11/);
+assert.match(paymentOrderHistory, /role="tab"[\s\S]*inline-flex h-7[\s\S]*rounded-full/, 'PC payment status filters use compact pills');
 assert.match(billing, /resolvePackageStatusDetail/);
 assert.match(billing, /<PortalEntitlementUsage/);
-assert.match(billing, /PortalBreadcrumb/);
+assert.doesNotMatch(billing, /PortalBreadcrumb/, 'Package top-level page must not show a Service breadcrumb');
+assert.doesNotMatch(billing, /portal\.billing\.breadcrumb/);
 assert.match(billing, /metricsPlacement="title-end"/);
 assert.match(billing, /data-portal-billing="attention"/);
 assert.doesNotMatch(billing, /contextPanel=/);
-assert.doesNotMatch(billing, /id="package-options"|const paymentOrdersCard =/);
-assert.match(accountCommerce, /id="package-options"[\s\S]*paymentOrdersCard/);
+assert.doesNotMatch(billing, /const paymentOrdersCard =/);
+assert.match(billing, /PortalAccountCommercePanels[\s\S]*surface="billing"/);
+assert.match(accountCommerce, /surface === 'billing'[\s\S]*id="package-options"/);
+assert.match(accountCommerce, /paymentOrdersCard/);
+assert.doesNotMatch(accountCommerce, /data-portal-account="package-summary"|data-portal-account="upgrade-package"/);
 assert.match(accountCommerce, /activeCommercialDialog === 'package'[\s\S]*\{packageOptions\}/);
 assert.match(accountCommerce, /<PortalCreditPackDialog[\s\S]*packs=\{availableCreditPacks\}/);
 assert.match(accountCommerce, /activeCommercialDialog === 'trial'[\s\S]*\{trialOptions\}/);
@@ -175,15 +187,15 @@ assert.match(creditPackDialog, /selectedPackId === pack\.pack_id[\s\S]*onConfirm
 assert.match(packagePanel, /border-2 bg-white[\s\S]*focus-visible:ring-\[#0071e3\]/);
 assert.match(accountCommerce, /size="3xl"\s+className="portal-commercial-dialog /, 'package change dialog must use the Modal 3xl size');
 assert.doesNotMatch(accountCommerce + creditPackDialog + siteUsageDialog, /portal-commercial-dialog max-w-|size="xl"\s+className="[^"]*max-w-/, 'portal dialogs must not override Modal width with className');
-assert.match(modal, /'2xl': 'max-w-4xl'[\s\S]*'3xl': 'max-w-5xl'/, 'Modal must expose the formal 2xl/3xl portal sizes');
+assert.match(modal, /'2xl': 'max-w-4xl'[\s\S]*'3xl': 'max-w-3xl'/, 'Modal must expose the formal site-usage size and the narrowed package size');
 assert.match(siteUsageDialog, /size="2xl"/, 'site usage dialog must use the Modal 2xl size');
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_credit_snapshot/);
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_purchase_amount/);
 assert.match(paymentOrderHistory, /<details[\s\S]*portal\.usage\.payment_orders_title[\s\S]*<\/details>/);
-assert.match(paymentOrderHistory, /open=\{Number\(counts\.pending \|\| 0\) > 0\}/);
+assert.match(paymentOrderHistory, /<details[\s\S]*\sopen\s+data-portal-account="payment-orders"/, 'Existing account payment orders remain visible initially');
 
 assert.doesNotMatch(support, /<h2[^>]*>[\s\S]*portal\.support_request_list_title[\s\S]*<\/h2>/);
-assert.match(support, /PortalBreadcrumb[\s\S]*portal\.support_requests_title/);
+assert.doesNotMatch(support, /PortalBreadcrumb/, 'Tickets list top-level page must not show a Service breadcrumb');
 assert.doesNotMatch(support, /data-portal-support="ticket-guide"[\s\S]*rounded-xl border border-slate-200\/80 bg-slate-50/);
 assert.match(siteUsageDialog, /const creditEventPageSize = 20/);
 assert.doesNotMatch(siteUsageDialog, /setCreditLedger\(bundle\.creditLedger\)/);

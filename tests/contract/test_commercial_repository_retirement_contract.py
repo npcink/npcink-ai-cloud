@@ -211,9 +211,9 @@ def test_support_mixin_uses_explicit_support_access_and_audit_repositories() -> 
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and ast.unparse(node.func) in expected_repositories
     ]
-    assert constructions.count("CommercialSupportRepository") == 13
-    assert constructions.count("CommercialAccessRepository") == 6
-    assert constructions.count("CommercialServiceAuditRepository") == 7
+    assert constructions.count("CommercialSupportRepository") == 14
+    assert constructions.count("CommercialAccessRepository") == 7
+    assert constructions.count("CommercialServiceAuditRepository") == 8
     assert not any(
         isinstance(node, ast.Name) and node.id == "CommercialRepository"
         for node in ast.walk(tree)

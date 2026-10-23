@@ -652,7 +652,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                 : t('portal.sites.empty_list_hint', {}, 'Use Connect new site above for the WordPress binding steps.')}
             />
           ) : (
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full text-left text-sm">
               <caption className="sr-only">
                 {t('portal.site_register_desc', {}, 'Every connected site appears here with its current service status.')}
               </caption>

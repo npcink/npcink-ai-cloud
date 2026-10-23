@@ -429,19 +429,47 @@ export interface PortalUsageSummaryPayload {
   };
 }
 
+export type PortalSiteKnowledgeUsageSourceType = 'text' | 'media' | 'video' | 'pdf';
+
+/** Counts of documents/images; reserved video records and PDF files (not seconds/pages). */
+export type PortalSiteKnowledgeUsageMeteringUnit = 'document' | 'image' | 'video' | 'pdf';
+
+export interface PortalSiteKnowledgeUsageItem {
+  site_id: string;
+  site_name: string;
+  status: string;
+  /** Usage in the response's metering_unit. */
+  used: number;
+  last_indexed_at: string;
+  /** Text-bucket compatibility alias of used. */
+  indexed_document_count?: number;
+}
+
 export interface PortalSiteKnowledgeUsageRow {
   site_id: string;
   site_name: string;
   status: string;
+  used: number;
   indexed_document_count: number;
   last_indexed_at: string;
 }
 
-export interface PortalAccountSiteKnowledgeUsagePayload {
+export interface PortalSiteKnowledgeUsagePayload {
   generated_at: string;
+  source_type: PortalSiteKnowledgeUsageSourceType;
+  metering_unit: PortalSiteKnowledgeUsageMeteringUnit;
+  total_used: number;
+  items: PortalSiteKnowledgeUsageItem[];
+}
+
+/** Text-bucket response including the legacy breakdown fields. */
+export interface PortalAccountSiteKnowledgeUsagePayload
+  extends PortalSiteKnowledgeUsagePayload {
+  source_type: 'text';
+  metering_unit: 'document';
+  sites: PortalSiteKnowledgeUsageRow[];
   total_indexed_document_count: number;
   indexed_document_limit: number;
-  sites: PortalSiteKnowledgeUsageRow[];
 }
 
 export interface PortalPluginObservabilityTotals {
@@ -1462,6 +1490,7 @@ export interface CreatePortalSupportRequestPayload {
 
 export interface CreatePortalSupportRequestMessagePayload {
   body: string;
+  attachment_ids?: string[];
 }
 
 export interface CreatePortalSupportRequestAttachmentPayload {
@@ -2276,7 +2305,11 @@ export class PortalClient {
   async createSupportRequestMessage(
     requestId: string,
     payload: CreatePortalSupportRequestMessagePayload
-  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; message: PortalSupportRequestMessage }>> {
+  ): Promise<PortalEnvelope<{
+    request: PortalSupportRequest;
+    message: PortalSupportRequestMessage;
+    attachments?: PortalSupportRequestAttachment[];
+  }>> {
     return this.request('POST', `/support-requests/${requestId}/messages`, payload);
   }
 
@@ -2293,6 +2326,17 @@ export class PortalClient {
   ): Promise<PortalEnvelope<{ attachment: PortalSupportRequestAttachment }>> {
     return this.request(
       'GET',
+      `/support-requests/${requestId}/attachments/${attachmentId}`,
+      undefined
+    );
+  }
+
+  async deleteSupportRequestAttachment(
+    requestId: string,
+    attachmentId: string
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; attachment: PortalSupportRequestAttachment }>> {
+    return this.request(
+      'DELETE',
       `/support-requests/${requestId}/attachments/${attachmentId}`,
       undefined
     );
@@ -2442,6 +2486,13 @@ export class PortalClient {
 
   async getAccountSiteKnowledgeUsage(): Promise<PortalEnvelope<PortalAccountSiteKnowledgeUsagePayload>> {
     return this.request('GET', '/account/site-knowledge-usage', undefined);
+  }
+
+  async getAccountSiteKnowledgeUsageByType(
+    sourceType: PortalSiteKnowledgeUsageSourceType
+  ): Promise<PortalEnvelope<PortalSiteKnowledgeUsagePayload>> {
+    const query = sourceType === 'text' ? '' : `?source_type=${encodeURIComponent(sourceType)}`;
+    return this.request('GET', `/account/site-knowledge-usage${query}`, undefined);
   }
 
   async getUsageBundle(options?: { siteId?: string }): Promise<PortalUsageBundle> {

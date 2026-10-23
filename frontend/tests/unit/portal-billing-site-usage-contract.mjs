@@ -39,7 +39,7 @@ const entitlement = readFileSync(entitlementPath, 'utf8');
 const sourcesDialog = readFileSync(sourcesDialogPath, 'utf8');
 assert.match(
   entitlement,
-  /onOpenCreditSources\?\.\(\)[\s\S]{0,400}open-credit-sources/,
+  /const openCreditSourcesDialog = \(\) => onOpenCreditSources\?\.\(\);[\s\S]*const activateCard = creditSourcesClickable\s*\? openCreditSourcesDialog[\s\S]*'open-credit-sources'[\s\S]*onClick=\{activateCard\}/,
   'AI credits primary ratio must open the credit-sources dialog'
 );
 assert.match(
@@ -170,6 +170,7 @@ assert.doesNotMatch(
 for (const key of [
   'portal.billing.site_usage_list_title',
   'portal.billing.site_usage_list_desc',
+  'portal.billing.site_usage_list_desc_single',
   'portal.billing.site_usage_dialog_title',
   'portal.billing.site_usage_pick_hint',
 ]) {

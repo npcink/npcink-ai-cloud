@@ -39,7 +39,7 @@ describe('Portal billing quiet status', () => {
       'Multiple capacities need attention'
     );
     expect(resolveBillingPressureCta({ quotaSummary: capacityLimited, t })).toEqual({
-      href: '/portal/account#package-options',
+      href: '/portal/billing?action=upgrade',
       kind: 'upgrade',
       label: 'Upgrade package',
     });
@@ -50,7 +50,7 @@ describe('Portal billing quiet status', () => {
       resource_limits: [],
     };
     expect(resolveBillingPressureCta({ quotaSummary: creditLimited, t })).toEqual({
-      href: '/portal/account#package-options',
+      href: '/portal/billing?action=credits',
       kind: 'buy_credits',
       label: 'Buy credits',
     });

@@ -27,7 +27,7 @@ assert.equal(
 
 assert.match(clientSource, /state\?: 'eligible' \| 'active' \| 'used' \| 'blocked' \| 'unavailable'/);
 assert.match(clientSource, /allowed_tiers\?: Array<'plus' \| 'pro'>/);
-assert.match(i18nSource, /'portal\.package\.paid_offer_desc': '\{\{amount\}\}\/30 天。'/);
+assert.match(i18nSource, /'portal\.package\.paid_offer_desc': '\{\{amount\}\}\/月。'/);
 assert.match(i18nSource, /'portal\.package\.trial_shared_desc'/);
 assert.match(i18nSource, /'portal\.package\.trial_blocked_desc'/);
 

@@ -1,8 +1,8 @@
 # Commercial development next stage v1
 
-Status: active. Operator approved continued development and sequential
-implementation on 2026-10-23. This supersedes the commercial **development**
-freeze; it does not authorize production operations or claim Phase 1 completion.
+Status: active bounded rollout contract. The operator approved existing sales
+and the shared trial on 2026-10-23. Other commercial expansion stays frozen;
+this exception does not authorize production operations or claim Phase 1 completion.
 
 ## Current bounded rollout (2026-10-23)
 
@@ -42,7 +42,7 @@ environment, transaction and authorization. No price change, real WeChat API,
 new marketing system, broad commercial expansion or paused-feature restoration
 is included in this rollout.
 
-## Delivery order
+## Deferred follow-on order (not implementation authorization)
 
 1. Admin sales status → Portal catalog → checkout/trial eligibility.
 2. Payment confirmation, credit delivery, closing and refunds, including recovery.
@@ -50,7 +50,8 @@ is included in this rollout.
 4. Account-centered Admin operations linking subscriptions, orders, ledger and support.
 5. Revenue/refunds, estimated provider cost and actual supplier bill analysis.
 
-Each batch uses current master, focused tests, consumer evidence and a separate
+Future expansion requires explicit scheduling and authorization. An authorized
+batch uses current master, focused tests, consumer evidence and a separate
 reviewable PR. Overlapping unfinished work must be reconciled before starting
 the dependent batch. Preserve other sessions' dirty work and shared M4 ownership.
 Record local, CI, M4 candidate, merged, M4 accepted, production and human evidence
@@ -86,9 +87,9 @@ remain paused.
 
 ## Corrections to older commercialization drafts
 
-The former development freeze was a development policy, not a claim that sales
-were runtime-disabled or DB Offers were all draft. Restoring development must
-not pre-seed ACTIVE Offers into production or implicitly enable sales.
+The development freeze is a development policy, not a claim that sales are
+runtime-disabled or DB Offers are all draft. The bounded exception must not
+pre-seed ACTIVE Offers into production or implicitly enable production sales.
 Current payment return handling lives at `/portal/billing`; do not copy the
 older `/portal/account?payment_return=success` examples as the current contract.
 Use current code for payment settings and credit-pack overrides rather than

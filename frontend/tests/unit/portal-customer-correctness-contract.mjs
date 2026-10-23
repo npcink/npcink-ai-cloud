@@ -57,6 +57,16 @@ assert.match(
   'package page must list visible sites and open usage for the chosen site'
 );
 assert.match(
+  siteUsageListSource,
+  /isSingleSite[\s\S]*site_usage_list_desc_single[\s\S]*data-portal-billing-site-layout=\{isSingleSite \? 'single' : 'multi'\}/,
+  'single-site package usage list must use full-width layout and quieter copy'
+);
+assert.doesNotMatch(
+  siteUsageListSource,
+  /setSiteUsageSite\(|auto-?open|useEffect\(\(\) => \{[\s\S]*onSelectSite/,
+  'site usage list must not auto-open a usage modal'
+);
+assert.match(
   billingSource,
   /<PortalSiteUsageDialog[\s\S]*isOpen=\{Boolean\(siteUsageSite\)\}[\s\S]*site=\{siteUsageSite\}/,
   'site usage Modal must be scoped to the site picked from the list'
@@ -76,9 +86,10 @@ assert.match(
   /useEffect\(\(\) => \{\s*siteIdRef\.current = siteId;[\s\S]*setCreditTrend\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setSelectedCreditEvent\(null\)/,
   'site usage Modal must clear stale trend, records, and detail when the site changes'
 );
-assert.match(accountCommerceSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
-assert.doesNotMatch(billingSource, /id="package-options"/);
-assert.match(billingSource, /href=\{\s*manageHref\s*\}|href="\/portal\/account#package-options"/);
+assert.match(accountCommerceSource, /surface !== 'billing'[\s\S]*setActiveCommercialDialog\('package'\)[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/);
+assert.match(billingSource, /PortalAccountCommercePanels[\s\S]*surface="billing"/);
+assert.doesNotMatch(accountCommerceSource, /data-portal-account="package-summary"|data-portal-account="upgrade-package"/);
+assert.match(billingSource, /href=\{\s*manageHref\s*\}|href="\/portal\/billing\?action=upgrade"/);
 assert.match(auditSource, /SUCCESSFUL_AUDIT_OUTCOMES[\s\S]*succeeded[\s\S]*completed/);
 assert.match(headerSource, /onSiteChange[\s\S]*<select[\s\S]*onSiteChange\(event\.target\.value\)/);
 

@@ -76,8 +76,8 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /primaryAction=\{[\s\S]*support_request_new_action/,
-  'Portal submit-ticket action must sit in the title info group via primaryAction'
+  /actions=\{\([\s\S]*data-portal-support="header-actions"[\s\S]*data-portal-support="status-filters"[\s\S]*data-portal-support="submit-ticket"/,
+  'Portal support header must keep status filters and submit icon in the title-end actions group'
 );
 assert.match(
   portalSupportPageSource,
@@ -106,3 +106,185 @@ assert.doesNotMatch(
   'Portal support PC ticket title/site cells must not keep the older wider max-width caps'
 );
 
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="list-toolbar"/,
+  'Portal support must not keep an in-card list toolbar row for filters'
+);
+assert.match(
+  portalSupportPageSource,
+  /PortalPageStack className="space-y-3"/,
+  'Portal support page stack must use tighter title-to-list spacing'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="header-actions"[\s\S]*status-filters[\s\S]*submit-ticket/,
+  'Portal support filters must sit in the header actions cluster before the submit icon'
+);
+assert.match(
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /actionsPlacement === 'title-end'[\s\S]*data-portal-header-actions="title-end"/,
+  'PortalWorkspaceHeader title-end actions must use a right-edge wrapper'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="submit-ticket"[\s\S]*portal\.support_request_new_action[\s\S]*PortalActionIcon id="ticket-new"/,
+  'Portal submit-ticket header control must be an accessible icon button'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="view-detail"[\s\S]*PortalActionIcon id="view-detail"/,
+  'Portal ticket row detail control must be an accessible icon link'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /<p className="text-xs font-medium[\s\S]*portal\.support_filter_label/,
+  'Portal support must not show a visible Filter by status label'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /: <p className="text-sm text-slate-500">\{t\('portal\.support_account_scope_label'\)\}<\/p>/,
+  'Portal support must not show a standing Account scope label on the list toolbar'
+);
+
+
+assert.match(
+  portalSupportPageSource,
+  /actionsPlacement="title-end"/,
+  'Portal support header must place filters/submit at the title-end edge'
+);
+
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /common\.back/,
+  'Ticket detail must not show a redundant Back action beside the breadcrumb'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /titleDisplay="sr-only"/,
+  'Ticket detail must hide the large H1 when breadcrumb already shows 工单 / title'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="ticket-description"/,
+  'Ticket detail must not keep a separate description card that duplicates the first customer bubble'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="message-thread"[\s\S]*bubble-customer[\s\S]*bubble-operator/,
+  'Ticket detail must render Q&A as left/right chat bubbles'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="system-line"/,
+  'Ticket detail must render system status changes as thin centered lines'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="composer"[\s\S]*data-portal-support="reply-actions"[\s\S]*composer-attach[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
+  'Ticket detail must use a compact composer with attach, refresh, and send'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="attachment-chips"[\s\S]*data-portal-support="attachment-remove"/,
+  'Composer attachment chips must expose a remove control'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /composerDrafts\.map\(\(draft\)[\s\S]*data-draft-local=\{!draft\.attachment_id[\s\S]*data-portal-support="attachment-remove"[\s\S]*handleComposerDraftRemove\(draft\)/,
+  'Local attachment drafts must expose the same cancel/remove control before upload'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="reply-reopen-notice"[\s\S]*border-amber-200 bg-amber-50/,
+  'Ticket detail must not keep the tall amber reopen banner'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*data-portal-support="feedback-rating-stars"/,
+  'Close evaluation must use a resolved segment and star rating instead of wide selects'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="close-evaluation"[\s\S]*justify-end[\s\S]*support_feedback_submit_action/,
+  'Close evaluation submit must be right-aligned'
+);
+
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="status-rules"/,
+  'Portal support list must not keep a standing ticket-status legend card'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="ticket-guide"[\s\S]*support_guide_status_summary/,
+  'Portal support must keep status meaning in the quiet title ⓘ hint'
+);
+
+assert.match(
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /titleDisplay\?: 'visible' \| 'sr-only'/,
+  'PortalWorkspaceHeader must support sr-only title for breadcrumb-led detail pages'
+);
+
+
+assert.match(
+  portalSupportDetailPageSource,
+  /statusTone\(supportRequest\.status\)[\s\S]{0,120}force|force[\s\S]{0,80}statusTone\(supportRequest\.status\)/,
+  'Ticket detail status badge must force-render so resolved is never silenced'
+);
+assert.match(
+  portalSupportPageSource,
+  /statusTone\(item\.status\)[\s\S]{0,120}force/,
+  'Ticket list status badges must force-render so resolved is never silenced'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /rounded-2xl[\s\S]*data-portal-support="composer-shell"|data-portal-support="composer-shell"[\s\S]*rounded-2xl/,
+  'Ticket composer must use a rounded shell matching bubble radius'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="refresh-detail"[\s\S]*absolute|absolute[\s\S]*data-portal-support="refresh-detail"/,
+  'Ticket refresh must sit inside the input trailing corner, not beside send'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /text-right[\s\S]*data-portal-support="reply-reopen-notice"|data-portal-support="reply-reopen-notice"[\s\S]*text-right/,
+  'Reopen hint must be right-aligned under the composer send side'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /max-w-\[30rem\][\s\S]*data-portal-support="close-evaluation"/,
+  'Close evaluation must use a narrow centered card (~30rem)'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*flex-1|flex w-full[\s\S]*feedback-resolved-segment/,
+  'Close evaluation segment must span the narrow card width'
+);
+
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /bubble-customer[\s\S]{0,800}support_message_author_customer|authorLabel\(/,
+  'Ticket bubbles must not show You/Support author labels; color alone distinguishes sides'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="bubble-time"[\s\S]*group-hover:opacity-100[\s\S]*group-focus-within:opacity-100|group-hover:opacity-100[\s\S]*group-focus-within:opacity-100[\s\S]*bubble-time/,
+  'Ticket bubble timestamps must stay hidden until hover/focus'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackUpdateLink[\s\S]*close-evaluation-update[\s\S]*support_feedback_update_action/,
+  'After feedback is submitted, detail must collapse the close-eval card behind an Update evaluation link'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackEditor[\s\S]*!feedback \|\| feedbackEditorOpen|!feedback \|\| feedbackEditorOpen[\s\S]*showFeedbackEditor/,
+  'Close evaluation editor must open only when no feedback yet or the user expands Update evaluation'
+);
+
+console.log('portal_support_requests_contract: ok');

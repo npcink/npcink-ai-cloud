@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { PortalCreditPackDialog } from '@/components/portal/PortalCreditPackDialog';
 import {
@@ -45,10 +45,20 @@ function normalizePaymentText(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
 }
 
-export function PortalAccountCommercePanels() {
+export type PortalAccountCommerceSurface = 'account' | 'billing';
+
+type PortalAccountCommercePanelsProps = {
+  /** account: payment orders only. billing: package/credit/trial dialogs (no plan summary row). */
+  surface: PortalAccountCommerceSurface;
+};
+
+export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePanelsProps) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, refresh } = useSession();
+  const catalogEnabled = isAuthenticated && surface === 'billing';
   const {
     entitlements,
     creditPacks,
@@ -57,7 +67,7 @@ export function PortalAccountCommercePanels() {
     error,
     load: loadBilling,
   } = usePortalCommercialCatalog({
-    isAuthenticated,
+    isAuthenticated: catalogEnabled,
     t,
   });
   const {
@@ -88,29 +98,65 @@ export function PortalAccountCommercePanels() {
   const [selectedPackageTier, setSelectedPackageTier] = useState<
     PortalPackageTier | null
   >(null);
-  const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(true);
+  const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(false);
   const [selectedCreditPackId, setSelectedCreditPackId] = useState<string | null>(null);
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
   const handledUpgradeIntentRef = useRef('');
 
+  const clearCommercialActionFromUrl = () => {
+    if (surface !== 'billing') return;
+    if (!searchParams.get('action')) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('action');
+    const qs = params.toString();
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}${hash}`, { scroll: false });
+  };
+
+  const closeCommercialDialog = () => {
+    setActiveCommercialDialog(null);
+    // Keep handledUpgradeIntentRef until `action` leaves the URL so the open
+    // effect cannot re-open the dialog during router.replace.
+    clearCommercialActionFromUrl();
+  };
+
   useEffect(() => {
+    if (surface !== 'billing') return;
+    if (searchParams.get('action')) return;
+    handledUpgradeIntentRef.current = '';
+  }, [surface, searchParams]);
+
+  useEffect(() => {
+    if (surface !== 'billing') return;
     const requestedTier = searchParams.get('plan');
     const requestedAction = searchParams.get('action');
-    const intentKey = `${requestedAction}:${requestedTier}`;
-    if (
-      requestedAction !== 'upgrade'
-      || (requestedTier !== 'plus' && requestedTier !== 'pro')
-      || handledUpgradeIntentRef.current === intentKey
-      || !(planOffers?.items || []).some((offer) => offer.tier_id === requestedTier)
-    ) {
+    const intentKey = `${requestedAction || ''}:${requestedTier || ''}`;
+    if (!requestedAction || handledUpgradeIntentRef.current === intentKey) return;
+
+    if (requestedAction === 'credits') {
+      handledUpgradeIntentRef.current = intentKey;
+      setCreditPackError(null);
+      setActiveCommercialDialog('credits');
       return;
     }
+
+    if (requestedAction !== 'upgrade') return;
+
+    if (requestedTier === 'plus' || requestedTier === 'pro') {
+      const offers = planOffers?.items || [];
+      if (!offers.some((offer) => offer.tier_id === requestedTier)) {
+        // Wait until catalog resolves so a deep-linked tier can preselect when present.
+        if (isLoading || planOffers === null) return;
+      } else {
+        setSelectedPackageTier(requestedTier);
+      }
+    }
+
     handledUpgradeIntentRef.current = intentKey;
     setPackageError(null);
-    setSelectedPackageTier(requestedTier);
-    setShowOnlyPackageDifferences(true);
+    setShowOnlyPackageDifferences(false);
     setActiveCommercialDialog('package');
-  }, [planOffers?.items, searchParams]);
+  }, [surface, planOffers, planOffers?.items, isLoading, searchParams]);
 
   useEffect(() => {
     const allowedTiers = planOffers?.trial?.allowed_tiers || [];
@@ -120,13 +166,14 @@ export function PortalAccountCommercePanels() {
 
 
   const handleStartPlanTrial = async (tierId: 'plus' | 'pro') => {
+    if (!salesAvailable) return;
     setPackagePending(`trial:${tierId}`);
     setPackageError(null);
     try {
       await portalClient.startPlanTrial(tierId);
       await refresh();
       await loadBilling();
-      setActiveCommercialDialog(null);
+      closeCommercialDialog();
     } catch (err) {
       setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
@@ -135,6 +182,7 @@ export function PortalAccountCommercePanels() {
   };
 
   const handleCreateSubscriptionOrder = async (offer: PortalPlanOffer) => {
+    if (!salesAvailable) return;
     const paymentWindow = preparePaymentWindow();
     setPackagePending(`order:${offer.tier_id}`);
     setPackageError(null);
@@ -151,7 +199,7 @@ export function PortalAccountCommercePanels() {
         setPaymentOrderStatusGroup('pending');
         setPaymentOrderOffset(0);
         await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
+        closeCommercialDialog();
       } else {
         closePreparedPaymentWindow(paymentWindow);
       }
@@ -170,7 +218,7 @@ export function PortalAccountCommercePanels() {
       await portalClient.scheduleFreeDowngrade();
       await refresh();
       await loadBilling();
-      setActiveCommercialDialog(null);
+      closeCommercialDialog();
     } catch (err) {
       setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
@@ -179,6 +227,7 @@ export function PortalAccountCommercePanels() {
   };
 
   const handleCreateCreditPackOrder = async (packId: string) => {
+    if (!salesAvailable) return;
     const paymentWindow = preparePaymentWindow();
     setCreditPackPending(packId);
     setCreditPackError(null);
@@ -195,7 +244,7 @@ export function PortalAccountCommercePanels() {
         setPaymentOrderStatusGroup('pending');
         setPaymentOrderOffset(0);
         await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
+        closeCommercialDialog();
       } else {
         closePreparedPaymentWindow(paymentWindow);
       }
@@ -241,7 +290,9 @@ export function PortalAccountCommercePanels() {
   const trialDays = Number(trial?.trial_days || selectedTrialOffer?.trial_days || 14);
   const activeTrialTier = String(trial?.highest_tier_id || trial?.tier_id || currentPlanId || '').toLowerCase();
   const activeTrialTierLabel = activeTrialTier === 'plus' ? 'Plus' : activeTrialTier === 'pro' ? 'Pro' : '';
-  const availableCreditPacks = creditPacks?.items || [];
+  const salesAvailable = planOffers?.commercial_available !== false
+    && creditPacks?.commercial_available !== false;
+  const availableCreditPacks = salesAvailable ? creditPacks?.items || [] : [];
   const selectedPackageOffer = selectedPackageTier && selectedPackageTier !== 'free'
     ? offersByTier.get(selectedPackageTier)
     : null;
@@ -287,8 +338,6 @@ export function PortalAccountCommercePanels() {
   ) : null;
 
   const comparisonTiers = planOffers?.comparison_tiers || [];
-  const salesAvailable = planOffers?.commercial_available !== false
-    && creditPacks?.commercial_available !== false;
 
   const handleConfirmPackageSelection = () => {
     if (!selectedPackageTier || packagePending !== null) return;
@@ -305,7 +354,13 @@ export function PortalAccountCommercePanels() {
     void handleCreateCreditPackOrder(selectedCreditPackId);
   };
 
-  const packageOptions = (
+  const commercialPausedNotice = !salesAvailable ? (
+    <p role="status" className="text-sm text-slate-600 dark:text-slate-300">
+      {t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.')}
+    </p>
+  ) : null;
+
+  const packageOptions = salesAvailable ? (
     <PortalPackageChangePanel
       t={t}
       currentPlanId={currentPlanId}
@@ -323,7 +378,7 @@ export function PortalAccountCommercePanels() {
       onConfirm={handleConfirmPackageSelection}
       onAgencyPurchase={(offer) => void handleCreateSubscriptionOrder(offer)}
     />
-  );
+  ) : commercialPausedNotice;
 
   const trialStatusTitle = trialState === 'eligible'
     ? t('portal.package.trial_eligible_title', { days: String(trialDays) }, `${trialDays}-day paid-package trial available`)
@@ -351,7 +406,7 @@ export function PortalAccountCommercePanels() {
           ? t('portal.package.trial_blocked_desc', {}, 'This account already has an active paid package, so a trial cannot be started. Renew or change the package instead.')
           : t('portal.package.trial_unavailable_desc', {}, 'No self-service trial is available for this account. Package purchase remains available.');
 
-  const trialOptions = (
+  const trialOptions = salesAvailable ? (
     <PortalTrialEligibilityPanel
       t={t}
       state={trialState}
@@ -365,7 +420,7 @@ export function PortalAccountCommercePanels() {
       onSelectTier={setTrialTierSelection}
       onStartTrial={(tier) => void handleStartPlanTrial(tier)}
     />
-  );
+  ) : commercialPausedNotice;
 
   const paymentOrdersCard = (
     <div id="payment-orders" className="scroll-mt-24">
@@ -389,106 +444,30 @@ export function PortalAccountCommercePanels() {
 
 
 
-  const quotaSummary = entitlements?.quota_summary || null;
-  const creditNeedsAttention = quotaSummary?.ai_credits?.status === 'limited';
+  if (surface === 'account') {
+    return (
+      <div className="space-y-5" data-portal-account="commerce">
+        {paymentOrdersCard}
+      </div>
+    );
+  }
 
   if (isLoading && !entitlements && !planOffers && !creditPacks) {
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} compact />;
   }
 
-  return (
-    <div className="space-y-5" data-portal-account="commerce">
-      {paymentLaunchNotice}
+  const hasVisibleBillingChrome = Boolean(paymentLaunchNotice) || Boolean(error) || !salesAvailable;
+  const anyCommercialDialogOpen = activeCommercialDialog !== null;
 
-      {error ? (
-        <PortalCard variant="portal" className="border-rose-200 bg-rose-50/80 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-          <p className="font-medium">{t('error.failed_load', {}, 'Failed to load')}</p>
-          <p className="mt-1">{error}</p>
-          <button type="button" className="btn btn-secondary btn-sm mt-3" onClick={() => void loadBilling()}>
-            {t('common.retry', {}, 'Retry')}
-          </button>
-        </PortalCard>
-      ) : null}
+  const packageOptionsAnchor = (
+    <div id="package-options" className="scroll-mt-24" hidden aria-hidden="true" />
+  );
 
-      {!error && entitlements ? (
-        <div id="package-options" className="scroll-mt-24">
-          <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-2xl">
-                <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                  {t('portal.billing.manage_title', {}, 'Manage package')}
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {t(
-                    'portal.billing.manage_desc',
-                    {},
-                    'Open an option only when you need to change the package, add AI credits, or review trial eligibility.'
-                  )}
-                </p>
-                <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  {salesAvailable
-                    ? trialStatusTitle
-                    : t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.')}
-                </p>
-              </div>
-              <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[25rem]">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-secondary' : 'btn-primary'}`}
-                    disabled={!salesAvailable}
-                    onClick={() => {
-                      setPackageError(null);
-                      setSelectedPackageTier(null);
-                      setShowOnlyPackageDifferences(true);
-                      setActiveCommercialDialog('package');
-                    }}
-                  >
-                    {salesAvailable
-                      ? t('portal.billing.upgrade_action', {}, 'Upgrade package')
-                      : t('portal.package.offer_unavailable', {}, 'Unavailable')}
-                  </button>
-                  {availableCreditPacks.length > 0 || !salesAvailable ? (
-                    <button
-                      type="button"
-                      className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-primary' : 'btn-secondary'}`}
-                      disabled={!salesAvailable}
-                      onClick={() => {
-                        setCreditPackError(null);
-                        setSelectedCreditPackId(null);
-                        setActiveCommercialDialog('credits');
-                      }}
-                    >
-                      {t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')}
-                    </button>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={!salesAvailable}
-                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300 dark:hover:text-blue-200"
-                  onClick={() => {
-                    setPackageError(null);
-                    setActiveCommercialDialog('trial');
-                  }}
-                >
-                  {trialState === 'eligible'
-                    ? t('portal.package.trial_entry_action', { days: String(trialDays) }, `Start ${trialDays}-day trial`)
-                    : trialState === 'active'
-                      ? t('portal.package.trial_active_entry_action', {}, 'View active trial')
-                      : t('portal.package.trial_eligibility_action', {}, 'Trial eligibility')}
-                </button>
-              </div>
-            </div>
-          </PortalCard>
-        </div>
-      ) : null}
-
-      {paymentOrdersCard}
-
+  const commercialDialogs = (
+    <>
       <Modal
         isOpen={activeCommercialDialog === 'package'}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
         description={t(
@@ -500,6 +479,17 @@ export function PortalAccountCommercePanels() {
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
       >
         {packageOptions}
+        <button
+          type="button"
+          className="btn btn-secondary mt-4"
+          disabled={!salesAvailable}
+          onClick={() => {
+            setPackageError(null);
+            setActiveCommercialDialog('trial');
+          }}
+        >
+          {t('portal.package.trial_eligibility_action', {}, 'Trial eligibility')}
+        </button>
       </Modal>
 
       <PortalCreditPackDialog
@@ -509,14 +499,14 @@ export function PortalAccountCommercePanels() {
         selectedPackId={selectedCreditPackId}
         pendingPackId={creditPackPending}
         error={creditPackError}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         onSelect={setSelectedCreditPackId}
         onConfirm={handleConfirmCreditPackSelection}
       />
 
       <Modal
         isOpen={activeCommercialDialog === 'trial'}
-        onClose={() => setActiveCommercialDialog(null)}
+        onClose={() => closeCommercialDialog()}
         closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.package.trial_dialog_title', {}, 'Trial eligibility')}
         description={t(
@@ -529,6 +519,37 @@ export function PortalAccountCommercePanels() {
       >
         {trialOptions}
       </Modal>
+    </>
+  );
+
+  // Quiet billing: no visible chrome → do not mount a space-y host that doubles
+  // PortalPageStack gaps. Keep dialogs mounted (null when closed) so deep-links work.
+  if (!hasVisibleBillingChrome && !anyCommercialDialogOpen) {
+    return (
+      <>
+        {packageOptionsAnchor}
+        {commercialDialogs}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-5" data-portal-account="commerce" data-portal-billing="package-commerce">
+      {packageOptionsAnchor}
+      {paymentLaunchNotice}
+      {!anyCommercialDialogOpen ? commercialPausedNotice : null}
+
+      {error ? (
+        <PortalCard variant="portal" className="border-rose-200 bg-rose-50/80 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+          <p className="font-medium">{t('error.failed_load', {}, 'Failed to load')}</p>
+          <p className="mt-1">{error}</p>
+          <button type="button" className="btn btn-secondary btn-sm mt-3" onClick={() => void loadBilling()}>
+            {t('common.retry', {}, 'Retry')}
+          </button>
+        </PortalCard>
+      ) : null}
+
+      {commercialDialogs}
     </div>
   );
 }

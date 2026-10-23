@@ -1,6 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Default/--dry-run uses local stub fixtures only: no DB, Docker, or Provider requests.
+# --live tests enabled DB-managed connections and may incur Provider charges.
+# Use --live only for an explicitly authorized operational check, never to
+# manufacture observation data. A stub success is not live readiness evidence.
+MODE="dry-run"
+case "$#:$*" in
+	0:|1:--dry-run) ;;
+	1:--live) MODE="live" ;;
+	1:--help|1:-h)
+		printf '%s\n' 'Usage: remote-provider-matrix-smoke.sh [--dry-run|--live]' \
+			'Default: local stub matrix only. --live may incur Provider charges; requires authorization.'
+		exit 0
+		;;
+	*)
+		printf '%s\n' 'Usage: remote-provider-matrix-smoke.sh [--dry-run|--live]' >&2
+		exit 2
+		;;
+esac
+
+REQUIRED_CAPABILITIES="${NPCINK_CLOUD_REQUIRED_PROVIDER_CAPABILITIES:-text_generation,image_generation,web_search,image_source,embedding,vector_store}"
+export REQUIRED_CAPABILITIES
+
+if [ "${MODE}" = "dry-run" ]; then
+	python3 - <<'STUB_PY'
+import json
+import os
+import sys
+
+# Fixed fixture support, deliberately independent of requested capabilities.
+capabilities = (
+    "text_generation", "image_generation", "web_search", "image_source",
+    "embedding", "vector_store",
+)
+required = [item.strip() for item in os.environ["REQUIRED_CAPABILITIES"].split(",")
+            if item.strip()]
+missing = [item for item in required if item not in capabilities]
+print(json.dumps({
+    "status": "failed" if missing else "ok",
+    "mode": "dry-run",
+    "live_validation": False,
+    "provider_truth": "local_stub_fixtures",
+    "required_capabilities": required,
+    "missing_capabilities": missing,
+    "capability_matrix": {item: [{"provider_id": "stub", "kind": "stub"}]
+                          for item in capabilities},
+    "connection_tests": [{"provider_id": "stub", "kind": "stub", "ok": True}],
+    "test_failures": [],
+    "secret_exposure": "none",
+}, indent=2, sort_keys=True))
+sys.exit(1 if missing else 0)
+STUB_PY
+	exit "$?"
+fi
+
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
 if [ -n "${SCRIPT_SOURCE}" ] && [ "${SCRIPT_SOURCE}" != "bash" ] && [ -e "${SCRIPT_SOURCE}" ]; then
 	ROOT_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")/.." && pwd -P)"
@@ -10,9 +64,6 @@ fi
 . "${ROOT_DIR}/deploy/common.sh"
 
 npcink_ai_cloud_require_cmd docker
-
-REQUIRED_CAPABILITIES="${NPCINK_CLOUD_REQUIRED_PROVIDER_CAPABILITIES:-text_generation,image_generation,web_search,image_source,embedding,vector_store}"
-export REQUIRED_CAPABILITIES
 
 npcink_ai_cloud_compose "${ROOT_DIR}" exec -T \
 	-e "REQUIRED_CAPABILITIES=${REQUIRED_CAPABILITIES}" \
@@ -126,6 +177,8 @@ missing_capabilities = [
 ]
 
 payload = {
+    "mode": "live",
+    "live_validation": True,
     "status": "ok" if not missing_capabilities and not test_failures else "failed",
     "required_capabilities": required_capabilities,
     "missing_capabilities": missing_capabilities,
