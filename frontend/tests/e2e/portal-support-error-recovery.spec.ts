@@ -89,7 +89,7 @@ for (const copy of locales) {
           });
         }
         if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/portal/v1/')) return reject();
-        const prefetchPaths = ['/portal', '/portal/login', '/portal/billing', '/portal/account', '/portal/support/ticket_recovery'];
+        const prefetchPaths = ['/portal', '/portal/login', '/portal/billing', '/portal/account', '/portal/notifications', '/portal/support/ticket_recovery'];
         if (request.headers()['next-router-prefetch'] === '1' && prefetchPaths.includes(url.pathname)) {
           prefetched.push(url.pathname);
           return route.fulfill({ status: 204, body: '' });
