@@ -320,11 +320,11 @@ export function PortalPaymentOrderHistory({
         {/* When the table is hidden (loading / filter empty), keep the status filter reachable on desktop too. */}
         {orders.length === 0 ? (
           <div className="mb-3" data-portal-account="payment-orders-status-filter-bar">
-            {renderStatusFilterSelect('input h-8 w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
+            {renderStatusFilterSelect('input h-8 !w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
           </div>
         ) : (
           <div className="mb-3 lg:hidden" data-portal-account="payment-orders-status-filter-bar">
-            {renderStatusFilterSelect('input h-8 w-max max-w-full py-0.5 text-xs font-medium')}
+            {renderStatusFilterSelect('input h-8 !w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
           </div>
         )}
         <div role="region" aria-label={t('portal.usage.payment_orders_title', {}, 'Payment orders')}>
@@ -345,7 +345,7 @@ export function PortalPaymentOrderHistory({
                           <span className="text-[0.65rem] font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                             {t('common.status', {}, 'Status')}
                           </span>
-                          {renderStatusFilterSelect('input h-8 w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
+                          {renderStatusFilterSelect('input h-8 !w-max max-w-[9.5rem] py-0.5 text-xs font-medium')}
                         </span>
                       </th>
                       <th scope="col" className="w-[14%] px-3 py-3 text-right font-medium">{t('portal.usage.payment_order_purchase_amount', {}, 'Amount')}</th>

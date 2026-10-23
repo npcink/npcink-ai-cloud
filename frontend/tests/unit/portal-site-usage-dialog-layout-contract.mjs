@@ -134,7 +134,7 @@ assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage di
 // Quiet: feature filter must not stretch the native select to the full flexible column width.
 assert.match(
   dialog,
-  /className="input h-8 w-max max-w-\[10\.5rem\] py-0\.5 text-xs font-medium"[\s\S]*data-portal-usage="records-feature-filter"/,
+  /className="input h-8 !w-max max-w-\[10\.5rem\] py-0\.5 text-xs font-medium"[\s\S]*data-portal-usage="records-feature-filter"/,
   'service-type filter select is content-sized, not column-stretched'
 );
 assert.doesNotMatch(

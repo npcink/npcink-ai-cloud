@@ -590,7 +590,7 @@ export function PortalSiteUsageDialog({
   };
   const renderFeatureFilterSelect = () => (
     <select
-      className="input h-8 w-max max-w-[10.5rem] py-0.5 text-xs font-medium"
+      className="input h-8 !w-max max-w-[10.5rem] py-0.5 text-xs font-medium"
       value={creditEventFeature}
       disabled={creditEventLoading || dayLoading}
       onChange={(event) => onFeatureFilterChange(event.target.value as PortalCreditEventFeature)}
@@ -612,7 +612,7 @@ export function PortalSiteUsageDialog({
                             <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
                             <colgroup>
                               <col className="w-40" />
-                              <col />
+                              <col className="w-52" />
                               <col className="w-36" />
                               <col className="w-8" />
                             </colgroup>
