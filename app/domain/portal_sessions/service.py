@@ -1,16 +1,18 @@
-"""Transaction-owned Portal login lifecycle; no API imports or internal commits."""
+"""Portal login UoW primitives and transaction-owning session management commands."""
 
 from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.portal_session_repository import PortalSessionRepository
 from app.core.config import Settings
+from app.core.db import get_session
 from app.core.models import (
     Account,
     AccountUserMembership,
@@ -20,8 +22,17 @@ from app.core.models import (
 )
 from app.core.portal_session_tokens import build_portal_session_token
 from app.core.security import derive_stable_secret_digest
-from app.domain.commercial.errors import CommercialConflictError, CommercialPermissionError
-from app.domain.portal_sessions.contracts import PortalSessionAuthMethod
+from app.domain.commercial.errors import (
+    CommercialConflictError,
+    CommercialNotFoundError,
+    CommercialPermissionError,
+)
+from app.domain.portal_sessions.contracts import (
+    PortalSessionAuthMethod,
+    PortalSessionPage,
+    PortalSessionProjection,
+    PortalSessionRevocation,
+)
 
 
 def utc(value: datetime) -> datetime:
@@ -224,3 +235,81 @@ def sign_session(
     return IssuedPortalSession(
         token, principal.principal_id, sid, principal.session_version, now, expiry
     )
+
+
+def list_principal_sessions(
+    database_url: str, identity: AuthenticatedSession, *, limit: int = 20, offset: int = 0
+) -> PortalSessionPage:
+    """A current-principal read, independent of account role and selected site."""
+    with get_session(database_url) as session:
+        # One principal-serialized snapshot for caller validity, count and page.
+        lock_login_scope(session, identity.principal_id)
+        validate_registered_session(session, identity, for_update=True)
+        repository = PortalSessionRepository(session)
+        now = datetime.now(UTC)
+        rows = repository.list_active(
+            principal_id=identity.principal_id, now=now, limit=limit, offset=offset
+        )
+        return PortalSessionPage(
+            items=[
+                PortalSessionProjection(
+                    session_id=row.session_id,
+                    is_current=row.session_id == identity.session_id,
+                    created_at=utc(row.created_at),
+                    expires_at=utc(row.absolute_expires_at),
+                    auth_method=cast(PortalSessionAuthMethod, row.auth_method),
+                    client_hint=row.client_hint,
+                )
+                for row in rows
+            ],
+            total=repository.count_active(principal_id=identity.principal_id, now=now),
+            limit=limit,
+            offset=offset,
+        )
+
+
+def revalidate_session_caller(database_url: str, identity: AuthenticatedSession) -> None:
+    """Receipt replay is authorized again under the same lock as new commands."""
+    with get_session(database_url) as session:
+        lock_login_scope(session, identity.principal_id)
+        validate_registered_session(session, identity, for_update=True)
+
+
+def revoke_principal_sessions(
+    database_url: str, identity: AuthenticatedSession, *, target_session_id: str | None = None
+) -> PortalSessionRevocation:
+    """None means other sessions; a target means owned, idempotent single revoke."""
+    with get_session(database_url) as session:
+        lock_login_scope(session, identity.principal_id)
+        repository = PortalSessionRepository(session)
+        rows = repository.lock_owned_rows(
+            principal_id=identity.principal_id,
+            session_ids=None
+            if target_session_id is None
+            else sorted({identity.session_id, target_session_id}),
+        )
+        validate_registered_session(session, identity, for_update=True)
+        if target_session_id is not None and not any(
+            row.session_id == target_session_id for row in rows
+        ):
+            raise CommercialNotFoundError("portal.session_not_found", "session not found")
+        now = datetime.now(UTC)
+        count = 0
+        for row in rows:
+            target = (
+                row.session_id == target_session_id
+                if target_session_id is not None
+                else (
+                    row.session_id != identity.session_id
+                    and row.session_version == identity.session_version
+                    and utc(row.absolute_expires_at) > now
+                )
+            )
+            if target and row.revoked_at is None:
+                row.revoked_at, row.revoke_reason = (
+                    now,
+                    "self_revoke" if target_session_id else "revoke_others",
+                )
+                count += 1
+        session.commit()
+        return PortalSessionRevocation(count, target_session_id == identity.session_id)

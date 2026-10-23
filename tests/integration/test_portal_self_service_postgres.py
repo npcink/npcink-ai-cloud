@@ -1200,3 +1200,187 @@ def test_registry_postgres_registration_reserved_identity_race(closure_database,
             )
             == original_counts
         )
+
+
+def _b3a_issue(url):
+    from app.domain.portal_sessions.service import (
+        AuthenticatedSession,
+        PortalSessionIssuer,
+        lock_login_scope,
+    )
+
+    with get_session(url) as session:
+        issued = PortalSessionIssuer(_registry_settings(url), 3600, "email_code").issue(
+            session, lock_login_scope(session, "prn_close")
+        )
+        session.commit()
+    return AuthenticatedSession(
+        issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+    )
+
+
+def _b3a_revoke(url, caller, target=None):
+    from app.domain.portal_sessions.service import revoke_principal_sessions
+
+    try:
+        return revoke_principal_sessions(url, caller, target_session_id=target)
+    except CommercialPermissionError as error:
+        assert error.error_code == "auth.portal_session_revoked"
+        return 401
+
+
+@pytest.mark.parametrize("single_first", [True, False])
+def test_sessions_postgres_single_vs_others_rechecks_caller(
+    closure_database, monkeypatch, single_first
+):
+    from app.core.models import PortalSession
+
+    url = closure_database
+    a, b, c = [_b3a_issue(url) for _ in range(3)]
+
+    def single():
+        return _b3a_revoke(url, a, b.session_id)
+
+    def others():
+        return _b3a_revoke(url, b)
+
+    first, second = _run_registry_ordered_pair(
+        url, monkeypatch, single if single_first else others, others if single_first else single
+    )
+    assert first.revoked_count == (1 if single_first else 3)  # includes export fixture
+    assert second == 401
+    _b3a_assert_auth(url, a, single_first)
+    _b3a_assert_auth(url, b, not single_first)
+    _b3a_assert_auth(url, c, single_first)
+    with get_session(url) as session:
+        assert (session.get(PortalSession, a.session_id).revoked_at is None) == single_first
+        assert (session.get(PortalSession, b.session_id).revoked_at is not None) == single_first
+        assert (session.get(PortalSession, c.session_id).revoked_at is None) == single_first
+        assert session.get(Principal, "prn_close").session_version == 1
+
+
+@pytest.mark.parametrize("export_first", [True, False])
+def test_sessions_postgres_individual_revoke_vs_export_commit_order(
+    closure_database, monkeypatch, export_first
+):
+    from app.core.models import PortalSession
+
+    url = closure_database
+    revoker = _b3a_issue(url)
+    challenge = _export_call(url, "code", {})
+    assert isinstance(challenge, dict)
+    payload = {"challenge_id": challenge["challenge_id"], "code": challenge["code"]}
+
+    def export():
+        return _export_call(url, "confirm", payload)
+
+    def revoke():
+        return _b3a_revoke(url, revoker, "pg_export_fixture")
+
+    first, second = _run_registry_ordered_pair(
+        url, monkeypatch, export if export_first else revoke, revoke if export_first else export
+    )
+    exported, revoked = (first, second) if export_first else (second, first)
+    assert isinstance(exported, bytes) if export_first else exported in (401, 409)
+    assert revoked.revoked_count == 1
+    _b3a_assert_auth(url, revoker, True)
+    with get_session(url) as session:
+        assert session.get(PortalSession, "pg_export_fixture").revoked_at is not None
+        assert session.get(PortalSession, revoker.session_id).revoked_at is None
+        assert session.get(PortalLoginCode, payload["challenge_id"]).status == (
+            "consumed" if export_first else "pending"
+        )
+        assert session.get(Principal, "prn_close").session_version == 1
+
+
+@pytest.mark.parametrize("operation", ["write", "replay"])
+def test_sessions_postgres_expiry_while_waiting_rejects_original_caller(
+    closure_database, monkeypatch, operation
+):
+    from datetime import timedelta
+
+    from app.core.models import PortalSession
+    from app.domain.portal_sessions import service
+
+    url = closure_database
+    caller, target = _b3a_issue(url), _b3a_issue(url)
+    clock = [datetime.now(UTC)]
+
+    class ControlledClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0] if tz is not None else clock[0].replace(tzinfo=None)
+
+    def command():
+        if operation == "write":
+            return _b3a_revoke(url, caller, target.session_id)
+        try:
+            service.revalidate_session_caller(url, caller)
+        except CommercialPermissionError as error:
+            assert error.error_code == "auth.portal_session_revoked"
+            return 401
+        return 200
+
+    with monkeypatch.context() as injected:
+        injected.setattr(service, "datetime", ControlledClock)
+        with get_session(url) as owner:
+            owner.scalar(
+                select(Account).where(Account.account_id == "acct_close").with_for_update()
+            )
+            with _watch_registry_wait(url) as wait:
+                with ThreadPoolExecutor(1, thread_name_prefix="registry-race") as executor:
+                    future = executor.submit(command)
+                    try:
+                        wait()  # real second-connection PostgreSQL lock wait
+                        clock[0] = caller.expires_at + timedelta(seconds=1)
+                    finally:
+                        owner.rollback()
+                    assert future.result(timeout=10) == 401
+    with get_session(url) as session:
+        assert session.get(PortalSession, target.session_id).revoked_at is None
+        assert session.get(PortalSession, caller.session_id).revoked_at is None
+        assert session.get(Principal, "prn_close").session_version == 1
+
+
+
+def _b3a_assert_auth(url, identity, valid):
+    from app.api.auth import PortalBearerTokenError, validate_portal_principal_session
+
+    def check():
+        validate_portal_principal_session(
+            _registry_settings(url), principal_id=identity.principal_id,
+            session_id=identity.session_id, session_version=identity.session_version,
+            expires_at=identity.expires_at,
+        )
+
+    if valid:
+        check()
+    else:
+        with pytest.raises(PortalBearerTokenError) as error:
+            check()
+        assert error.value.status_code == 401
+
+
+def test_sessions_postgres_replay_waiting_for_caller_revoke_fails_closed(
+    closure_database, monkeypatch
+):
+    from app.domain.portal_sessions.service import revalidate_session_caller
+
+    url = closure_database
+    caller, revoker = _b3a_issue(url), _b3a_issue(url)
+
+    def revoke():
+        return _b3a_revoke(url, revoker, caller.session_id)
+
+    def replay():
+        try:
+            revalidate_session_caller(url, caller)
+        except CommercialPermissionError as error:
+            assert error.error_code == "auth.portal_session_revoked"
+            return 401
+        return 200
+
+    first, second = _run_registry_ordered_pair(url, monkeypatch, revoke, replay)
+    assert first.revoked_count == 1 and second == 401
+    _b3a_assert_auth(url, caller, False)
+    _b3a_assert_auth(url, revoker, True)

@@ -1,14 +1,10 @@
-"""Dormant Portal session storage primitives; the caller owns the transaction.
-
-No auth entrypoint calls this repository in B1. In the later cutover, callers
-must lock the principal before session writes (account first when required).
-"""
+"""Portal session storage; the caller owns locks and commit/rollback."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.models import PortalSession, Principal
@@ -84,4 +80,36 @@ class PortalSessionRepository:
                 .limit(limit)
                 .offset(offset)
             )
+        )
+
+    def lock_owned_rows(
+        self, *, principal_id: str, session_ids: list[str] | None = None
+    ) -> list[PortalSession]:
+        """Caller holds account/principal/membership locks; stable SID order last."""
+        statement = select(PortalSession).where(PortalSession.principal_id == principal_id)
+        if session_ids is not None:
+            statement = statement.where(PortalSession.session_id.in_(session_ids))
+        return list(
+            self.session.scalars(
+                statement.order_by(PortalSession.session_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+
+    def count_active(self, *, principal_id: str, now: datetime) -> int:
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(PortalSession)
+                .join(Principal, Principal.principal_id == PortalSession.principal_id)
+                .where(
+                    PortalSession.principal_id == principal_id,
+                    Principal.status == "active",
+                    PortalSession.session_version == Principal.session_version,
+                    PortalSession.revoked_at.is_(None),
+                    PortalSession.absolute_expires_at > now,
+                )
+            )
+            or 0
         )

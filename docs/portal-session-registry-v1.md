@@ -1,9 +1,9 @@
 # Portal session registry v1
 
-Status: B2 source implementation, pending independent review and runtime acceptance.
-B1 storage was accepted separately. This document describes the complete B2
-activation unit; source, local tests, CI, M4 and production remain separate
-states. No production deployment or cutover is authorized by this document.
+Status: B3a local source candidate; independent review and runtime acceptance pending.
+B2 was merged in #1241 (master `4aff7487`) and separately M4 accepted.
+This document describes B2 activation and the B3a API contract; source, local
+tests, CI, M4 and production remain separate states. No production deployment or cutover is authorized by this document.
 
 ## Scope and boundary
 
@@ -17,7 +17,7 @@ separate signing/projection types. B2 connects all Portal issuance and Cookie/
 Bearer validation together through a pure core encoder and transaction-owned
 lifecycle service. The API attaches only material returned after commit. The
 repository flushes but never commits; its list primitive is not an auth check.
-There is still no public list/individual revoke endpoint or device-list UI.
+B3a adds own-principal list and revocation commands; B3b UI remains a separate batch.
 
 ## Minimal storage
 
@@ -50,7 +50,7 @@ for future idempotency semantics, without revealing another principal's rows.
 `PortalSessionProjection` is a separate safe public shape with `is_current` and
 bounded hint, without principal/version/secrets. B2 uses a separate internal `IssuedPortalSession` containing token and matching timestamps;
 that value never enters public JSON, audit or idempotency receipts. Only its safe
-time/transport metadata is serialized; B3 projections remain unexposed.
+time/transport metadata is serialized; B3a exposes the separate safe projection.
 
 ## B2 transaction and activation contract
 
@@ -88,20 +88,42 @@ Logout revokes the valid current sid and clears cookie; missing/expired/
 already revoked cookie can still be cleared. DB failure must not be described as
 successful server revocation. Revoking a Bearer sid does not delete client copies.
 
-## Future B3 API and UI
+## B3a API and future B3b UI
 
-Only after B2 acceptance, add own-principal sessions without requiring a selected
-site or account owner. Keep existing snake_case Cloud envelope/meta, error,
-same-origin/CSRF, private no-store and receipt semantics:
+The own-principal API requires no selected site, account membership or owner
+role. It keeps snake_case Cloud envelope/meta, errors, same-origin and existing
+idempotency receipts:
 
-- GET `/portal/v1/sessions?limit=20&offset=0`: bounded stable active-only list.
+- GET `/portal/v1/sessions?limit=20&offset=0`: limit 1..50 and offset >=0;
+  invalid pagination is 400. Returns `data.items` and
+  `data.pagination: {limit, offset, total}`, ordered by created_at then SID
+  descending. Items contain only session_id, is_current, created_at, expires_at,
+  auth_method and nullable client_hint; active/current-version rows only.
 - POST `/portal/v1/sessions/{session_id}/revoke`: owned revoked target is idempotent
   while caller remains valid; unknown/other owner's target both 404. Current sid
   revocation clears cookie and makes subsequent Cookie/Bearer calls 401.
 - POST `/portal/v1/sessions/revoke-others`: retains verified current sid, no global
   version bump; static route must not be consumed by dynamic ID matching.
 
-Auth precedes receipt replay; writes recheck caller under the principal lock.
+Both POST commands require the existing Idempotency-Key and return only
+`data.revoked_count`. No cookie-clearing flag or token is stored in receipts.
+Replaying a self-revoke receipt using another valid login does not clear that
+login's cookie. Own already-revoked targets return count zero with a fresh key.
+Revocation and receipt persistence retain the existing separate transactions:
+if receipt persistence fails after the revoke committed, return 503 without
+undoing the revoke. A fresh-key retry by a valid caller returns count zero.
+
+All exits on this seam, including early forwarded-host rejection, framework
+405, auth, receipt and unexpected failure, use `Cache-Control: private, no-store`,
+`Pragma: no-cache` and `Vary: Cookie, Authorization` (preserving existing Vary).
+Unexpected/DB failures return generic 503 without SQL or exception details.
+
+Auth precedes receipt replay; writes and cached replay recheck the original
+caller SID/version/expiry under account→principal→membership→sorted SID locks.
+Clock validity is checked after lock waits, without replacing original claims.
+List count and page share the same principal-serialized snapshot; GET never
+writes or renews expiry. Commands own their transaction; repository methods
+never commit.
 A revoked caller cannot use a cached response to bypass auth. Response loss after
 self-revocation can correctly lead to 401 on retry. Store no token/private body
 in receipts. UI follows API in a separate batch, in account security; keep the
@@ -148,5 +170,8 @@ B1 needs focused pytest, Ruff/mypy, changed plan/doctor, doc reachability/diff
 checks, plus integrator-run real PG with zero skips. CI, M4 candidate, merge,
 M4 accepted and production are separate evidence states. B2 additionally needs
 all login/rotation/revocation/export concurrency and fail-closed tests; B3 needs
-API ownership/replay and compiled browser tests. See
+API ownership/replay, atomic failed-commit readback, and real PG races for
+individual revoke vs revoke-others and export in both commit orders, plus
+original-caller expiry during observed lock waits for command/replay. B3b
+separately needs compiled browser tests. See
 [verification commands](engineering/verification-commands.md) .

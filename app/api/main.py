@@ -28,6 +28,8 @@ from app.api.routes.open import router as open_router
 from app.api.routes.portal import router as portal_router
 from app.api.routes.portal_data_export import DataExportCacheMiddleware
 from app.api.routes.portal_data_export import router as portal_data_export_router
+from app.api.routes.portal_sessions import PortalSessionsCacheMiddleware
+from app.api.routes.portal_sessions import router as portal_sessions_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
 from app.api.routes.service import router as service_router
@@ -199,6 +201,7 @@ def create_app(
     app.include_router(open_router)
     app.include_router(portal_router)
     app.include_router(portal_data_export_router)
+    app.include_router(portal_sessions_router)
     app.include_router(service_router)
     app.include_router(economics_admin_router, prefix="/internal/service")
     app.include_router(observability_router)
@@ -211,6 +214,7 @@ def create_app(
     app.include_router(auth_router)
     # Keep private download headers on early forwarded-header/auth failures too.
     app.add_middleware(DataExportCacheMiddleware)
+    app.add_middleware(PortalSessionsCacheMiddleware)
 
     return app
 
