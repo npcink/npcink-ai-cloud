@@ -584,7 +584,7 @@ Small-customer paid trial preflight is incomplete unless:
 
 - [ ] `deploy/small-customer-trial-preflight.sh --require-smoke-env --require-alipay-enabled` passes with the formal smoke env
 - [x] the `Post-production smoke` GitHub Actions job passes after a production deploy
-- [x] `/open/payments/alipay/return` redirects to `/portal/billing?payment_return=alipay...`
+- [ ] `/open/payments/alipay/return` redirects to `/portal/account?payment_return=alipay...#payment-orders` (verify the account destination in the next formal release smoke)
 - [x] `/open/payments/alipay/notify` rejects an unsigned or empty callback
 - [ ] the filled smoke env file remains outside Git and has restricted local permissions
 

@@ -124,6 +124,7 @@ async function installPortalMocks(
     commercialEmergencyStop?: boolean;
     paymentReturnFlow?: boolean;
     paymentReturnProcessingStep?: boolean;
+    paymentReturnTerminalStatus?: 'canceled' | 'refunded';
     delaySessionRefresh?: boolean;
     failPaymentReturnEntitlements?: boolean;
     emptyCreditTrend?: boolean;
@@ -754,7 +755,7 @@ async function installPortalMocks(
           ? 'pending'
           : options.paymentReturnProcessingStep && paymentReturnPollCount === 2
             ? 'processing'
-            : 'paid';
+            : options.paymentReturnTerminalStatus || 'paid';
         paymentReturnConfirmed = status === 'paid';
         await fulfillJson(route, {
           account_id: 'acct_portal',
@@ -847,6 +848,17 @@ async function installPortalMocks(
           created_at: '2026-04-06T09:00:00Z',
         },
       ];
+      if (options.paymentReturnFlow) {
+        const terminal = paymentReturnPollCount > (options.paymentReturnProcessingStep ? 2 : 1);
+        allOrders.unshift({
+          order_id: 'pay_return_polling', account_id: 'acct_portal', provider: 'alipay',
+          status: terminal ? options.paymentReturnTerminalStatus || 'paid' : 'pending',
+          amount: 0.01, currency: 'CNY', subject: 'Small credit pack',
+          available_actions: [], purchase_kind: 'credit_pack',
+          status_detail: { code: terminal ? options.paymentReturnTerminalStatus || 'paid_and_granted' : 'awaiting_payment_confirmation' },
+          created_at: '2026-04-07T10:00:00Z',
+        });
+      }
       const groupedOrders = allOrders.filter((order) => {
         if (statusGroup === 'pending') return order.status === 'pending';
         if (statusGroup === 'paid') return order.status === 'paid';
@@ -2001,14 +2013,18 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   });
 
   await page.goto(
-    '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
+    '/portal/account?payment_return=alipay&out_trade_no=pay_return_polling&trade_status=TRADE_SUCCESS#payment-orders'
   );
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 15_000 });
   await expect.poll(calls.sessionRequestCount).toBe(2);
-  await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
-  await expect(page).toHaveURL('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
+  await expect(page).toHaveURL('/portal/account#payment-orders');
+  await expect(page.locator('#payment-orders [data-ui="payment-return-notice"]')).toBeVisible();
+  await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
   calls.releaseSessionRefresh();
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
@@ -2027,7 +2043,13 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   await page.getByRole('button', { name: /Language|语言/i }).click();
   await page.getByRole('option', { name: 'English' }).click();
   await expect(expiryMetric).toContainText(expectedEnglishExpiry);
-  await expect(page).toHaveURL('/portal/billing');
+  const continuePayment = page.getByRole('link', { name: /^Continue payment$/i });
+  const actionBounds = await continuePayment.boundingBox();
+  expect(actionBounds?.height).toBeLessThan(60);
+  await page.getByRole('tab', { name: /^Paid 1$/i }).click();
+  await expect(page.locator('[data-payment-order-id="pay_return_polling"]')).toContainText('Paid');
+
+  await expect(page).toHaveURL('/portal/account#payment-orders');
 });
 
 test('confirmed Alipay return can retry when account totals fail to refresh', async ({
@@ -2037,12 +2059,12 @@ test('confirmed Alipay return can retry when account totals fail to refresh', as
   await installPortalMocks(page, options);
 
   await page.goto(
-    '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
+    '/portal/account?payment_return=alipay&out_trade_no=pay_return_polling'
   );
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
-  await expect(page).toHaveURL('/portal/billing');
+  await expect(page).toHaveURL('/portal/account#payment-orders');
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
     /Not available|暂无数据|不适用/i
@@ -2050,7 +2072,7 @@ test('confirmed Alipay return can retry when account totals fail to refresh', as
   await expect(
     notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
   ).toBeVisible();
-  // Both Quiet billing catalog consumers must see the fault until manual retry.
+  // Keep the read-only account totals unavailable until manual retry.
   options.failPaymentReturnEntitlements = false;
   await notice.getByRole('button', { name: /Retry|重试/i }).click();
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
@@ -2062,6 +2084,42 @@ test('confirmed Alipay return can retry when account totals fail to refresh', as
   ).toHaveCount(0);
   await expect(notice.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
 });
+
+test('closed Alipay return stays in account orders without claiming payment success', async ({ page }) => {
+  const calls = await installPortalMocks(page, {
+    paymentReturnFlow: true,
+    paymentReturnTerminalStatus: 'canceled',
+  });
+  await page.goto('/portal/account?payment_return=alipay&out_trade_no=pay_return_polling&trade_status=TRADE_SUCCESS#payment-orders');
+  const notice = page.locator('[data-ui="payment-return-notice"]');
+  await expect(notice.getByText(/^(Payment was not completed|支付未完成)$/i)).toBeVisible();
+  await expect(page).toHaveURL('/portal/account#payment-orders');
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
+});
+
+for (const entry of [
+  '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling&trade_status=TRADE_SUCCESS',
+  '/portal/billing#payment-orders',
+]) {
+  test(`legacy payment entry redirects to account orders: ${entry}`, async ({ page }) => {
+    const calls = await installPortalMocks(page, { paymentReturnFlow: true });
+    await page.goto(entry);
+    await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
+    await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+    if (entry.includes('payment_return')) {
+      const notice = page.locator('[data-ui="payment-return-notice"]');
+      // A browser success claim must not skip canonical pending status.
+      await expect(notice.getByText(/^(Payment confirmation is pending|正在等待支付确认)$/i)).toBeVisible();
+      await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible();
+    } else {
+      await expect(page.locator('[data-ui="payment-return-notice"]')).toHaveCount(0);
+    }
+    await expect(page).toHaveURL('/portal/account#payment-orders');
+    expect(calls.portalStateMutationRequestCount()).toBe(0);
+  });
+}
 
 test('portal account page hides internal identifiers and duplicate summary metrics', async ({ page }) => {
   await installPortalMocks(page);

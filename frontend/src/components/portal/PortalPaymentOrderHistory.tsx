@@ -351,12 +351,12 @@ export function PortalPaymentOrderHistory({
                   </caption>
                   <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
-                      <th scope="col" className="w-[40%] px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
+                      <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
                       <th scope="col" className="w-[18%] px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
                       <th scope="col" className="w-[14%] px-3 py-3 text-right font-medium">{t('portal.usage.payment_order_purchase_amount', {}, 'Amount')}</th>
                       <th scope="col" className="w-[18%] px-3 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
                       {hasActionableRows ? (
-                        <th scope="col" className="w-[10%] px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                        <th scope="col" className="w-40 px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
                       ) : null}
                     </tr>
                   </thead>
@@ -423,7 +423,7 @@ export function PortalPaymentOrderHistory({
                           </td>
                           {hasActionableRows ? (
                             <td className="px-3 py-4">
-                              {renderOrderActions(order, 'flex flex-wrap items-center justify-end gap-2')}
+                              {renderOrderActions(order, 'flex flex-wrap items-center justify-end gap-2 [&_.btn]:whitespace-nowrap')}
                             </td>
                           ) : null}
                         </tr>

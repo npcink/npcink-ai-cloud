@@ -181,15 +181,15 @@ assert.doesNotMatch(
 assert.match(
   paymentReturnNoticeSource,
   /provider === 'alipay'[\s\S]*alipay_return_title[\s\S]*handleRefresh/,
-  'Portal package page must show a read-only Alipay return notice with refresh'
+  'Portal account page must show a read-only Alipay return notice with refresh'
 );
 assert.match(
   paymentReturnNoticeSource,
   /getAccountPaymentOrder[\s\S]*setTimeout[\s\S]*alipay_return_paid_title/,
-  'Portal package page must poll the canonical order and render confirmed payment state'
+  'Portal account page must poll the canonical order and render confirmed payment state'
 );
 assert.match(
-  billingPageSource,
+  accountCommerceSource,
   /<PortalPaymentReturnNotice[\s\S]*locale=\{locale\}/,
   'the payment return notice must receive the current application locale explicitly'
 );
@@ -308,7 +308,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   paymentReturnNoticeSource,
   /payment_return[\s\S]*(markPaid|mark_payment|paid_at|subscription_id\s*=)/,
-  'Portal package page must not treat browser payment return as payment truth'
+  'Portal account page must not treat browser payment return as payment truth'
 );
 assert.doesNotMatch(
   billingHeader,

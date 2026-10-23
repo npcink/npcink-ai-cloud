@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PortalCard } from '@/components/portal/PortalScaffold';
+import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import { PortalCreditPackDialog } from '@/components/portal/PortalCreditPackDialog';
 import {
   PortalPackageChangePanel,
@@ -20,6 +21,7 @@ import { usePortalPaymentOrders } from '@/hooks/usePortalPaymentOrders';
 import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
+  type Entitlements,
   type PortalPlanOffer,
 } from '@/lib/portal-client';
 import { formatPortalWriteErrorMessage } from '@/lib/portal-error';
@@ -56,8 +58,16 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const { isAuthenticated, refresh } = useSession();
+  const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
+  const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
+  const [paymentReturnEntitlements, setPaymentReturnEntitlements] = useState<Entitlements | null>(null);
+  const loadPaymentReturnEntitlements = useCallback(async () => {
+    const response = await portalClient.getAccountEntitlements();
+    setPaymentReturnEntitlements(response.data);
+    return true;
+  }, []);
   const catalogEnabled = isAuthenticated && surface === 'billing';
   const {
     entitlements,
@@ -424,7 +434,20 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   ) : commercialPausedNotice;
 
   const paymentOrdersCard = (
-    <div id="payment-orders" className="scroll-mt-24">
+    <div id="payment-orders" className="scroll-mt-24 space-y-5">
+    {surface === 'account' ? (
+      <PortalPaymentReturnNotice
+        t={t}
+        locale={locale}
+        provider={paymentReturnProvider}
+        orderId={paymentReturnOrderId}
+        isAuthenticated={isAuthenticated}
+        entitlements={paymentReturnEntitlements}
+        refreshSession={refresh}
+        refreshBilling={loadPaymentReturnEntitlements}
+        refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
+      />
+    ) : null}
     <PortalPaymentOrderHistory
       t={t}
       payload={paymentOrders}

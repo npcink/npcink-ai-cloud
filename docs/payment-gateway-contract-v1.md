@@ -62,6 +62,14 @@ read from deployment environment variables. Real Alipay mode signs
 `alipay.trade.page.pay` orders with RSA2 and verifies asynchronous notify
 callbacks before any payment order is marked paid.
 
+The configured Alipay browser return endpoint redirects with HTTP 303 to
+`/portal/account?payment_return=alipay&out_trade_no=…&trade_status=…#payment-orders`.
+The account payment-order section polls the canonical order and refreshes the
+session, account entitlements, and order history. Terminal results remove the
+return query and stay at `/portal/account#payment-orders`. Legacy Portal billing
+return links redirect to this account section; package upgrades remain on the
+Package page. Browser return fields never settle an order or grant entitlement.
+
 Deployment environment variables are not a payment gateway configuration
 source. If `payment_alipay` is missing, disabled, incomplete, or fails key
 validation, public Alipay callbacks must fail closed and checkout orders must

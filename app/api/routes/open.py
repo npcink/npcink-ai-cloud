@@ -185,7 +185,7 @@ async def receive_open_alipay_payment_return(request: Request) -> Any:
         "out_trade_no": str(request.query_params.get("out_trade_no") or ""),
         "trade_status": str(request.query_params.get("trade_status") or ""),
     }
-    target = f"/portal/billing?{urlencode({key: value for key, value in query.items() if value})}"
+    target = f"/portal/account?{urlencode({key: value for key, value in query.items() if value})}#payment-orders"
     return RedirectResponse(target, status_code=303)
 
 

@@ -188,7 +188,7 @@
 
 - 不新增 admin 式 visual governance / receipt 门禁  
 - 不把 Admin 宽表 shells 并进门户；门户服务中心已统一 56rem（见 §2）  
-- Alipay `payment_return` **后端仍落** `/portal/billing?payment_return=…`（契约不动）；支付结果通知条留在套餐页。账号深链 `#payment-orders` 已从前端软跳到 `/portal/account#payment-orders`。**不**把 return 整段迁到账号（e2e / 通知条依赖 billing；可另迭代）  
+- Alipay `payment_return` 后端以 303 落到 `/portal/account?payment_return=alipay&out_trade_no=…&trade_status=…#payment-orders`；账号支付订单区展示只读结果通知条，轮询 canonical order，并刷新会话、账号权益和订单列表。终态清理回跳参数后仍留在 `/portal/account#payment-orders`。旧 `/portal/billing?payment_return=…` 与 `#payment-orders` 兼容跳到账号，升级意图仍只归套餐页。浏览器回跳参数不作为支付成功真值。
 - 不做本 Spec 未列的 IA 大迁；**§10 顶栏对齐 + 套餐/用量合并**已按用户确认落地（见下）  
 
 ---

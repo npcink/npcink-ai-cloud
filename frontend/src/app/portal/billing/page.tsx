@@ -12,7 +12,6 @@ import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSit
 import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
 import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
 import type { Site } from '@/lib/portal-client';
-import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import {
   PortalErrorState,
@@ -23,7 +22,6 @@ import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalCommercialCatalog } from '@/hooks/usePortalCommercialCatalog';
-import { usePortalPaymentOrders } from '@/hooks/usePortalPaymentOrders';
 import { useSession } from '@/hooks/useSession';
 import { type Entitlements } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
@@ -109,7 +107,7 @@ function PortalBillingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { locale, t } = useLocale();
-  const { session, isLoading: sessionLoading, isAuthenticated, refresh } = useSession();
+  const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const {
     entitlements,
     isLoading,
@@ -119,16 +117,6 @@ function PortalBillingContent() {
     isAuthenticated,
     t,
   });
-  // Payment return deep-links still land on /portal/billing; keep orders refresh for the notice.
-  const {
-    statusGroup: paymentOrderStatusGroup,
-    offset: paymentOrderOffset,
-    load: loadPaymentOrders,
-  } = usePortalPaymentOrders({
-    isAuthenticated,
-    t,
-  });
-
   const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
   const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
   const [siteUsageListHighlight, setSiteUsageListHighlight] = useState(false);
@@ -192,16 +180,13 @@ function PortalBillingContent() {
   // Payment-order anchors stay on Account; package upgrade intents stay on this page.
   useEffect(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
-    if (hash === '#payment-orders') {
+    if (hash === '#payment-orders' || searchParams.has('payment_return')) {
       const params = new URLSearchParams(searchParams.toString());
       params.delete('action');
       const qs = params.toString();
       router.replace(`/portal/account${qs ? `?${qs}` : ''}#payment-orders`);
     }
   }, [router, searchParams]);
-
-  const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
-  const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
 
   if (sessionLoading && !session) {
     return <PortalLoadingState message={t('portal.loading_session', {}, 'Loading session...')} />;
@@ -289,18 +274,6 @@ function PortalBillingContent() {
         metrics={packageSummaryMetrics}
         metricsLayout="rail"
         metricsPlacement="title-end"
-      />
-
-      <PortalPaymentReturnNotice
-        t={t}
-        locale={locale}
-        provider={paymentReturnProvider}
-        orderId={paymentReturnOrderId}
-        isAuthenticated={isAuthenticated}
-        entitlements={entitlements}
-        refreshSession={refresh}
-        refreshBilling={loadBilling}
-        refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
       />
 
       <PortalAccountCommercePanels surface="billing" />

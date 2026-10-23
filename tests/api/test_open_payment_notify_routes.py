@@ -663,8 +663,8 @@ def test_browser_return_before_notify_keeps_order_unpaid_until_notify_arrives(
     )
     assert return_response.status_code == 303
     assert return_response.headers["location"] == (
-        f"/portal/billing?payment_return=alipay&out_trade_no={external_order_no}"
-        "&trade_status=TRADE_SUCCESS"
+        f"/portal/account?payment_return=alipay&out_trade_no={external_order_no}"
+        "&trade_status=TRADE_SUCCESS#payment-orders"
     )
     after_return = _credit_pack_state(database_url, order_id)
     assert after_return["status"] == PAYMENT_ORDER_STATUS_PENDING
