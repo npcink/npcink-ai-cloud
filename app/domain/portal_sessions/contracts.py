@@ -1,7 +1,6 @@
 """Internal signing inputs and safe public projections are distinct contracts.
 
-B1 only defines storage contracts. These types do not issue tokens or change
-existing Portal authentication. Client hints are optional, unverified labels.
+These types do not issue tokens. Client hints are optional, unverified labels.
 """
 
 from __future__ import annotations
@@ -30,3 +29,17 @@ class PortalSessionProjection:
     expires_at: datetime
     auth_method: PortalSessionAuthMethod
     client_hint: str | None
+
+
+@dataclass(frozen=True)
+class PortalSessionPage:
+    items: list[PortalSessionProjection]
+    total: int
+    limit: int
+    offset: int
+
+
+@dataclass(frozen=True)
+class PortalSessionRevocation:
+    revoked_count: int
+    is_current: bool

@@ -94,3 +94,33 @@ def test_pagination_is_bounded(engine, limit, offset):
             PortalSessionRepository(session).list_active(
                 principal_id="own", now=NOW, limit=limit, offset=offset
             )
+
+
+def test_owned_lock_refreshes_stale_rows_and_preserves_scope_and_rollback(engine):
+    with Session(engine) as session:
+        repo = PortalSessionRepository(session)
+        _create(repo, "z")
+        _create(repo, "a")
+        _create(repo, "peer", principal_id="peer", session_version=1)
+        session.commit()
+    with Session(engine) as session:
+        stale = session.get(PortalSession, "a")
+        # Bypass the identity map to reproduce cached ORM state in a transaction.
+        session.connection().execute(
+            PortalSession.__table__.update()
+            .where(PortalSession.session_id == "a")
+            .values(client_hint="Browser hint")
+        )
+        assert stale.client_hint is None
+        repo = PortalSessionRepository(session)
+        rows = repo.lock_owned_rows(principal_id="own", session_ids=["z", "peer", "a"])
+        assert [row.session_id for row in rows] == ["a", "z"]
+        assert stale.client_hint == "Browser hint"
+        assert repo.count_active(principal_id="own", now=NOW) == 2
+        rows[0].revoked_at, rows[0].revoke_reason = NOW, "self_revoke"
+        session.flush()
+        assert repo.count_active(principal_id="own", now=NOW) == 1
+        session.rollback()
+    with Session(engine) as session:
+        assert session.get(PortalSession, "a").revoked_at is None
+        assert session.get(PortalSession, "a").client_hint is None
