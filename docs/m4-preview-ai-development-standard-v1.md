@@ -151,6 +151,20 @@ Risk and command choice are related but not identical:
 - an agent MUST NOT choose `deploy` merely as a substitute for understanding
   the changed files.
 
+**`sync` ≠ `deploy`.** `m4:preview:sync` updates candidate source against a
+compatible runtime; `m4:preview:deploy` rebuilds or recreates runtime when
+images, Compose, proxy, dependencies, or deployment scripts change—or when
+live containers still run an older revision after a merge. A green sync exit
+and a clean `master` tip are not enough: confirm the **running** preview via
+`m4:preview:status` / `/health/live` `source_revision` before claiming a merged
+fix is live. Lesson (2026-10-23, #1200 / `8f47e4d5`): sync left the M4 runtime
+on an older rev (`d566744`); spot-check still showed assist-driven
+`latency_high` until `m4:preview:deploy` rebuilt runtime and
+`/health/live` matched a tip that contained #1200. Evidence filenames (not in
+repo): `/workspace/preview-sync-1200-2026-10-23.md`,
+`/workspace/preview-1200-redeploy-spotcheck-2026-10-23.md`.
+
+
 Within a valid source sync, successful content-bound markers select runtime
 operations independently. Unchanged migration source skips Alembic only after
 the live database revision equals the expected Alembic head. Unchanged worker
