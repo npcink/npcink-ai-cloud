@@ -7,6 +7,7 @@ Purpose: dated M4 preview transfer, routing, and package-cache
 validation records. Migrated from the `docs/` root on 2026-09-22 so
 dated evidence lives in the history namespace.
 
+- [preview sync ne deploy session closeout 2026 10 23](preview-sync-ne-deploy-session-closeout-2026-10-23.md)
 - [m4 package proxy streaming cache validation 2026 07 25](m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 - [m4 personal preview auto route retrospective 2026 07 25](m4-personal-preview-auto-route-retrospective-2026-07-25.md)
 - [m4 source relay transfer validation 2026 07 24](m4-source-relay-transfer-validation-2026-07-24.md)
