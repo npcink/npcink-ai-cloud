@@ -14,9 +14,27 @@ export async function proxyDataExport(request: NextRequest, operation: 'code' | 
   if (!(response.headers.get('content-type') || '').includes('application/json')) {
     response = NextResponse.json({ error: { code: 'portal.data_export_unavailable', message: 'Personal data copy unavailable' } }, { status: 502 });
   }
+  return privateDataExportResponse(response);
+}
+
+function privateDataExportResponse(response: NextResponse): NextResponse {
   response.headers.set('Cache-Control', 'private, no-store');
   response.headers.set('Pragma', 'no-cache');
   const vary = response.headers.get('Vary');
   response.headers.set('Vary', [...new Set([...(vary ? vary.split(',').map(v => v.trim()) : []), 'Cookie', 'Authorization'])].join(', '));
   return response;
+}
+
+// These paths accept only POST; OPTIONS describes that contract without
+// Next inferring allowed operations from our explicit rejection handlers.
+export function dataExportMethodNotAllowed(): NextResponse {
+  return privateDataExportResponse(new NextResponse(null, {
+    status: 405, headers: { Allow: 'OPTIONS, POST' },
+  }));
+}
+
+export function dataExportOptions(): NextResponse {
+  return privateDataExportResponse(new NextResponse(null, {
+    status: 204, headers: { Allow: 'OPTIONS, POST' },
+  }));
 }
