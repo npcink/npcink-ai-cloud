@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
@@ -214,6 +215,18 @@ export function SupportRequestsWorkspace() {
     setQueryDraft(appliedQuery);
   }, [appliedQuery]);
 
+  useEffect(() => {
+    const trimmedDraft = queryDraft.trim();
+    const trimmedApplied = appliedQuery.trim();
+    if (trimmedDraft === trimmedApplied) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      updateQueueUrl({ q: trimmedDraft || null, offset: null, focus: null });
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [appliedQuery, queryDraft, updateQueueUrl]);
+
   const items = directory?.items || [];
   const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || null;
   const supportReturnPolicy = {
@@ -242,7 +255,7 @@ export function SupportRequestsWorkspace() {
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const submittedQuery = String(new FormData(event.currentTarget).get('q') || '').trim();
+    const submittedQuery = queryDraft.trim();
     setQueryDraft(submittedQuery);
     updateQueueUrl({ q: submittedQuery || null, offset: null, focus: null });
   };
@@ -378,11 +391,14 @@ export function SupportRequestsWorkspace() {
         density="compact"
         bodyClassName="overflow-hidden"
         headerActions={(
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div
+            data-ui="support-request-view-pills"
+            className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1.5"
+          >
             <div
               role="group"
-              aria-label={t('admin.support_requests_view_filter_label', {}, 'Ticket view')}
-              data-ui="support-request-view-pills"
+              aria-label={t('admin.support_requests_attention_filter_label', {}, 'Attention')}
+              data-ui="support-request-attention-pills"
               className="flex min-w-0 flex-wrap items-center gap-1.5"
             >
               <BackofficeFilterPill
@@ -408,6 +424,17 @@ export function SupportRequestsWorkspace() {
               >
                 {t('admin.support_requests_overdue', {}, 'Overdue')}
               </BackofficeFilterPill>
+            </div>
+            <span
+              aria-hidden="true"
+              className="hidden h-4 w-px shrink-0 bg-slate-200 sm:block dark:bg-slate-700"
+            />
+            <div
+              role="group"
+              aria-label={t('admin.support_requests_status_filter_label', {}, 'Ticket status')}
+              data-ui="support-request-status-pills"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
+            >
               {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => (
                 <BackofficeFilterPill
                   key={status}
@@ -420,7 +447,14 @@ export function SupportRequestsWorkspace() {
                 </BackofficeFilterPill>
               ))}
             </div>
-            <AdminQueueKeyboardHint />
+            <AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}>
+              <div data-ui="support-request-keyboard-help" className="space-y-2">
+                <p className="font-medium text-slate-700 dark:text-slate-200">
+                  {t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}
+                </p>
+                <AdminQueueKeyboardHint className="!flex" />
+              </div>
+            </AdminHelpTip>
           </div>
         )}
         footer={(
@@ -455,9 +489,15 @@ export function SupportRequestsWorkspace() {
               <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
             </select>
           </label>
-          <div className="flex items-center justify-end gap-2 whitespace-nowrap sm:ml-auto">
-            <button type="submit" className="btn btn-primary btn-sm">{t('common.apply', {}, 'Apply')}</button>
-            <button type="button" className="btn btn-secondary btn-sm" disabled={!hasFilters && !queryDraft} onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button>
+          <div className="flex items-center justify-end whitespace-nowrap sm:ml-auto">
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline dark:text-slate-400 dark:hover:text-slate-200"
+              disabled={!hasFilters && !queryDraft}
+              onClick={clearFilters}
+            >
+              {t('common.clear_filters', {}, 'Clear filters')}
+            </button>
           </div>
         </form>
 
@@ -480,7 +520,7 @@ export function SupportRequestsWorkspace() {
                 const waitAge = ageHours(item.waiting_since || item.created_at);
                 const waitingOn = item.waiting_on || (item.status === 'open' ? 'operator' : item.status === 'in_progress' ? 'customer' : 'none');
                 return (
-                  <tr key={item.request_id} data-ui="support-request-row" className={cn('align-middle transition', isSelected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
+                  <tr key={item.request_id} data-ui="support-request-row" className={cn('group align-middle transition', isSelected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
                     <td className="px-3 py-2.5">
                       <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold', riskToneClassName(risk))}>{t(`admin.support_requests_risk_${risk}`, {}, risk)}</span>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -497,7 +537,7 @@ export function SupportRequestsWorkspace() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <BackofficeStatusBadge status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
+                      <p className="text-sm text-slate-700 dark:text-slate-200">{t(`admin.support_status_${item.status}`, {}, item.status)}</p>
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
@@ -509,7 +549,23 @@ export function SupportRequestsWorkspace() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-2">
-                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; updateQueueUrl({ focus: item.request_id }); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
+                        <button
+                          ref={isSelected ? inspectorTriggerRef : undefined}
+                          type="button"
+                          className={cn(
+                            'btn btn-ghost btn-sm',
+                            isSelected
+                              ? 'opacity-100'
+                              : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'
+                          )}
+                          aria-pressed={isSelected}
+                          onClick={(event) => {
+                            inspectorTriggerRef.current = event.currentTarget;
+                            updateQueueUrl({ focus: item.request_id });
+                          }}
+                        >
+                          {t('admin.support_requests_inspect_action', {}, 'Inspect')}
+                        </button>
                         <Link
                           className="btn btn-primary btn-sm"
                           href={supportRequestDetailHref(item.request_id)}

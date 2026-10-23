@@ -150,9 +150,8 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(queue).toBeVisible();
   await page.locator('[data-ui="support-request-view-pills"]').getByRole('button', { name: /^Open$|^待处理$/i }).click();
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Payment');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
   await expect(page).toHaveURL(/status=open/);
-  await expect(page).toHaveURL(/q=Payment/);
+  await expect(page).toHaveURL(/q=Payment/, { timeout: 5000 });
 
   const row = page.locator('[data-ui="support-request-row"]');
   await expect(row).toHaveCount(1);
@@ -253,7 +252,7 @@ test('ticket operator preserves queue context through failed and successful publ
     browserEvidence,
     expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
     routeRuleResults: [
-      { id: 'single-primary-action', status: 'pass', evidence: 'Apply owns the filter region and Open conversation owns each ticket action region' },
+      { id: 'single-primary-action', status: 'pass', evidence: 'Debounced search owns the filter region and Open conversation owns each ticket action region' },
       { id: 'textual-status', status: 'pass', evidence: 'risk and ticket status are both visible as text labels' },
       { id: 'action-object-proximity', status: 'pass', evidence: 'Inspect and Open conversation remain in the affected ticket row and drawer' },
       { id: 'distinct-interaction-states', status: 'pass', evidence: 'filtered input, selected row, aria-pressed inspection, and disabled states remain distinct' },

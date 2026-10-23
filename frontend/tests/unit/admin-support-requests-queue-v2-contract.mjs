@@ -22,8 +22,13 @@ const drawerSource = readFileSync(
 assert.match(source, /BackofficePageHeader[\s\S]*secondaryAction=\{\([\s\S]*summaryItems=\{\[/, 'ticket queue must use the shared compact page header and operating summary');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeStackCard|support-request-queue-item/, 'ticket queue must not restore the old card stack or task cards');
 assert.match(source, /AdminDataTableFrame[\s\S]*dataUi="support-request-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/, 'ticket queue must use the shared full-width semantic table');
-assert.match(source, /data-ui="support-request-view-pills"[\s\S]*BackofficeFilterPill[\s\S]*data-ui="support-request-toolbar"/, 'status and attention must use Quiet filter pills above the compact secondary toolbar');
-assert.match(source, /data-ui="support-request-toolbar"[\s\S]*support_requests_search_label[\s\S]*support_requests_topic_filter_label[\s\S]*support_requests_sort_label[\s\S]*whitespace-nowrap/, 'search, topic, sort, and both actions must share one Quiet secondary toolbar');
+assert.match(source, /data-ui="support-request-view-pills"[\s\S]*support-request-attention-pills[\s\S]*support-request-status-pills[\s\S]*data-ui="support-request-toolbar"/, 'attention and workflow status pills must be grouped above the compact secondary toolbar');
+assert.match(source, /AdminHelpTip[\s\S]*AdminQueueKeyboardHint|support-request-keyboard-help[\s\S]*admin-queue-keyboard-hint/, 'keyboard hints must live in a quieter help tip, not compete with pills');
+assert.match(source, /data-ui="support-request-toolbar"[\s\S]*support_requests_search_label[\s\S]*support_requests_topic_filter_label[\s\S]*support_requests_sort_label[\s\S]*clear_filters/, 'search, topic, sort, and clear-filters must share one Quiet secondary toolbar');
+assert.doesNotMatch(source, /common\.apply/, 'Quiet toolbar must not keep a primary Apply button');
+assert.match(source, /group-hover:opacity-100[\s\S]*support_requests_inspect_action[\s\S]*support_requests_open_conversation_action/, 'Inspect must demote to hover/focus reveal; Open conversation stays the row primary');
+assert.match(source, /admin\.support_status_\$\{item\.status\}[\s\S]*portal\.support_topic_\$\{item\.topic\}/, 'row status must stay quieter text beside topic');
+assert.ok(!/data-ui="support-request-row"[\s\S]{0,1200}BackofficeStatusBadge/.test(source), 'table rows must not keep a second strong status badge column');
 assert.match(source, /SUPPORT_REQUEST_PAGE_SIZE = 10/, 'Quiet queue default page size must be 10');
 assert.match(source, /data-ui="support-request-quiet-pagination"[\s\S]*common\.pagination_summary/, 'Quiet queue must always show range / total pagination (including single-page)');
 assert.match(source, /summaryItems=\{\[[\s\S]*waiting_for_operator[\s\S]*overdue[\s\S]*\]\}/, 'header summary must keep actionable waiting/overdue signals');

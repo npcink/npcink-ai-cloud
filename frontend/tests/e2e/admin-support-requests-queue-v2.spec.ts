@@ -207,7 +207,6 @@ test('ticket queue persists filters and focus while retaining usable results on 
     page.getByLabel(/Search tickets|搜索工单/i),
     page.getByLabel(/Ticket topic|工单类型/i),
     page.getByLabel(/Sort|排序/i),
-    page.getByRole('button', { name: /^Apply$|^应用$/i }),
     page.getByRole('button', { name: /^Clear filters$|^清除筛选$/i }),
   ];
   const toolbarCenters = await Promise.all(secondaryToolbarControls.map(async (control) => {
@@ -234,8 +233,7 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(rows).toHaveCount(2);
 
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Payment');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
-  await expect(page).toHaveURL(/q=Payment/);
+  await expect(page).toHaveURL(/q=Payment/, { timeout: 5000 });
   await expect(rows).toHaveCount(1);
 
   const inspectButton = page.getByRole('button', { name: /^Inspect$|^检查$/i });
@@ -250,8 +248,7 @@ test('ticket queue persists filters and focus while retaining usable results on 
 
   mocks.failRequestForQuery('Missing');
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Missing');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
-  await expect(page).toHaveURL(/q=Missing/);
+  await expect(page).toHaveURL(/q=Missing/, { timeout: 5000 });
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(rows).toHaveCount(1);
   await page.getByRole('button', { name: /^Inspect$|^检查$/i }).click();
@@ -260,7 +257,7 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
   await page.getByLabel(/Search tickets|搜索工单/i).fill('NeverMatches');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(page).toHaveURL(/q=NeverMatches/, { timeout: 5000 });
   const emptyState = page.locator('[data-ui="admin-empty-state"]');
   await expect(emptyState).toContainText(/No tickets match these filters|没有符合当前筛选条件的工单/i);
   await emptyState.getByRole('button', { name: /Clear filters|清除筛选/i }).click();
@@ -319,7 +316,10 @@ test('ticket queue keyboard flow moves focus, ignores typing, and opens detail w
   });
   await page.goto('/admin/support-requests');
   await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(4);
+  const keyboardHelp = page.locator('[data-ui="support-request-view-pills"] [data-ui="admin-help-tip-trigger"]');
+  await keyboardHelp.click();
   await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
+  await page.keyboard.press('Escape');
 
   const search = page.getByLabel(/Search tickets|搜索工单/i);
   await search.focus();
