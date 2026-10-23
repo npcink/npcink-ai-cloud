@@ -112,7 +112,8 @@ const test = base.extend<{ model: Model }>({
         if (model.holdQuota) await model.holdQuota;
         if (model.failQuota) return route.fulfill({
           status: 503, contentType: 'application/json', body: JSON.stringify({
-            status: 'error', error_code: 'fixture.unknown_quota', message: diagnostic, data: null,
+            status: 'error', error_code: 'service.entitlements_temporarily_unavailable', message: diagnostic, data: {},
+            meta: { trace_id: 'quota-recovery-error-trace', revision: 'm6' },
           }),
         });
         return ok(route, entitlements(model));
@@ -240,12 +241,21 @@ test('zh-CN: site capacity exceeded opens package review without changing site l
   await expect(page.locator('[data-portal-billing="attention"]')).toContainText('1');
 });
 
-test('zh-CN: unknown quota stays unavailable through Retry until fresh evidence arrives', async ({ page, model }) => {
+test('zh-CN: backend 503 quota stays unavailable through Retry until fresh evidence arrives', async ({ page, model }) => {
   model.failQuota = true;
+  const failedResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/portal/account/entitlements');
   await home(page);
+  const response = await failedResponse;
+  expect(response.status()).toBe(503);
+  expect(await response.json()).toMatchObject({
+    status: 'error', error_code: 'service.entitlements_temporarily_unavailable',
+    meta: { trace_id: 'quota-recovery-error-trace', revision: 'm6' },
+  });
   const attention = page.locator('[data-portal-home="attention-focus"]');
   await expect(attention).toContainText('套餐用量暂不可用');
-  await expect(attention.getByRole('link')).toHaveCount(0);
+  // This localized detail and recovery link require the parsed business error code.
+  await expect(attention).toContainText('Cloud 服务暂时不可用，请稍后重试；如果持续发生，请联系支持。');
+  await expect(attention.getByRole('link', { name: '联系支持', exact: true })).toHaveAttribute('href', '/portal/support?new=1&topic=account');
   await expect(page.locator('body')).not.toContainText(diagnostic);
   const retry = page.getByRole('button', { name: /暂不可用.*重新获取/ });
   await expect(retry).toBeVisible();
