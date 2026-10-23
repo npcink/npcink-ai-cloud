@@ -150,8 +150,8 @@ assert.match(
 );
 assert.match(
   paymentOrderHistorySource,
-  /<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*role="tablist"[\s\S]*<\/details>/,
-  'Portal package page must keep the payment summary visible and fold lower-priority order actions behind disclosure'
+  /const renderStatusFilter = \(\) =>[\s\S]*role="tablist"[\s\S]*<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*\{renderStatusFilter\(\)\}[\s\S]*<\/details>/,
+  'Account payment history must keep its summary and status pills inside the order disclosure'
 );
 assert.equal(
   (accountCommerceSource.match(/const paymentOrdersCard =/g) || []).length,

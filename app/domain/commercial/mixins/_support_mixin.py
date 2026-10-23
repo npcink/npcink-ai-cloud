@@ -900,6 +900,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 account_id=str(request.account_id or ""),
             )
             attachment_payload = self._serialize_portal_support_request_attachment(attachment)
+            attachment_byte_size = int(attachment.byte_size or 0)
             repository.delete_support_request_attachment(attachment, activity_at=now)
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
@@ -919,7 +920,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "request_id": str(request.request_id),
                     "attachment_id": str(attachment_payload.get("attachment_id") or ""),
                     "visibility": str(attachment_payload.get("visibility") or ""),
-                    "byte_size": int(attachment_payload.get("byte_size") or 0),
+                    "byte_size": attachment_byte_size,
                     "content_type": str(attachment_payload.get("content_type") or ""),
                     "deleted_at": self._serialize_datetime(now),
                 },
