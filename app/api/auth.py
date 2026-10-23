@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -14,11 +14,10 @@ from fastapi.responses import JSONResponse
 from jwt import InvalidTokenError
 from sqlalchemy import text
 
-from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.envelope import build_envelope
 from app.core.config import Settings
 from app.core.db import build_postgres_advisory_lock_material, get_session
-from app.core.models import PRINCIPAL_STATUS_ACTIVE
+from app.core.portal_session_tokens import build_portal_session_token as build_portal_session_token
 from app.core.security import (
     PUBLIC_REPLAY_POLICY_METHOD_DEFAULT,
     PUBLIC_RUNTIME_MAX_BODY_BYTES,
@@ -84,6 +83,9 @@ PORTAL_SESSION_REQUIRED_CLAIMS = (
 class PortalAuthContext:
     principal_id: str
     site_id: str = ""
+    session_id: str = ""
+    session_version: int = 0
+    expires_at: datetime | None = None
 
 
 class PortalBearerTokenError(ValueError):
@@ -175,55 +177,6 @@ def _build_auth_error_response(
     )
 
 
-def build_portal_session_token(
-    settings: Settings,
-    *,
-    principal_id: str,
-    site_id: str = "",
-    session_version: int = 1,
-    expires_at: datetime | None = None,
-) -> str:
-    if (
-        not isinstance(principal_id, str)
-        or not principal_id.strip()
-        or principal_id != principal_id.strip()
-    ):
-        raise ValueError("principal_id must be a non-empty canonical string")
-    if (
-        isinstance(session_version, bool)
-        or not isinstance(session_version, int)
-        or session_version < 1
-    ):
-        raise ValueError("session_version must be a positive integer")
-    if site_id != "" and (
-        not isinstance(site_id, str) or normalize_portal_site_id(site_id) != site_id
-    ):
-        raise ValueError("site_id must be a canonical portal site id")
-    now = datetime.now(UTC)
-    resolved_expires_at = expires_at or (
-        now + timedelta(seconds=resolve_portal_session_ttl_seconds(settings))
-    )
-    issued_at_timestamp = int(now.timestamp())
-    expires_at_timestamp = int(resolved_expires_at.timestamp())
-    if expires_at_timestamp <= issued_at_timestamp:
-        raise ValueError("expires_at must be later than the token issue time")
-    payload: dict[str, Any] = {
-        "iss": _resolve_portal_jwt_issuer(settings),
-        "aud": _resolve_portal_jwt_audience(settings),
-        "sub": principal_id,
-        "purpose": PORTAL_SESSION_PURPOSE,
-        "session_version": session_version,
-        "iat": issued_at_timestamp,
-        "exp": expires_at_timestamp,
-    }
-    if site_id:
-        payload["site_id"] = site_id
-    return jwt.encode(
-        payload,
-        _resolve_portal_link_signing_secret(settings),
-        algorithm=PORTAL_SESSION_ALGORITHM,
-    )
-
 
 def _resolve_portal_link_signing_secret(settings: Settings) -> str:
     secret = settings.portal_jwt_secret
@@ -276,6 +229,9 @@ def _validate_portal_session_claims(
     invalid_message: str,
 ) -> dict[str, Any]:
     claims = _jwt_payload_dict(payload)
+    sid = claims.get("sid")
+    if not isinstance(sid, str) or not sid or len(sid) > 64 or sid != sid.strip():
+        raise PortalBearerTokenError(401, "auth.portal_session_revoked", "please log in again")
     principal_id = claims.get("sub")
     session_version = claims.get("session_version")
     issued_at = claims.get("iat")
@@ -477,34 +433,25 @@ def validate_portal_principal_session(
     *,
     principal_id: str,
     session_version: int,
+    session_id: str,
+    expires_at: datetime,
 ) -> None:
-    if (
-        isinstance(session_version, bool)
-        or not isinstance(session_version, int)
-        or session_version < 1
-    ):
-        raise PortalBearerTokenError(
-            403,
-            "auth.portal_token_invalid",
-            "invalid portal bearer token",
-        )
-    with get_session(settings.database_url) as session:
-        repository = CommercialIdentityRepository(session)
-        identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
-        current_session_version = getattr(identity, "session_version", None)
-        if (
-            identity is None
-            or identity.status != PRINCIPAL_STATUS_ACTIVE
-            or isinstance(current_session_version, bool)
-            or not isinstance(current_session_version, int)
-            or current_session_version < 1
-            or current_session_version != session_version
-        ):
-            raise PortalBearerTokenError(
-                401,
-                "auth.portal_session_revoked",
-                "portal session is no longer valid",
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.domain.commercial.errors import CommercialPermissionError
+    from app.domain.portal_sessions.service import AuthenticatedSession, validate_registered_session
+
+    try:
+        with get_session(settings.database_url) as session:
+            validate_registered_session(
+                session, AuthenticatedSession(principal_id, session_id, session_version, expires_at)
             )
+    except CommercialPermissionError as error:
+        raise PortalBearerTokenError(401, error.error_code, error.message) from error
+    except SQLAlchemyError as error:
+        raise PortalBearerTokenError(
+            503, "auth.portal_session_unavailable", "session unavailable"
+        ) from error
 
 
 def _enforce_portal_request_rate_limit(
@@ -998,6 +945,8 @@ def _authorize_portal_bearer_jwt_request(
             services.settings,
             principal_id=principal_id,
             session_version=_extract_portal_session_version(claims),
+            session_id=claims["sid"],
+            expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
         )
     except PortalBearerTokenError as error:
         return _build_auth_error_response(
@@ -1009,4 +958,7 @@ def _authorize_portal_bearer_jwt_request(
     return PortalAuthContext(
         principal_id=principal_id,
         site_id=_extract_portal_site_id(claims),
+        session_id=claims["sid"],
+        session_version=claims["session_version"],
+        expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
     )

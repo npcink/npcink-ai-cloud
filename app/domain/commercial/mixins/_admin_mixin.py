@@ -91,6 +91,7 @@ from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
+from app.domain.portal_sessions.service import lock_login_scope, lock_login_scopes
 from app.domain.runtime.provider_budget import ProviderBudgetService
 
 AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
@@ -1090,9 +1091,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             identity_repository = CommercialIdentityRepository(session)
             access_repository = CommercialAccessRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
-            identity = identity_repository.get_principal_identity_by_ref(
-                principal_id=normalized_principal_id,
-            )
+            identity = lock_login_scope(session, normalized_principal_id)
             if identity is None:
                 raise CommercialNotFoundError(
                     "service.principal_not_found",
@@ -1183,10 +1182,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             identity_repository = CommercialIdentityRepository(session)
             access_repository = CommercialAccessRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
+            locked_identities = lock_login_scopes(session, normalized_principal_ids)
             for normalized_principal_id in normalized_principal_ids:
-                identity = identity_repository.get_principal_identity_by_ref(
-                    principal_id=normalized_principal_id,
-                )
+                identity = locked_identities[normalized_principal_id]
                 if identity is None:
                     totals["failed"] += 1
                     items.append(
