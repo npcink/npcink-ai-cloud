@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -100,7 +101,7 @@ const ACCOUNTS_RETURN_CONTEXT_POLICY = {
 } as const;
 const INTERNAL_TEST_ACCOUNT_RE = /(^|[_-])(smoke)([_-]|$)|codex_image_smoke|site_knowledge_smoke/i;
 const ACCOUNT_SORTS = new Set<AccountSort>(['display_name', 'created_at']);
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 const accountsClient = createApiClient({ idempotencyPrefix: 'admin_accounts' });
 
 function isMalformedAccountText(value?: string): boolean {
@@ -341,6 +342,15 @@ function AccountsContent() {
     loadError && loadedRequestKey && loadedRequestKey !== requestKey
   );
 
+  // Rows and total belong to the last successful request, including while a
+  // different URL page is pending or its request has failed.
+  const loadedOffset = normalizeOffset(new URLSearchParams(loadedRequestKey).get('offset'));
+  const isOutOfRangePage = hasLoaded && total > 0 && loadedOffset >= total && !visibleAccounts.length;
+  const changePage = (nextOffset: number) => {
+    if (nextOffset === offset) void loadAccounts(true);
+    else updateDirectoryUrl({ offset: String(nextOffset) });
+  };
+
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     updateDirectoryUrl({ q: draftQuery.trim() || null, offset: null });
@@ -413,6 +423,24 @@ function AccountsContent() {
 
   const hasFilters =
     Boolean(appliedQuery || appliedStatus || showInternalAccounts) || sort !== 'display_name';
+
+  const directoryPagination = visibleAccounts.length && (total > PAGE_SIZE || loadedOffset > 0) ? (
+    <ListPagination
+      offset={loadedOffset}
+      limit={PAGE_SIZE}
+      total={total}
+      isLoading={isRefreshing}
+      onOffsetChange={changePage}
+    />
+  ) : hasLoaded ? (
+    <p data-ui="customer-directory-range" className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      {t('common.pagination_summary', {
+        start: visibleAccounts.length ? String(loadedOffset + 1) : '0',
+        end: visibleAccounts.length ? String(Math.min(loadedOffset + visibleAccounts.length, total)) : '0',
+        total: String(total),
+      })}
+    </p>
+  ) : null;
 
   return (
     <BackofficePageStack className="space-y-5">
@@ -522,74 +550,79 @@ function AccountsContent() {
       <BackofficeSectionPanel className="overflow-hidden p-0">
         <div
           data-ui="customer-directory-toolbar"
-          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-end"
+          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800"
         >
-          <form
-            data-ui="customer-directory-search"
-            className="flex min-w-0 gap-2 lg:w-full lg:max-w-2xl"
-            onSubmit={applySearch}
-          >
-            <label className="min-w-0 flex-1">
-              <span className="sr-only">{t('common.search', {}, 'Search')}</span>
-              <input
-                type="search"
+          <div role="group" aria-label={t('common.status', {}, 'Status')} className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">{t('common.status', {}, 'Status')}</span>
+            {[
+              { value: '', label: t('admin.accounts.all_statuses', {}, 'All account states') },
+              { value: 'active', label: t('status.active', {}, 'Active') },
+              { value: 'inactive', label: t('status.inactive', {}, 'Inactive') },
+              { value: 'suspended', label: t('status.suspended', {}, 'Suspended') },
+            ].map(({ value, label }) => (
+              <BackofficeFilterPill
+                key={value}
+                active={appliedStatus === value}
+                aria-pressed={appliedStatus === value}
+                onClick={() => updateDirectoryUrl({ status: value || null, offset: null })}
+              >
+                {label}
+              </BackofficeFilterPill>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
+            <form
+              data-ui="customer-directory-search"
+              className="flex min-w-0 flex-1 gap-2 lg:max-w-2xl"
+              onSubmit={applySearch}
+            >
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">{t('common.search', {}, 'Search')}</span>
+                <input
+                  type="search"
+                  className="input w-full"
+                  value={draftQuery}
+                  placeholder={t(
+                    'admin.accounts.search_placeholder',
+                    {},
+                    'Customer name, email, account ID, or note'
+                  )}
+                  onChange={(event) => setDraftQuery(event.target.value)}
+                />
+              </label>
+              <button type="submit" className="btn btn-primary">
+                {t('common.search', {}, 'Search')}
+              </button>
+            </form>
+            <label className="shrink-0 lg:w-48">
+              <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
+              <select
                 className="input w-full"
-                value={draftQuery}
-                placeholder={t(
-                  'admin.accounts.search_placeholder',
-                  {},
-                  'Customer name, email, account ID, or note'
-                )}
-                onChange={(event) => setDraftQuery(event.target.value)}
-              />
+                value={sort}
+                onChange={(event) =>
+                  updateDirectoryUrl({
+                    sort: normalizeSort(event.target.value),
+                    offset: null,
+                  })
+                }
+              >
+                <option value="display_name">
+                  {t('admin.accounts.sort_name', {}, 'Sort: customer name')}
+                </option>
+                <option value="created_at">
+                  {t('admin.accounts.sort_created', {}, 'Sort: recently created')}
+                </option>
+              </select>
             </label>
-            <button type="submit" className="btn btn-primary">
-              {t('common.search', {}, 'Search')}
+            <button
+              type="button"
+              className="btn btn-secondary shrink-0 whitespace-nowrap"
+              disabled={!hasFilters && !draftQuery}
+              onClick={clearFilters}
+            >
+              {t('common.clear_filters', {}, 'Clear filters')}
             </button>
-          </form>
-          <label className="lg:w-48">
-            <span className="sr-only">{t('common.status', {}, 'Status')}</span>
-            <select
-              className="input w-full"
-              value={appliedStatus}
-              onChange={(event) =>
-                updateDirectoryUrl({ status: event.target.value || null, offset: null })
-              }
-            >
-              <option value="">{t('admin.accounts.all_statuses', {}, 'All account states')}</option>
-              <option value="active">{t('status.active', {}, 'Active')}</option>
-              <option value="inactive">{t('status.inactive', {}, 'Inactive')}</option>
-              <option value="suspended">{t('status.suspended', {}, 'Suspended')}</option>
-            </select>
-          </label>
-          <label className="lg:w-48">
-            <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
-            <select
-              className="input w-full"
-              value={sort}
-              onChange={(event) =>
-                updateDirectoryUrl({
-                  sort: normalizeSort(event.target.value),
-                  offset: null,
-                })
-              }
-            >
-              <option value="display_name">
-                {t('admin.accounts.sort_name', {}, 'Sort: customer name')}
-              </option>
-              <option value="created_at">
-                {t('admin.accounts.sort_created', {}, 'Sort: recently created')}
-              </option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={!hasFilters && !draftQuery}
-            onClick={clearFilters}
-          >
-            {t('common.clear_filters', {}, 'Clear filters')}
-          </button>
+          </div>
         </div>
 
         {hiddenInternalTotal > 0 ? (
@@ -613,7 +646,7 @@ function AccountsContent() {
             >
               {showInternalAccounts
                 ? t('admin.accounts.hide_internal_records', {}, 'Hide test records')
-                : t('admin.accounts.show_internal_records', {}, 'Show test records')}
+                : t('admin.accounts.show_internal_records', { count: formatInteger(hiddenInternalTotal) }, 'Show test records')}
             </button>
           </div>
         ) : null}
@@ -633,34 +666,24 @@ function AccountsContent() {
               `${formatInteger(visibleAccounts.length)} on this page · ${formatInteger(total)} total`
             )}
             bodyClassName="overflow-x-auto"
-            footer={(
-              <ListPagination
-                offset={offset}
-                limit={PAGE_SIZE}
-                total={total}
-                isLoading={isRefreshing}
-                onOffsetChange={(nextOffset) =>
-                  updateDirectoryUrl({ offset: String(nextOffset) })
-                }
-              />
-            )}
+            footer={directoryPagination}
           >
             <table
-              className="w-full min-w-[68rem] table-fixed border-collapse text-left text-sm"
+              className="w-full min-w-[60rem] table-fixed border-collapse text-left text-sm"
               aria-label={t('admin.accounts.table_region_label', {}, 'Customer directory')}
             >
               <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                 <tr>
-                  <th className="w-[18rem] px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
-                  <th className="w-[18rem] px-4 py-3">
+                  <th className="w-[22%] px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
+                  <th className="w-[24%] px-4 py-3">
                     {t('admin.accounts.login_email_label', {}, 'Login email')}
                   </th>
-                  <th className="w-[10rem] px-4 py-3">{t('common.status', {}, 'Status')}</th>
-                  <th className="w-[12rem] px-4 py-3">{t('common.package', {}, 'Package')}</th>
-                  <th className="w-[10rem] px-4 py-3">
+                  <th className="w-[14%] px-4 py-3">{t('common.status', {}, 'Status')}</th>
+                  <th className="w-[10%] px-4 py-3">{t('common.package', {}, 'Package')}</th>
+                  <th className="w-[16%] px-4 py-3">
                     {t('admin.accounts.service_footprint_label', {}, 'Service footprint')}
                   </th>
-                  <th className="px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
+                  <th className="w-[14%] px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -740,7 +763,7 @@ function AccountsContent() {
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={accountDetailHref(account.account_id)}
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-primary btn-sm whitespace-nowrap"
                       >
                         {t('common.details', {}, 'Details')}
                       </Link>
@@ -751,22 +774,35 @@ function AccountsContent() {
             </table>
           </AdminDataTableFrame>
         ) : (
-          <BackofficeEmptyState
-            className="m-5 md:m-6"
-            title={t('admin.accounts.no_match_title', {}, 'No customers match these filters')}
-            description={t(
-              'admin.accounts.no_match_desc',
-              {},
-              'Clear or adjust the customer search and account-state filter. No customer record has been changed.'
-            )}
-            action={
-              hasFilters ? (
+          <>
+            <BackofficeEmptyState
+              className="m-5 md:m-6"
+              title={total > 0
+                ? t('empty.no_data_title', {}, 'No data available')
+                : t('admin.accounts.no_match_title', {}, 'No customers match these filters')}
+              description={total > 0
+                ? t('empty.no_data_desc', {}, 'There is no data to display at this time.')
+                : t('admin.accounts.no_match_desc', {}, 'Clear or adjust the customer search and account-state filter. No customer record has been changed.')}
+              action={isOutOfRangePage ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing}
+                  onClick={() => changePage(Math.min(
+                    Math.max(0, loadedOffset - PAGE_SIZE),
+                    Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE
+                  ))}
+                >
+                  {t('common.previous', {}, 'Previous')}
+                </button>
+              ) : hasFilters ? (
                 <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
                   {t('common.clear_filters', {}, 'Clear filters')}
                 </button>
-              ) : null
-            }
-          />
+              ) : null}
+            />
+            {directoryPagination}
+          </>
         )}
       </BackofficeSectionPanel>
 

@@ -6,8 +6,20 @@ import {
   LONG_ACCOUNT_ID,
 } from './helpers/admin-operator-fixture';
 
+const pageErrors: string[] = [];
+const unhandledAdminRequests: string[] = [];
+test.beforeEach(async ({ page }) => {
+  pageErrors.length = 0;
+  unhandledAdminRequests.length = 0;
+  page.on('pageerror', error => pageErrors.push(error.message));
+});
+test.afterEach(() => {
+  expect(pageErrors).toEqual([]);
+  expect(unhandledAdminRequests).toEqual([]);
+});
+
 type AccountFixture = {
-  account: { account_id: string; name: string; status: string; metadata?: Record<string, unknown> };
+  account: { account_id: string; name: string; status: string; created_at?: string; metadata?: Record<string, unknown> };
   site_count: number;
   active_subscription_count: number;
   top_plan_id: string;
@@ -96,20 +108,50 @@ function initialAccounts(): AccountFixture[] {
   ];
 }
 
-async function installAccountsQueueMocks(page: Page) {
-  await installAdminMocks(page);
-  let accounts = initialAccounts();
+function directoryAccounts(count: number): AccountFixture[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...initialAccounts()[2],
+    account: {
+      account_id: `acct_directory_${index}`,
+      name: `Directory customer ${String(index).padStart(2, '0')}`,
+      status: index % 3 === 0 ? 'suspended' : index % 3 === 1 ? 'active' : 'inactive',
+      created_at: new Date(Date.UTC(2026, 8, index + 1)).toISOString(),
+    },
+    ...identityFixture(`acct_directory_${index}`, `owner${index}@directory.example`),
+  }));
+}
+
+function internalAccount(): AccountFixture {
+  return {
+    ...initialAccounts()[2],
+    account: { account_id: 'acct_smoke_fixture', name: 'Internal smoke fixture', status: 'active' },
+    ...identityFixture('acct_smoke_fixture', 'internal@example.test'),
+  };
+}
+
+async function installAccountsQueueMocks(page: Page, initialItems = initialAccounts()) {
+  await installAdminMocks(page, { unhandledAdminRequests });
+  let accounts = [...initialItems, internalAccount()];
   let requestCount = 0;
   let createRequestCount = 0;
   let createPayload: Record<string, unknown> | null = null;
-  let failQuery = '';
+  let failWhen: ((params: URLSearchParams) => boolean) | null = null;
+  const requests: URLSearchParams[] = [];
+  let holdNext: (() => Promise<void>) | null = null;
 
   await page.route('**/api/admin/accounts?*', async (route) => {
     requestCount += 1;
     const url = new URL(route.request().url());
-    const q = (url.searchParams.get('q') || '').toLowerCase();
-    if (failQuery && q === failQuery) {
-      failQuery = '';
+    const params = url.searchParams;
+    requests.push(params);
+    if (holdNext) {
+      const wait = holdNext;
+      holdNext = null;
+      await wait();
+    }
+    const q = (params.get('q') || '').toLowerCase();
+    if (failWhen?.(params)) {
+      failWhen = null;
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('temporary customer queue failure')) });
       return;
     }
@@ -117,16 +159,23 @@ async function installAccountsQueueMocks(page: Page) {
     const sort = url.searchParams.get('sort') || 'display_name';
     let items = accounts.filter((item) => {
       const searchable = [item.account.account_id, item.account.name, item.primary_identity.email, item.display_package_label, item.account.metadata?.operator_note].join(' ').toLowerCase();
-      return (!q || searchable.includes(q)) && (!status || item.account.status === status);
+      return (!q || q.split(/\s+/).every(term => searchable.includes(term))) && (!status || item.account.status === status);
     });
+    const hiddenInternalTotal = items.filter(item => item.account.account_id === 'acct_smoke_fixture').length;
+    if (params.get('exclude_internal') === 'true') items = items.filter(item => item.account.account_id !== 'acct_smoke_fixture');
     items = [...items].sort((left, right) => {
       if (sort === 'display_name') return left.account.name.localeCompare(right.account.name);
-      return right.account.account_id.localeCompare(left.account.account_id);
+      return (right.account.created_at || '').localeCompare(left.account.created_at || '') || right.account.account_id.localeCompare(left.account.account_id);
     });
+    const total = items.length;
+    const limit = Number(params.get('limit'));
+    const offset = Number(params.get('offset') || 0);
+    expect(limit).toBe(10);
+    items = items.slice(offset, offset + limit);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({ items, total: items.length, hidden_internal_total: 1 })),
+      body: JSON.stringify(buildAdminApiEnvelope({ items, total, hidden_internal_total: hiddenInternalTotal })),
     });
   });
 
@@ -166,9 +215,11 @@ async function installAccountsQueueMocks(page: Page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: generatedAccountId })) });
   });
 
-  await page.route('**/api/admin/accounts/acct_generated_new_customer', async route => {
-    const item = accounts.find(account => account.account.account_id === 'acct_generated_new_customer');
-    if (!item) throw new Error('Created account fixture must exist before loading detail');
+  await page.route(/\/api\/admin\/accounts\/[^/?]+$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const accountId = new URL(route.request().url()).pathname.split('/').at(-1);
+    const item = accounts.find(account => account.account.account_id === accountId);
+    if (!item) return route.fallback();
     await route.fulfill({ json: buildAdminApiEnvelope({
       account: item.account, primary_identity: item.primary_identity,
       identity_relationship_state: item.identity_relationship_state,
@@ -181,8 +232,13 @@ async function installAccountsQueueMocks(page: Page) {
     getRequestCount: () => requestCount,
     getCreateRequestCount: () => createRequestCount,
     getCreatePayload: () => createPayload,
-    failNextRequest: () => {
-      failQuery = 'missing';
+    getRequests: () => requests,
+    failNextRequest: (predicate = (params: URLSearchParams) => params.get('q')?.toLowerCase() === 'missing') => { failWhen = predicate; },
+    holdNextRequest: () => {
+      let release!: () => void;
+      const held = new Promise<void>(resolve => { release = resolve; });
+      holdNext = () => held;
+      return release;
     },
   };
 }
@@ -207,7 +263,7 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(directoryRows.nth(1)).toContainText('Beta Customer');
   await expect(directoryRows.nth(2)).toContainText('Zeta Customer');
 
-  await page.getByRole('combobox').nth(0).selectOption('suspended');
+  await page.getByRole('group', { name: /^Status$|^状态$/i }).getByRole('button', { name: /^Suspended$|^已暂停$|^暂停$/i }).click();
   await expect(page).toHaveURL(/status=suspended/);
   await expect(directoryRows).toHaveCount(1);
   await expect(directoryRows).toContainText('Zeta Customer');
@@ -218,7 +274,7 @@ test('customer directory persists customer filters and opens the specified custo
 
   await page.reload();
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Zeta');
-  await expect(page.getByRole('combobox').nth(0)).toHaveValue('suspended');
+  await expect(page.getByRole('group', { name: /^Status$|^状态$/i }).getByRole('button', { name: /^Suspended$|^已暂停$|^暂停$/i })).toHaveAttribute('aria-pressed', 'true');
   await expect(directoryRows).toContainText('Zeta Customer');
 
   const detailHref = await directoryRows
@@ -281,7 +337,7 @@ test('customer creation uses a dialog, receives a generated ID, and binds Free b
 
 test('customer identity audit and access disable live in the specified customer detail', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installAdminMocks(page);
+  await installAdminMocks(page, { unhandledAdminRequests });
 
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}#customer-access`);
   await expect(
@@ -329,4 +385,245 @@ test('customer identity audit and access disable live in the specified customer 
   });
   expect(directory.items.find((item: { account: { account_id: string } }) => item.account.account_id === 'acct_free_primary').identity_relationship_state)
     .toBe(secondary.identity_relationship_state);
+});
+
+function statusGroup(page: Page) {
+  return page.getByRole('group', { name: /^Status$|^状态$/i });
+}
+
+async function expectRange(page: Page, start: number, end: number, total: number) {
+  const range = new RegExp(`^(?:第\\s*)?${start}\\s*[–-]\\s*${end}\\s*(?:of\\s*|条，共\\s*)${total}(?:\\s*条)?$`);
+  await expect(page.getByText(range)).toBeVisible();
+}
+
+for (const count of [0, 1, 10, 11, 21]) {
+  test(`customer directory uses a true ten-row page and honest range for ${count} customers`, async ({ page }) => {
+    const mocks = await installAccountsQueueMocks(page, directoryAccounts(count));
+    await page.goto('/admin/accounts');
+    await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(Math.min(count, 10));
+    await expectRange(page, count ? 1 : 0, Math.min(count, 10), count);
+    expect(mocks.getRequests().at(-1)?.get('limit')).toBe('10');
+    expect(mocks.getRequests().at(-1)?.get('exclude_internal')).toBe('true');
+    await expect(statusGroup(page).getByRole('button', { pressed: true })).toHaveCount(1);
+    if (count > 10) {
+      await expect(page.getByRole('button', { name: /^Previous$|^上一页$/i })).toBeDisabled();
+      await expect(page.getByRole('button', { name: /^Next page$|^下一页$/i })).toBeEnabled();
+    } else {
+      await expect(page.getByRole('button', { name: /^Next page$|^下一页$/i })).toHaveCount(0);
+    }
+  });
+}
+
+test('customer directory pages real results and keeps explicit search, status and sort URL backed', async ({ page }) => {
+  const mocks = await installAccountsQueueMocks(page, directoryAccounts(21));
+  await page.goto('/admin/accounts?q=Directory');
+  const rows = page.locator('[data-ui="customer-directory-row"]');
+  const next = page.getByRole('button', { name: /^Next page$|^下一页$/i });
+  const previous = page.getByRole('button', { name: /^Previous$|^上一页$/i });
+  await expect(rows.first()).toContainText('Directory customer 00');
+  await next.click();
+  await expect(page).toHaveURL(/q=Directory&offset=10$/);
+  await expect(rows).toHaveCount(10);
+  await expect(rows.first()).toContainText('Directory customer 10');
+  await expectRange(page, 11, 20, 21);
+  expect(mocks.getRequests().at(-1)?.get('offset')).toBe('10');
+  await next.click();
+  await expect(page).toHaveURL(/offset=20$/);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Directory customer 20');
+  await expectRange(page, 21, 21, 21);
+  await expect(next).toBeDisabled();
+  await previous.click();
+  await expectRange(page, 11, 20, 21);
+  await page.reload();
+  await expect(rows.first()).toContainText('Directory customer 10');
+  await expectRange(page, 11, 20, 21);
+  await page.getByRole('combobox', { name: /^Sort$|^排序$/i }).selectOption('created_at');
+  await expect(page).toHaveURL(/q=Directory&sort=created_at$/);
+  await expect(rows.first()).toContainText('Directory customer 20');
+  expect(mocks.getRequests().at(-1)?.get('offset')).toBeNull();
+  await next.click();
+  await expectRange(page, 11, 20, 21);
+  await statusGroup(page).getByRole('button', { name: /^Active$|^活跃$/i }).click();
+  await expect(page).toHaveURL(/q=Directory&sort=created_at&status=active$/);
+  await expect(rows).toHaveCount(7);
+  await expectRange(page, 1, 7, 7);
+  await expect(statusGroup(page).getByRole('button', { pressed: true })).toHaveCount(1);
+  const beforeTyping = mocks.getRequestCount();
+  await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 19');
+  expect(mocks.getRequestCount()).toBe(beforeTyping);
+  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Directory customer 19');
+  await expectRange(page, 1, 1, 1);
+  expect(mocks.getRequests().at(-1)?.get('q')).toBe('Directory customer 19');
+});
+
+test('customer directory retains its successful page during pending and failed paging and retries the URL target', async ({ page }, testInfo) => {
+  const mocks = await installAccountsQueueMocks(page, directoryAccounts(21));
+  await page.goto('/admin/accounts?q=Directory&offset=10');
+  const rows = page.locator('[data-ui="customer-directory-row"]');
+  await expect(rows.first()).toContainText('Directory customer 10');
+  await expectRange(page, 11, 20, 21);
+  const rangeEvidence = await page.evaluateHandle(() => {
+    const initialRange = document.querySelector('nav[aria-label="Pagination"], nav[aria-label="分页"]')?.querySelector('p')?.textContent;
+    const ranges: string[] = initialRange ? [initialRange] : [];
+    const observer = new MutationObserver(() => {
+      const nav = document.querySelector('nav[aria-label="Pagination"], nav[aria-label="分页"]');
+      const text = nav?.querySelector('p')?.textContent;
+      if (text && ranges.at(-1) !== text) ranges.push(text);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return { ranges, stop: () => observer.disconnect() };
+  });
+  mocks.failNextRequest(params => params.get('offset') === '20');
+  const release = mocks.holdNextRequest();
+  const before = mocks.getRequestCount();
+  await page.getByRole('button', { name: /^Next page$|^下一页$/i }).click();
+  await expect(page).toHaveURL(/offset=20$/);
+  await expect.poll(() => mocks.getRequestCount()).toBe(before + 1);
+  await expect(rows.first()).toContainText('Directory customer 10');
+  await expectRange(page, 11, 20, 21);
+  release();
+  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
+  await expectRange(page, 11, 20, 21);
+  await expect(rows.first()).toContainText('Directory customer 10');
+  const recordedRanges = await rangeEvidence.evaluate(state => state.ranges);
+  expect(recordedRanges.length).toBeGreaterThan(0);
+  expect(recordedRanges.every(text => /11\s*[–-]\s*20/.test(text))).toBe(true);
+  await rangeEvidence.evaluate(state => state.stop());
+  await testInfo.attach('retained-range-observation', { body: JSON.stringify(recordedRanges), contentType: 'application/json' });
+  await page.screenshot({ path: testInfo.outputPath('accounts-retained-page-error.png'), fullPage: true, animations: 'disabled' });
+  const beforeRetry = mocks.getRequestCount();
+  await page.getByRole('button', { name: /^Next page$|^下一页$/i }).click();
+  await expect.poll(() => mocks.getRequestCount()).toBe(beforeRetry + 1);
+  expect(mocks.getRequests().at(-1)?.get('offset')).toBe('20');
+  await expect(page).toHaveURL(/offset=20$/);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Directory customer 20');
+  await expectRange(page, 21, 21, 21);
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+});
+
+test('customer directory recovers a successful far empty page once without changing its filter context', async ({ page }, testInfo) => {
+  const mocks = await installAccountsQueueMocks(page, directoryAccounts(21));
+  const context = '/admin/accounts?q=Directory&internal=1&sort=created_at&offset=900';
+  await page.goto(context);
+  await expect(page.getByText(/^No data available$|^暂无数据$/i)).toBeVisible();
+  await expect(page.getByText(/No customers match|没有符合.*客户/i)).toHaveCount(0);
+  await expectRange(page, 0, 0, 21);
+  await expect(page).toHaveURL(context);
+  expect(mocks.getRequests().at(-1)?.get('offset')).toBe('900');
+  await page.screenshot({ path: testInfo.outputPath('accounts-out-of-range.png'), fullPage: true, animations: 'disabled' });
+  const before = mocks.getRequestCount();
+  await page.getByRole('button', { name: /^Previous$|^上一页$/i }).click();
+  await expect(page).toHaveURL('/admin/accounts?q=Directory&internal=1&sort=created_at&offset=20');
+  await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(1);
+  await expectRange(page, 21, 21, 21);
+  expect(mocks.getRequestCount()).toBe(before + 1);
+  expect(mocks.getRequests().at(-1)?.get('exclude_internal')).toBeNull();
+});
+
+test('customer directory internal visibility and both detail links retain the directory return context', async ({ page }, testInfo) => {
+  const mocks = await installAccountsQueueMocks(page, directoryAccounts(11));
+  await page.goto('/admin/accounts?sort=created_at');
+  await expectRange(page, 1, 10, 11);
+  await page.getByRole('button', { name: /Show test records|显示测试\/异常账号/i }).click();
+  await expect(page).toHaveURL('/admin/accounts?sort=created_at&internal=1');
+  await expectRange(page, 1, 10, 12);
+  expect(mocks.getRequests().at(-1)?.get('exclude_internal')).toBeNull();
+  await page.getByRole('button', { name: /^Next page$|^下一页$/i }).click();
+  await expectRange(page, 11, 12, 12);
+  await expect(page.locator('[data-ui="customer-directory-row"]')).toContainText(['Directory customer 00', 'Internal smoke fixture']);
+  await page.getByRole('button', { name: /Hide test records|隐藏测试\/异常账号/i }).click();
+  await expect(page).toHaveURL('/admin/accounts?sort=created_at');
+  await expectRange(page, 1, 10, 11);
+  await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 10');
+  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await expectRange(page, 1, 1, 1);
+  const row = page.locator('[data-ui="customer-directory-row"]');
+  const links = row.getByRole('link');
+  await expect(links).toHaveCount(2);
+  const href = await links.first().getAttribute('href');
+  await expect(links.last()).toHaveAttribute('href', href!);
+  const queueUrl = new URL(page.url());
+  expect(new URL(href!, page.url()).searchParams.get('return_to')).toBe(`${queueUrl.pathname}${queueUrl.search}`);
+  await links.last().click();
+  await expect(page.getByRole('heading', { name: 'Directory customer 10' })).toBeVisible();
+  await page.getByRole('link', { name: /Back to customers|返回客户列表/i }).click();
+  await expect(page).toHaveURL(queueUrl.href);
+  await expectRange(page, 1, 1, 1);
+  await page.screenshot({ path: testInfo.outputPath('accounts-filtered-returned.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('customer directory rejects a late response after a newer explicit search succeeds', async ({ page }) => {
+  const mocks = await installAccountsQueueMocks(page, directoryAccounts(21));
+  await page.goto('/admin/accounts');
+  await expectRange(page, 1, 10, 21);
+  const release = mocks.holdNextRequest();
+  const firstResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('q') === 'Directory');
+  await page.getByLabel(/^Search$|^搜索$/i).fill('Directory');
+  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await expect.poll(() => mocks.getRequests().at(-1)?.get('q')).toBe('Directory');
+  await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 20');
+  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await expectRange(page, 1, 1, 1);
+  release();
+  await firstResponse;
+  await expectRange(page, 1, 1, 1);
+  await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(1);
+  await expect(page.locator('[data-ui="customer-directory-row"]')).toContainText('Directory customer 20');
+});
+
+test('customer directory Quiet PC preview keeps real language and theme controls and reachable row actions', async ({ page }, testInfo) => {
+  await installAccountsQueueMocks(page, directoryAccounts(11));
+  await page.goto('/admin/accounts');
+  await expectRange(page, 1, 10, 11);
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1050 });
+    const tableBody = page.locator('[data-ui="customer-directory-table"] > div.overflow-x-auto');
+    const action = page.locator('[data-ui="customer-directory-row"]').first().getByRole('link', { name: /^Details$|^详情$/i });
+    await action.scrollIntoViewIfNeeded();
+    const bodyBox = await tableBody.boundingBox();
+    const actionBox = await action.boundingBox();
+    expect(actionBox!.height).toBeLessThanOrEqual(40);
+    expect(await tableBody.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(actionBox!.x).toBeGreaterThanOrEqual(bodyBox!.x);
+    expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(bodyBox!.x + bodyBox!.width + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`accounts-zh-light-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: '切换主题', exact: true }).click();
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await page.screenshot({ path: testInfo.outputPath(`accounts-zh-dark-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: '切换主题', exact: true }).click();
+  await expect(page.locator('html')).not.toHaveClass(/dark/);
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('option', { name: 'English', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Customers', exact: true }).first()).toBeVisible();
+  const englishAction = page.locator('[data-ui="customer-directory-row"]').first().getByRole('link', { name: 'Details', exact: true });
+  await englishAction.scrollIntoViewIfNeeded();
+  const englishBox = await englishAction.boundingBox();
+  const englishBody = await page.locator('[data-ui="customer-directory-table"] > div.overflow-x-auto').boundingBox();
+  expect(englishBox!.height).toBeLessThanOrEqual(40);
+  expect(englishBox!.x + englishBox!.width).toBeLessThanOrEqual(englishBody!.x + englishBody!.width + 1);
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await page.screenshot({ path: testInfo.outputPath(`accounts-en-light-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+  if (!await page.locator('html').evaluate(element => element.classList.contains('dark'))) {
+    await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  }
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await page.screenshot({ path: testInfo.outputPath(`accounts-en-dark-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+  await page.getByLabel('Search', { exact: true }).fill('No such customer');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expectRange(page, 0, 0, 0);
+  await page.screenshot({ path: testInfo.outputPath('accounts-empty-en-dark.png'), fullPage: true, animations: 'disabled' });
 });

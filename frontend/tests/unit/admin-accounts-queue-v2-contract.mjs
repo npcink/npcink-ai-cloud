@@ -29,6 +29,24 @@ assert.match(
   /BackofficePageHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*<table/,
   'customer directory must use one compact header, summary strip, and semantic directory table'
 );
+assert.match(directorySource, /const PAGE_SIZE = 10;/, 'directory pages must request exactly ten customers');
+assert.match(directorySource, /BackofficeFilterPill[\s\S]*role="group"[\s\S]*aria-pressed=\{appliedStatus === value\}/, 'status uses the existing mutually exclusive named pills');
+for (const key of ['admin.accounts.all_statuses', 'status.active', 'status.inactive', 'status.suspended']) {
+  assert.ok(directorySource.includes(`t('${key}'`), `status must reuse ${key}`);
+}
+assert.match(directorySource, /<ListPagination[\s\S]*offset=\{loadedOffset\}[\s\S]*limit=\{PAGE_SIZE\}[\s\S]*total=\{total\}/, 'valid multi-page results must keep the shared pager with successful-result scope');
+assert.match(directorySource, /new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'pending and failed URL changes must retain the displayed successful page offset');
+assert.match(directorySource, /nextOffset === offset\) void loadAccounts\(true\)/, 'retrying a retained next page already present in the URL must issue a fresh read');
+assert.match(directorySource, /customer-directory-range[\s\S]*common.pagination_summary/, 'single and empty pages must show an honest visible range');
+assert.match(directorySource, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages need an explicit bounded recovery without misleading no-match text');
+assert.doesNotMatch(directorySource, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination|useAdminQueueKeyboard/, 'the directory must not gain URL page size, a copied pager, or keyboard selection');
+for (const summary of ['summary_customers', 'summary_active', 'summary_login_ready', "common.sites", "common.subscriptions"]) {
+  assert.ok(directorySource.includes(summary), `existing summary ${summary} must remain`);
+}
+assert.match(directorySource, /loadedAt[\s\S]*common.updated_at/, 'successful read freshness must remain visible');
+assert.match(directorySource, /onSubmit=\{applySearch\}[\s\S]*onChange=\{\(event\) => setDraftQuery/, 'typing remains a local draft until explicit search');
+assert.match(directorySource, /hiddenInternalTotal > 0[\s\S]*show_internal_records[\s\S]*hide_internal_records|hiddenInternalTotal > 0[\s\S]*hide_internal_records[\s\S]*show_internal_records/, 'the internal record notice and visibility toggle must remain');
+
 assert.doesNotMatch(
   directorySource,
   /AccountRisk|accountRisk|riskToneClassName|risk_reason|account-inspector|focus:|aria-controls="account-inspector"/,
