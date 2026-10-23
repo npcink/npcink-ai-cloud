@@ -224,7 +224,8 @@
 短标签「套餐」；用量不堆在主滚动（用户确认：默认列站点，点站点弹窗看趋势/记录）。
 
 过程教训（题分支、e2e 选择器、同因不重复等）见历史复盘
-[Portal 安静状态 UX 交付复盘 — 2026-10-20](history/portal/2026/portal-status-ux-quiet-delivery-retrospective-2026-10-20.md)。
+[Portal 安静状态 UX 交付复盘 — 2026-10-20](history/portal/2026/portal-status-ux-quiet-delivery-retrospective-2026-10-20.md)；Quiet UX IA / 工单附件 / 预览退版（bind-mount vs 镜像层）见
+[Portal Quiet UX 交付复盘 — 2026-10-23](history/portal/2026/portal-quiet-ux-delivery-retrospective-2026-10-23.md)。
 
 ---
 
