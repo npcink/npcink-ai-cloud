@@ -14,6 +14,7 @@ import {
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
+import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
@@ -24,6 +25,7 @@ import {
   buildAdminDetailHref,
   buildAdminQueueReturnTo,
 } from '@/lib/admin-return-context';
+import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 interface Subscription {
@@ -374,6 +376,14 @@ function SubscriptionsContent() {
       },
     });
 
+  const keyboardFocus = useAdminQueueKeyboard({
+    itemIds: queuedSubscriptions.map((subscription) => subscription.subscription_id),
+    focusedId: focusedSubscriptionId,
+    onFocus: (subscriptionId) => updateQueueUrl({ focus: subscriptionId }),
+    onOpen: (subscriptionId) => router.push(subscriptionDetailHref(subscriptionId)),
+    onClose: () => updateQueueUrl({ focus: null }),
+  });
+
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     updateQueueUrl({
@@ -445,7 +455,6 @@ function SubscriptionsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.subscriptions.workspace_eyebrow', {}, 'Subscription operations')}
         title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}
         description={t(
           'admin.subscriptions.workspace_desc',
@@ -523,13 +532,16 @@ function SubscriptionsContent() {
                   )}
                 </p>
               </div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
-                {t(
-                  'admin.subscriptions.result_count',
-                  { visible: formatInteger(queuedSubscriptions.length), total: formatInteger(total) },
-                  `${formatInteger(queuedSubscriptions.length)} on this page · ${formatInteger(total)} total`
-                )}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+                <AdminQueueKeyboardHint />
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
+                  {t(
+                    'admin.subscriptions.result_count',
+                    { visible: formatInteger(queuedSubscriptions.length), total: formatInteger(total) },
+                    `${formatInteger(queuedSubscriptions.length)} on this page · ${formatInteger(total)} total`
+                  )}
+                </p>
+              </div>
             </div>
 
             <form
@@ -789,7 +801,7 @@ function SubscriptionsContent() {
         </BackofficeSectionPanel>
 
         <AdminInspectorDrawer
-          open={Boolean(selectedSubscription)}
+          open={Boolean(selectedSubscription) && !keyboardFocus}
           title={t('admin.subscriptions.inspector_title', {}, 'Current subscription focus')}
           titleId="subscription-inspector-title"
           eyebrow={t('admin.subscriptions.inspector_eyebrow', {}, 'Inspector')}

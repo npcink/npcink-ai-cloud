@@ -445,7 +445,6 @@ export default function AdminSiteCompliancePage() {
   return (
     <BackofficePageStack className="min-w-0 space-y-3">
       <BackofficeConfigurationHeader
-        eyebrow={copy('网站与审核资料', 'Public site and review')}
         title={copy('网站合规资料', 'Site compliance')}
         description={copy(
           '维护一份版本化的 Cloud 公开资料；草稿保存后重新检查，只有已发布版本进入公开页面。',

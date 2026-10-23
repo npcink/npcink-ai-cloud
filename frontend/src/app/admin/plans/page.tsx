@@ -438,7 +438,6 @@ function PlansContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.nav_plan_catalog', {}, 'Package Catalog')}
         title={t('admin.coverage_package_catalog_title', {}, 'Coverage package catalog')}
         description={t(
           'admin.package_management_center_desc',

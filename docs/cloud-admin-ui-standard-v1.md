@@ -241,6 +241,25 @@ Every admin route declares exactly one model in
 
 Do not change an API or data owner merely to make two routes look alike.
 
+### 3.2 Overview Action List
+
+An `overview` page leads with the current exceptions, not a directory of
+destinations. Its first working surface is a data-driven action list projected
+from the overview payload:
+
+- one row per watch item, carrying severity, object, reason, current value, and
+  one action that opens the queue owning that scope;
+- an explicit clear state when the projection has no watch items;
+- the surface states that it reads the current payload and does not create or
+  change a record;
+- stable destination links remain available as a compact secondary strip, not
+  as the first-screen card grid;
+- support lookup stays one bounded section; do not merge it into the action
+  list.
+
+The browser must not derive severity or invent rows beyond the service
+projection.
+
 ### 3.1 Diagnostic Operator Density
 
 A diagnostic page is an evidence workbench, not a raw telemetry dump. Its
@@ -389,6 +408,34 @@ The durable reasoning and delivery evidence for these rules are recorded in
 [Cloud Admin Support Request Queue Retrospective](history/admin/2026/records/cloud-admin-support-request-queue-retrospective-2026-08-01.md)
 and [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md).
 
+### 5.2 Queue Keyboard Navigation
+
+High-frequency queues (`/admin/support-requests`, `/admin/subscriptions`) share
+`useAdminQueueKeyboard` and `AdminQueueKeyboardHint`:
+
+- `j` / `k` move the queue selection through the rendered order, `Enter` opens
+  the focused record in its detail route with the current queue URL as return
+  context, and `Escape` clears the selection;
+- shortcuts never fire while the operator is typing in an input, textarea,
+  select, or editable surface, or when a modified key or blocking dialog is
+  active;
+- while keyboard navigation owns the selection the preview drawer stays closed
+  and pointer use releases that mode, so `Enter` keeps its native meaning on
+  focused controls;
+- queue drawers keep their own `Escape` handling; the queue listener defers to
+  an open drawer;
+- the hint is a quiet one-line affordance in the queue header, translated in
+  both locales, and must not become a permanent tutorial block.
+
+### 5.3 Workspace Freeze Note
+
+A workspace whose development is frozen may carry one quiet note under its tab
+bar. The note must name the freeze accurately, state that existing records
+still read and operate normally, and stay informational: never render it as an
+error, never use it to disable existing reads, and never attach it to a
+workspace that is not frozen. Phase 1 attaches it only to the commercial
+workspace tabs through `navigation.ts`.
+
 ## 6. Dialogs And Configuration
 
 - Create and edit use a dialog or drawer while the list remains the primary
@@ -438,6 +485,7 @@ Prefer these shared surfaces:
 - `BackofficeLayer`, `BackofficeSummaryStrip`, and
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
+- `AdminQueueKeyboardHint` for the bounded queue shortcut affordance;
 - `AdminActionMenu` for collision-aware, keyboard-accessible low-frequency row actions;
 - `AdminCommandDialog` for the global quick-switcher dialog shell;
 - `AdminConfigurationTable`;
@@ -458,10 +506,11 @@ ready-state top-level page header; diagnostic-model routes may pass
 `density="compact"` to render the shared header as the §1.1 toolbar. `BackofficeConfigurationHeader` remains the
 configuration-page compatibility alias and delegates to the same primitive.
 Keep the header order stable:
-eyebrow, one page title with an information hint, no more than one primary
-action plus bounded secondary action, then a compact factual summary. Use
-`BackofficeLayer` only for a section inside the page; it must not create a
-second page title. Loading and failure shells may use `BackofficePrimaryPanel`
+one page title with an information hint, no more than one primary action plus
+bounded secondary action, then one compact factual summary row. The page header
+does not repeat parent context as an eyebrow; the route breadcrumb and workspace
+tabs already carry it. Use `BackofficeLayer` only for a section inside the page;
+it must not create a second page title. Loading and failure shells may use `BackofficePrimaryPanel`
 when they need to retain a bounded retry surface without fabricating summary
 facts.
 

@@ -1276,7 +1276,6 @@ export default function AdminServiceSettingsPage() {
     return (
       <BackofficePageStack>
         <BackofficeConfigurationHeader
-          eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
           title={t('admin.service_settings_title', {}, 'Service settings')}
           description={t('admin.service_settings.load_shell_desc', {}, 'The service-settings shell remains available while this bounded configuration read is retried.')}
           summaryItems={[{
@@ -1298,7 +1297,6 @@ export default function AdminServiceSettingsPage() {
   return (
     <BackofficePageStack className="space-y-3">
       <BackofficeConfigurationHeader
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.service_settings_title', {}, 'Service settings')}
         description={t(
           'admin.service_settings_desc',

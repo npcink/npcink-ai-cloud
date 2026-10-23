@@ -451,50 +451,88 @@ test('admin navigation stays customer-first', async ({ page }) => {
   const adminNav = page.getByRole('navigation', { name: /管理后台|admin/i });
   const adminPrimaryNav = page.locator('[data-ui="admin-primary-nav"]');
   const primaryLinks = adminPrimaryNav.locator('a.admin-nav-link');
-  await expect(primaryLinks).toHaveCount(15);
-  await expect(primaryLinks.nth(0)).toHaveAttribute('href', '/admin');
-  await expect(primaryLinks.nth(1)).toHaveAttribute('href', '/admin/accounts');
-  await expect(primaryLinks.nth(2)).toHaveAttribute('href', '/admin/support-requests');
-  await expect(primaryLinks.nth(3)).toHaveAttribute('href', '/admin/coverage');
-  await expect(primaryLinks.nth(4)).toHaveAttribute('href', '/admin/subscriptions');
-  await expect(primaryLinks.nth(5)).toHaveAttribute('href', '/admin/plans');
-  await expect(primaryLinks.nth(6)).toHaveAttribute('href', '/admin/credit-packs');
-  await expect(primaryLinks.nth(7)).toHaveAttribute('href', '/admin/ai-resources');
-  await expect(primaryLinks.nth(8)).toHaveAttribute('href', '/admin/external-services');
-  await expect(primaryLinks.nth(9)).toHaveAttribute('href', '/admin/vector-settings');
-  await expect(primaryLinks.nth(10)).toHaveAttribute('href', '/admin/runtime-profiles');
-  await expect(primaryLinks.nth(11)).toHaveAttribute('href', '/admin/usage-statistics');
-  await expect(primaryLinks.nth(12)).toHaveAttribute('href', '/admin/troubleshooting');
-  await expect(primaryLinks.nth(13)).toHaveAttribute('href', '/admin/service-settings');
-  await expect(primaryLinks.nth(14)).toHaveAttribute('href', '/admin/site-compliance');
-  await expect(adminPrimaryNav.getByText(/^Workspace$|^工作台$/i)).toBeVisible();
+  await expect(primaryLinks).toHaveCount(8);
+  const primaryHrefs = [
+    '/admin',
+    '/admin/accounts',
+    '/admin/subscriptions',
+    '/admin/usage-statistics',
+    '/admin/troubleshooting',
+    '/admin/ai-resources',
+    '/admin/runtime-profiles',
+    '/admin/service-settings',
+  ];
+  for (const [index, href] of primaryHrefs.entries()) {
+    await expect(primaryLinks.nth(index)).toHaveAttribute('href', href);
+  }
+  await expect(adminPrimaryNav.getByText(/^Workspace$|^工作台$/i)).toHaveCount(0);
   await expect(adminPrimaryNav.getByText(/^Customer Ops$|^客户运营$/i)).toBeVisible();
   await expect(adminPrimaryNav.getByText(/^Runtime & Observability$|^运行与观测$/i)).toBeVisible();
+  await expect(adminPrimaryNav.getByText(/^Configuration$|^配置$/i)).toBeVisible();
   await expect(adminPrimaryNav.getByText(/^Diagnostics$|^诊断$/i)).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Overview$|^概览$|^概覽$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Customers$|^客户$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Sites$|^站点$|^站點$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Packages \/ Service Status$|^套餐\/服务状态$|^方案\/服務狀態$/i })).toHaveCount(0);
-  await expect(adminNav.getByRole('link', { name: /^Model suppliers$|^模型供应商$|^模型供應商$/i })).toBeVisible();
+  await expect(adminNav.getByRole('link', { name: /^External capabilities$|^外部能力$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Runtime Profiles$|^运行配置$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Model Binding$|^模型绑定$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Runtime Diagnostics$|^运行诊断$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Hosted Models$|^托管模型$|^託管模型$/i })).toHaveCount(0);
-  await expect(adminNav.getByRole('link', { name: /^Service Operations$|^服务运营$/i })).toBeVisible();
-  await expect(adminNav.getByRole('link', { name: /^Subscription Operations$|^订阅运营$/i })).toBeVisible();
+  await expect(adminNav.getByRole('link', { name: /^Tickets$|^工单$/i })).toHaveCount(0);
+  await expect(adminNav.getByRole('link', { name: /^Service Operations$|^服务运营$/i })).toHaveCount(0);
+  await expect(adminNav.getByRole('link', { name: /^Subscription Operations$|^订阅运营$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Portal Users$|^自助注册用户$|^自助註冊使用者$/i })).toHaveCount(0);
-  await expect(adminNav.getByRole('link', { name: /^Package Catalog$|^套餐目录$|^方案目錄$/i })).toBeVisible();
-  await expect(adminNav.getByRole('link', { name: /^AI Credit Packs$|^AI 积分包$/i })).toBeVisible();
+  await expect(adminNav.getByRole('link', { name: /^Package Catalog$|^套餐目录$|^方案目錄$/i })).toHaveCount(0);
+  await expect(adminNav.getByRole('link', { name: /^AI Credit Packs$|^AI 积分包$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Members$|^成员$|^成員$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Plugin Observability$|^插件观测$|^外掛觀測$/i })).toHaveCount(0);
 
+  await page.getByRole('button', { name: /Open quick switcher|打开快速跳转/i }).click();
+  const commandDialog = page.getByRole('dialog', { name: /Quick switcher|快速跳转/i });
+  await expect(commandDialog.getByRole('link', { name: /Tickets|工单/i })).toBeVisible();
+  await expect(commandDialog.getByRole('link', { name: /Service status|服务状态/i })).toBeVisible();
+  await expect(commandDialog.getByRole('link', { name: /Packages|套餐/i })).toBeVisible();
+  await expect(commandDialog.getByRole('link', { name: /Credit packs|积分包/i })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(commandDialog).toHaveCount(0);
+
+  const workspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
+  await expect(workspaceTabs.getByRole('link')).toHaveCount(0);
+
+  await page.goto('/admin/accounts');
+  await expect(workspaceTabs.getByRole('link')).toHaveCount(2);
+  await expect(workspaceTabs.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toBeVisible();
+  const breadcrumb = page.locator('[data-ui="admin-route-breadcrumb"]');
+  await expect(breadcrumb.getByText(/^Customers$|^客户$/i)).toHaveCount(1);
+
+  await page.goto('/admin/support-requests');
+  await expect(adminPrimaryNav.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toHaveAttribute('aria-current', 'page');
+  await expect(breadcrumb).toContainText(/Customers|客户/i);
+  await expect(breadcrumb).toContainText(/Tickets|工单/i);
+
   await page.goto('/admin/subscriptions');
   const main = page.locator('main');
+  await expect(adminPrimaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.getByRole('link')).toHaveCount(4);
+  await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(breadcrumb).toContainText(/Commercial records|商业记录/i);
+  await expect(breadcrumb).toContainText(/Subscriptions|订阅/i);
   await expect(main.getByRole('link', { name: /^Customer register$|^客户目录$|^客戶目錄$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Registered users$|^注册用户$|^註冊使用者$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Service follow-up$|^服务跟进$|^服務跟進$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Subscription records$|^订阅记录$|^訂閱記錄$/i })).toHaveCount(0);
   await expect(main.getByLabel(/Subscription status|订阅状态|訂閱狀態/i)).toBeVisible();
+
+  await page.goto('/admin/subscriptions/sub_mvp');
+  await expect(adminPrimaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+
+  await page.getByRole('button', { name: /Collapse sidebar|收起侧栏/i }).click();
+  await expect(primaryLinks).toHaveCount(8);
+  await expect(adminPrimaryNav.locator('[data-nav-collapsed-label]')).toHaveCount(8);
 });
 
 test('admin operator path stays usable on mobile viewport', async ({ page }) => {
@@ -504,6 +542,17 @@ test('admin operator path stays usable on mobile viewport', async ({ page }) => 
 
   await page.goto('/admin');
   await expect(page.getByRole('heading', { name: /Platform state comes first|先看平台概况/i })).toBeVisible();
+
+  await page.getByRole('button', { name: /Open menu|打开菜单/i }).click();
+  await expect(page.locator('[data-ui="admin-mobile-primary-nav"] a.admin-nav-link')).toHaveCount(8);
+
+  await page.goto('/admin/subscriptions');
+  const mobileWorkspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
+  await expect(mobileWorkspaceTabs).toBeVisible();
+  await expect(mobileWorkspaceTabs.getByRole('link')).toHaveCount(4);
+  await expect(mobileWorkspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  const workspaceOverflow = await mobileWorkspaceTabs.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(workspaceOverflow).toBeLessThanOrEqual(1);
 
   await page.goto('/admin/sites/site_mvp');
   await expect(page.getByRole('heading', { name: /MVP Site|site_mvp/i }).first()).toBeVisible();

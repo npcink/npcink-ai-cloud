@@ -21,6 +21,12 @@ test('admin overview keeps canonical work destinations primary and evidence coll
     'href',
     '/admin/troubleshooting'
   );
+  await expect(page.locator('[data-ui="admin-overview-action"]')).toHaveCount(2);
+  await expect(page.locator('[data-ui="admin-overview-action-count"]')).toContainText('2');
+  await expect(page.locator('[data-ui="admin-overview-action"] a').first()).toHaveAttribute(
+    'href',
+    '/admin/troubleshooting'
+  );
   await expect(page.locator('[data-ui="admin-overview-destination"]')).toHaveCount(4);
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/accounts"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/coverage"]')).toBeVisible();
@@ -34,8 +40,10 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   });
   await expect(extendedEvidence).not.toHaveAttribute('open', '');
   await expect(page.getByRole('heading', { name: /Runtime and usage snapshot|运行与用量快照/i })).toBeHidden();
+  const overviewScreenshotPath = testInfo.outputPath('p4-e03-admin-overview.png');
+  await page.screenshot({ path: overviewScreenshotPath, fullPage: true });
   await testInfo.attach('p4-e03-admin-overview', {
-    body: await page.screenshot({ fullPage: true }),
+    path: overviewScreenshotPath,
     contentType: 'image/png',
   });
 

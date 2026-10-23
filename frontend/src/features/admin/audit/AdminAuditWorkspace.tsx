@@ -168,7 +168,6 @@ export function AdminAuditWorkspace() {
     <BackofficePageStack spacing="compact">
       <BackofficePageHeader
         density="compact"
-        eyebrow={t('admin.audit_workspace.eyebrow', {}, 'Service evidence')}
         title={t('admin.audit_workspace.title', {}, 'Audit evidence')}
         description={t(
           'admin.audit_workspace.description',

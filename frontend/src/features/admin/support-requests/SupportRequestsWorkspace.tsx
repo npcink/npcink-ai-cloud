@@ -2,11 +2,12 @@
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
+import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -18,6 +19,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import {
   ADMIN_QUEUE_PATHNAMES,
@@ -63,6 +65,7 @@ export function SupportRequestsWorkspace() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const [queueParamsKey, setQueueParamsKey] = useState(searchParamsKey);
@@ -145,6 +148,29 @@ export function SupportRequestsWorkspace() {
 
   const items = directory?.items || [];
   const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || null;
+  const supportReturnPolicy = {
+    allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
+    fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
+  } as const;
+  const supportRequestDetailHref = (requestId: string) => buildAdminDetailHref({
+    detailPathname: `/admin/support-requests/${encodeURIComponent(requestId)}`,
+    returnTo: buildAdminQueueReturnTo({
+      pathname,
+      searchParams: queueParamsKey,
+      policy: supportReturnPolicy,
+      focusId: requestId,
+    }),
+    policy: supportReturnPolicy,
+  });
+
+  const keyboardFocus = useAdminQueueKeyboard({
+    itemIds: items.map((item) => item.request_id),
+    focusedId: focusedRequestId,
+    enabled: !editRequest,
+    onFocus: (requestId) => updateQueueUrl({ focus: requestId }),
+    onOpen: (requestId) => router.push(supportRequestDetailHref(requestId)),
+    onClose: () => updateQueueUrl({ focus: null }),
+  });
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -233,20 +259,6 @@ export function SupportRequestsWorkspace() {
         ? t('admin.support_requests_reason_in_progress', {}, 'Work has started; keep the customer conversation and internal next step current.')
         : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
   const closeInspector = () => updateQueueUrl({ focus: null });
-  const supportReturnPolicy = {
-    allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
-    fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
-  } as const;
-  const supportRequestDetailHref = (requestId: string) => buildAdminDetailHref({
-    detailPathname: `/admin/support-requests/${encodeURIComponent(requestId)}`,
-    returnTo: buildAdminQueueReturnTo({
-      pathname,
-      searchParams: queueParamsKey,
-      policy: supportReturnPolicy,
-      focusId: requestId,
-    }),
-    policy: supportReturnPolicy,
-  });
   const openEditor = (item: SupportRequest) => {
     setActionError('');
     setEditRequest(item);
@@ -255,7 +267,6 @@ export function SupportRequestsWorkspace() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={t('admin.support_requests_title', {}, 'Tickets')}
         description={t('admin.support_requests_workspace_desc', {}, 'Prioritize unanswered customer issues, inspect one ticket, then continue the full conversation in its detail view.')}
         secondaryAction={(
@@ -293,6 +304,7 @@ export function SupportRequestsWorkspace() {
         dataUi="support-request-table"
         density="compact"
         bodyClassName="overflow-hidden"
+        headerActions={<AdminQueueKeyboardHint />}
         footer={<ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />}
       >
         <form
@@ -408,7 +420,7 @@ export function SupportRequestsWorkspace() {
       </AdminDataTableFrame>
 
       <AdminContextDrawer
-        open={Boolean(selectedRequest) && !editRequest}
+        open={Boolean(selectedRequest) && !editRequest && !keyboardFocus}
         title={selectedRequest?.title || t('admin.support_requests_inspector_title', {}, 'Current ticket')}
         titleId="support-request-drawer-title"
         eyebrow={t('admin.support_requests_inspector_eyebrow', {}, 'Inspector')}

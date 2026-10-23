@@ -162,8 +162,10 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(pageHeader).toBeVisible();
   await expect(pageHeader.getByRole('button', { name: /Refresh subscriptions|刷新订阅/i })).toHaveClass(/btn-secondary/);
   const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
+  const workspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
   await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
-  await expect(primaryNav.locator('a[href="/admin/coverage"]')).not.toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/coverage"]')).not.toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: /Back to service status|返回服务状态/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(2);
   await expect(page.locator('table')).toHaveCount(0);
@@ -260,7 +262,7 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(page).toHaveURL(/customer=acct_beta/);
   failNextRefresh = true;
   await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅|刷新訂閱/i }).click();
-  await expect(page.getByRole('alert').first()).toContainText('temporary subscription refresh failure');
+  await expect(page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load/ }).first()).toBeVisible();
   await expect(page.getByText(/last successfully loaded results|最近一次成功加载的结果/i)).toBeVisible();
   await expect(queueItems).toHaveCount(1);
   await expect(page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i)).toHaveValue('acct_beta');
@@ -286,4 +288,86 @@ test('subscription risk queue persists server filters and inspector focus while 
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(mobileLayout).toEqual({ viewportWidth: 390, scrollWidth: 390 });
+});
+
+test('subscription queue keyboard flow moves focus and opens detail while the freeze note stays visible', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installAdminMocks(page);
+  await page.route('**/api/admin/subscriptions?*', async (route) => {
+    const url = new URL(route.request().url());
+    const risk = url.searchParams.get('risk') || 'all';
+    const items = SUBSCRIPTIONS.filter((item) => risk === 'needs_action' ? item.operator_risk.level !== 'stable' : true);
+    const summary = SUBSCRIPTIONS.reduce<Record<string, number>>(
+      (current, item) => ({
+        ...current,
+        [item.operator_risk.level]: current[item.operator_risk.level] + 1,
+      }),
+      { critical: 0, warning: 0, monitor: 0, stable: 0 }
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({ items, total: items.length, summary })),
+    });
+  });
+  await page.route('**/api/admin/subscriptions/sub_past_due', async (route) => {
+    const item = SUBSCRIPTIONS[0];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        subscription: item.subscription,
+        account: item.account,
+        covered_sites: item.covered_sites,
+        plan: { plan_id: item.subscription.plan_id, display_name: item.coverage.package_alias },
+        plan_version: { plan_version_id: item.subscription.plan_version_id },
+        billing_snapshot_status: item.billing_snapshot_status,
+        usage_totals: { runs: 0, tokens: 0, cost_cny: 42.5 },
+      })),
+    });
+  });
+  await page.goto('/admin/subscriptions');
+  await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(2);
+  await expect(page.locator('[data-ui="admin-workspace-navigation-note"]')).toContainText(/开发冻结|development freeze/i);
+  await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
+
+  const customerInput = page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i);
+  await customerInput.focus();
+  await page.keyboard.press('j');
+  await expect(page).not.toHaveURL(/focus=/);
+  await customerInput.fill('');
+  await customerInput.blur();
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_past_due/);
+  await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toHaveCount(0);
+  const subscriptionKeyboardScreenshotPath = testInfo.outputPath('p3-subscription-queue-keyboard.png');
+  await page.screenshot({ path: subscriptionKeyboardScreenshotPath, fullPage: true });
+  await testInfo.attach('p3-subscription-queue-keyboard', {
+    path: subscriptionKeyboardScreenshotPath,
+    contentType: 'image/png',
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(250);
+  const freezeNoteScreenshotPath = testInfo.outputPath('p3-subscription-freeze-note-mobile.png');
+  await page.screenshot({ path: freezeNoteScreenshotPath, fullPage: true });
+  await testInfo.attach('p3-subscription-freeze-note-mobile', {
+    path: freezeNoteScreenshotPath,
+    contentType: 'image/png',
+  });
+  await page.setViewportSize({ width: 1440, height: 1200 });
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_stale/);
+  await page.keyboard.press('k');
+  await expect(page).toHaveURL(/focus=sub_past_due/);
+
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(/focus=/);
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sub_past_due/);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/subscriptions\/sub_past_due\?return_to=/);
 });

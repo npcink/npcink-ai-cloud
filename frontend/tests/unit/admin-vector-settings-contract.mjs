@@ -4,6 +4,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const page = readFileSync(fromFrontendRoot('src/app/admin/vector-settings/page.tsx'), 'utf8');
 const layout = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
+const navigation = readFileSync(fromFrontendRoot('src/features/admin/navigation.ts'), 'utf8');
 
 assert.match(
   page,
@@ -106,9 +107,9 @@ assert.doesNotMatch(
   'Vector settings must not restore the retired multi-provider configuration surface'
 );
 assert.match(
-  layout,
-  /href: '\/admin\/vector-settings'[\s\S]*activePrefixes: \['\/admin\/vector-settings'\]/,
-  'Admin navigation must expose Vector Settings under Runtime Plane'
+  navigation,
+  /externalCapabilityTabs[\s\S]*href: '\/admin\/vector-settings'[\s\S]*labelKey: 'admin\.workspace_tab_vector'/,
+  'Admin navigation must expose Vector Settings under external capabilities'
 );
 
 console.log('admin_vector_settings_contract: ok');

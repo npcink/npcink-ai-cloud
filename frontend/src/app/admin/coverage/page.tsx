@@ -459,7 +459,6 @@ function AdminCoverageContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.coverage.primary_queue_eyebrow', {}, 'Customer operations')}
         title={t('admin.coverage_surface_title', {}, 'Service status')}
         description={t(
           'admin.coverage_surface_desc',

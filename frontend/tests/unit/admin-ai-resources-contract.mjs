@@ -24,22 +24,29 @@ const aiResourcesTranslationSource = i18nSource
   .filter((line) => line.includes("'admin.ai_resources."))
   .join('\n');
 
+const navigationSource = read('src/features/admin/navigation.ts');
+const externalCapabilityTabsSource = navigationSource.slice(
+  navigationSource.indexOf('externalCapabilityTabs'),
+  navigationSource.indexOf('systemSettingsTabs')
+);
 const aiResourcesNavIndex = layoutSource.indexOf("href: '/admin/ai-resources'");
-const externalServicesNavIndex = layoutSource.indexOf("href: '/admin/external-services'");
-const vectorSettingsNavIndex = layoutSource.indexOf("href: '/admin/vector-settings'");
+const externalServicesNavIndex = externalCapabilityTabsSource.indexOf("href: '/admin/external-services'");
+const vectorSettingsNavIndex = externalCapabilityTabsSource.indexOf("href: '/admin/vector-settings'");
 const diagnosticsNavIndex = layoutSource.indexOf("href: '/admin/troubleshooting'");
 const runtimeProfilesNavIndex = layoutSource.indexOf("href: '/admin/runtime-profiles'");
+const configurationGroupIndex = layoutSource.indexOf('admin.nav_group_configuration');
+const aiResourcesTabIndex = externalCapabilityTabsSource.indexOf("href: '/admin/ai-resources'");
 
 assert.ok(aiResourcesNavIndex >= 0, 'Model suppliers must have a primary admin navigation entry');
-assert.ok(externalServicesNavIndex > aiResourcesNavIndex, 'Search and images must follow model suppliers');
+assert.ok(aiResourcesTabIndex >= 0, 'Model suppliers must lead the external capability tabs');
+assert.ok(externalServicesNavIndex > aiResourcesTabIndex, 'Search and images must follow model suppliers');
 assert.ok(vectorSettingsNavIndex > externalServicesNavIndex, 'Vector settings must follow search and images');
-assert.ok(runtimeProfilesNavIndex > vectorSettingsNavIndex, 'Hosted runtime profiles must follow vector settings');
-assert.ok(diagnosticsNavIndex > runtimeProfilesNavIndex, 'Runtime diagnostics must follow hosted runtime profiles');
-assert.ok(diagnosticsNavIndex > vectorSettingsNavIndex, 'Runtime diagnostics must remain the final runtime-plane entry');
-assert.match(layoutSource, /href: '\/admin\/ai-resources'[\s\S]*fallback: 'Model Suppliers'/);
-assert.match(layoutSource, /href: '\/admin\/external-services'[\s\S]*fallback: 'Search & Images'/);
+assert.ok(runtimeProfilesNavIndex > aiResourcesNavIndex, 'Hosted runtime profiles must follow external capabilities');
+assert.ok(configurationGroupIndex > diagnosticsNavIndex, 'Configuration must stay a separate group after runtime observation and diagnostics');
+assert.match(layoutSource, /href: '\/admin\/ai-resources'[\s\S]*fallback: 'External capabilities'/);
+assert.match(navigationSource, /href: '\/admin\/external-services'[\s\S]*fallback: 'Search & images'/);
 assert.match(i18nSource, /'admin\.nav_ai_resources': '模型供应商'/);
-assert.match(i18nSource, /'admin\.nav_external_services': '搜索与图片'/);
+assert.match(i18nSource, /'admin\.workspace_tab_external_services': '搜索与图片'/);
 assert.match(i18nSource, /'admin\.ai_resources\.title': '模型供应商'/);
 
 assert.match(pageSource, /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*summaryItems=\{\[/);

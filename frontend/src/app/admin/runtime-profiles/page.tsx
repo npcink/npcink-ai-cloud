@@ -998,7 +998,6 @@ export default function RuntimeProfilesPage() {
   return (
     <BackofficePageStack className="space-y-3" data-page-model="configuration">
       <BackofficeConfigurationHeader
-        eyebrow={copy('eyebrow', 'Runtime plane')}
         title={copy('title', 'Runtime Profiles')}
         description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.')}
         secondaryAction={(

@@ -29,8 +29,10 @@ test('package directory keeps modal focus while retaining the catalog on refresh
 
   await expect(page.getByRole('heading', { name: /Standard package catalog|标准套餐目录/i })).toBeVisible();
   const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
-  await expect(primaryNav.locator('a[href="/admin/plans"]')).toHaveAttribute('aria-current', 'page');
-  await expect(primaryNav.locator('a[href="/admin/credit-packs"]')).not.toHaveAttribute('aria-current', 'page');
+  const workspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
+  await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/plans"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/credit-packs"]')).not.toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: /Open AI credit packs|打开AI 积分包/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="plan-catalog-table"] table')).toBeVisible();
   await expect(page.locator('[data-ui="plan-catalog-table"] thead')).toContainText(/Package AI credits|套餐 AI 积分/i);

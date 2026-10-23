@@ -16,8 +16,10 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await page.goto('/admin/coverage');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$/i })).toBeVisible();
   const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
-  await expect(primaryNav.locator('a[href="/admin/coverage"]')).toHaveAttribute('aria-current', 'page');
-  await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).not.toHaveAttribute('aria-current', 'page');
+  const workspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
+  await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/coverage"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).not.toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: /Open subscription risk|打开订阅风险/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();

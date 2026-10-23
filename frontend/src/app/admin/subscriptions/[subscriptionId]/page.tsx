@@ -256,7 +256,7 @@ function SubscriptionDetailContent() {
     return (
       <BackofficePageStack>
         <BackofficePrimaryPanel
-          eyebrow={t('admin.nav_coverage', {}, 'Service status')}
+          eyebrow={t('admin.workspace_tab_service_status', {}, 'Service status')}
           title={t('admin.subscription_detail.load_error_title', {}, 'Subscription detail is temporarily unavailable')}
           description={t('admin.subscription_detail.load_error_desc', {}, 'The operator shell remains available. Retry this bounded subscription read without leaving the current route.')}
         >
@@ -378,7 +378,6 @@ function SubscriptionDetailContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
-        eyebrow={t('admin.nav_subscriptions', {}, 'Subscription operations')}
         title={t(
           'admin.subscription_detail.title',
           { subscription: packageLabel },

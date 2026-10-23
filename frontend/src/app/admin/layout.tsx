@@ -13,7 +13,8 @@ import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
 import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
-import { adminSecondaryParentHref } from '@/features/admin/navigation';
+import { AdminWorkspaceNavigation } from '@/components/admin/AdminWorkspaceNavigation';
+import { adminSecondaryParentHref, adminWorkspaceTabForPath } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
@@ -37,6 +38,7 @@ type AdminNavGroup = {
   descKey: string;
   fallback: string;
   descFallback: string;
+  headerless?: boolean;
   items: AdminNavItem[];
 };
 
@@ -210,6 +212,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       descKey: 'admin.nav_group_overview_desc',
       fallback: 'Workspace',
       descFallback: 'Platform posture and next operator actions.',
+      headerless: true,
       items: [
         { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview', collapsedLabel: 'OV' },
       ],
@@ -218,7 +221,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       groupKey: 'admin.nav_group_customer_service',
       descKey: 'admin.nav_group_customer_service_desc',
       fallback: 'Customer Ops',
-      descFallback: 'Accounts, coverage, subscriptions, and package records.',
+      descFallback: 'Customers, tickets, and commercial records.',
       items: [
         {
           href: '/admin/accounts',
@@ -228,81 +231,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
-          href: '/admin/support-requests',
-          labelKey: 'admin.nav_support_requests',
-          fallback: 'Tickets',
-          collapsedLabel: 'TI',
-        },
-        {
-          href: '/admin/coverage',
-          labelKey: 'admin.nav_coverage',
-          fallback: 'Service Operations',
-          collapsedLabel: 'SO',
-          activePrefixes: ['/admin/coverage'],
-        },
-        {
           href: '/admin/subscriptions',
-          labelKey: 'admin.nav_subscriptions',
-          fallback: 'Subscription Operations',
-          collapsedLabel: 'SU',
-          activePrefixes: ['/admin/subscriptions'],
-        },
-        {
-          href: '/admin/plans',
-          labelKey: 'admin.nav_plan_catalog',
-          fallback: 'Package Catalog',
-          collapsedLabel: 'PC',
-          activePrefixes: ['/admin/plans'],
-        },
-        {
-          href: '/admin/credit-packs',
-          labelKey: 'admin.nav_credit_packs',
-          fallback: 'AI Credit Packs',
-          collapsedLabel: 'CP',
-          activePrefixes: ['/admin/credit-packs'],
+          labelKey: 'admin.nav_commercial_records',
+          fallback: 'Commercial records',
+          collapsedLabel: 'CR',
+          activePrefixes: ['/admin/coverage', '/admin/plans', '/admin/credit-packs'],
         },
       ],
     },
     {
       groupKey: 'admin.nav_group_runtime_ops',
       descKey: 'admin.nav_group_runtime_ops_desc',
-      fallback: 'Runtime Plane',
-      descFallback: 'Provider readiness, hosted runtime profiles, and diagnostics.',
+      fallback: 'Runtime & Observability',
+      descFallback: 'Runtime observation and runtime diagnostics.',
       items: [
-        {
-          href: '/admin/ai-resources',
-          labelKey: 'admin.nav_ai_resources',
-          fallback: 'Model Suppliers',
-          collapsedLabel: 'MS',
-          activePrefixes: ['/admin/ai-resources'],
-        },
-        {
-          href: '/admin/external-services',
-          labelKey: 'admin.nav_external_services',
-          fallback: 'Search & Images',
-          collapsedLabel: 'SI',
-          activePrefixes: ['/admin/external-services'],
-        },
-        {
-          href: '/admin/vector-settings',
-          labelKey: 'admin.nav_vector_settings',
-          fallback: 'Vector Settings',
-          collapsedLabel: 'VS',
-          activePrefixes: ['/admin/vector-settings'],
-        },
-        {
-          href: '/admin/runtime-profiles',
-          labelKey: 'admin.nav_runtime_profiles',
-          fallback: 'Runtime Profiles',
-          collapsedLabel: 'RP',
-          activePrefixes: ['/admin/runtime-profiles'],
-        },
         {
           href: '/admin/usage-statistics',
           labelKey: 'admin.nav_runtime_observation',
-          fallback: 'Runtime observation',
+          fallback: 'Observability overview',
           collapsedLabel: 'US',
-          activePrefixes: ['/admin/usage-statistics', '/admin/media-observability', '/admin/vector-observability'],
+          activePrefixes: ['/admin/usage-statistics', '/admin/plugin-observability', '/admin/media-observability', '/admin/vector-observability'],
         },
         {
           href: '/admin/troubleshooting',
@@ -314,22 +262,31 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
-      groupKey: 'admin.nav_group_system',
-      descKey: 'admin.nav_group_system_desc',
-      fallback: 'System',
-      descFallback: 'Cloud-owned service configuration.',
+      groupKey: 'admin.nav_group_configuration',
+      descKey: 'admin.nav_group_configuration_desc',
+      fallback: 'Configuration',
+      descFallback: 'External capabilities, runtime profiles, and Cloud-owned service settings.',
       items: [
+        {
+          href: '/admin/ai-resources',
+          labelKey: 'admin.nav_external_capabilities',
+          fallback: 'External capabilities',
+          collapsedLabel: 'EC',
+          activePrefixes: ['/admin/ai-resources', '/admin/external-services', '/admin/vector-settings'],
+        },
+        {
+          href: '/admin/runtime-profiles',
+          labelKey: 'admin.nav_runtime_profiles',
+          fallback: 'Runtime Profiles',
+          collapsedLabel: 'RP',
+          activePrefixes: ['/admin/runtime-profiles'],
+        },
         {
           href: '/admin/service-settings',
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
           collapsedLabel: 'SS',
-        },
-        {
-          href: '/admin/site-compliance',
-          labelKey: 'admin.nav_site_compliance',
-          fallback: 'Site Compliance',
-          collapsedLabel: 'SC',
+          activePrefixes: ['/admin/service-settings', '/admin/site-compliance'],
         },
       ],
     },
@@ -349,6 +306,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   };
   const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
   const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
+  const activeWorkspaceTab = adminWorkspaceTabForPath(pathname);
+  const activeWorkspaceTabLabel = activeWorkspaceTab
+    ? t(activeWorkspaceTab.labelKey, {}, activeWorkspaceTab.fallback)
+    : '';
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -361,20 +322,40 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           label: t(item.labelKey, {}, item.fallback),
         }));
       });
-      const diagnosticsGroupLabel = t('admin.nav_group_diagnostics', {}, 'Diagnostics');
+      const withGroup = (
+        groupKey: string,
+        groupFallback: string,
+        items: Array<Pick<AdminCommandItem, 'href' | 'labelKey' | 'fallback' | 'collapsedLabel'>>
+      ): AdminCommandItem[] => {
+        const groupLabel = t(groupKey, {}, groupFallback);
+        return items.map((item) => ({
+          ...item,
+          groupLabel,
+          groupFallback,
+          label: t(item.labelKey, {}, item.fallback),
+        }));
+      };
       const contextualItems: AdminCommandItem[] = [
-        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
-        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
-        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
-        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
-        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
-        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
-      ].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor').map((item) => ({
-        ...item,
-        groupLabel: diagnosticsGroupLabel,
-        groupFallback: 'Diagnostics',
-        label: t(item.labelKey, {}, item.fallback),
-      }));
+        ...withGroup('admin.nav_group_customer_service', 'Customer Ops', [
+          { href: '/admin/support-requests', labelKey: 'admin.workspace_tab_tickets', fallback: 'Tickets', collapsedLabel: 'TI' },
+          { href: '/admin/coverage', labelKey: 'admin.workspace_tab_service_status', fallback: 'Service status', collapsedLabel: 'SO' },
+          { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages', collapsedLabel: 'PC' },
+          { href: '/admin/credit-packs', labelKey: 'admin.workspace_tab_credit_packs', fallback: 'Credit packs', collapsedLabel: 'CP' },
+        ]),
+        ...withGroup('admin.nav_group_diagnostics', 'Diagnostics', [
+          { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
+          { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
+          { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
+          { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
+          { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
+          { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
+        ].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor')),
+        ...withGroup('admin.nav_group_configuration', 'Configuration', [
+          { href: '/admin/external-services', labelKey: 'admin.workspace_tab_external_services', fallback: 'Search & images', collapsedLabel: 'SI' },
+          { href: '/admin/vector-settings', labelKey: 'admin.workspace_tab_vector', fallback: 'Site vector service', collapsedLabel: 'VS' },
+          { href: '/admin/site-compliance', labelKey: 'admin.workspace_tab_compliance', fallback: 'Site compliance', collapsedLabel: 'SC' },
+        ]),
+      ];
       return [...primaryItems, ...contextualItems];
     },
     [navGroups, t]
@@ -404,16 +385,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     >
       {navGroups.map((group) => (
         <div key={group.groupKey} className={cn('space-y-1.5', collapsed && 'space-y-1')}>
-          <div className={cn(variant === 'desktop' ? 'px-2' : '', collapsed && 'sr-only')}>
-            <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              {t(group.groupKey, {}, group.fallback)}
-            </p>
-            {variant === 'desktop' ? (
-              <p className="sr-only">
-                {t(group.descKey, {}, group.descFallback)}
+          {group.headerless ? null : (
+            <div className={cn(variant === 'desktop' ? 'px-2' : '', collapsed && 'sr-only')}>
+              <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                {t(group.groupKey, {}, group.fallback)}
               </p>
-            ) : null}
-          </div>
+              {variant === 'desktop' ? (
+                <p className="sr-only">
+                  {t(group.descKey, {}, group.descFallback)}
+                </p>
+              ) : null}
+            </div>
+          )}
           <div className="space-y-1">
             {group.items.map((item) => {
               const active = isActive(item);
@@ -585,6 +568,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
                 <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
               </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
+              {activeWorkspaceTabLabel && activeWorkspaceTabLabel !== activeNavLabel ? (
+                <>
+                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
+                  <span className="truncate text-slate-600 dark:text-slate-300">{activeWorkspaceTabLabel}</span>
+                </>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2">
@@ -736,6 +725,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
+              <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
               <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>

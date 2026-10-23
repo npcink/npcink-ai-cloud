@@ -177,7 +177,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   });
 
   await page.goto('/admin/service-settings');
-  await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Service Settings$|^服务设置$/i })).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(8);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
@@ -358,7 +358,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
     pageModel: 'configuration',
     testedStates: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog', 'empty'],
     humanAcceptance: 'not_required',
-    pageTitle: page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i }),
+    pageTitle: page.getByRole('heading', { name: /^Service Settings$|^服务设置$/i }),
     workingSurface: page.locator('[data-ui="admin-settings-workbench"]'),
     browserEvidence,
     expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
@@ -430,7 +430,7 @@ test('service settings initial failure preserves the PC shell and bounded retry'
   });
 
   await page.goto('/admin/service-settings');
-  await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Service Settings$|^服务设置$/i })).toBeVisible();
   await expect(page.getByRole('alert').filter({ hasText: /service settings unavailable|服务配置/i })).toBeVisible();
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);

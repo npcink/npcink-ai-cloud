@@ -352,6 +352,16 @@ function buildAdminLookupHref(path: string, query: string): string {
   return `${path}?${params.toString()}`;
 }
 
+function overviewActionHref(scope: string): string {
+  if (scope === 'runtime.provider_budget') {
+    return '/admin/service-settings?tab=provider-budget';
+  }
+  if (scope.startsWith('commercial.')) {
+    return '/admin/coverage';
+  }
+  return '/admin/troubleshooting';
+}
+
 function overviewRuntimeAlertTitle(
   alert: AdminOverview['runtimeTelemetry']['alerts'][number] | undefined,
   t: (key: string, vars?: Record<string, string>, fallback?: string) => string
@@ -653,7 +663,13 @@ function AdminOverviewContent() {
         ? `/admin/sites/${item.siteId}`
         : '/admin/subscriptions',
   }));
-  const attentionNotes = operatorWatchItems.slice(0, 2);
+  const actionItems = operatorWatchItems;
+  const severityLabel = (severity: 'watch' | 'warn' | 'action-needed') =>
+    severity === 'action-needed'
+      ? t('admin.severity_action_needed', {}, 'Action needed')
+      : severity === 'warn'
+        ? t('admin.severity_warn', {}, 'Warn')
+        : t('admin.severity_watch', {}, 'Watch');
   const primaryActionHref = overview.operatorProjection.primaryAction.href;
   const primaryActionLabel =
     overview.operatorProjection.primaryAction.kind === 'readiness'
@@ -780,7 +796,6 @@ function AdminOverviewContent() {
   return (
     <AdminWorkspacePage>
       <BackofficePageHeader
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.home_title', {}, 'Platform state comes first')}
         description={platformConclusion}
         primaryAction={(
@@ -799,132 +814,146 @@ function AdminOverviewContent() {
           </span>
         )}
       />
-      <BackofficeSectionPanel className="space-y-3" data-ui="admin-overview-attention">
-        <div className="space-y-3">
-          {attentionNotes.length > 0 ? (
-            attentionNotes.map((item) => (
-              <BackofficeStackCard key={`${item.scope}-${item.title}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.reason}</p>
-                  </div>
+      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-attention">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              {t('admin.home_actions_eyebrow', {}, 'Action list')}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+              {t('admin.home_actions_title', {}, 'Todo and exceptions')}
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {t(
+                'admin.home_actions_desc',
+                {},
+                'Every row comes from the current overview payload and opens the owning queue. This surface does not create or change a record.'
+              )}
+            </p>
+          </div>
+          <span
+            data-ui="admin-overview-action-count"
+            className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-950/45 dark:text-slate-300"
+          >
+            {actionItems.length > 0
+              ? t('admin.home_actions_count', { count: formatInteger(actionItems.length) }, `${formatInteger(actionItems.length)} open`)
+              : t('admin.home_actions_clear_badge', {}, 'Clear')}
+          </span>
+        </div>
+
+        {actionItems.length > 0 ? (
+          <div className="space-y-2" data-ui="admin-overview-action-list">
+            {actionItems.map((item) => (
+              <div
+                key={`${item.scope}-${item.title}`}
+                data-ui="admin-overview-action"
+                className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex min-w-0 items-start gap-3">
                   <span
                     className={cn(
-                      'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em]',
+                      'mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em]',
                       operatorSeverityClasses(item.severity)
                     )}
                   >
-                    {item.value}
+                    {severityLabel(item.severity)}
                   </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.reason}</p>
+                  </div>
                 </div>
-              </BackofficeStackCard>
-            ))
-          ) : (
-            <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
-              {t('admin.home_attention_clear', {}, 'No immediate watch items are rising from the current overview payload.')}
-            </BackofficeStackCard>
-          )}
+                <div className="flex shrink-0 items-center justify-between gap-3 md:justify-end">
+                  <span className="text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{item.value}</span>
+                  <Link href={overviewActionHref(item.scope)} className="btn btn-secondary btn-sm whitespace-nowrap">
+                    {t('admin.home_action_open', {}, 'Handle')} →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
+            {t('admin.home_attention_clear', {}, 'No immediate watch items are rising from the current overview payload.')}
+          </BackofficeStackCard>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-3 dark:border-slate-800/70" data-ui="admin-overview-destinations">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+            {t('admin.home_quick_destinations_label', {}, 'Go to queue')}
+          </span>
+          {quickLinks.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              data-ui="admin-overview-destination"
+              title={item.detail}
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+            >
+              {item.label} →
+            </Link>
+          ))}
         </div>
       </BackofficeSectionPanel>
 
-      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-destinations">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.home_quick_actions_eyebrow', {}, 'Operator console')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.home_quick_actions_title', {}, 'Handle queues first')}
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                  {t(
-                    'admin.home_quick_actions_desc',
-                    {},
-                    'These entries only open existing Cloud service-plane detail surfaces. They do not edit WordPress, prompts, routers, abilities, or workflows.'
-                  )}
-                </p>
-              </div>
+      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-support-lookup">
+        <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-admin-support-lookup>
+          <div className="grid gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                {t('admin.home_support_lookup_eyebrow', {}, 'Support lookup')}
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+                {t('admin.home_support_lookup_title', {}, 'Find the customer record first')}
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {t(
+                  'admin.home_support_lookup_desc',
+                  {},
+                  'Search by email, customer, site, or domain. Start from the customer or Portal user record, then open service status only when coverage needs follow-up.'
+                )}
+              </p>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {quickLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  data-ui="admin-overview-destination"
-                  className="group block rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 text-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/70 hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/45 dark:hover:border-blue-900/70 dark:hover:bg-blue-950/25"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-950 dark:text-white">{item.label}</p>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {item.detail}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600 dark:text-slate-500 dark:group-hover:text-blue-300">
-                      →
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-            <BackofficeStackCard className="mt-4 bg-white/80 dark:bg-slate-950/45" data-admin-support-lookup>
-              <div className="grid gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('admin.home_support_lookup_eyebrow', {}, 'Support lookup')}
-                  </p>
-                  <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-                    {t('admin.home_support_lookup_title', {}, 'Find the customer record first')}
-                  </h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {t(
-                      'admin.home_support_lookup_desc',
-                      {},
-                      'Search by email, customer, site, or domain. Start from the customer or Portal user record, then open service status only when coverage needs follow-up.'
-                    )}
-                  </p>
-                </div>
-                <form
-                  className="flex w-full flex-col gap-2 sm:flex-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    router.push(supportLookupAccountHref);
-                  }}
-                >
-                  <label className="sr-only" htmlFor="admin-support-lookup-query">
-                    {t('admin.home_support_lookup_label', {}, 'Support lookup query')}
-                  </label>
-                  <input
-                    id="admin-support-lookup-query"
-                    type="search"
-                    value={supportQuery}
-                    onChange={(event) => setSupportQuery(event.target.value)}
-                    placeholder={t('admin.home_support_lookup_placeholder', {}, 'Email, customer, site, or domain')}
-                    className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
-                  />
-                  <div className="flex shrink-0 gap-2">
-                    <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
-                      {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
-                    </Link>
-                  </div>
-                </form>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <Link
-                  href="/admin/coverage"
-                  className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-                >
-                  {t('admin.home_support_lookup_coverage', {}, 'Open service status')}
-                </Link>
-                <Link
-                  href="/admin/troubleshooting"
-                  className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-                >
-                  {t('admin.home_support_lookup_diagnostics', {}, 'Open diagnostics')}
+            <form
+              className="flex w-full flex-col gap-2 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                router.push(supportLookupAccountHref);
+              }}
+            >
+              <label className="sr-only" htmlFor="admin-support-lookup-query">
+                {t('admin.home_support_lookup_label', {}, 'Support lookup query')}
+              </label>
+              <input
+                id="admin-support-lookup-query"
+                type="search"
+                value={supportQuery}
+                onChange={(event) => setSupportQuery(event.target.value)}
+                placeholder={t('admin.home_support_lookup_placeholder', {}, 'Email, customer, site, or domain')}
+                className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
+              />
+              <div className="flex shrink-0 gap-2">
+                <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
+                  {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
                 </Link>
               </div>
-            </BackofficeStackCard>
+            </form>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
+            <Link
+              href="/admin/coverage"
+              className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+            >
+              {t('admin.home_support_lookup_coverage', {}, 'Open service status')}
+            </Link>
+            <Link
+              href="/admin/troubleshooting"
+              className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+            >
+              {t('admin.home_support_lookup_diagnostics', {}, 'Open diagnostics')}
+            </Link>
+          </div>
+        </BackofficeStackCard>
       </BackofficeSectionPanel>
 
       <details ref={runtimeEvidenceRef} className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
@@ -1039,7 +1068,7 @@ function AdminOverviewContent() {
               </h2>
             </div>
             <Link href="/admin/coverage" className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
-              {t('admin.nav_coverage', {}, 'Service status')} →
+              {t('admin.workspace_tab_service_status', {}, 'Service status')} →
             </Link>
           </div>
           <BackofficeMetricStrip items={commercialPanelMetrics} columnsClassName="xl:grid-cols-1" />

@@ -297,3 +297,55 @@ test('ticket drawer inspects context and shared dialog owns bounded internal han
   await page.getByRole('button', { name: /Close ticket inspector|关闭工单检查器/i }).click();
   await expect(paymentInspectButton).toBeFocused();
 });
+
+test('ticket queue keyboard flow moves focus, ignores typing, and opens detail with return context', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installSupportQueueMocks(page);
+  await page.route('**/api/admin/support-requests/sr_overdue_payment', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        request: initialTickets()[0],
+        messages: [],
+        attachments: [],
+        feedback: null,
+      })),
+    });
+  });
+  await page.goto('/admin/support-requests');
+  await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(4);
+  await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
+
+  const search = page.getByLabel(/Search tickets|搜索工单/i);
+  await search.focus();
+  await page.keyboard.press('j');
+  await expect(page).not.toHaveURL(/focus=/);
+  await search.fill('');
+  await search.blur();
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  await expect(page.locator('[data-ui="support-request-row"]').nth(0)).toHaveClass(/bg-blue-50/);
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toHaveCount(0);
+  const supportKeyboardScreenshotPath = testInfo.outputPath('p3-support-queue-keyboard.png');
+  await page.screenshot({ path: supportKeyboardScreenshotPath, fullPage: true });
+  await testInfo.attach('p3-support-queue-keyboard', {
+    path: supportKeyboardScreenshotPath,
+    contentType: 'image/png',
+  });
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_open_site/);
+  await page.keyboard.press('k');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(page.locator('[data-ui="support-request-row"]').nth(0)).not.toHaveClass(/bg-blue-50/);
+
+  await page.keyboard.press('j');
+  await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/support-requests\/sr_overdue_payment\?return_to=/);
+});
