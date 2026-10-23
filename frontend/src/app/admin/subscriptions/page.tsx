@@ -376,7 +376,7 @@ function SubscriptionsContent() {
       },
     });
 
-  const keyboardFocus = useAdminQueueKeyboard({
+  const { keyboardFocus, inspect } = useAdminQueueKeyboard({
     itemIds: queuedSubscriptions.map((subscription) => subscription.subscription_id),
     focusedId: focusedSubscriptionId,
     onFocus: (subscriptionId) => updateQueueUrl({ focus: subscriptionId }),
@@ -756,7 +756,7 @@ function SubscriptionsContent() {
                         className="btn btn-secondary btn-sm"
                         aria-pressed={isSelected}
                         aria-controls="subscription-inspector"
-                        onClick={() => updateQueueUrl({ focus: subscription.subscription_id })}
+                        onClick={() => inspect(subscription.subscription_id)}
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>

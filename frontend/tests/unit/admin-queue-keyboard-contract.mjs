@@ -19,7 +19,14 @@ assert.match(hook, /event\.altKey \|\| event\.ctrlKey \|\| event\.metaKey/, 'que
 assert.match(hook, /hasBlockingDialog\(\)/, 'queue shortcuts must yield to blocking dialogs');
 assert.match(hook, /hasOpenQueueDrawer\(\)/, 'Escape must stay with the open queue drawer');
 assert.match(hook, /admin-context-drawer[\s\S]*admin-inspector-drawer|admin-inspector-drawer[\s\S]*admin-context-drawer/, 'both queue drawers keep their own focus and Escape behavior');
-assert.match(hook, /document\.addEventListener\('pointerdown'/, 'pointer use must release keyboard-owned selection');
+assert.doesNotMatch(hook, /document\.addEventListener\('(?:pointerdown|click)'/, 'unrelated pointer actions must not turn keyboard selection into an inspector');
+assert.match(hook, /const inspect = \(id: string\)[\s\S]*kind: 'inspect', id[\s\S]*onFocus\(id\)/, 'explicit inspection must select the requested record');
+assert.match(hook, /focusedId !== selectionIntent\.id/, 'a pending inspection must suppress the previous record until its target focus commits');
+for (const consumer of [supportWorkspace, subscriptionsPage]) {
+  assert.match(consumer, /const \{ keyboardFocus, inspect \} = useAdminQueueKeyboard/, 'both queue consumers must use explicit inspection ownership');
+}
+assert.match(supportWorkspace, /inspect\(item\.request_id\)/, 'ticket Inspect must use explicit inspection');
+assert.match(subscriptionsPage, /inspect\(subscription\.subscription_id\)/, 'subscription Inspect must use explicit inspection');
 
 assert.match(hint, /data-ui="admin-queue-keyboard-hint"/, 'the keyboard hint needs a stable surface marker');
 for (const key of ['admin.queue_keyboard_label', 'admin.queue_keyboard_move', 'admin.queue_keyboard_open', 'admin.queue_keyboard_close']) {
