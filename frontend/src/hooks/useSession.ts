@@ -28,6 +28,7 @@ export interface UseSessionReturn extends SessionState {
   }>;
   verifyLoginCode: (email: string, code: string, options?: { rememberMe?: boolean }) => Promise<void>;
   logout: () => Promise<void>;
+  clearSession: () => void;
   selectSite: (siteId: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -159,6 +160,19 @@ function useSessionController(): UseSessionReturn {
     }
   }, [loadSession]);
 
+  // Local cleanup only: callers must establish or explain the remote outcome.
+  const clearSession = useCallback((): void => {
+    sessionRequestVersionRef.current += 1;
+    sessionLoadPromiseRef.current = null;
+    setState({
+      session: null,
+      isLoading: false,
+      isAuthenticated: false,
+      error: null,
+      sessionInvalid: false,
+    });
+  }, []);
+
   /**
    * 登出
    */
@@ -214,6 +228,7 @@ function useSessionController(): UseSessionReturn {
     requestLoginCode,
     verifyLoginCode,
     logout,
+    clearSession,
     selectSite,
     refresh,
   };
