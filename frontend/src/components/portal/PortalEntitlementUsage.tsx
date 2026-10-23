@@ -278,29 +278,45 @@ export function PortalEntitlementUsage({
                   const showProgressBar = isCredit || !unlimited;
 
                   const creditSourcesClickable = isCredit && Boolean(onOpenCreditSources);
+                  const knowledgeBreakdownClickable = key === 'vector_documents';
+                  const cardClickable = creditSourcesClickable || knowledgeBreakdownClickable;
                   const openCreditSourcesDialog = () => onOpenCreditSources?.();
+                  const openKnowledgeBreakdown = () => { void openSiteKnowledgeUsage(); };
+                  const activateCard = creditSourcesClickable
+                    ? openCreditSourcesDialog
+                    : knowledgeBreakdownClickable
+                      ? openKnowledgeBreakdown
+                      : undefined;
+                  const cardAriaLabel = creditSourcesClickable
+                    ? t('portal.usage.sources_title', {}, 'Credit sources')
+                    : knowledgeBreakdownClickable
+                      ? t('portal.usage.site_knowledge_breakdown_title', {}, 'Site knowledge usage')
+                      : undefined;
+                  const cardBillingAttr = creditSourcesClickable
+                    ? 'open-credit-sources'
+                    : knowledgeBreakdownClickable
+                      ? 'open-usage-from-knowledge'
+                      : undefined;
 
                   return (
                     <article
                       key={key}
                       data-portal-quota-resource={key}
-                      data-portal-billing={creditSourcesClickable ? 'open-credit-sources' : undefined}
-                      role={creditSourcesClickable ? 'button' : undefined}
-                      tabIndex={creditSourcesClickable ? 0 : undefined}
-                      aria-label={creditSourcesClickable
-                        ? t('portal.usage.sources_title', {}, 'Credit sources')
-                        : undefined}
+                      data-portal-billing={cardBillingAttr}
+                      role={cardClickable ? 'button' : undefined}
+                      tabIndex={cardClickable ? 0 : undefined}
+                      aria-label={cardAriaLabel}
                       className={cn(
                         'flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40',
-                        creditSourcesClickable
+                        cardClickable
                           && 'cursor-pointer transition hover:border-blue-300/80 hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 dark:hover:border-blue-700/60 dark:hover:bg-blue-950/20',
                       )}
-                      onClick={creditSourcesClickable ? openCreditSourcesDialog : undefined}
-                      onKeyDown={creditSourcesClickable
+                      onClick={activateCard}
+                      onKeyDown={cardClickable
                         ? (event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
-                              openCreditSourcesDialog();
+                              activateCard?.();
                             }
                           }
                         : undefined}
@@ -405,18 +421,6 @@ export function PortalEntitlementUsage({
                         );
                       })() : null}
 
-                      {key === 'vector_documents' ? (
-                        <div className="mt-auto pt-2.5">
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={() => { void openSiteKnowledgeUsage(); }}
-                            data-portal-billing="open-usage-from-knowledge"
-                          >
-                            {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
-                          </button>
-                        </div>
-                      ) : null}
                     </article>
                   );
                 })}

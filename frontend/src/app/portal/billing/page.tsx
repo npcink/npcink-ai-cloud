@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -131,6 +131,8 @@ function PortalBillingContent() {
 
   const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
   const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
+  const [siteUsageListHighlight, setSiteUsageListHighlight] = useState(false);
+  const siteUsageHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const focusSiteUsageList = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -143,8 +145,19 @@ function PortalBillingContent() {
       '',
       `/portal/billing${qs ? `?${qs}` : ''}#site-usage`,
     );
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
+    // Brief ring/bg flash so the click always feels acknowledged, even when already in view.
+    setSiteUsageListHighlight(false);
     requestAnimationFrame(() => {
+      setSiteUsageListHighlight(true);
       document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      siteUsageHighlightTimerRef.current = setTimeout(() => {
+        setSiteUsageListHighlight(false);
+        siteUsageHighlightTimerRef.current = null;
+      }, 1800);
     });
   }, []);
 
@@ -158,6 +171,13 @@ function PortalBillingContent() {
 
   const closeSiteUsage = useCallback(() => {
     setSiteUsageSite(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -333,6 +353,7 @@ function PortalBillingContent() {
             sites={session.sites}
             t={t}
             onSelectSite={openSiteUsage}
+            highlight={siteUsageListHighlight}
           />
         </PortalCard>
       ) : null}

@@ -27,20 +27,29 @@ export type PortalBillingSiteUsageListProps = {
   sites: readonly Site[] | null | undefined;
   t: TranslateFn;
   onSelectSite: (site: Site) => void;
+  /** Temporary focus flash after「查看本期用量」scroll; quiet ring/bg only. */
+  highlight?: boolean;
 };
 
 export function PortalBillingSiteUsageList({
   sites,
   t,
   onSelectSite,
+  highlight = false,
 }: PortalBillingSiteUsageListProps) {
   const visibleSites = getVisiblePortalSites(sites);
 
   return (
     <section
       id="site-usage"
-      className="scroll-mt-24 space-y-3"
+      className={[
+        'scroll-mt-24 space-y-3 rounded-xl p-1 -m-1 transition-[box-shadow,background-color] duration-500',
+        highlight
+          ? 'bg-blue-50/80 shadow-[0_0_0_2px_rgba(96,165,250,0.75)] dark:bg-blue-950/40 dark:shadow-[0_0_0_2px_rgba(59,130,246,0.55)]'
+          : 'bg-transparent shadow-none',
+      ].join(' ')}
       data-portal-billing="site-usage-list"
+      data-portal-billing-highlight={highlight ? 'true' : undefined}
     >
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
