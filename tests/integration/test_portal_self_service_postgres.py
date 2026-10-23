@@ -470,3 +470,11 @@ def test_public_reply_recipient_isolation_and_atomic_pg_readback(
     with get_session(url) as session:
         if not notification_failure:
             assert not session.scalar(select(PortalNotification)).is_read
+
+
+def test_all_portal_sessions_revoked_api_and_version_readback(parent_database):
+    """Actual API against a unique guarded PG schema; never touches demo sessions."""
+    from tests.api.test_portal_session_revocation import assert_session_revocation_api_readback
+
+    _migrate(parent_database, REVISION)
+    assert_session_revocation_api_readback(parent_database)
