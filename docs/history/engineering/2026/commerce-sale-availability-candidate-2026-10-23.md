@@ -19,8 +19,10 @@ parameter editing remains in place; immutable entitlement versioning is deferred
 
 ## Local evidence
 
-Source base: `a6fa69bf243eb8158ef0c95fab7d797593166e79`. The verification ran
-against the focused dirty candidate; this is not clean-master runtime evidence.
+Initial source base: `a6fa69bf243eb8158ef0c95fab7d797593166e79`. The initial
+verification ran against the focused dirty candidate. The branch was then
+rebased onto master `244cab8fb49a165fd0d46b9b31da249a87717da4`; intervening
+#1204 changed history documents only. This is not clean-master runtime evidence.
 
 - `pnpm run verify:local`: passed, including targeted Python quality/tests,
   TypeScript, ESLint, proxy Vitest, Admin contracts and release-policy checks.
@@ -39,8 +41,18 @@ against the focused dirty candidate; this is not clean-master runtime evidence.
   directory failures concern pagination/configure and raw error localization;
   one diagnostic tooltip exceeds its geometry assertion by 0.78125px; six
   coverage-queue tests cannot find expected working surfaces/pagination.
-  These flows were not repaired in this batch. A clean-master comparison has
-  not established whether they predate this candidate. This gate is not green.
+  Follow-up comparison on clean master `244cab8f` reproduced the service queue
+  hang and provider-error failure; the short-viewport diagnostic case passed.
+  Independent [PR #1207](https://github.com/npcink/npcink-ai-cloud/pull/1207)
+  fixes canceled-request deduplication and the already-handled provider
+  rejection, and corrects the pagination test's list entry route. Its focused
+  9 cases and full **95-test** Admin visual gate passed. No geometry thresholds
+  or goldens changed. These results belong to the independent repair branch,
+  not this commerce branch; integration and combined verification remain pending.
+- Full frontend contract gate passed. Two stale CI expectations were updated:
+  the navigation contract now expects the withdrawn freeze note to remain
+  hidden, and the repository-retirement contract accounts for the bounded
+  sales transaction. The latter contract file passed all 10 tests.
 - Browser console includes expected injected 503 responses and a Next dev/HMR
   React warning during initial login. Production-build console remains unverified.
 
@@ -52,14 +64,24 @@ M4 status was inspected read-only: Portal candidate source
 `acceptance_state=candidate`, `promotion_pr=none`. This candidate belongs to
 another active change. No sync, promotion or M4 mutation was performed.
 
-CI: pending publication. Merged: no. M4 candidate for this change: no.
+Commerce PR: [#1205](https://github.com/npcink/npcink-ai-cloud/pull/1205), draft.
+At revision `f2295ab69cd27809d05360823a2e5a22adb8ed7d`, Cloud CI run
+`39914838418` has passed backend static, contract shards and impacted tests;
+frontend remains in progress. CodeQL, secret scan, PR body and documentation
+checks passed. These are observations of that revision, not final CI acceptance.
+The independent Admin repair PR has its own CI in progress.
+An operator question about switching the shared M4 lane is pending; no
+dependent sync may proceed without an answer.
+
+Merged: no. M4 candidate for this change: no.
 M4 accepted: no. Production: unchanged. Human acceptance: pending.
 Retain the locked task worktree while this candidate/PR remains open.
 
 ## Next work and rollback
 
-Resolve the independent Admin visual failures and obtain the shared M4 lane
-before promoting this change to integration acceptance. Follow the operating
+Integrate the independent Admin repair, verify this commerce branch against
+that reviewed baseline, and obtain the shared M4 lane before promoting this
+change to integration acceptance. Follow the operating
 model's second-independent-blocker rule; keep later batches in sequence.
 Batch 2 should verify the current payment recovery paths against actual UI
 consumers: signed notification deduplication, delayed notification versus
