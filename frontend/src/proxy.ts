@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { withPortalSessionsPrivateHeaders } from '@/app/api/portal/_shared';
 import { readInstallationState } from '@/lib/installation-state';
 
 const ADMIN_SESSION_COOKIE = 'npcink_admin_session_token';
@@ -135,7 +136,7 @@ function buildAdminLoginRedirect(request: NextRequest): NextResponse {
  * - Security headers
  * - Request logging
  */
-export async function proxy(request: NextRequest) {
+async function routeProxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const response = withSecurityHeaders(NextResponse.next());
   const setupRouteKey = `${request.method.toUpperCase()} ${pathname}`;
@@ -236,6 +237,13 @@ export async function proxy(request: NextRequest) {
   }
 
   return response;
+}
+
+export async function proxy(request: NextRequest) {
+  const response = await routeProxy(request);
+  const path = request.nextUrl.pathname;
+  return path === '/api/portal/sessions' || path.startsWith('/api/portal/sessions/')
+    ? withPortalSessionsPrivateHeaders(response) : response;
 }
 
 export const config = {

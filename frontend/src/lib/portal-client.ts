@@ -42,6 +42,56 @@ export interface PortalNotificationInbox {
   fetched_at: string;
 }
 
+export interface PortalOwnSession {
+  session_id: string;
+  is_current: boolean;
+  created_at: string;
+  expires_at: string;
+  auth_method: 'email_code' | 'registration' | 'qq';
+  client_hint: string | null;
+}
+
+export interface PortalOwnSessionPage {
+  items: PortalOwnSession[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
+function sessionProjectionError(): ApiError {
+  return new ApiError({ statusCode: 502, errorCode: 'client.invalid_session_projection', message: 'Session management unavailable' });
+}
+
+function isSessionTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)
+    && Number.isFinite(Date.parse(value));
+}
+
+function parseOwnSessionPage(raw: unknown, limit: number, offset: number): PortalOwnSessionPage {
+  if (!raw || typeof raw !== 'object') throw sessionProjectionError();
+  const page = raw as PortalOwnSessionPage;
+  const pagination = page.pagination;
+  if (!pagination || pagination.limit !== limit || pagination.offset !== offset
+    || !Number.isSafeInteger(pagination.total) || pagination.total < 0
+    || !Array.isArray(page.items) || page.items.length > limit
+    || page.items.length !== Math.min(limit, Math.max(0, pagination.total - offset))) throw sessionProjectionError();
+  const ids = new Set<string>();
+  const items = page.items.map((item) => {
+    if (!item || typeof item.session_id !== 'string' || !item.session_id.trim() || item.session_id.length > 64
+      || ids.has(item.session_id) || typeof item.is_current !== 'boolean'
+      || !['email_code', 'registration', 'qq'].includes(item.auth_method)
+      || !isSessionTimestamp(item.created_at)
+      || !isSessionTimestamp(item.expires_at)
+      || Date.parse(item.expires_at) <= Date.parse(item.created_at)
+      || !(item.client_hint === null || (typeof item.client_hint === 'string'
+        && item.client_hint.trim().length > 0 && item.client_hint.length <= 120))) throw sessionProjectionError();
+    ids.add(item.session_id);
+    // Return only the public projection, never arbitrary response fields.
+    return { session_id: item.session_id, is_current: item.is_current, created_at: item.created_at,
+      expires_at: item.expires_at, auth_method: item.auth_method, client_hint: item.client_hint };
+  });
+  if (items.filter((item) => item.is_current).length > 1) throw sessionProjectionError();
+  return { items, pagination: { limit, offset, total: pagination.total } };
+}
+
 export interface PortalSession {
   email: string;
   sites: Site[];
@@ -1812,18 +1862,20 @@ export class PortalClient {
   private async request<T>(
     method: ApiMethod,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options: { idempotencyKey?: string } = {}
   ): Promise<PortalEnvelope<T>> {
     this.apiClient ??= new ApiClient({
       baseUrl: this.baseUrl || getPortalApiBaseUrl(),
       idempotencyPrefix: 'portal_write',
     });
     const isWrite = method !== 'GET' && method !== 'HEAD';
-    const writeIntent = isWrite ? await this.writeIntentSignature(method, path, body) : '';
+    const writeIntent = isWrite && options.idempotencyKey === undefined
+      ? await this.writeIntentSignature(method, path, body) : '';
     const idempotencyKey = isWrite
-      ? this.pendingWriteKeys.get(writeIntent) || generateIdempotencyKey('portal_write')
+      ? options.idempotencyKey ?? (this.pendingWriteKeys.get(writeIntent) || generateIdempotencyKey('portal_write'))
       : undefined;
-    if (isWrite && !this.pendingWriteKeys.has(writeIntent)) {
+    if (writeIntent && !this.pendingWriteKeys.has(writeIntent)) {
       this.rememberPendingWriteKey(writeIntent, idempotencyKey as string);
     }
 
@@ -1831,7 +1883,7 @@ export class PortalClient {
       const response = await this.apiClient.request<T>(path, {
         method,
         ...(body === undefined ? {} : { body }),
-        ...(idempotencyKey ? { idempotencyKey } : {}),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       if (writeIntent) {
         this.pendingWriteKeys.delete(writeIntent);
@@ -2031,6 +2083,28 @@ export class PortalClient {
    */
   async revokeSession(): Promise<PortalEnvelope<Record<string, never>>> {
     return this.request('POST', '/session/revoke');
+  }
+
+  async listOwnSessions(limit = 10, offset = 0): Promise<PortalEnvelope<PortalOwnSessionPage>> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50
+      || !Number.isSafeInteger(offset) || offset < 0) throw new RangeError('Invalid session pagination');
+    const response = await this.request<unknown>('GET', `/sessions?limit=${limit}&offset=${offset}`);
+    return { ...response, data: parseOwnSessionPage(response.data, limit, offset) };
+  }
+
+  private async revokeOwnSessionTarget(path: string, idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    const response = await this.request<{ revoked_count: number }>('POST', path, undefined, { idempotencyKey });
+    if (!response.data || !Number.isSafeInteger(response.data.revoked_count) || response.data.revoked_count < 0) throw sessionProjectionError();
+    return { ...response, data: { revoked_count: response.data.revoked_count } };
+  }
+
+  async revokeOwnSession(sessionId: string, idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    if (!sessionId.trim() || sessionId.length > 64) throw new RangeError('Invalid session identifier');
+    return this.revokeOwnSessionTarget(`/sessions/${encodeURIComponent(sessionId)}/revoke`, idempotencyKey);
+  }
+
+  async revokeOtherSessions(idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    return this.revokeOwnSessionTarget('/sessions/revoke-others', idempotencyKey);
   }
 
   // ========================================
