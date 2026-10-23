@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { cn } from '@/lib/utils';
+import { portalClient, PORTAL_NOTIFICATIONS_UPDATED } from '@/lib/portal-client';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
@@ -18,6 +19,26 @@ export function PortalNavbar() {
   const { t } = useLocale();
   const { isAuthenticated, logout } = useSession();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const update = (event: Event) => {
+      const count = (event as CustomEvent<number>).detail;
+      if (Number.isFinite(count)) setUnreadCount(Math.max(0, count));
+    };
+    window.addEventListener(PORTAL_NOTIFICATIONS_UPDATED, update);
+    if (!isAuthenticated) setUnreadCount(0);
+    else if (pathname !== '/portal/notifications') {
+      void portalClient.getNotifications(1).then((response) => {
+        if (active) setUnreadCount(response.data.unread_count);
+      }).catch(() => { if (active) setUnreadCount(0); });
+    }
+    return () => {
+      active = false;
+      window.removeEventListener(PORTAL_NOTIFICATIONS_UPDATED, update);
+    };
+  }, [isAuthenticated, pathname]);
 
   const primaryNavItems = useMemo(
     () => [
@@ -36,7 +57,7 @@ export function PortalNavbar() {
       }
 
       // Recent activity is reached from Account and belongs to that section.
-      if (baseHref === '/portal/account' && pathname === '/portal/audit') return true;
+      if (baseHref === '/portal/account' && (pathname === '/portal/audit' || pathname === '/portal/notifications')) return true;
       return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
     },
     [pathname]
@@ -48,6 +69,7 @@ export function PortalNavbar() {
   };
 
   const handleLogout = useCallback(async () => {
+    setUnreadCount(0);
     await logout();
     router.push('/portal/login');
   }, [logout, router]);
@@ -119,6 +141,19 @@ export function PortalNavbar() {
               <LocaleSwitcher />
               <ThemeToggle />
             </div>
+            {isAuthenticated ? (
+              <Link
+                href="/portal/notifications"
+                data-portal-nav="notifications"
+                aria-label={t('portal.notifications.bell', { count: String(unreadCount) })}
+                className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+                </svg>
+                {unreadCount > 0 ? <span data-portal-notification-badge="" aria-hidden="true" className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[10px] leading-4 text-white">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+              </Link>
+            ) : null}
             {logoutControl}
             {!isAuthenticated && !isLoginPage ? (
               <Link

@@ -20,6 +20,7 @@ export type PortalWorkspacePage =
   | 'sites'
   | 'support'
   | 'account'
+  | 'notifications'
   | 'home';
 
 export type PortalWorkspaceMetric = {

@@ -14,6 +14,34 @@ import { generateIdempotencyKey } from './idempotency';
 // 类型定义
 // ============================================
 
+export const PORTAL_NOTIFICATIONS_UPDATED = 'portal-notifications-updated';
+
+export function publishPortalNotificationCount(unreadCount: number): void {
+  window.dispatchEvent(new CustomEvent(PORTAL_NOTIFICATIONS_UPDATED, { detail: unreadCount }));
+}
+
+export interface PortalNotification {
+  notification_id: string;
+  account_id: string;
+  event_type: string;
+  title: string;
+  body: string | null;
+  link_href: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface PortalNotificationInbox {
+  items: PortalNotification[];
+  total_count: number;
+  unread_count: number;
+  limit: number;
+  offset: number;
+  unread_only: boolean;
+  fetched_at: string;
+}
+
 export interface PortalSession {
   email: string;
   sites: Site[];
@@ -1837,6 +1865,37 @@ export class PortalClient {
    */
   async verifyLoginCode(payload: PortalLoginCodeVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
     return this.request('POST', '/auth/code/verify', payload);
+  }
+
+  async getNotifications(limit = 20, offset = 0): Promise<PortalEnvelope<PortalNotificationInbox>> {
+    return this.request('GET', `/notifications?limit=${limit}&offset=${offset}`);
+  }
+
+  async markNotificationRead(notificationId: string): Promise<PortalEnvelope<{
+    notification_id: string; marked_read_count: number; unread_count: number;
+  }>> {
+    return this.request('POST', `/notifications/${encodeURIComponent(notificationId)}/read`);
+  }
+
+  async markAllNotificationsRead(): Promise<PortalEnvelope<{
+    marked_read_count: number; unread_count: number;
+  }>> {
+    return this.request('POST', '/notifications/read-all');
+  }
+
+  async requestAccountDeletionCode(locale: string): Promise<PortalEnvelope<{
+    email: string; delivery: string; expires_in_seconds: number;
+  }>> {
+    return this.request('POST', '/account/deletion/request', { locale });
+  }
+
+  async confirmAccountDeletion(code: string): Promise<PortalEnvelope<{
+    account_deletion: {
+      closed_accounts: number; revoked_memberships: number;
+      released_site_bindings: number; revoked_api_keys: number;
+    };
+  }>> {
+    return this.request('POST', '/account/deletion/confirm', { code });
   }
 
   async requestEmailChangeCode(payload: PortalEmailChangeCodeRequest): Promise<PortalEnvelope<PortalEmailChangeCodeResponse>> {

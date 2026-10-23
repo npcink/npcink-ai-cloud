@@ -8,8 +8,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.adapters.repositories.commercial_access_repository import (
     CommercialAccessRepository,
+)
+from app.adapters.repositories.commercial_notification_repository import (
+    CommercialNotificationRepository,
 )
 from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
@@ -633,6 +638,26 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "admin_reply"},
                 activity_at=now,
             )
+            if (
+                normalized_visibility == SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                and request.account_id
+            ):
+                try:
+                    CommercialNotificationRepository(session).create_notification(
+                        notification_id=f"pnotif_support_{message.message_id}",
+                        account_id=request.account_id,
+                        principal_id=request.principal_id,
+                        event_type="support_request_replied",
+                        title=request.title,
+                        body=normalized_body[:800],
+                        link_href=f"/portal/support/{request.request_id}",
+                    )
+                except SQLAlchemyError as error:
+                    # The outer session rolls back the reply and audit as well.
+                    raise CommercialValidationError(
+                        "service.support_reply_notification_failed",
+                        "Support reply could not be saved; retry the operation.",
+                    ) from error
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalSection,
@@ -22,9 +22,11 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
+  publishPortalNotificationCount,
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { formatPortalErrorMessage, formatPortalWriteErrorMessage } from '@/lib/portal-error';
+import { ApiError } from '@/lib/errors';
 import { cn, formatDate } from '@/lib/utils';
 
 type AccountActionState =
@@ -48,7 +50,8 @@ function normalizePortalContact(value?: string): string {
 function AccountPageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
-  const { session, isLoading, isAuthenticated, refresh } = useSession();
+  const router = useRouter();
+  const { session, isLoading, isAuthenticated, refresh, logout } = useSession();
   const [providerState, setProviderState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [providerError, setProviderError] = useState('');
   const [providers, setProviders] = useState<PortalIdentityProviderStatus[]>([]);
@@ -58,6 +61,50 @@ function AccountPageContent() {
   const [emailChangeCode, setEmailChangeCode] = useState('');
   const [emailChangePendingEmail, setEmailChangePendingEmail] = useState('');
   const [showEmailChange, setShowEmailChange] = useState(false);
+
+  const [showClosure, setShowClosure] = useState(false);
+  const [closureStep, setClosureStep] = useState<'review' | 'code'>('review');
+  const [closureBusy, setClosureBusy] = useState(false);
+  const [closureCode, setClosureCode] = useState('');
+  const [closureError, setClosureError] = useState('');
+  const [closureEmail, setClosureEmail] = useState('');
+
+  const closeClosureDialog = () => {
+    if (closureBusy) return;
+    setShowClosure(false);
+    setClosureCode('');
+    setClosureError('');
+  };
+
+  const handleClosure = async (requestNewCode = false) => {
+    setClosureBusy(true);
+    setClosureError('');
+    try {
+      if (closureStep === 'review' || requestNewCode) {
+        const response = await portalClient.requestAccountDeletionCode(locale);
+        setClosureEmail(response.data.email);
+        setClosureCode('');
+        setClosureStep('code');
+      } else {
+        await portalClient.confirmAccountDeletion(closureCode.trim());
+        publishPortalNotificationCount(0);
+        await logout();
+        router.replace('/portal/login');
+      }
+    } catch (error) {
+      const key = error instanceof ApiError
+        && error.errorCode === 'service.portal_account_closure_unavailable'
+        ? 'portal.account.closure_unavailable'
+        : error instanceof ApiError && error.errorCode === 'service.portal_account_deletion_code_pending'
+          ? 'portal.account.closure_code_pending'
+        : error instanceof ApiError && error.errorCode === 'auth.account_deletion_code_invalid'
+          ? 'portal.account.closure_code_invalid'
+          : 'portal.account.closure_failed';
+      setClosureError(formatPortalWriteErrorMessage(error, t, t(key)));
+    } finally {
+      setClosureBusy(false);
+    }
+  };
 
   const qqProvider = useMemo(
     () => providers.find((provider) => provider.provider === 'qq') || null,
@@ -435,6 +482,46 @@ function AccountPageContent() {
       <div className="space-y-3" data-portal-account="payment-orders-section">
         <PortalAccountCommercePanels surface="account" />
       </div>
+
+      <PortalSection className="space-y-3" data-portal-account="closure">
+        <h2 className="text-base font-semibold text-slate-950 dark:text-white">{t('portal.account.closure_title')}</h2>
+        <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.closure_impact')}</p>
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('portal.account.closure_eligibility')}</p>
+        <button type="button" className="btn btn-secondary btn-sm text-rose-700 dark:text-rose-300" onClick={() => setShowClosure(true)}>
+          {t('portal.account.closure_start')}
+        </button>
+      </PortalSection>
+
+      <Modal
+        isOpen={showClosure}
+        onClose={closeClosureDialog}
+        closeLabel={t('common.close')}
+        title={t(closureStep === 'review' ? 'portal.account.closure_review' : 'portal.account.closure_verify')}
+        description={t('portal.account.closure_impact')}
+      >
+        <div className="space-y-4" data-portal-account="closure-dialog">
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.closure_eligibility')}</p>
+          {closureStep === 'code' ? (
+            <>
+              <p className="text-sm" role="status">{t('portal.account.closure_sent', { email: closureEmail })}</p>
+              <label className="grid gap-2 text-sm font-medium">
+                {t('portal.account.closure_code')}
+                <input className="input" inputMode="numeric" autoComplete="one-time-code" value={closureCode} maxLength={6} onChange={(event) => setClosureCode(event.target.value.replace(/\D/g, ''))} />
+              </label>
+              <button type="button" className="text-sm text-blue-700 hover:underline dark:text-blue-300" disabled={closureBusy} onClick={() => void handleClosure(true)}>
+                {t('portal.account.closure_restart')}
+              </button>
+            </>
+          ) : null}
+          {closureError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{closureError}</p> : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="btn btn-secondary" disabled={closureBusy} onClick={closeClosureDialog}>{t('common.cancel')}</button>
+            <button type="button" className="btn bg-rose-700 text-white hover:bg-rose-800 disabled:opacity-50" disabled={closureBusy || (closureStep === 'code' && closureCode.length !== 6)} onClick={() => void handleClosure()}>
+              {closureBusy ? t('common.loading') : t(closureStep === 'review' ? 'portal.account.closure_send' : 'portal.account.closure_confirm')}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showEmailChange}

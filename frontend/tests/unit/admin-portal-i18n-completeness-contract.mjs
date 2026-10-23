@@ -96,6 +96,7 @@ const translationLockedFiles = [
   resolve(root, 'src/components/portal/PortalSiteKnowledgePanel.tsx'),
   resolve(root, 'src/components/portal/PortalSiteInspectorDrawer.tsx'),
   resolve(root, 'src/app/portal/account/page.tsx'),
+  resolve(root, 'src/app/portal/notifications/page.tsx'),
   resolve(root, 'src/app/portal/register/page.tsx'),
   resolve(root, 'src/app/portal/usage/page.tsx'),
   resolve(root, 'src/app/portal/billing/page.tsx'),

@@ -202,6 +202,11 @@ async function installPortalMocks(
       return;
     }
 
+    if (pathname === '/notifications' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], total_count: 0, unread_count: 0, limit: 1, offset: 0, unread_only: false, fetched_at: '2026-10-23T08:00:00Z' });
+      return;
+    }
+
     if (pathname === '/logout') {
       loggedIn = false;
       await fulfillJson(route, {});

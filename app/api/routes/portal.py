@@ -14,6 +14,12 @@ from starlette.concurrency import run_in_threadpool
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
 from app.adapters.notifications.smtp import build_portal_email_sender
+from app.adapters.repositories.commercial_identity_repository import (
+    CommercialIdentityRepository,
+)
+from app.adapters.repositories.commercial_notification_repository import (
+    CommercialNotificationRepository,
+)
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
@@ -46,6 +52,7 @@ from app.api.routes.service import (
     _get_commercial_service,
     _service_error_response,
 )
+from app.core.db import get_session
 from app.core.models import PLATFORM_KIND_WORDPRESS, SITE_STATUS_ARCHIVED
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
@@ -226,6 +233,22 @@ class PortalEmailChangeVerifyPayload(BaseModel):
     code: str = Field(default="", max_length=32)
 
 
+class PortalAccountDeletionRequestPayload(BaseModel):
+    """向当前登录邮箱发送账号注销验证码。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    locale: str = Field(default="", max_length=16)
+
+
+class PortalAccountDeletionConfirmPayload(BaseModel):
+    """验证注销验证码并执行账号软注销。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(default="", max_length=32)
+
+
 class PortalRegistrationCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -301,6 +324,28 @@ def _object_list(value: object) -> list[Any]:
 
 def _dict_value(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _serialize_utc_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return normalized.isoformat().replace("+00:00", "Z")
+
+
+def _coerce_count(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip() or 0)
+        except ValueError:
+            return 0
+    return 0
 
 
 def _portal_site_response_data(value: object) -> dict[str, object]:
@@ -3011,6 +3056,181 @@ async def verify_portal_email_change_code(
         site_id=auth.site_id,
         expires_at=current_session_expires_at,
     )
+    return response
+
+
+@router.post("/account/deletion/request")
+async def request_portal_account_deletion_code(
+    request: Request,
+    payload: PortalAccountDeletionRequestPayload,
+) -> Any:
+    """向当前登录邮箱发送账号注销验证码。
+
+    purpose: account_deletion。endpoint 自带 same_origin_guard + 活跃 principal 鉴权。
+    domain service 内部会拒绝仍有 pending deletion code 的重复请求。
+    """
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    locale = resolve_portal_email_locale(request, payload.locale)
+    services = get_cloud_services(request)
+    # --- 端点层 rate limit（60 秒内最多 1 次 / 邮箱）；
+    #     domain service 内部 pending-code 幂等保护作为第二道防线 ---
+    current_email_for_rate_limit = ""
+    with get_session(services.settings.database_url) as _session:
+        _identity = CommercialIdentityRepository(_session).get_principal_identity_by_ref(
+            principal_id=auth.principal_id,
+        )
+        if _identity is not None:
+            current_email_for_rate_limit = str(_identity.email or "").strip().lower()
+    if current_email_for_rate_limit:
+        try:
+            enforce_portal_login_code_request_rate_limit(
+                request, email=current_email_for_rate_limit
+            )
+        except PortalBearerTokenError as error:
+            return _portal_login_code_rate_limit_response(request, error)
+    ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
+    email_sender = services.portal_email_sender or build_portal_email_sender(
+        services.settings,
+        database_url=services.settings.database_url,
+    )
+    allow_development_code = _allow_development_login_code(request)
+    if email_sender is None and not allow_development_code:
+        return portal_json_error(
+            request,
+            status_code=503,
+            error_code="portal.email_not_configured",
+            message="Portal email delivery is not configured",
+        )
+    try:
+        issued = await run_in_threadpool(
+            _get_commercial_service(request).issue_portal_account_deletion_code,
+            principal_id=auth.principal_id,
+            ttl_seconds=ttl_seconds,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    if email_sender is not None:
+        try:
+            await run_in_threadpool(
+                email_sender.send_account_deletion_code,
+                recipient_email=str(issued.get("email") or ""),
+                principal_id=str(issued.get("principal_id") or ""),
+                code=str(issued.get("code") or ""),
+                expires_in_seconds=ttl_seconds,
+                project_name=services.settings.project_name,
+                locale=locale,
+            )
+        except PortalEmailDeliveryError as error:
+            return portal_json_error(
+                request,
+                status_code=502,
+                error_code="portal.email_delivery_failed",
+                message=str(error),
+            )
+    return _portal_route_envelope(
+        message="portal account deletion code issued",
+        data={
+            "email": str(issued.get("email") or ""),
+            "delivery": ("development_code" if allow_development_code else "email"),
+            "expires_in_seconds": ttl_seconds,
+            "code": (str(issued.get("code") or "") if allow_development_code else ""),
+        },
+    )
+
+
+@router.post("/account/deletion/confirm")
+async def confirm_portal_account_deletion(
+    request: Request,
+    payload: PortalAccountDeletionConfirmPayload,
+) -> Any:
+    """验证注销验证码并执行账号软注销。
+
+    执行后会清 session cookie（用户被登出），domain service 会 revoke membership、
+    release site bindings、revoke site api keys、把 account.status 改成 closed。
+    """
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    code = payload.code.strip()
+    if not code or not code.isdigit():
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="auth.account_deletion_code_invalid",
+            message="account deletion verification code is required",
+        )
+    services = get_cloud_services(request)
+    try:
+        max_attempts = max(
+            1,
+            int(services.settings.portal_login_code_max_attempts or 0),
+        )
+    except Exception:
+        max_attempts = 5
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).verify_and_execute_portal_account_deletion,
+            principal_id=auth.principal_id,
+            code=code,
+            max_attempts=max_attempts,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        if error.error_code == "service.portal_account_deletion_code_invalid":
+            return portal_json_error(
+                request,
+                status_code=401,
+                error_code="auth.account_deletion_code_invalid",
+                message="account deletion verification code is invalid or expired",
+            )
+        return _service_error_response(error, request=request)
+
+    # Principal disabled and old sessions invalidated; retained records are not erased.
+    response = JSONResponse(
+        status_code=200,
+        content=_portal_route_envelope(
+            message="portal login disabled and service account closed",
+            data={
+                "account_deletion": {
+                    "closed_accounts": _coerce_count(result.get("closed_accounts")),
+                    "revoked_memberships": _coerce_count(result.get("revoked_memberships")),
+                    "released_site_bindings": _coerce_count(result.get("released_site_bindings")),
+                    "revoked_api_keys": _coerce_count(result.get("revoked_api_keys")),
+                },
+            },
+        ),
+    )
+    clear_portal_session_cookies(response)
     return response
 
 
@@ -5851,4 +6071,208 @@ async def get_portal_site_billing_reconciliation(request: Request, site_id: str)
     return _portal_route_envelope(
         message="portal billing reconciliation loaded",
         data=_portal_billing_reconciliation_data(reconciliation, site_id=site_id),
+    )
+
+
+# ============================================
+# Portal 站内通知（收件箱 MVP）
+# ============================================
+
+
+@router.get("/notifications")
+async def list_portal_notifications(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    unread_only: bool = False,
+) -> Any:
+    """列出当前 account 内发送给当前登录 principal 的站内通知。
+
+    - 需要活跃 principal 鉴权 + account 级 member 权限
+    - 默认返回最近 50 条，支持 unread_only / limit / offset
+    - 同时返回 unread_count 和 total_count 供顶栏铃铛 badge 使用
+    """
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "").strip()
+    effective_limit = min(max(1, limit), 200)
+    effective_offset = max(0, offset)
+    services = get_cloud_services(request)
+    now = datetime.now(UTC)
+    with get_session(services.settings.database_url) as session:
+        repository = CommercialNotificationRepository(session)
+        notifications = repository.list_account_notifications(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            limit=effective_limit,
+            offset=effective_offset,
+            unread_only=unread_only,
+        )
+        unread_count = repository.count_account_notifications(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            unread_only=True,
+        )
+        total_count = repository.count_account_notifications(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+        )
+        session.expunge_all()
+    items = [
+        {
+            "notification_id": str(n.notification_id or ""),
+            "account_id": str(n.account_id or ""),
+            "event_type": str(n.event_type or ""),
+            "title": str(n.title or ""),
+            "body": str(n.body or "") if n.body else None,
+            "link_href": str(n.link_href or "") if n.link_href else None,
+            "is_read": bool(n.is_read),
+            "created_at": _serialize_utc_datetime(n.created_at),
+            "read_at": _serialize_utc_datetime(n.read_at) if n.read_at else None,
+        }
+        for n in notifications
+    ]
+    return _portal_route_envelope(
+        message="portal notifications loaded",
+        data={
+            "items": items,
+            "total_count": total_count,
+            "unread_count": unread_count,
+            "limit": effective_limit,
+            "offset": effective_offset,
+            "unread_only": bool(unread_only),
+            "fetched_at": _serialize_utc_datetime(now),
+        },
+    )
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_portal_notification_read(
+    request: Request,
+    notification_id: str,
+) -> Any:
+    """标记单条通知已读。"""
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "").strip()
+    services = get_cloud_services(request)
+    now = datetime.now(UTC)
+    with get_session(services.settings.database_url) as session:
+        repository = CommercialNotificationRepository(session)
+        if repository.get_notification(
+            notification_id=notification_id,
+            account_id=account_id,
+            principal_id=auth.principal_id,
+        ) is None:
+            return portal_json_error(
+                request,
+                status_code=404,
+                error_code="portal.notification_not_found",
+                message="Notification was not found",
+            )
+        matched = repository.mark_read(
+            notification_id=notification_id,
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            now=now,
+        )
+        session.commit()
+        unread_count = repository.count_account_notifications(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            unread_only=True,
+        )
+    return _portal_route_envelope(
+        message="portal notification marked read",
+        data={
+            "notification_id": notification_id,
+            "marked_read_count": matched,
+            "unread_count": unread_count,
+        },
+    )
+
+
+@router.post("/notifications/read-all")
+async def mark_all_portal_notifications_read(
+    request: Request,
+) -> Any:
+    """标记当前 account 内当前 principal 的所有未读通知为已读。"""
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "").strip()
+    services = get_cloud_services(request)
+    now = datetime.now(UTC)
+    with get_session(services.settings.database_url) as session:
+        repository = CommercialNotificationRepository(session)
+        marked = repository.mark_all_read(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            now=now,
+        )
+        session.commit()
+        unread_count = repository.count_account_notifications(
+            account_id=account_id,
+            principal_id=auth.principal_id,
+            unread_only=True,
+        )
+    return _portal_route_envelope(
+        message="portal notifications all marked read",
+        data={
+            "marked_read_count": marked,
+            "unread_count": unread_count,
+        },
     )
