@@ -46,6 +46,11 @@ batches in [commercial-development-next-stage-v1.md](commercial-development-next
 This changes development scope only; it neither completes the editor loop nor
 authorizes production sales activation, real transactions, or specialist restoration.
 
+The operator also approved all eligible normal accounts for existing Plus/Pro
+monthly purchases, credit packs, and the shared 14-day Plus/Pro trial. The
+three-user Free validation proceeds independently and is not an access gate.
+Keep current pricing, shared trial limits and the separate production gate.
+
 ## Loop checklist
 
 [wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md)

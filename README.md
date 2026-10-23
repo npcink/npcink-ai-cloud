@@ -45,6 +45,11 @@ Until that loop has sufficient real evidence:
   evidence as separate states.
 
 Current revisions, PRs, M4 ownership, and release state are time-sensitive.
+All eligible normal accounts are in scope for existing Plus/Pro monthly
+purchases, credit packs, and the shared 14-day Plus/Pro trial. The three-user
+Free validation remains independent; it is not an access allowlist or a
+prerequisite for paid access. This approved rollout scope is not evidence of
+production deployment or successful real transactions.
 Inspect the current `origin/master`, active tasks, open PRs, and M4 status before
 using a dated closeout record as present truth.
 

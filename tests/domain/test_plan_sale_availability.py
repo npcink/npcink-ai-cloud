@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -172,3 +172,63 @@ def test_withdrawn_credit_pack_hides_and_preserves_existing_order_snapshot(tmp_p
     assert replay["order_id"] == created["order_id"]
     assert replay["amount"] == 99
     assert replay["credit_pack"]["ai_credits"] == 10000
+
+
+@pytest.mark.parametrize("tier,amount,trial_credits", [("plus", 15, 3000), ("pro", 29, 5000)])
+def test_new_accounts_can_purchase_or_start_shared_trial_without_invitation(
+    tmp_path: Path, tier: str, amount: int, trial_credits: int,
+):
+    _, service = _setup(tmp_path)
+    for account_id in ("new_buyer", "new_trial"):
+        _account(service, account_id)
+        catalog = service.list_account_plan_offers(account_id=account_id)
+        assert {o["tier_id"] for o in catalog["items"]} == {"plus", "pro"}
+        assert set(catalog["trial"]["allowed_tiers"]) == {"plus", "pro"}
+
+    order = service.create_account_subscription_payment_order(
+        account_id="new_buyer", offer_id=f"{tier}_monthly_v1",
+        audit_context=_audit(f"new-buyer-{tier}"),
+    )
+    assert order["order"]["amount"] == amount
+    trial = service.start_account_plan_trial(account_id="new_trial", tier_id=tier)
+    assert trial["subscription"]["status"] == "trialing"
+    assert trial["trial"]["ai_credit_limit"] == trial_credits
+    started = datetime.fromisoformat(trial["trial"]["trial_started_at"])
+    ends = datetime.fromisoformat(trial["trial"]["trial_ends_at"])
+    assert ends - started == timedelta(days=14)
+    if tier == "plus":
+        upgraded = service.start_account_plan_trial(account_id="new_trial", tier_id="pro")
+        assert upgraded["trial"]["trial_ends_at"] == trial["trial"]["trial_ends_at"]
+        assert upgraded["trial"]["ai_credit_limit"] == 5000
+
+
+def test_emergency_recovery_keeps_withdrawn_offers_and_packs_unavailable(tmp_path: Path):
+    _, service = _setup(tmp_path)
+    pending = service.create_account_subscription_payment_order(
+        account_id="acct_sale", offer_id="plus_monthly_v1", audit_context=_audit("before-stop")
+    )
+    service.update_admin_plan_sales_status(plan_id="plus", status="retired")
+    service.update_admin_credit_pack_catalog(items=[{"pack_id": "pack_small", "active": False}])
+    service.settings.commercial_emergency_stop = True
+    assert service.list_account_plan_offers(account_id="acct_sale")["items"] == []
+    assert service.list_credit_packs()["items"] == []
+    service.settings.commercial_emergency_stop = False
+
+    catalog = service.list_account_plan_offers(account_id="acct_sale")
+    assert [o["tier_id"] for o in catalog["items"]] == ["pro"]
+    assert catalog["trial"]["allowed_tiers"] == ["pro"]
+    assert "pack_small" not in [p["pack_id"] for p in service.list_credit_packs()["items"]]
+    with pytest.raises(CommercialNotFoundError):
+        service.start_account_plan_trial(account_id="acct_sale", tier_id="plus")
+    with pytest.raises(CommercialNotFoundError):
+        service.create_account_subscription_payment_order(
+            account_id="acct_sale", offer_id="plus_monthly_v1", audit_context=_audit("new-order")
+        )
+    replay = service.create_account_subscription_payment_order(
+        account_id="acct_sale", offer_id="plus_monthly_v1", audit_context=_audit("before-stop")
+    )
+    assert replay["order"]["order_id"] == pending["order"]["order_id"]
+    paid = service.mark_payment_order_paid(
+        order_id=pending["order"]["order_id"], provider_event_id="after-recovery-paid", amount=15,
+    )
+    assert paid["subscription"]["plan_id"] == "plus"

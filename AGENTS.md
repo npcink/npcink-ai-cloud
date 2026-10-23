@@ -28,6 +28,15 @@ The Phase 1 editor loop remains active. Development authorization does not
 authorize production Deploy, live sales activation, real payment/refund tests,
 price changes, or restoration of paused specialist capabilities.
 
+Operator decision on 2026-10-23 permits all eligible normal accounts to buy
+existing Plus/Pro monthly packages and credit packs, and to start the existing
+shared 14-day Plus/Pro trial. No invitation, account-age gate, or three-user
+allowlist is required. Preserve current prices and one-trial-per-customer rules.
+The three-user Free validation runs separately and does not gate this rollout.
+See the bounded rollout contract in the commercial next-stage document;
+production deployment/configuration and real transaction tests remain separate
+operations requiring explicit authorization.
+
 ## Follow-on (Phase 2–3)
 
 After Phase 1 loop evidence: continue Phase 2 portal e2e triage (assertion
