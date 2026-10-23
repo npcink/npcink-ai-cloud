@@ -1273,7 +1273,10 @@ class PluginObservabilityService:
                     severity="warning",
                     code="plugin_observability.latency_high",
                     title="High average latency",
-                    detail=f"Average connection-related plugin event latency is {avg_latency_ms}ms.",
+                    detail=(
+                        "Average connection-related plugin event "
+                        f"latency is {avg_latency_ms}ms."
+                    ),
                     site_id=site_id,
                     suggested_action="Inspect the slow plugin and recent event kinds.",
                 )
