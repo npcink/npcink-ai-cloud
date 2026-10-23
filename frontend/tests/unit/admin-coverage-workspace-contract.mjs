@@ -38,7 +38,7 @@ assert.doesNotMatch(
 
 assert.match(
   coverageSource + serviceSource,
-  /data-ui="coverage-pagination"[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
+  /changePage[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*data-ui="coverage-pagination"[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
   'Coverage pagination must be URL-backed while filtering and ordering happen before service pagination'
 );
 
@@ -68,7 +68,7 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
+  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*admin\.coverage\.status_filter_label[\s\S]*coverage-filter-toolbar[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
   'Coverage defaults to customers needing action and the clear action restores that URL-owned default'
 );
 
@@ -167,5 +167,19 @@ assert.doesNotMatch(
   /invoice_create|createCheckout|paymentIntent|wordpress_write|auto_apply|publish_to_wordpress/i,
   'Coverage workspace must not introduce commercial front-office or WordPress write actions'
 );
+
+
+assert.match(coverageSource, /const DEFAULT_PAGE_SIZE = 10;[\s\S]*parsed >= 1 && parsed <= 500/, 'default ten rows must preserve existing URL limit1..500');
+assert.match(coverageSource, /role="group" aria-label=\{t\('admin\.coverage\.status_filter_label'\)\}[\s\S]*aria-pressed=\{view === filter.value\}/, 'service states are mutually exclusive named pills');
+assert.match(coverageSource, /queueParamsRef.current.toString\(\)\) return;[\s\S]*setDebouncedSearchQuery/, 'local URL synchronization must not bypass the existing search debounce');
+assert.match(coverageSource, /window.setTimeout[\s\S]*setDebouncedSearchQuery\(searchQuery\)[\s\S]*250/, 'search stays automatically debounced at250ms');
+assert.match(coverageSource, /loadedQuery.delete\('offset'\)[\s\S]*requestedQuery.delete\('offset'\)[\s\S]*isDebouncingSearch/, 'retained query identity includes the debounce window and all dimensions except offset');
+assert.match(coverageSource, /if \(isRefreshing \|\| isRetainingDifferentQuery\) return;/, 'handlers cannot paginate retained results into another query');
+assert.match(coverageSource, /nextOffset === offset\) void loadCoverage\(true\)/, 'same target offset retries a real GET');
+assert.match(coverageSource, /queueRequestKey === coverageRequestKey &&[\s\S]*!isDebouncingSearch &&[\s\S]*!isRefreshing &&[\s\S]*pagination.total <= offset/, 'automatic recovery consumes only current successful evidence');
+assert.match(coverageSource, /rangeStart = visibleItems.length[\s\S]*rangeEnd = visibleItems.length[\s\S]*data-ui="coverage-pagination"/, 'zero and single-page ranges stay visible and use actual returned rows');
+for (const key of ['summary_total', 'filter_needs_action', 'common.updated_at', 'visibleSummary.error', 'visibleSummary.warning', 'activeQueue.generated_at']) assert.ok(coverageSource.includes(key), `preserve summary/freshness ${key}`);
+assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQuery \|\| pagination.offset <= 0\}/, 'previous obeys the query boundary');
+assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQuery \|\| !pagination.hasMore\}/, 'next keeps backend has_more and the query boundary');
 
 console.log('admin_coverage_workspace_contract: ok');
