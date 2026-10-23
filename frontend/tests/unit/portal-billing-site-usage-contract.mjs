@@ -170,6 +170,7 @@ assert.doesNotMatch(
 for (const key of [
   'portal.billing.site_usage_list_title',
   'portal.billing.site_usage_list_desc',
+  'portal.billing.site_usage_list_desc_single',
   'portal.billing.site_usage_dialog_title',
   'portal.billing.site_usage_pick_hint',
 ]) {

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
+import { useLocale } from '@/contexts/LocaleContext';
 import { cn } from '@/lib/utils';
 
 export type PortalRowActionConfirm = {
@@ -51,6 +52,20 @@ export function PortalActionIcon({ id, className = 'h-4 w-4' }: { id: string; cl
           <path d="M5 12h14" />
         </svg>
       );
+    case 'ticket-new':
+      return (
+        <svg {...common}>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case 'view-detail':
+      return (
+        <svg {...common}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
     case 'connect-collapse':
       return (
         <svg {...common}>
@@ -62,6 +77,12 @@ export function PortalActionIcon({ id, className = 'h-4 w-4' }: { id: string; cl
         <svg {...common}>
           <path d="M21 12a9 9 0 1 1-2.6-6.3" />
           <path d="M21 3v6h-6" />
+        </svg>
+      );
+    case 'attach':
+      return (
+        <svg {...common}>
+          <path d="M21.4 11.6 12.1 20.9a5.5 5.5 0 0 1-7.8-7.8l9.9-9.9a3.5 3.5 0 0 1 5 5l-9.9 9.9a1.5 1.5 0 0 1-2.1-2.1l8.5-8.5" />
         </svg>
       );
     case 'view-plan':
@@ -223,6 +244,7 @@ export function PortalRowActions({
   className,
   overflowTestId,
 }: PortalRowActionsProps) {
+  const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{
@@ -349,7 +371,7 @@ export function PortalRowActions({
       <Modal
         isOpen={Boolean(pendingConfirm)}
         onClose={() => setPendingConfirm(null)}
-        closeLabel={pendingConfirm?.confirm.cancelLabel || 'Close'}
+        closeLabel={pendingConfirm?.confirm.cancelLabel || t('common.close', {}, 'Close')}
         title={pendingConfirm?.confirm.title || pendingConfirm?.item.label}
         description={pendingConfirm?.confirm.description}
         size="sm"
@@ -361,7 +383,7 @@ export function PortalRowActions({
               className="btn btn-secondary"
               onClick={() => setPendingConfirm(null)}
             >
-              {pendingConfirm?.confirm.cancelLabel || 'Cancel'}
+              {pendingConfirm?.confirm.cancelLabel || t('common.cancel', {}, 'Cancel')}
             </button>
             <button
               type="button"

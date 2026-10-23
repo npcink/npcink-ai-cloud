@@ -9,7 +9,6 @@ import {
   PortalCard,
   PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
-import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
@@ -256,31 +255,18 @@ function AccountPageContent() {
       <PortalWorkspaceHeader
         title={t('portal.account.title', undefined, 'Account')}
         currentPage="account"
-        breadcrumb={(
-          <PortalBreadcrumb
-            aria-label={t('portal.account.breadcrumb', undefined, 'Account location')}
-            items={[
-              {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
-                label: t('portal.account.title', undefined, 'Account'),
-              },
-            ]}
-          />
-        )}
+        actionsPlacement="title-end"
         titleAccessory={(
           <PortalInfoHint
             detail={t(
               'portal.account.description',
               undefined,
-              'Manage sign-in contact, package changes, AI credits, and payment orders.'
+              'Manage sign-in methods, contact email, and payment history. Package changes live on the Package page.'
             )}
           />
         )}
         actions={
-          <Link href="/portal/audit" className="btn btn-secondary btn-sm">
+          <Link href="/portal/audit" className="btn btn-secondary btn-sm" data-portal-account-deeplink="audit">
             {t('portal.audit.nav_label', undefined, 'Recent activity')}
           </Link>
         }
@@ -299,43 +285,48 @@ function AccountPageContent() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
-        <PortalSection className="space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.login_methods_label', undefined, 'Login')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.login_methods_title', undefined, 'Login methods')}
-              </h2>
-            </div>
-          </div>
+      <PortalSection className="space-y-4" data-portal-account="login-security">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+            {t('portal.account.login_security_title', undefined, 'Sign-in and security')}
+          </h2>
+          <PortalInfoHint
+            detail={t(
+              'portal.account.email_login_desc',
+              undefined,
+              'Sign in with a verification code sent to the contact email shown on this page.'
+            )}
+          />
+        </div>
 
-          <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.email_login_title', undefined, 'Email verification code')}
-                  </h3>
-                  {showPrimaryIdentityBadge ? (
-                    <PortalStatusBadge
-                      label={t('portal.account.primary_identity', undefined, 'Primary identity')}
-                      status="active"
-                    />
-                  ) : null}
-                  <PortalInfoHint
-                    detail={t(
-                      'portal.account.email_login_desc',
-                      undefined,
-                      'Sign in with a verification code sent to the contact email shown on this page.'
-                    )}
-                  />
-                </div>
+        <div
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          data-portal-account="contact-info"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-slate-950 dark:text-white">
+              {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
+            </p>
+            {showPrimaryIdentityBadge ? (
+              <div className="mt-1.5">
+                <PortalStatusBadge
+                  force
+                  label={t('portal.account.primary_identity', undefined, 'Primary identity')}
+                  status="active"
+                />
               </div>
-            </div>
-          </PortalCard>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm shrink-0"
+            onClick={() => setShowEmailChange(true)}
+          >
+            {contactEmail
+              ? t('portal.account.contact_change_title', undefined, 'Change email')
+              : t('portal.account.contact_add_title', undefined, 'Add email')}
+          </button>
+        </div>
 
           {providerState === 'loading' ? (
             <PortalLoadingState message={t('common.loading')} compact />
@@ -347,27 +338,21 @@ function AccountPageContent() {
               onRetry={() => void loadProviders()}
             />
           ) : !qqProvider?.configured && !qqProvider?.bound ? (
-            <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {t('portal.account.qq_unavailable_short', undefined, 'QQ quick login is not available in the current environment.')}
-                  </span>
-                </span>
-                <span aria-hidden="true" className="text-slate-400">⌄</span>
-              </summary>
-              <div className="mt-4 border-t border-slate-200/80 pt-4 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                <p className="font-semibold text-slate-950 dark:text-white">
-                  {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
-                </p>
-                <p className="mt-1">
-                  {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
-                </p>
-              </div>
-            </details>
+            <div
+              className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35"
+              data-portal-account="other-login-unavailable"
+            >
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {t(
+                  'portal.account.qq_unavailable_short',
+                  undefined,
+                  'QQ quick login is not available in the current environment.'
+                )}
+              </p>
+            </div>
           ) : (
           <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -377,6 +362,7 @@ function AccountPageContent() {
                     {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
                   </h3>
                   <PortalStatusBadge
+                    force
                     label={
                       qqProvider?.bound
                         ? t('portal.account.bound', undefined, 'Bound')
@@ -393,14 +379,14 @@ function AccountPageContent() {
                   <PortalInfoHint
                     detail={
                       qqProvider?.bound
-                        ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
-                        : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')
+                        ? t('portal.account.qq_bound_desc', undefined, 'You can use the bound QQ account for quick Portal login.')
+                        : t('portal.account.qq_unbound_desc', undefined, 'After binding, QQ can be used for quick login. Email remains the primary account.')
                     }
                   />
                 </div>
                 {qqProvider?.bound && qqProvider.binding?.display_name ? (
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                    {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
+                    {t('portal.account.qq_bound_as', undefined, 'Bound account')}: {qqProvider.binding.display_name}
                   </p>
                 ) : null}
                 {!qqProvider?.configured ? (
@@ -444,60 +430,10 @@ function AccountPageContent() {
             </div>
           </PortalCard>
           )}
-        </PortalSection>
+      </PortalSection>
 
-        <div data-portal-account="contact-info">
-          <PortalSection className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.contact_label', undefined, 'Contact')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.contact_title', undefined, 'Contact information')}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t(
-                  'portal.account.contact_desc',
-                  undefined,
-                  'This is the information used for login codes, service notices, and support follow-up.'
-                )}
-              </p>
-            </div>
-
-            <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-              <p className="text-base font-semibold text-slate-950 dark:text-white">
-                {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
-              </p>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {contactEmail
-                  ? t(
-                      'portal.account.contact_change_desc',
-                      undefined,
-                      'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
-                    )
-                  : t(
-                      'portal.account.contact_add_desc',
-                      undefined,
-                      'Add and verify an email login before removing another sign-in method.'
-                    )}
-              </p>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowEmailChange(true)}>
-                {contactEmail
-                  ? t('portal.account.contact_change_title', undefined, 'Change email')
-                  : t('portal.account.contact_add_title', undefined, 'Add email')}
-              </button>
-            </PortalCard>
-          </PortalSection>
-        </div>
-      </div>
-
-      <div className="space-y-3" data-portal-account="billing-commerce">
-        <div className="min-w-0">
-          <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
-            {t('portal.account.commerce_title', undefined, 'Package and payments')}
-          </h2>
-        </div>
-        <PortalAccountCommercePanels />
+      <div className="space-y-3" data-portal-account="payment-orders-section">
+        <PortalAccountCommercePanels surface="account" />
       </div>
 
       <Modal

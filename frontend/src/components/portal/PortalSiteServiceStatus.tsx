@@ -298,7 +298,7 @@ export function PortalSiteServiceStatus({
                   {t('portal.monitoring.quota_evidence_attention', {}, 'The account is near or over its shared package limit.')}
                 </span>
                 <Link
-                  href="/portal/account#package-options"
+                  href="/portal/billing?action=upgrade"
                   className="btn btn-secondary btn-sm shrink-0"
                   data-portal-site="view-plan"
                 >

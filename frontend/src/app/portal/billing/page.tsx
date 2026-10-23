@@ -1,19 +1,19 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
-import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
 import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSiteUsageList';
 import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
 import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
 import type { Site } from '@/lib/portal-client';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
+import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import {
   PortalErrorState,
   PortalLoadingState,
@@ -131,6 +131,8 @@ function PortalBillingContent() {
 
   const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
   const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
+  const [siteUsageListHighlight, setSiteUsageListHighlight] = useState(false);
+  const siteUsageHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const focusSiteUsageList = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -143,8 +145,19 @@ function PortalBillingContent() {
       '',
       `/portal/billing${qs ? `?${qs}` : ''}#site-usage`,
     );
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
+    // Brief ring/bg flash so the click always feels acknowledged, even when already in view.
+    setSiteUsageListHighlight(false);
     requestAnimationFrame(() => {
+      setSiteUsageListHighlight(true);
       document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      siteUsageHighlightTimerRef.current = setTimeout(() => {
+        setSiteUsageListHighlight(false);
+        siteUsageHighlightTimerRef.current = null;
+      }, 1800);
     });
   }, []);
 
@@ -160,6 +173,13 @@ function PortalBillingContent() {
     setSiteUsageSite(null);
   }, []);
 
+  useEffect(() => () => {
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (window.location.hash === '#usage' || window.location.hash === '#site-usage') {
@@ -169,15 +189,14 @@ function PortalBillingContent() {
     }
   }, [entitlements, isLoading, searchParams]);
 
-  // Upgrade / manage intents now live on Account.
+  // Payment-order anchors stay on Account; package upgrade intents stay on this page.
   useEffect(() => {
-    const requestedAction = searchParams.get('action');
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
-    if (requestedAction === 'upgrade' || hash === '#package-options' || hash === '#payment-orders') {
+    if (hash === '#payment-orders') {
       const params = new URLSearchParams(searchParams.toString());
-      const targetHash = hash === '#payment-orders' ? '#payment-orders' : '#package-options';
+      params.delete('action');
       const qs = params.toString();
-      router.replace(`/portal/account${qs ? `?${qs}` : ''}${targetHash}`);
+      router.replace(`/portal/account${qs ? `?${qs}` : ''}#payment-orders`);
     }
   }, [router, searchParams]);
 
@@ -260,23 +279,9 @@ function PortalBillingContent() {
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
         currentPage="billing"
-        breadcrumb={(
-          <PortalBreadcrumb
-            aria-label={t('portal.billing.breadcrumb', {}, 'Package location')}
-            items={[
-              {
-                label: t('portal.nav_service', {}, 'Service'),
-                href: '/portal',
-              },
-              {
-                label: t('portal.billing.customer_title', {}, 'Package'),
-              },
-            ]}
-          />
-        )}
         primaryAction={
           packageStatus !== 'warning' ? (
-            <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
+            <Link href="/portal/billing?action=upgrade" className="btn btn-secondary btn-sm">
               {t('portal.billing.manage_title', {}, 'Manage package')}
             </Link>
           ) : null
@@ -297,6 +302,8 @@ function PortalBillingContent() {
         refreshBilling={loadBilling}
         refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
       />
+
+      <PortalAccountCommercePanels surface="billing" />
 
       {error ? (
         <PortalErrorState
@@ -346,6 +353,7 @@ function PortalBillingContent() {
             sites={session.sites}
             t={t}
             onSelectSite={openSiteUsage}
+            highlight={siteUsageListHighlight}
           />
         </PortalCard>
       ) : null}

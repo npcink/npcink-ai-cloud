@@ -52,13 +52,13 @@ export function resolveBillingPressureCta(options: {
   const creditNeedsAttention = options.quotaSummary?.ai_credits?.status === 'limited';
   if (creditNeedsAttention) {
     return {
-      href: '/portal/account#package-options',
+      href: '/portal/billing?action=credits',
       kind: 'buy_credits',
       label: options.t('portal.usage.credit_pack_buy_action', {}, 'Buy credits'),
     };
   }
   return {
-    href: '/portal/account#package-options',
+    href: '/portal/billing?action=upgrade',
     kind: 'upgrade',
     label: options.t('portal.billing.upgrade_action', {}, 'Upgrade package'),
   };

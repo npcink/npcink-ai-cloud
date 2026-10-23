@@ -34,7 +34,7 @@ function RegisterFormContent() {
       ? 'pro'
       : null;
   const postRegistrationTarget = requestedPlan
-    ? `/portal/account?plan=${requestedPlan}&action=upgrade#package-options`
+    ? `/portal/billing?plan=${requestedPlan}&action=upgrade`
     : '/portal#sites';
   const requestedPlanLabel = requestedPlan === 'plus'
     ? 'Plus'

@@ -1,12 +1,16 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Entitlements } from '@/lib/portal-client';
-import { portalClient, type PortalAccountSiteKnowledgeUsagePayload } from '@/lib/portal-client';
+import {
+  portalClient,
+  type PortalSiteKnowledgeUsagePayload,
+  type PortalSiteKnowledgeUsageSourceType,
+} from '@/lib/portal-client';
 import type { Locale } from '@/lib/i18n';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
-import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { resolveBillingQuotaRowPresentation } from '@/lib/portal-billing-status';
+import { Modal } from '@/components/ui/Modal';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
@@ -26,6 +30,13 @@ type EntitlementMetric = {
 };
 
 const KNOWLEDGE_RESOURCE_KEYS: readonly string[] = ['vector_documents', 'media_images'];
+/** Resource keys whose per-site breakdown can be loaded from the live API today. */
+const KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE: ReadonlySet<string> = new Set(['vector_documents', 'media_images']);
+
+const KNOWLEDGE_RESOURCE_SOURCE_TYPE: Record<string, PortalSiteKnowledgeUsageSourceType> = {
+  vector_documents: 'text',
+  media_images: 'media',
+};
 
 type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
@@ -95,28 +106,61 @@ export function PortalEntitlementUsage({
   onOpenUsage,
   onOpenCreditSources,
 }: PortalEntitlementUsageProps) {
-  const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
+  // Shared knowledge breakdown dialog: one shell, typed by resource key.
+  // Fetchable keys call GET /account/site-knowledge-usage?source_type=…;
+  // reserved types (video/pdf later) stay on the quiet empty path until wired.
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
+  const [siteKnowledgeBreakdownKey, setSiteKnowledgeBreakdownKey] = useState<string | null>(null);
+  const [siteKnowledgeUsageByType, setSiteKnowledgeUsageByType] = useState<
+    Partial<Record<string, PortalSiteKnowledgeUsagePayload>>
+  >({});
   const [siteKnowledgeUsageLoading, setSiteKnowledgeUsageLoading] = useState(false);
   const [siteKnowledgeUsageError, setSiteKnowledgeUsageError] = useState('');
-  const siteKnowledgeUsageDialogRef = useDialogFocusManagement<HTMLElement>(
-    siteKnowledgeUsageOpen,
-    () => setSiteKnowledgeUsageOpen(false),
-  );
-  const openSiteKnowledgeUsage = useCallback(async () => {
-    setSiteKnowledgeUsageOpen(true);
-    if (siteKnowledgeUsage) return;
-    setSiteKnowledgeUsageLoading(true);
+  const siteKnowledgeBreakdownRequestKeyRef = useRef<string | null>(null);
+  const closeSiteKnowledgeUsage = useCallback(() => {
+    siteKnowledgeBreakdownRequestKeyRef.current = null;
+    setSiteKnowledgeUsageOpen(false);
+    setSiteKnowledgeBreakdownKey(null);
     setSiteKnowledgeUsageError('');
+    setSiteKnowledgeUsageLoading(false);
+  }, []);
+  const openSiteKnowledgeUsage = useCallback(async (resourceKey: string) => {
+    const key = String(resourceKey || '').trim();
+    if (!key) return;
+    siteKnowledgeBreakdownRequestKeyRef.current = key;
+    setSiteKnowledgeBreakdownKey(key);
+    setSiteKnowledgeUsageOpen(true);
+    setSiteKnowledgeUsageError('');
+    // Types without a per-site API: do not call another type's endpoint (would show wrong numbers).
+    if (!KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE.has(key)) {
+      setSiteKnowledgeUsageLoading(false);
+      return;
+    }
+    if (siteKnowledgeUsageByType[key]) {
+      setSiteKnowledgeUsageLoading(false);
+      return;
+    }
+    const sourceType = KNOWLEDGE_RESOURCE_SOURCE_TYPE[key];
+    if (!sourceType) {
+      setSiteKnowledgeUsageLoading(false);
+      return;
+    }
+    setSiteKnowledgeUsageLoading(true);
     try {
-      const response = await portalClient.getAccountSiteKnowledgeUsage();
-      setSiteKnowledgeUsage(response.data);
+      const response = sourceType === 'text'
+        ? await portalClient.getAccountSiteKnowledgeUsage()
+        : await portalClient.getAccountSiteKnowledgeUsageByType(sourceType);
+      if (siteKnowledgeBreakdownRequestKeyRef.current !== key) return;
+      setSiteKnowledgeUsageByType((prev) => ({ ...prev, [key]: response.data }));
     } catch (err) {
+      if (siteKnowledgeBreakdownRequestKeyRef.current !== key) return;
       setSiteKnowledgeUsageError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
-      setSiteKnowledgeUsageLoading(false);
+      if (siteKnowledgeBreakdownRequestKeyRef.current === key) {
+        setSiteKnowledgeUsageLoading(false);
+      }
     }
-  }, [siteKnowledgeUsage, t]);
+  }, [siteKnowledgeUsageByType, t]);
   const unlimitedLabel = t('common.unlimited', {}, 'Unlimited');
   const metrics = normalizeMetrics(quotaSummary);
   const knowledgeCapacityDetail = t(
@@ -278,29 +322,49 @@ export function PortalEntitlementUsage({
                   const showProgressBar = isCredit || !unlimited;
 
                   const creditSourcesClickable = isCredit && Boolean(onOpenCreditSources);
+                  const knowledgeBreakdownClickable = isKnowledge;
+                  const cardClickable = creditSourcesClickable || knowledgeBreakdownClickable;
                   const openCreditSourcesDialog = () => onOpenCreditSources?.();
+                  const openKnowledgeBreakdown = () => { void openSiteKnowledgeUsage(key); };
+                  const activateCard = creditSourcesClickable
+                    ? openCreditSourcesDialog
+                    : knowledgeBreakdownClickable
+                      ? openKnowledgeBreakdown
+                      : undefined;
+                  const cardAriaLabel = creditSourcesClickable
+                    ? t('portal.usage.sources_title', {}, 'Credit sources')
+                    : knowledgeBreakdownClickable
+                      ? t(
+                          `portal.usage.site_knowledge_breakdown_title_${key}`,
+                          {},
+                          t('portal.usage.site_knowledge_breakdown_title', {}, 'Site knowledge usage'),
+                        )
+                      : undefined;
+                  const cardBillingAttr = creditSourcesClickable
+                    ? 'open-credit-sources'
+                    : knowledgeBreakdownClickable
+                      ? 'open-usage-from-knowledge'
+                      : undefined;
 
                   return (
                     <article
                       key={key}
                       data-portal-quota-resource={key}
-                      data-portal-billing={creditSourcesClickable ? 'open-credit-sources' : undefined}
-                      role={creditSourcesClickable ? 'button' : undefined}
-                      tabIndex={creditSourcesClickable ? 0 : undefined}
-                      aria-label={creditSourcesClickable
-                        ? t('portal.usage.sources_title', {}, 'Credit sources')
-                        : undefined}
+                      data-portal-billing={cardBillingAttr}
+                      role={cardClickable ? 'button' : undefined}
+                      tabIndex={cardClickable ? 0 : undefined}
+                      aria-label={cardAriaLabel}
                       className={cn(
                         'flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40',
-                        creditSourcesClickable
+                        cardClickable
                           && 'cursor-pointer transition hover:border-blue-300/80 hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 dark:hover:border-blue-700/60 dark:hover:bg-blue-950/20',
                       )}
-                      onClick={creditSourcesClickable ? openCreditSourcesDialog : undefined}
-                      onKeyDown={creditSourcesClickable
+                      onClick={activateCard}
+                      onKeyDown={cardClickable
                         ? (event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
-                              openCreditSourcesDialog();
+                              activateCard?.();
                             }
                           }
                         : undefined}
@@ -405,18 +469,6 @@ export function PortalEntitlementUsage({
                         );
                       })() : null}
 
-                      {key === 'vector_documents' ? (
-                        <div className="mt-auto pt-2.5">
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={() => { void openSiteKnowledgeUsage(); }}
-                            data-portal-billing="open-usage-from-knowledge"
-                          >
-                            {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
-                          </button>
-                        </div>
-                      ) : null}
                     </article>
                   );
                 })}
@@ -427,36 +479,130 @@ export function PortalEntitlementUsage({
         </div>
       )}
 
-      {siteKnowledgeUsageOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={() => setSiteKnowledgeUsageOpen(false)} />
-          <aside ref={siteKnowledgeUsageDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="site-knowledge-usage-title" className="absolute left-1/2 top-1/2 flex max-h-[85vh] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-950">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-              <div>
-                <h2 id="site-knowledge-usage-title" className="text-xl font-semibold text-slate-950 dark:text-white">{t('portal.usage.site_knowledge_breakdown_title', {}, 'Site knowledge usage')}</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('portal.usage.site_knowledge_breakdown_desc', {}, 'Indexed documents grouped by site on this account.')}</p>
-              </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSiteKnowledgeUsageOpen(false)}>{t('common.close')}</button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-5">
-              {siteKnowledgeUsageLoading ? <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div> : siteKnowledgeUsageError ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{siteKnowledgeUsageError}</div> : siteKnowledgeUsage ? (
+      {(() => {
+        if (!siteKnowledgeBreakdownKey) return null;
+        const breakdownKey = siteKnowledgeBreakdownKey;
+        const breakdownFetchable = KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE.has(breakdownKey);
+        const siteKnowledgeUsage = siteKnowledgeUsageByType[breakdownKey] || null;
+        const breakdownMetric = metrics.find((metric) => String(metric.key || '') === breakdownKey);
+        const fallbackUsed = Math.max(0, Math.round(Number(breakdownMetric?.used || 0)));
+        const fallbackLimit = Math.max(0, Math.round(Number(breakdownMetric?.limit || 0)));
+        // Prefer the quota flag for non-fetchable types; text payload may also carry indexed_document_limit.
+        const fallbackUnlimited = Boolean(breakdownMetric?.unlimited);
+        const legacyTextPayload = siteKnowledgeUsage && 'total_indexed_document_count' in siteKnowledgeUsage
+          ? (siteKnowledgeUsage as { total_indexed_document_count?: number; indexed_document_limit?: number; sites?: Array<{ site_id: string; site_name: string; indexed_document_count?: number; used?: number }> })
+          : null;
+        const rawSiteRows = (() => {
+          if (!siteKnowledgeUsage) return [];
+          const items = Array.isArray(siteKnowledgeUsage.items) ? siteKnowledgeUsage.items : null;
+          const sites = Array.isArray(legacyTextPayload?.sites) ? legacyTextPayload.sites : null;
+          if (items && items.length) return items;
+          if (sites && sites.length) return sites;
+          // Honest empty from API (e.g. media with no indexed images).
+          return items || sites || [];
+        })();
+        const siteRows = rawSiteRows.map((row) => ({
+          site_id: String(row.site_id || ''),
+          site_name: String(row.site_name || ''),
+          used: Math.max(0, Math.round(Number(
+            ('used' in row && row.used != null)
+              ? row.used
+              : ('indexed_document_count' in row ? row.indexed_document_count : 0) || 0
+          ))),
+        }));
+        const totalCount = siteKnowledgeUsage
+          ? Math.max(0, Math.round(Number(
+              siteKnowledgeUsage.total_used
+              ?? legacyTextPayload?.total_indexed_document_count
+              ?? 0
+            )))
+          : fallbackUsed;
+        // Limits stay on entitlements for media/video/pdf; text may still echo indexed_document_limit.
+        const apiLimit = legacyTextPayload?.indexed_document_limit;
+        const totalLimit = apiLimit != null ? Math.max(0, Math.round(Number(apiLimit || 0))) : fallbackLimit;
+        const totalUnlimited = siteKnowledgeUsage && apiLimit != null
+          ? totalLimit <= 0
+          : fallbackUnlimited;
+        const breakdownTitle = t(
+          `portal.usage.site_knowledge_breakdown_title_${breakdownKey}`,
+          {},
+          t('portal.usage.site_knowledge_breakdown_title', {}, 'Site knowledge usage'),
+        );
+        const breakdownDesc = t(
+          `portal.usage.site_knowledge_breakdown_desc_${breakdownKey}`,
+          {},
+          t('portal.usage.site_knowledge_breakdown_desc', {}, 'Indexed documents grouped by site on this account.'),
+        );
+        const showQuietNoBreakdown = !breakdownFetchable;
+        const showBody = !siteKnowledgeUsageLoading && !siteKnowledgeUsageError
+          && (Boolean(siteKnowledgeUsage) || showQuietNoBreakdown);
+
+        return (
+          <Modal
+            isOpen={siteKnowledgeUsageOpen}
+            onClose={closeSiteKnowledgeUsage}
+            closeLabel={t('common.close', {}, 'Close')}
+            title={breakdownTitle}
+            description={breakdownDesc}
+            size="xl"
+            className="rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+          >
+            <div data-portal-knowledge-breakdown={breakdownKey}>
+              {siteKnowledgeUsageLoading ? (
+                <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div>
+              ) : siteKnowledgeUsageError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{siteKnowledgeUsageError}</div>
+              ) : showBody ? (
                 <>
                   <dl className="mb-5 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900"><dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_total_label', {}, 'Account total')}</dt><dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{formatNumber(siteKnowledgeUsage.total_indexed_document_count)}{siteKnowledgeUsage.indexed_document_limit > 0 ? ` / ${formatNumber(siteKnowledgeUsage.indexed_document_limit)}` : ''}</dd></div>
-                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900"><dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_limit_label', {}, 'Package limit')}</dt><dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{siteKnowledgeUsage.indexed_document_limit > 0 ? formatNumber(siteKnowledgeUsage.indexed_document_limit) : t('common.unlimited', {}, 'Unlimited')}</dd></div>
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
+                      <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_total_label', {}, 'Account total')}</dt>
+                      <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                        {formatNumber(totalCount)}
+                        {!totalUnlimited ? ` / ${formatNumber(totalLimit)}` : ''}
+                      </dd>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
+                      <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_limit_label', {}, 'Package limit')}</dt>
+                      <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                        {totalUnlimited
+                          ? t('common.unlimited', {}, 'Unlimited')
+                          : formatNumber(totalLimit)}
+                      </dd>
+                    </div>
                   </dl>
                   <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                    {siteKnowledgeUsage.sites.length ? siteKnowledgeUsage.sites.map((site) => {
-                      const share = siteKnowledgeUsage.total_indexed_document_count > 0 ? Math.round((site.indexed_document_count / siteKnowledgeUsage.total_indexed_document_count) * 100) : 0;
-                      return <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3"><div className="min-w-0"><p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p><p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p></div><strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.indexed_document_count)}</strong></div>;
-                    }) : <p className="px-4 py-5 text-sm text-slate-500">{t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}</p>}
+                    {showQuietNoBreakdown ? (
+                      <p className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400" data-portal-knowledge-breakdown-empty="quiet">
+                        {t('portal.usage.site_knowledge_no_site_breakdown', {}, 'Per-site details are not available yet.')}
+                      </p>
+                    ) : siteRows.length ? (
+                      siteRows.map((site) => {
+                        const share = totalCount > 0
+                          ? Math.round((site.used / totalCount) * 100)
+                          : 0;
+                        return (
+                          <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p>
+                              <p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p>
+                            </div>
+                            <strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.used)}</strong>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="px-4 py-5 text-sm text-slate-500" data-portal-knowledge-breakdown-empty="api">
+                        {t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}
+                      </p>
+                    )}
                   </div>
                 </>
               ) : null}
             </div>
-          </aside>
-        </div>
-      ) : null}
+          </Modal>
+        );
+      })()}
     </section>
   );
 }

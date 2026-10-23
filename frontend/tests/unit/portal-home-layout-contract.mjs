@@ -74,7 +74,7 @@ assert.match(
 );
 assert.match(
   source,
-  /capacity_attention_title[\s\S]*href: '\/portal\/account#package-options'/,
+  /capacity_attention_title[\s\S]*href: '\/portal\/billing\?action=upgrade'/,
   'Portal home must explain an over-limit warning and provide a customer action'
 );
 assert.match(source, /capacity_attention_desc/, 'Portal home capacity alerts must keep used/limit detail copy');

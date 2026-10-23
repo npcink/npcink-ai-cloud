@@ -317,7 +317,7 @@ test('registration preserves a selected paid plan through QQ authentication', as
   await qq.click();
 
   await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
-  expect(calls.qqStartReturnTo()).toBe('/portal/account?plan=pro&action=upgrade#package-options');
+  expect(calls.qqStartReturnTo()).toBe('/portal/billing?plan=pro&action=upgrade');
 });
 
 test('portal email-code login enters the dashboard after verification', async ({ page }) => {

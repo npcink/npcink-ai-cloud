@@ -415,7 +415,7 @@ function PortalSiteRecordContent() {
       : primaryIssueCategory === 'quota'
         ? {
             label: attentionActionLabel,
-            href: '/portal/account#package-options',
+            href: '/portal/billing?action=upgrade',
             testId: 'attention-cta',
           }
         : pluginMissingPrimary || !recheckHelpful

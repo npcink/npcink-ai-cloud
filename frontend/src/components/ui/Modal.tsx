@@ -156,7 +156,7 @@ export function Modal({
     lg: 'max-w-lg',
     xl: 'max-w-xl',
     '2xl': 'max-w-4xl',
-    '3xl': 'max-w-5xl',
+    '3xl': 'max-w-3xl',
     full: 'max-w-[calc(100vw-2rem)] h-[calc(100vh-2rem)]',
   };
 
