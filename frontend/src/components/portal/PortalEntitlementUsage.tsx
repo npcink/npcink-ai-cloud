@@ -1,6 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Entitlements } from '@/lib/portal-client';
-import { portalClient, type PortalAccountSiteKnowledgeUsagePayload } from '@/lib/portal-client';
+import {
+  portalClient,
+  type PortalSiteKnowledgeUsagePayload,
+  type PortalSiteKnowledgeUsageSourceType,
+} from '@/lib/portal-client';
 import type { Locale } from '@/lib/i18n';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
@@ -27,7 +31,12 @@ type EntitlementMetric = {
 
 const KNOWLEDGE_RESOURCE_KEYS: readonly string[] = ['vector_documents', 'media_images'];
 /** Resource keys whose per-site breakdown can be loaded from the live API today. */
-const KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE: ReadonlySet<string> = new Set(['vector_documents']);
+const KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE: ReadonlySet<string> = new Set(['vector_documents', 'media_images']);
+
+const KNOWLEDGE_RESOURCE_SOURCE_TYPE: Record<string, PortalSiteKnowledgeUsageSourceType> = {
+  vector_documents: 'text',
+  media_images: 'media',
+};
 
 type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
@@ -98,12 +107,12 @@ export function PortalEntitlementUsage({
   onOpenCreditSources,
 }: PortalEntitlementUsageProps) {
   // Shared knowledge breakdown dialog: one shell, typed by resource key.
-  // Only vector_documents has a live per-site API today; other types open the same
-  // dialog with account totals from quota + a quiet empty site list (no fake rows).
+  // Fetchable keys call GET /account/site-knowledge-usage?source_type=…;
+  // reserved types (video/pdf later) stay on the quiet empty path until wired.
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
   const [siteKnowledgeBreakdownKey, setSiteKnowledgeBreakdownKey] = useState<string | null>(null);
   const [siteKnowledgeUsageByType, setSiteKnowledgeUsageByType] = useState<
-    Partial<Record<string, PortalAccountSiteKnowledgeUsagePayload>>
+    Partial<Record<string, PortalSiteKnowledgeUsagePayload>>
   >({});
   const [siteKnowledgeUsageLoading, setSiteKnowledgeUsageLoading] = useState(false);
   const [siteKnowledgeUsageError, setSiteKnowledgeUsageError] = useState('');
@@ -122,7 +131,7 @@ export function PortalEntitlementUsage({
     setSiteKnowledgeBreakdownKey(key);
     setSiteKnowledgeUsageOpen(true);
     setSiteKnowledgeUsageError('');
-    // Types without a per-site API: do not call the text-only endpoint (would show wrong numbers).
+    // Types without a per-site API: do not call another type's endpoint (would show wrong numbers).
     if (!KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE.has(key)) {
       setSiteKnowledgeUsageLoading(false);
       return;
@@ -131,10 +140,16 @@ export function PortalEntitlementUsage({
       setSiteKnowledgeUsageLoading(false);
       return;
     }
+    const sourceType = KNOWLEDGE_RESOURCE_SOURCE_TYPE[key];
+    if (!sourceType) {
+      setSiteKnowledgeUsageLoading(false);
+      return;
+    }
     setSiteKnowledgeUsageLoading(true);
     try {
-      // Current backend is vector_documents-only; no source_type query yet.
-      const response = await portalClient.getAccountSiteKnowledgeUsage();
+      const response = sourceType === 'text'
+        ? await portalClient.getAccountSiteKnowledgeUsage()
+        : await portalClient.getAccountSiteKnowledgeUsageByType(sourceType);
       if (siteKnowledgeBreakdownRequestKeyRef.current !== key) return;
       setSiteKnowledgeUsageByType((prev) => ({ ...prev, [key]: response.data }));
     } catch (err) {
@@ -472,15 +487,40 @@ export function PortalEntitlementUsage({
         const breakdownMetric = metrics.find((metric) => String(metric.key || '') === breakdownKey);
         const fallbackUsed = Math.max(0, Math.round(Number(breakdownMetric?.used || 0)));
         const fallbackLimit = Math.max(0, Math.round(Number(breakdownMetric?.limit || 0)));
-        // Prefer the quota flag for non-fetchable types; API payload still treats limit<=0 as unlimited.
+        // Prefer the quota flag for non-fetchable types; text payload may also carry indexed_document_limit.
         const fallbackUnlimited = Boolean(breakdownMetric?.unlimited);
+        const legacyTextPayload = siteKnowledgeUsage && 'total_indexed_document_count' in siteKnowledgeUsage
+          ? (siteKnowledgeUsage as { total_indexed_document_count?: number; indexed_document_limit?: number; sites?: Array<{ site_id: string; site_name: string; indexed_document_count?: number; used?: number }> })
+          : null;
+        const rawSiteRows = (() => {
+          if (!siteKnowledgeUsage) return [];
+          const items = Array.isArray(siteKnowledgeUsage.items) ? siteKnowledgeUsage.items : null;
+          const sites = Array.isArray(legacyTextPayload?.sites) ? legacyTextPayload.sites : null;
+          if (items && items.length) return items;
+          if (sites && sites.length) return sites;
+          // Honest empty from API (e.g. media with no indexed images).
+          return items || sites || [];
+        })();
+        const siteRows = rawSiteRows.map((row) => ({
+          site_id: String(row.site_id || ''),
+          site_name: String(row.site_name || ''),
+          used: Math.max(0, Math.round(Number(
+            ('used' in row && row.used != null)
+              ? row.used
+              : ('indexed_document_count' in row ? row.indexed_document_count : 0) || 0
+          ))),
+        }));
         const totalCount = siteKnowledgeUsage
-          ? Number(siteKnowledgeUsage.total_indexed_document_count || 0)
+          ? Math.max(0, Math.round(Number(
+              siteKnowledgeUsage.total_used
+              ?? legacyTextPayload?.total_indexed_document_count
+              ?? 0
+            )))
           : fallbackUsed;
-        const totalLimit = siteKnowledgeUsage
-          ? Number(siteKnowledgeUsage.indexed_document_limit || 0)
-          : fallbackLimit;
-        const totalUnlimited = siteKnowledgeUsage
+        // Limits stay on entitlements for media/video/pdf; text may still echo indexed_document_limit.
+        const apiLimit = legacyTextPayload?.indexed_document_limit;
+        const totalLimit = apiLimit != null ? Math.max(0, Math.round(Number(apiLimit || 0))) : fallbackLimit;
+        const totalUnlimited = siteKnowledgeUsage && apiLimit != null
           ? totalLimit <= 0
           : fallbackUnlimited;
         const breakdownTitle = t(
@@ -536,10 +576,10 @@ export function PortalEntitlementUsage({
                       <p className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400" data-portal-knowledge-breakdown-empty="quiet">
                         {t('portal.usage.site_knowledge_no_site_breakdown', {}, 'Per-site details are not available yet.')}
                       </p>
-                    ) : siteKnowledgeUsage && siteKnowledgeUsage.sites.length ? (
-                      siteKnowledgeUsage.sites.map((site) => {
-                        const share = siteKnowledgeUsage.total_indexed_document_count > 0
-                          ? Math.round((site.indexed_document_count / siteKnowledgeUsage.total_indexed_document_count) * 100)
+                    ) : siteRows.length ? (
+                      siteRows.map((site) => {
+                        const share = totalCount > 0
+                          ? Math.round((site.used / totalCount) * 100)
                           : 0;
                         return (
                           <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3">
@@ -547,12 +587,14 @@ export function PortalEntitlementUsage({
                               <p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p>
                               <p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p>
                             </div>
-                            <strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.indexed_document_count)}</strong>
+                            <strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.used)}</strong>
                           </div>
                         );
                       })
                     ) : (
-                      <p className="px-4 py-5 text-sm text-slate-500">{t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}</p>
+                      <p className="px-4 py-5 text-sm text-slate-500" data-portal-knowledge-breakdown-empty="api">
+                        {t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}
+                      </p>
                     )}
                   </div>
                 </>
