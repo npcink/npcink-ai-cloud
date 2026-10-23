@@ -23,6 +23,7 @@ import {
   type PortalSupportRequestFeedback,
   type PortalSupportRequestMessage,
 } from '@/lib/portal-client';
+import { ApiError } from '@/lib/errors';
 import {
   formatPortalErrorMessage,
   formatPortalWriteErrorMessage,
@@ -34,6 +35,29 @@ function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger'
   if (status === 'resolved') return 'active';
   return 'neutral';
 }
+
+const SUPPORT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const SUPPORT_ATTACHMENT_CONTENT_TYPES = new Set([
+  'application/json',
+  'application/pdf',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/plain',
+]);
+
+/** Local composer draft — File stays client-side until Send uploads + links it. */
+type ComposerDraft = {
+  localId: string;
+  filename: string;
+  byte_size: number;
+  content_type: string;
+  file?: File;
+  /** Only set for server orphans (legacy pick-upload) or mid-send uploaded-but-unlinked. */
+  attachment_id?: string;
+};
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -59,6 +83,42 @@ function downloadAttachmentFile(attachment: PortalSupportRequestAttachment): voi
   URL.revokeObjectURL(url);
 }
 
+function downloadLocalDraftFile(draft: ComposerDraft): void {
+  if (!draft.file) return;
+  const url = URL.createObjectURL(draft.file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = draft.filename || 'support-attachment';
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function inferSupportAttachmentContentType(file: File): string {
+  const typed = String(file.type || '').trim().toLowerCase();
+  if (typed && SUPPORT_ATTACHMENT_CONTENT_TYPES.has(typed)) return typed;
+  const name = String(file.name || '').trim().toLowerCase();
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.gif')) return 'image/gif';
+  if (name.endsWith('.txt')) return 'text/plain';
+  if (name.endsWith('.csv')) return 'text/csv';
+  if (name.endsWith('.json')) return 'application/json';
+  return typed;
+}
+
+function isSupportAttachmentGoneError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.statusCode === 404) return true;
+  return error.errorCode.includes('not_found');
+}
+
+function isUnconfirmedPortalWriteError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.statusCode === 0 || error.errorCode.startsWith('client.');
+}
+
 export default function PortalSupportRequestDetailPage() {
   const params = useParams<{ requestId?: string }>();
   const requestId = String(params?.requestId || '');
@@ -67,20 +127,18 @@ export default function PortalSupportRequestDetailPage() {
   const contextSiteId = session?.selected_context?.site.site_id || '';
   const [supportRequest, setSupportRequest] = useState<PortalSupportRequest | null>(null);
   const [messages, setMessages] = useState<PortalSupportRequestMessage[]>([]);
-  /** Composer chips only — session drafts (not every historical request attachment). */
-  const [composerDrafts, setComposerDrafts] = useState<PortalSupportRequestAttachment[]>([]);
+  /** Composer chips — local File drafts until Send (optional attachment_id for orphans). */
+  const [composerDrafts, setComposerDrafts] = useState<ComposerDraft[]>([]);
   /** Request attachments shown under chat bubbles by message_id. */
   const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
   const [feedback, setFeedback] = useState<PortalSupportRequestFeedback | null>(null);
   const [reply, setReply] = useState('');
-  const [pendingUploads, setPendingUploads] = useState<Array<{ id: string; name: string }>>([]);
   const [feedbackResolved, setFeedbackResolved] = useState(true);
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackComment, setFeedbackComment] = useState('');
   const [feedbackEditorOpen, setFeedbackEditorOpen] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -90,8 +148,12 @@ export default function PortalSupportRequestDetailPage() {
   const detailRequestVersionRef = useRef(0);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cancelledPendingRef = useRef<Set<string>>(new Set());
-  const removingAttachmentIdsRef = useRef<Set<string>>(new Set());
+  const removingDraftIdsRef = useRef<Set<string>>(new Set());
+  const composerDraftsRef = useRef<ComposerDraft[]>([]);
+
+  useEffect(() => {
+    composerDraftsRef.current = composerDrafts;
+  }, [composerDrafts]);
 
   const loadDetail = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
@@ -147,15 +209,12 @@ export default function PortalSupportRequestDetailPage() {
     setAttachments([]);
     setFeedback(null);
     setReply('');
-    setPendingUploads([]);
-    cancelledPendingRef.current = new Set();
-    removingAttachmentIdsRef.current = new Set();
+    removingDraftIdsRef.current = new Set();
     setFeedbackResolved(true);
     setFeedbackRating(5);
     setFeedbackComment('');
     setIsDetailLoading(Boolean(isAuthenticated && requestId));
     setIsSubmitting(false);
-    setIsUploadingAttachment(false);
     setIsSubmittingFeedback(false);
     setError('');
     setNotice('');
@@ -184,27 +243,76 @@ export default function PortalSupportRequestDetailPage() {
     if (!isAuthenticated || !capturedRequestId) return;
     const body = reply.trim();
     if (!body) return;
-    if (pendingUploads.length || isUploadingAttachment) return;
-    const draftAttachmentIds = composerDrafts
-      .map((item) => item.attachment_id)
-      .filter(Boolean);
+    if (isSubmitting) return;
+    const draftsSnapshot = [...composerDraftsRef.current];
     setIsSubmitting(true);
     setError('');
     setNotice('');
     try {
+      const attachmentIds: string[] = [];
+      const nextDrafts: ComposerDraft[] = [];
+      for (const draft of draftsSnapshot) {
+        if (draft.attachment_id) {
+          attachmentIds.push(draft.attachment_id);
+          nextDrafts.push(draft);
+          continue;
+        }
+        if (!draft.file) {
+          throw new Error('draft file missing');
+        }
+        const contentBase64 = await readFileAsBase64(draft.file);
+        if (
+          contextRequestVersion !== contextRequestVersionRef.current
+          || requestContextSiteId !== contextSiteIdRef.current
+          || capturedRequestId !== requestIdRef.current
+        ) return;
+        const uploadResponse = await portalClient.createSupportRequestAttachment(capturedRequestId, {
+          filename: draft.filename,
+          content_type: draft.content_type,
+          content_base64: contentBase64,
+        });
+        if (
+          contextRequestVersion !== contextRequestVersionRef.current
+          || requestContextSiteId !== contextSiteIdRef.current
+          || capturedRequestId !== requestIdRef.current
+        ) return;
+        const uploaded = uploadResponse.data.attachment;
+        const linkedDraft: ComposerDraft = {
+          ...draft,
+          attachment_id: uploaded.attachment_id,
+          filename: uploaded.filename || draft.filename,
+          byte_size: uploaded.byte_size || draft.byte_size,
+          content_type: uploaded.content_type || draft.content_type,
+        };
+        nextDrafts.push(linkedDraft);
+        attachmentIds.push(uploaded.attachment_id);
+        // Persist mid-send progress so a later message failure can retry without re-upload,
+        // and × can DELETE the orphan.
+        setComposerDrafts((current) => current.map((item) => (
+          item.localId === draft.localId ? linkedDraft : item
+        )));
+      }
+
       const response = await portalClient.createSupportRequestMessage(capturedRequestId, {
         body,
-        attachment_ids: draftAttachmentIds,
+        attachment_ids: attachmentIds,
       });
       if (
         contextRequestVersion !== contextRequestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      const linkedAttachments = response.data.attachments || composerDrafts.map((item) => ({
-        ...item,
-        message_id: response.data.message.message_id,
-      }));
+      const linkedAttachments = response.data.attachments || nextDrafts
+        .filter((item) => item.attachment_id)
+        .map((item) => ({
+          attachment_id: item.attachment_id as string,
+          request_id: capturedRequestId,
+          message_id: response.data.message.message_id,
+          uploader_kind: 'customer',
+          filename: item.filename,
+          content_type: item.content_type,
+          byte_size: item.byte_size,
+        }));
       setSupportRequest(response.data.request);
       setMessages((current) => [...current, response.data.message]);
       setAttachments((current) => {
@@ -231,97 +339,57 @@ export default function PortalSupportRequestDetailPage() {
     }
   };
 
-  const uploadAttachmentFile = async (file: File, pendingId: string) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    const capturedRequestId = requestIdRef.current;
-    const contextRequestVersion = contextRequestVersionRef.current;
-    if (!isAuthenticated || !capturedRequestId) return;
-    setIsUploadingAttachment(true);
-    setError('');
-    setNotice('');
-    try {
-      const contentBase64 = await readFileAsBase64(file);
-      if (
-        contextRequestVersion !== contextRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-        || capturedRequestId !== requestIdRef.current
-      ) return;
-      if (cancelledPendingRef.current.has(pendingId)) return;
-      const response = await portalClient.createSupportRequestAttachment(capturedRequestId, {
-        filename: file.name,
-        content_type: file.type || 'application/octet-stream',
-        content_base64: contentBase64,
-      });
-      if (
-        contextRequestVersion !== contextRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-        || capturedRequestId !== requestIdRef.current
-      ) return;
-      if (cancelledPendingRef.current.has(pendingId)) {
-        // User cancelled while upload finished — delete so selection truly clears.
-        try {
-          await portalClient.deleteSupportRequestAttachment(
-            capturedRequestId,
-            response.data.attachment.attachment_id
-          );
-        } catch {
-          // Best-effort cleanup; chip already gone.
-        }
-        return;
-      }
-      setSupportRequest(response.data.request);
-      setComposerDrafts((current) => [...current, response.data.attachment]);
-      setNotice(t('portal.support_attachment_created', {}, 'Attachment uploaded.'));
-    } catch (err) {
-      if (
-        contextRequestVersion !== contextRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-        || capturedRequestId !== requestIdRef.current
-      ) return;
-      if (cancelledPendingRef.current.has(pendingId)) return;
-      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
-    } finally {
-      if (
-        contextRequestVersion === contextRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
-        && capturedRequestId === requestIdRef.current
-      ) setIsUploadingAttachment(false);
-    }
-  };
-
-  const handleAttachmentFilesSelected = async (fileList: FileList | null) => {
+  const handleAttachmentFilesSelected = (fileList: FileList | null) => {
     if (!fileList?.length) return;
     const files = Array.from(fileList);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    setError('');
+    setNotice('');
+    const accepted: ComposerDraft[] = [];
     for (const file of files) {
-      const pendingId = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
-      cancelledPendingRef.current.delete(pendingId);
-      setPendingUploads((current) => [...current, { id: pendingId, name: file.name }]);
-      try {
-        await uploadAttachmentFile(file, pendingId);
-      } finally {
-        setPendingUploads((current) => current.filter((item) => item.id !== pendingId));
-        cancelledPendingRef.current.delete(pendingId);
+      const contentType = inferSupportAttachmentContentType(file);
+      if (!SUPPORT_ATTACHMENT_CONTENT_TYPES.has(contentType)) {
+        setError(t(
+          'portal.support_attachment_type_invalid',
+          {},
+          'Use PDF, image, text, CSV, or JSON files only.'
+        ));
+        continue;
       }
+      if (file.size <= 0 || file.size > SUPPORT_ATTACHMENT_MAX_BYTES) {
+        setError(t(
+          'portal.support_attachment_size_invalid',
+          {},
+          'Each attachment must be between 1 byte and 5 MB.'
+        ));
+        continue;
+      }
+      accepted.push({
+        localId: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        filename: file.name,
+        byte_size: file.size,
+        content_type: contentType,
+      });
     }
+    if (!accepted.length) return;
+    setComposerDrafts((current) => [...current, ...accepted]);
   };
 
-  const handlePendingUploadCancel = (pendingId: string) => {
-    cancelledPendingRef.current.add(pendingId);
-    setPendingUploads((current) => current.filter((item) => item.id !== pendingId));
-  };
-
-  const handleComposerDraftRemove = async (attachment: PortalSupportRequestAttachment) => {
+  const handleComposerDraftRemove = async (draft: ComposerDraft) => {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    const attachmentId = attachment.attachment_id;
-    if (!isAuthenticated || !capturedRequestId || !attachmentId) return;
-    if (removingAttachmentIdsRef.current.has(attachmentId)) return;
-    removingAttachmentIdsRef.current.add(attachmentId);
-    // Optimistic Quiet remove from composer chips.
-    setComposerDrafts((current) => current.filter((item) => item.attachment_id !== attachmentId));
+    if (removingDraftIdsRef.current.has(draft.localId)) return;
+    removingDraftIdsRef.current.add(draft.localId);
+    // Quiet local remove first — drafts never uploaded never touch the server.
+    setComposerDrafts((current) => current.filter((item) => item.localId !== draft.localId));
     setError('');
+    const attachmentId = draft.attachment_id;
+    if (!attachmentId || !isAuthenticated || !capturedRequestId) {
+      removingDraftIdsRef.current.delete(draft.localId);
+      return;
+    }
     try {
       const response = await portalClient.deleteSupportRequestAttachment(capturedRequestId, attachmentId);
       if (
@@ -336,15 +404,59 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      // Restore chip if delete failed.
+      if (isSupportAttachmentGoneError(err)) {
+        // Already gone — chip stays removed.
+        return;
+      }
+      if (isUnconfirmedPortalWriteError(err)) {
+        // Optimistic remove kept; avoid the scary outcome-unknown banner for draft cleanup.
+        setNotice(t(
+          'portal.support_attachment_remove_unconfirmed',
+          {},
+          'Could not confirm removal on the server. Refresh if the file still appears after you send.'
+        ));
+        return;
+      }
+      // Confirmed failure — restore chip so the user can retry.
       setComposerDrafts((current) => (
-        current.some((item) => item.attachment_id === attachmentId)
+        current.some((item) => item.localId === draft.localId)
           ? current
-          : [...current, attachment]
+          : [...current, draft]
       ));
-      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
-      removingAttachmentIdsRef.current.delete(attachmentId);
+      removingDraftIdsRef.current.delete(draft.localId);
+    }
+  };
+
+  const handleDraftChipOpen = async (draft: ComposerDraft) => {
+    if (draft.file) {
+      downloadLocalDraftFile(draft);
+      return;
+    }
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    if (!isAuthenticated || !capturedRequestId || !draft.attachment_id) return;
+    setError('');
+    try {
+      const response = await portalClient.getSupportRequestAttachment(
+        capturedRequestId,
+        draft.attachment_id
+      );
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
+      downloadAttachmentFile(response.data.attachment);
+    } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
+      setError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
     }
   };
 
@@ -728,27 +840,28 @@ export default function PortalSupportRequestDetailPage() {
           onChange={(event) => void handleAttachmentFilesSelected(event.target.files)}
           data-portal-support="composer-attach-input"
         />
-        {composerDrafts.length || pendingUploads.length ? (
+        {composerDrafts.length ? (
           <div
             className="mb-2 flex flex-wrap items-center gap-2"
             data-portal-support="attachment-chips"
           >
-            {composerDrafts.map((attachment) => (
+            {composerDrafts.map((draft) => (
               <span
-                key={attachment.attachment_id}
+                key={draft.localId}
                 className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-3 pr-1 text-xs text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200"
                 data-portal-support="attachment-chip"
+                data-draft-local={!draft.attachment_id ? 'true' : 'false'}
               >
                 <button
                   type="button"
                   className="inline-flex min-w-0 items-center gap-2 rounded-full py-0.5 text-left transition hover:text-slate-950 dark:hover:text-white"
-                  onClick={() => void handleAttachmentDownload(attachment)}
-                  title={attachment.filename}
+                  onClick={() => void handleDraftChipOpen(draft)}
+                  title={draft.filename}
                 >
                   <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{attachment.filename}</span>
+                  <span className="truncate">{draft.filename}</span>
                   <span className="shrink-0 text-slate-400">
-                    {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                    {Math.ceil((draft.byte_size || 0) / 1024)} KB
                   </span>
                 </button>
                 <button
@@ -757,30 +870,8 @@ export default function PortalSupportRequestDetailPage() {
                   aria-label={t('portal.support_attachment_remove', {}, 'Remove attachment')}
                   title={t('portal.support_attachment_remove', {}, 'Remove attachment')}
                   data-portal-support="attachment-remove"
-                  onClick={() => void handleComposerDraftRemove(attachment)}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
-              </span>
-            ))}
-            {pendingUploads.map((pending) => (
-              <span
-                key={pending.id}
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-slate-300 bg-slate-50/90 py-1 pl-3 pr-1 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300"
-                data-portal-support="attachment-pending"
-              >
-                <span className="inline-flex min-w-0 items-center gap-2">
-                  <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{pending.name}</span>
-                  <span className="shrink-0">{t('common.saving', {}, 'Saving...')}</span>
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base leading-none text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                  aria-label={t('portal.support_attachment_remove', {}, 'Remove attachment')}
-                  title={t('portal.support_attachment_remove', {}, 'Remove attachment')}
-                  data-portal-support="attachment-pending-remove"
-                  onClick={() => handlePendingUploadCancel(pending.id)}
+                  disabled={isSubmitting}
+                  onClick={() => void handleComposerDraftRemove(draft)}
                 >
                   <span aria-hidden="true">×</span>
                 </button>
@@ -804,7 +895,7 @@ export default function PortalSupportRequestDetailPage() {
             <button
               type="button"
               className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
-                isUploadingAttachment || pendingUploads.length
+                composerDrafts.length
                   ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
               }`}
@@ -815,7 +906,7 @@ export default function PortalSupportRequestDetailPage() {
                 {},
                 'PDF, image, text, CSV, or JSON. Max 5 MB each.'
               )}
-              disabled={false}
+              disabled={isSubmitting}
               onClick={() => fileInputRef.current?.click()}
             >
               <PortalActionIcon id="attach" />
@@ -831,7 +922,7 @@ export default function PortalSupportRequestDetailPage() {
                   rows={1}
                   onChange={(event) => setReply(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting && !pendingUploads.length && !isUploadingAttachment) {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting) {
                       event.preventDefault();
                       void handleReply();
                     }
@@ -853,7 +944,7 @@ export default function PortalSupportRequestDetailPage() {
             <button
               type="button"
               className="btn btn-primary shrink-0 rounded-full px-4"
-              disabled={isSubmitting || !reply.trim() || pendingUploads.length > 0 || isUploadingAttachment}
+              disabled={isSubmitting || !reply.trim()}
               onClick={() => void handleReply()}
             >
               {isSubmitting
