@@ -35,7 +35,7 @@ PREFIX = "/portal/v1/account/data-export"
 
 
 @pytest.fixture
-def setup(tmp_path):
+def setup(tmp_path, monkeypatch):
     url = f"sqlite+pysqlite:///{tmp_path / 'export.db'}"
     init_schema(url)
     with get_session(url) as session:
@@ -73,6 +73,14 @@ def setup(tmp_path):
     )
     services = CloudServices(settings=settings, portal_email_sender=sender)
     with TestClient(create_app(services)) as client:
+        import sys
+        from functools import partial
+
+        monkeypatch.setattr(
+            sys.modules[__name__],
+            "build_portal_bearer_headers",
+            partial(build_portal_bearer_headers, database_url=url),
+        )
         client.headers.update(build_portal_bearer_headers(principal_id="p"))
         client.headers.update(
             {"Origin": "http://testserver", "Idempotency-Key": "export-test-key-0001"}
@@ -625,10 +633,9 @@ def test_dedicated_smtp_template_and_redacted_delivery_error(monkeypatch, locale
 
 
 def test_cookie_authentication_uses_original_signed_version(setup):
-    from app.api.auth import build_portal_session_token
 
     url, client, _, services = setup
-    token = build_portal_session_token(services.settings, principal_id="p", session_version=1)
+    token = build_portal_bearer_headers(principal_id="p", session_version=1)["Authorization"][7:]
     client.headers.pop("authorization")
     client.cookies.set("npcink_portal_session_token", token)
     payload = issue(setup)
@@ -679,3 +686,30 @@ def test_malformed_bound_email_is_unavailable(setup, value):
         s.commit()
     assert client.post(f"{PREFIX}/code", json={}).status_code == 503
     assert not sent
+
+
+def test_export_rechecks_individual_sid_and_binds_challenge_to_same_login(setup):
+    import jwt
+
+    from app.core.models import PortalSession
+
+    url, client, _, _ = setup
+    original = client.headers["authorization"]
+    sid = jwt.decode(original[7:], options={"verify_signature": False})["sid"]
+    payload = issue(setup)
+    other = build_portal_bearer_headers(principal_id="p")
+    client.headers.update(other)
+    # Same principal/version, different login cannot adopt the original challenge.
+    assert client.post(f"{PREFIX}/confirm", json=payload).status_code == 400
+    assert challenge(url, payload["challenge_id"])[0] != "consumed"
+    client.headers["authorization"] = original
+    with get_session(url) as session:
+        row = session.get(PortalSession, sid)
+        row.revoked_at, row.revoke_reason = datetime.now(UTC), "test_individual_revoke"
+        session.commit()
+    # No principal version bump; both transports must still reject this sid.
+    assert client.post(f"{PREFIX}/confirm", json=payload).status_code == 401
+    client.headers.pop("authorization")
+    client.cookies.set("npcink_portal_session_token", original[7:])
+    assert client.post(f"{PREFIX}/code", json={}).status_code == 401
+    assert challenge(url, payload["challenge_id"])[0] != "consumed"

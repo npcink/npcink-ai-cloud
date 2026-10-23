@@ -40,15 +40,18 @@ def assert_session_revocation_api_readback(database_url: str) -> None:
     app = create_app(CloudServices(settings=settings, providers={}))
     # Different expiry times produce distinct A and B session tokens for the same principal.
     a = build_portal_bearer_headers(
-        principal_id="prn_revoke", session_version=versions["prn_revoke"]
+        database_url=database_url, principal_id="prn_revoke", session_version=versions["prn_revoke"]
     )
     b = build_portal_bearer_headers(
+        database_url=database_url,
         principal_id="prn_revoke",
         session_version=versions["prn_revoke"],
         expires_at=datetime.now(UTC) + timedelta(minutes=20),
     )
     c = build_portal_bearer_headers(
-        principal_id="prn_unaffected", session_version=versions["prn_unaffected"]
+        database_url=database_url,
+        principal_id="prn_unaffected",
+        session_version=versions["prn_unaffected"],
     )
     assert a["Authorization"] != b["Authorization"]
     cookie_a = {"cookie": f"{COOKIE_PORTAL_SESSION_TOKEN}={a['Authorization'][7:]}"}

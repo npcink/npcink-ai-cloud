@@ -245,6 +245,8 @@ def execute_data_export(
     database_url: str,
     principal_id: str,
     session_version: int,
+    session_id: str,
+    session_expires_at: datetime,
     site_id: str,
     operation: str,
     payload: object,
@@ -260,6 +262,25 @@ def execute_data_export(
             principal, member, account = _scope(
                 session, principal_id, session_version, site_id, budget
             )
+            from app.domain.commercial.errors import CommercialPermissionError
+            from app.domain.portal_sessions.service import (
+                AuthenticatedSession,
+                validate_registered_session,
+            )
+
+            try:
+                validate_registered_session(
+                    session,
+                    AuthenticatedSession(
+                        principal_id,
+                        session_id,
+                        session_version,
+                        session_expires_at,
+                    ),
+                    for_update=True,
+                )
+            except CommercialPermissionError as error:
+                raise DataExportError(401, "portal.data_export_session_invalid") from error
             now = datetime.now(UTC)
             budget.check(session)
             latest = _throttle(session, principal, now)
@@ -301,7 +322,8 @@ def execute_data_export(
                 challenge_id = uuid4().hex
                 metadata = dict(latest.metadata_json or {})
                 metadata.update(
-                    binding=_binding(principal, member, account), last_issue=now.timestamp()
+                    binding={**_binding(principal, member, account), "session_id": session_id},
+                    last_issue=now.timestamp(),
                 )
                 challenge = PortalLoginCode(
                     code_id=challenge_id,
@@ -342,7 +364,7 @@ def execute_data_export(
                 or latest.attempt_count > 5
                 or utc(latest.expires_at) <= now
                 or (latest.metadata_json or {}).get("binding")
-                != _binding(principal, member, account)
+                != {**_binding(principal, member, account), "session_id": session_id}
             ):
                 latest.status = "expired"
                 reject(400, "portal.data_export_invalid_code")

@@ -1,9 +1,9 @@
 # Portal session registry v1
 
-Status: B1 dormant storage contract. This change does not issue or validate sid,
-change login/logout, or enable session lists/revocation. Existing Portal
-`Principal.session_version` authentication continues unchanged. Later B2/B3
-requirements below are contracts, not delivered runtime capabilities.
+Status: B2 source implementation, pending independent review and runtime acceptance.
+B1 storage was accepted separately. This document describes the complete B2
+activation unit; source, local tests, CI, M4 and production remain separate
+states. No production deployment or cutover is authorized by this document.
 
 ## Scope and boundary
 
@@ -12,10 +12,12 @@ users, Admin grants/sessions, site HMAC credentials, OAuth state, or anonymous
 customer-journey IDs. No WordPress control-plane truth moves to Cloud. No TOTP,
 commercial changes, cleanup worker, or new infrastructure is included.
 
-B1 contains only ORM, Alembic schema, caller-transaction repository primitives,
-distinct internal signing/public projection types, and storage tests. Repository
-creation flushes but never commits; errors propagate to the transaction owner.
-There are no production callers in B1. Its list primitive is not an auth check.
+B1 introduced ORM, Alembic schema, caller-transaction repository primitives and
+separate signing/projection types. B2 connects all Portal issuance and Cookie/
+Bearer validation together through a pure core encoder and transaction-owned
+lifecycle service. The API attaches only material returned after commit. The
+repository flushes but never commits; its list primitive is not an auth check.
+There is still no public list/individual revoke endpoint or device-list UI.
 
 ## Minimal storage
 
@@ -23,19 +25,19 @@ There are no production callers in B1. Its list primitive is not an auth check.
 
 | Column | Meaning |
 | --- | --- |
-| `session_id` | Nonempty string, at most 64 characters, primary key; future issuer must generate a cryptographically random ID (for example `secrets.token_urlsafe(32)`). It is an identifier, not a bearer secret. |
+| `session_id` | Nonempty string, at most 64 characters, primary key; issuer generates a cryptographically random ID (for example `secrets.token_urlsafe(32)`). It is an identifier, not a bearer secret. |
 | `principal_id` | Required FK to `principals`, no cascade deletion. |
 | `session_version` | Required positive principal version at issuance. |
 | `created_at` | Required timezone-aware UTC issuance timestamp, explicitly supplied. |
 | `absolute_expires_at` | Required UTC expiry strictly after creation; no automatic renewal. |
-| `revoked_at`, `revoke_reason` | Both null or both present; reason length 1..64, timestamp at/after creation. Future lifecycle defines stable reason codes. |
+| `revoked_at`, `revoke_reason` | Both null or both present; reason length 1..64, timestamp at/after creation. B2 logout uses `logout`; whole-principal invalidation remains version-derived. |
 | `auth_method` | `email_code`, `registration`, or `qq`; not a second-factor claim. |
 | `client_hint` | Optional browser/OS label, 1..120 characters; unverified and possibly absent or spoofed. |
 
 No raw UA/IP, location, fingerprint, JWT, OTP, OAuth payload, or last-seen hot
 writes. Client hint must be derived from a bounded allowlist in the future
 issuer, never copied from raw request headers into this column. It cannot prove
-physical device identity or merge sessions. B1 provides no hint parser.
+physical device identity or merge sessions. B2 intentionally leaves hints unknown (`NULL`) and adds no UA parser.
 
 Indexes support stable `(principal_id, created_at, session_id)` pagination and
 expiry lookup. `list_active` orders creation then ID descending, limit 1..50,
@@ -46,19 +48,22 @@ for future idempotency semantics, without revealing another principal's rows.
 
 `PortalSessionSigningMaterial` is an internal input shape; it contains no token.
 `PortalSessionProjection` is a separate safe public shape with `is_current` and
-bounded hint, without principal/version/secrets. B1 does not serialize either
-onto an API or convert a row into trusted signing material.
+bounded hint, without principal/version/secrets. B2 uses a separate internal `IssuedPortalSession` containing token and matching timestamps;
+that value never enters public JSON, audit or idempotency receipts. Only its safe
+time/transport metadata is serialized; B3 projections remain unexposed.
 
-## Transactions and future B2 activation
+## B2 transaction and activation contract
 
 The caller owns commit/rollback. When needed, lock account first, then principal,
 then membership, then session rows in stable ID order, then proof/code. The
-repository's explicit principal lock refreshes cached ORM state. B1 does not
-retrofit existing domain transactions or claim current login concurrency is
-solved. Future issuance/revoke/Admin disable/closure must use one protocol;
-code-first login transactions must be reordered and rechecked before activation.
+repository's explicit principal lock refreshes cached ORM state. B2 locks all discovered accounts in sorted order, then principals in sorted order,
+then memberships; refreshes locked ORM state; and only then locks registry and
+proof. Batch disable retains request result ordering while acquiring locks in
+stable order. Login/registration discover existing identity without locking,
+then lock and recheck before consuming code. New-registration unique constraints
+and proof locks reject conflicting writers; no uncommitted token reaches HTTP.
 
-B2 must switch all issuers and both Cookie/Bearer verifiers together: email login
+B2 switches all issuers and both Cookie/Bearer verifiers together: email login
 and remember-me, existing/new registration, existing/new QQ JSON/HTML, and dev
 entry's normal backend verification. QQ bind must not create a login row. Same
 clock and integer-second expiry must drive row, JWT and response metadata.
@@ -77,10 +82,9 @@ the same transaction, preserving expiry. Global `/session/revoke` retains its
 existing all-sessions-including-current meaning. QQ unbind, closure, and Admin
 single/bulk disable must share principal status/version locking. Data export
 must recheck original sid inside its own locked transaction and bind its OTP to
-sid/version; route-only auth misses races with individual revocation. These are
-B2 obligations, not additions to dormant B1.
+sid/version; route-only auth misses races with individual revocation. These are part of the single B2 cutover; no separate verifier/issuer activation is supported.
 
-Logout later revokes the valid current sid and clears cookie; missing/expired/
+Logout revokes the valid current sid and clears cookie; missing/expired/
 already revoked cookie can still be cleared. DB failure must not be described as
 successful server revocation. Revoking a Bearer sid does not delete client copies.
 
@@ -114,7 +118,7 @@ B1 downgrade drops only its indexes/table, preserving principals. It is safe onl
 while no dependent runtime writes/readers are enabled and with any required data
 retention handled. Do not treat schema downgrade as an auth rollback strategy.
 
-B2's default cutover is explicit time T: all sid-less tokens become 401 and users
+B2 cutover T is the coordinated activation of this source revision across all API instances: all sid-less tokens become 401 and users
 log in again. No infinite legacy path, automatic session registration, or sliding
 compatibility TTL. Coordinate all API instances; mixed old verifiers cannot
 promise individual revocation. M4 may use a disposable candidate identity for
@@ -130,9 +134,13 @@ before restoring an old verifier. Remove dependent consumers before downgrade.
 
 SQLite repository tests prove caller rollback/commit, own scope, filtering and
 stable pagination only. Metadata-created tables are not Alembic evidence.
-The existing guarded `tests/integration/test_portal_self_service_postgres.py`
-module adds real parent→head→downgrade→head, persisted-state, FK/no cascade,
-uniqueness, check constraints and two-connection transaction-lock proof. Its
+The guarded `tests/integration/test_portal_self_service_postgres.py` retains B1's
+real parent→head→downgrade→head, persisted-state, FK/no cascade, uniqueness and
+check tests. B2 adds dual independent connections with a barrier at the actual
+commit and observed `pg_blocking_pids` waits, testing both commit orders for
+issuance vs revoke/disable, rotation vs logout, and export vs logout; failed
+signing/commit must preserve pending proof. Existing consumer fixtures now include
+0090 and explicitly registered sessions. Skipped PG tests are not concurrency proof. Its
 runner accepts only disposable Compose PostgreSQL in test/development/preview;
 no configured DB means skip, which is not PG proof. Keep 0089's tests unchanged.
 
@@ -141,5 +149,4 @@ checks, plus integrator-run real PG with zero skips. CI, M4 candidate, merge,
 M4 accepted and production are separate evidence states. B2 additionally needs
 all login/rotation/revocation/export concurrency and fail-closed tests; B3 needs
 API ownership/replay and compiled browser tests. See
-[verification commands](engineering/verification-commands.md) and
-[Portal frontend implementation patterns](engineering/portal-frontend-feature-implementation-patterns.md).
+[verification commands](engineering/verification-commands.md) .

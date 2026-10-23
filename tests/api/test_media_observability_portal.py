@@ -33,7 +33,7 @@ def build_portal_headers(**kwargs: object) -> dict[str, str]:
     if "principal_id" not in kwargs and _PORTAL_GRANT:
         kwargs["principal_id"] = str(_PORTAL_GRANT["principal_id"])
         kwargs["session_version"] = int(_PORTAL_GRANT.get("session_version") or 1)
-    return _build_portal_headers(**kwargs)
+    return _build_portal_headers(database_url=str(_PORTAL_GRANT["database_url"]), **kwargs)
 
 
 def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
@@ -50,6 +50,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
             metadata_json={"source": "test"},
         )
     )
+    _PORTAL_GRANT["database_url"] = database_url
     settings = Settings(
         project_name="Npcink AI Cloud Test",
         environment="test",

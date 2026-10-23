@@ -14,15 +14,12 @@ from app.adapters.notifications.base import PortalEmailDeliveryError
 from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     PortalBearerTokenError,
-    decode_portal_bearer_claims,
-    decode_portal_session_cookie_claims,
     get_cloud_services,
 )
 from app.api.browser_security import enforce_browser_same_origin
 from app.api.envelope import build_envelope
 from app.api.portal_locale import resolve_portal_email_locale
 from app.api.portal_session import (
-    COOKIE_PORTAL_SESSION_TOKEN,
     portal_json_error,
     resolve_portal_request_context,
 )
@@ -105,17 +102,7 @@ async def _execute(request: Request, operation: str) -> Response:
     if isinstance(auth, JSONResponse):
         return auth
     services = get_cloud_services(request)
-    try:
-        # Decode the authenticated token itself, never substitute a later DB version.
-        authorization = request.headers.get("authorization", "").strip()
-        if authorization:
-            claims = decode_portal_bearer_claims(services.settings, authorization[7:].strip())
-        else:
-            claims = decode_portal_session_cookie_claims(
-                services.settings, request.cookies.get(COOKIE_PORTAL_SESSION_TOKEN, "")
-            )
-        version = claims["session_version"]
-    except (PortalBearerTokenError, KeyError):
+    if auth.expires_at is None:
         return portal_json_error(
             request,
             status_code=401,
@@ -144,7 +131,9 @@ async def _execute(request: Request, operation: str) -> Response:
             execute_data_export,
             database_url=services.settings.database_url,
             principal_id=auth.principal_id,
-            session_version=version,
+            session_version=auth.session_version,
+            session_id=auth.session_id,
+            session_expires_at=auth.expires_at,
             site_id=auth.site_id,
             operation=operation,
             payload=payload,

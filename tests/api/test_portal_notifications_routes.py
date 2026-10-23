@@ -42,7 +42,7 @@ PEER_PRINCIPAL = "prn_portal_notifications_peer"
 
 
 @pytest.fixture
-def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
+def portal_client(tmp_path: Path, monkeypatch) -> Iterator[tuple[str, TestClient]]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'portal-notifications.sqlite3'}"
     init_schema(database_url)
     settings = Settings(
@@ -186,6 +186,14 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
                     "origin": "http://testserver",
                     "referer": "http://testserver/portal",
                 }
+            )
+            import sys
+            from functools import partial
+
+            monkeypatch.setattr(
+                sys.modules[__name__],
+                "build_portal_bearer_headers",
+                partial(build_portal_bearer_headers, database_url=database_url),
             )
             yield database_url, client
     finally:

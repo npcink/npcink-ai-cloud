@@ -30,12 +30,13 @@ from app.api.auth import (
     enforce_portal_subscription_order_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
+    resolve_portal_session_ttl_seconds,
 )
 from app.api.browser_security import enforce_browser_same_origin
 from app.api.envelope import build_envelope
 from app.api.portal_locale import resolve_portal_email_locale
 from app.api.portal_session import (
-    build_new_portal_session_metadata,
+    authenticated_session,
     clear_portal_session_cookies,
     portal_cookie_secure,
     portal_idempotency_replay_response,
@@ -44,6 +45,8 @@ from app.api.portal_session import (
     resolve_portal_login_session_ttl_seconds,
     resolve_portal_request_context,
     resolve_portal_session_rotation_expiry,
+    revoke_current_portal_session,
+    rotate_portal_session,
     serialize_portal_session,
     set_portal_session_cookies,
 )
@@ -86,6 +89,11 @@ from app.domain.portal_idempotency import (
     PortalIdempotencyClaim,
     build_portal_business_idempotency_key,
     release_unexecuted_portal_mutation,
+)
+from app.domain.portal_sessions.service import (
+    IssuedPortalSession,
+    OAuthLoginProof,
+    PortalSessionIssuer,
 )
 from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
@@ -1873,6 +1881,7 @@ async def finish_qq_login_callback(
             provider="qq",
             state=state,
             nonce=_portal_qq_oauth_nonce(request),
+            consume=False,
         )
         token = _exchange_qq_code(request, code=code.strip())
         subject = _fetch_qq_openid(
@@ -1890,6 +1899,8 @@ async def finish_qq_login_callback(
                 return auth
             binding = await run_in_threadpool(
                 _get_commercial_service(request).bind_portal_identity_provider,
+                authenticated=authenticated_session(auth),
+                oauth_proof=OAuthLoginProof(state, _portal_qq_oauth_nonce(request)),
                 principal_id=auth.principal_id,
                 provider="qq",
                 external_subject=str(subject.get("openid") or ""),
@@ -1925,8 +1936,15 @@ async def finish_qq_login_callback(
             )
             _clear_portal_qq_oauth_nonce_cookie(response)
             return response
+        issuer = PortalSessionIssuer(
+            get_cloud_services(request).settings,
+            resolve_portal_session_ttl_seconds(get_cloud_services(request).settings),
+            "qq",
+            OAuthLoginProof(state, _portal_qq_oauth_nonce(request)),
+        )
         login = await run_in_threadpool(
             _get_commercial_service(request).resolve_portal_identity_provider_login,
+            session_issuer=issuer,
             provider="qq",
             external_subject=str(subject.get("openid") or ""),
             unionid=str(subject.get("unionid") or ""),
@@ -1939,6 +1957,7 @@ async def finish_qq_login_callback(
             )
             login = await run_in_threadpool(
                 _get_commercial_service(request).register_portal_identity_provider_login,
+                session_issuer=issuer,
                 provider="qq",
                 external_subject=str(subject.get("openid") or ""),
                 unionid=str(subject.get("unionid") or ""),
@@ -1946,13 +1965,14 @@ async def finish_qq_login_callback(
                 avatar_url=str(profile.get("avatar_url") or ""),
                 audit_context=_build_audit_context(request),
             )
+        issued = _issued_session(login)
         principal_id = str(login.get("principal_id") or "")
         data = serialize_portal_session(
             request,
             principal_id=principal_id,
             site_id="",
             strict_site=False,
-            session_metadata=build_new_portal_session_metadata(request),
+            session_metadata=issued.metadata(),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -1964,31 +1984,20 @@ async def finish_qq_login_callback(
             message=str(error),
         )
 
-    response = JSONResponse(
-        status_code=200,
-        content=_portal_route_envelope(
-            message="portal session created",
-            data=data,
-        ),
-    )
-    set_portal_session_cookies(
-        request,
-        response,
-        principal_id=principal_id,
-        site_id=str(data.get("site_id") or ""),
-    )
-    _clear_portal_qq_oauth_nonce_cookie(response)
-    if _portal_prefers_html(request):
-        redirect = RedirectResponse(return_to, status_code=303)
-        set_portal_session_cookies(
-            request,
-            redirect,
-            principal_id=principal_id,
-            site_id=str(data.get("site_id") or ""),
+    login_response = (
+        RedirectResponse(return_to, status_code=303)
+        if _portal_prefers_html(request)
+        else JSONResponse(
+            status_code=200,
+            content=_portal_route_envelope(
+                message="portal session created",
+                data=data,
+            ),
         )
-        _clear_portal_qq_oauth_nonce_cookie(redirect)
-        return redirect
-    return response
+    )
+    set_portal_session_cookies(request, login_response, issued=issued)
+    _clear_portal_qq_oauth_nonce_cookie(login_response)
+    return login_response
 
 
 @router.get("/auth/login-options")
@@ -2091,6 +2100,7 @@ async def bind_portal_qq_login(
             provider="qq",
             state=state,
             nonce=_portal_qq_oauth_nonce(request, payload.nonce),
+            consume=False,
         )
         token = _exchange_qq_code(request, code=code)
         subject = _fetch_qq_openid(
@@ -2104,6 +2114,8 @@ async def bind_portal_qq_login(
         )
         binding = await run_in_threadpool(
             _get_commercial_service(request).bind_portal_identity_provider,
+            authenticated=authenticated_session(auth),
+            oauth_proof=OAuthLoginProof(state, _portal_qq_oauth_nonce(request, payload.nonce)),
             principal_id=auth.principal_id,
             provider="qq",
             external_subject=str(subject.get("openid") or ""),
@@ -2148,6 +2160,7 @@ async def unbind_portal_qq_login(
     try:
         result = await run_in_threadpool(
             _get_commercial_service(request).revoke_portal_identity_provider,
+            authenticated=authenticated_session(auth),
             principal_id=auth.principal_id,
             provider=payload.provider,
         )
@@ -2785,6 +2798,13 @@ async def request_portal_login_code(
     )
 
 
+def _issued_session(result: dict[str, object]) -> IssuedPortalSession:
+    issued = result.get("_portal_session")
+    if not isinstance(issued, IssuedPortalSession):
+        raise RuntimeError("committed Portal session material missing")
+    return issued
+
+
 @router.post("/auth/code/verify")
 async def verify_portal_login_code(
     request: Request,
@@ -2802,9 +2822,16 @@ async def verify_portal_login_code(
             error_code="auth.portal_login_code_required",
             message="portal login code and email are required",
         )
+    session_ttl_seconds = resolve_portal_login_session_ttl_seconds(
+        request,
+        remember_me=bool(payload.remember_me),
+    )
     try:
         verified = await run_in_threadpool(
             _get_commercial_service(request).verify_portal_login_code,
+            session_issuer=PortalSessionIssuer(
+                get_cloud_services(request).settings, session_ttl_seconds, "email_code"
+            ),
             email=email,
             code=code,
             max_attempts=max(
@@ -2813,19 +2840,13 @@ async def verify_portal_login_code(
             ),
         )
         principal_id = str(verified.get("principal_id") or "")
-        session_ttl_seconds = resolve_portal_login_session_ttl_seconds(
-            request,
-            remember_me=bool(payload.remember_me),
-        )
+        issued = _issued_session(verified)
         data = serialize_portal_session(
             request,
             principal_id=principal_id,
             site_id="",
             strict_site=False,
-            session_metadata=build_new_portal_session_metadata(
-                request,
-                ttl_seconds=session_ttl_seconds,
-            ),
+            session_metadata=issued.metadata(),
         )
     except CommercialServiceError as error:
         if error.error_code == "service.portal_login_code_invalid":
@@ -2844,13 +2865,7 @@ async def verify_portal_login_code(
             data=data,
         ),
     )
-    set_portal_session_cookies(
-        request,
-        response,
-        principal_id=principal_id,
-        site_id=str(data.get("site_id") or ""),
-        ttl_seconds=session_ttl_seconds,
-    )
+    set_portal_session_cookies(request, response, issued=issued)
     return response
 
 
@@ -2977,7 +2992,7 @@ async def verify_portal_email_change_code(
         )
     services = get_cloud_services(request)
     try:
-        current_session_expires_at = resolve_portal_session_rotation_expiry(
+        resolve_portal_session_rotation_expiry(
             request,
             principal_id=auth.principal_id,
             minimum_remaining_seconds=60,
@@ -2989,13 +3004,13 @@ async def verify_portal_email_change_code(
             error_code=error.error_code,
             message=error.message,
         )
-    renewed_session_metadata = build_new_portal_session_metadata(
-        request,
-        expires_at=current_session_expires_at,
-    )
     try:
         changed = await run_in_threadpool(
             _get_commercial_service(request).verify_portal_email_change_code,
+            authenticated=authenticated_session(auth),
+            session_issuer=PortalSessionIssuer(
+                services.settings, 60, "email_code", site_id=auth.site_id
+            ),
             principal_id=auth.principal_id,
             new_email=new_email,
             code=code,
@@ -3005,12 +3020,13 @@ async def verify_portal_email_change_code(
             ),
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
+        issued = _issued_session(changed)
         data = serialize_portal_session(
             request,
             principal_id=auth.principal_id,
             site_id=auth.site_id,
             strict_site=False,
-            session_metadata=renewed_session_metadata,
+            session_metadata=issued.metadata(),
         )
     except CommercialServiceError as error:
         if error.error_code == "service.portal_email_change_code_invalid":
@@ -3049,13 +3065,7 @@ async def verify_portal_email_change_code(
             },
         ),
     )
-    set_portal_session_cookies(
-        request,
-        response,
-        principal_id=auth.principal_id,
-        site_id=auth.site_id,
-        expires_at=current_session_expires_at,
-    )
+    set_portal_session_cookies(request, response, issued=issued)
     return response
 
 
@@ -3200,6 +3210,7 @@ async def confirm_portal_account_deletion(
     try:
         result = await run_in_threadpool(
             _get_commercial_service(request).verify_and_execute_portal_account_deletion,
+            authenticated=authenticated_session(auth),
             principal_id=auth.principal_id,
             code=code,
             max_attempts=max_attempts,
@@ -3335,6 +3346,11 @@ async def verify_portal_registration_code(
     try:
         registration = await run_in_threadpool(
             _get_commercial_service(request).verify_portal_registration_code,
+            session_issuer=PortalSessionIssuer(
+                get_cloud_services(request).settings,
+                resolve_portal_session_ttl_seconds(get_cloud_services(request).settings),
+                "registration",
+            ),
             email=email,
             code=code,
             max_attempts=max(
@@ -3343,6 +3359,7 @@ async def verify_portal_registration_code(
             ),
             audit_context=_build_portal_audit_context(request, "portal_registration"),
         )
+        issued = _issued_session(registration)
         principal_id = str(registration.get("principal_id") or "")
         site_id = str(registration.get("site_id") or "")
         session_data = serialize_portal_session(
@@ -3350,7 +3367,7 @@ async def verify_portal_registration_code(
             principal_id=principal_id,
             site_id=site_id,
             strict_site=False,
-            session_metadata=build_new_portal_session_metadata(request),
+            session_metadata=issued.metadata(),
         )
         data = session_data
     except CommercialServiceError as error:
@@ -3369,12 +3386,7 @@ async def verify_portal_registration_code(
             data=data,
         ),
     )
-    set_portal_session_cookies(
-        request,
-        response,
-        principal_id=principal_id,
-        site_id=site_id,
-    )
+    set_portal_session_cookies(request, response, issued=issued)
     return response
 
 
@@ -3427,7 +3439,7 @@ async def select_portal_session_site(
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        current_session_expires_at = resolve_portal_session_rotation_expiry(
+        resolve_portal_session_rotation_expiry(
             request,
             principal_id=auth.principal_id,
             minimum_remaining_seconds=5,
@@ -3440,11 +3452,13 @@ async def select_portal_session_site(
             message=error.message,
         )
     try:
+        issued = rotate_portal_session(request, auth, site_id)
         data = serialize_portal_session(
             request,
             principal_id=auth.principal_id,
             site_id=site_id,
             strict_site=True,
+            session_metadata=issued.metadata(),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3455,13 +3469,7 @@ async def select_portal_session_site(
             data=data,
         ),
     )
-    set_portal_session_cookies(
-        request,
-        response,
-        principal_id=auth.principal_id,
-        site_id=site_id,
-        expires_at=current_session_expires_at,
-    )
+    set_portal_session_cookies(request, response, issued=issued)
     return response
 
 
@@ -3470,6 +3478,30 @@ async def logout_portal_session(request: Request) -> Any:
     same_origin = _portal_same_origin_guard(request, always=True)
     if same_origin is not None:
         return same_origin
+    auth = await resolve_portal_request_context(
+        request, require_idempotency=False, allow_session_cookies=True
+    )
+    if isinstance(auth, JSONResponse):
+        if auth.status_code in {401, 403}:
+            return _portal_session_cleared_response()
+        clear_portal_session_cookies(auth)
+        return auth
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        await run_in_threadpool(revoke_current_portal_session, request, auth)
+    except SQLAlchemyError:
+        response = portal_json_error(
+            request,
+            status_code=503,
+            error_code="auth.portal_session_unavailable",
+            message="session unavailable",
+        )
+        clear_portal_session_cookies(response)
+        return response
+    except CommercialServiceError as error:
+        if error.error_code != "auth.portal_session_revoked":
+            return _service_error_response(error, request=request)
     return _portal_session_cleared_response()
 
 
@@ -3488,6 +3520,7 @@ async def revoke_portal_session(request: Request) -> Any:
     try:
         await run_in_threadpool(
             _get_commercial_service(request).revoke_portal_sessions,
+            authenticated=authenticated_session(auth),
             principal_id=auth.principal_id,
         )
     except CommercialServiceError as error:
