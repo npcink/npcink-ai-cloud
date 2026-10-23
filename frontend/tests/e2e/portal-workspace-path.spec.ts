@@ -2036,7 +2036,18 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-account-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
-  await expect(page.getByText(/activity for All sites|查看 全部站点 最近的操作/i)).toBeVisible();
+  // The audit scope copy moved into the quiet header info hint (#1198).
+  const auditScopeHint = page
+    .locator('[data-portal-workspace-header="audit"] [data-portal-info-hint="trigger"]')
+    .first();
+  await expect(auditScopeHint).toHaveAttribute(
+    'aria-label',
+    /activity for All sites|查看 全部站点 最近的操作/i
+  );
+  await auditScopeHint.hover();
+  await expect(page.locator('[data-portal-info-hint="panel"]')).toContainText(
+    /activity for All sites|查看 全部站点 最近的操作/i
+  );
   const auditTable = page.locator('[data-portal-audit="records-table"]');
   await expect(auditTable).toBeVisible();
   await expect(auditTable.locator('tbody tr')).toHaveCount(10);
