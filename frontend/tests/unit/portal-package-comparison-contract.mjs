@@ -23,6 +23,21 @@ assert.match(commerceSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{
 assert.match(packagePanelSource, /package_comparison_title[\s\S]*package_only_differences[\s\S]*<table/);
 assert.match(
   packagePanelSource,
+  /hasIdenticalComparisonRows[\s\S]*comparisonTiers\.length >= 2[\s\S]*size === 1/,
+  'only-differences control requires at least one identical row across tiers'
+);
+assert.match(
+  packagePanelSource,
+  /hasIdenticalComparisonRows \? \([\s\S]*data-portal-package="only-differences"[\s\S]*\) : null/,
+  'only-differences checkbox is hidden when every row already differs'
+);
+assert.match(
+  packagePanelSource,
+  /showOnlyDifferences && !hasIdenticalComparisonRows[\s\S]*onShowOnlyDifferencesChange\(false\)/,
+  'stale only-differences state clears when identical rows disappear'
+);
+assert.match(
+  packagePanelSource,
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
 );
 assert.match(i18nSource, /'portal\.billing\.compare_site_limit': 'Active sites'/);

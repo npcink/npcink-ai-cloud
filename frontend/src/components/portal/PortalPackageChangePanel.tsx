@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type {
@@ -169,7 +170,16 @@ export function PortalPackageChangePanel({
     const right = tier.comparison_rights[key];
     return `${right.state}:${right.value ?? ''}`;
   };
-  const visibleComparisonRows = showOnlyDifferences
+  const hasIdenticalComparisonRows = comparisonTiers.length >= 2 && comparisonRows.some((row) => (
+    new Set(comparisonTiers.map((tier) => comparisonRightSignature(tier, row.key))).size === 1
+  ));
+  const effectiveShowOnlyDifferences = showOnlyDifferences && hasIdenticalComparisonRows;
+  useEffect(() => {
+    if (showOnlyDifferences && !hasIdenticalComparisonRows) {
+      onShowOnlyDifferencesChange(false);
+    }
+  }, [hasIdenticalComparisonRows, onShowOnlyDifferencesChange, showOnlyDifferences]);
+  const visibleComparisonRows = effectiveShowOnlyDifferences
     ? comparisonRows.filter((row) => (
         new Set(comparisonTiers.map((tier) => comparisonRightSignature(tier, row.key))).size > 1
       ))
@@ -307,16 +317,18 @@ export function PortalPackageChangePanel({
               {t('portal.billing.package_comparison_desc', {}, 'Compare the customer-visible limits that change between packages.')}
             </p>
           </div>
-          <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={showOnlyDifferences}
-              onChange={(event) => onShowOnlyDifferencesChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-[#0066cc] focus:ring-[#0071e3]"
-              data-portal-package="only-differences"
-            />
-            {t('portal.billing.package_only_differences', {}, 'Only show differences')}
-          </label>
+          {hasIdenticalComparisonRows ? (
+            <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={effectiveShowOnlyDifferences}
+                onChange={(event) => onShowOnlyDifferencesChange(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#0066cc] focus:ring-[#0071e3]"
+                data-portal-package="only-differences"
+              />
+              {t('portal.billing.package_only_differences', {}, 'Only show differences')}
+            </label>
+          ) : null}
         </div>
         {comparisonTiers.length > 0 ? (
           <div className="mt-3 overflow-x-auto rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">

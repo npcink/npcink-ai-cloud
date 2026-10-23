@@ -96,6 +96,22 @@ assert.doesNotMatch(dialog, /requestAnimationFrame\(\(\) => scrollContainer\(\)\
 assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
 assert.match(dialog, /records-feature-filter/, 'service filter stays');
+assert.match(
+  dialog,
+  /credit_events_feature_label[\s\S]*renderFeatureFilterSelect\(\)[\s\S]*credit_events_points_column/,
+  'hour/event table keeps the service filter in the 服务类型 header'
+);
+assert.match(
+  dialog,
+  /records-day-mix-column[\s\S]*day_mix_column[\s\S]*renderFeatureFilterSelect\(\)/,
+  'day-agg table keeps the service filter in the 服务构成 header'
+);
+assert.doesNotMatch(
+  dialog,
+  /label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700[\s\S]*credit_events_feature_label[\s\S]*records-feature-filter/,
+  'no duplicate above-table 服务类型 filter'
+);
+assert.match(dialog, /records-feature-filter-fallback/, 'empty/loading states keep a compact filter fallback');
 assert.match(i18n, /'portal\.usage\.day_calls_column': '调用次数'[\s\S]*'portal\.usage\.day_total_column': '合计 AI 积分'/);
 
 // C. Chart bars open records for that bucket with a removable chip.
