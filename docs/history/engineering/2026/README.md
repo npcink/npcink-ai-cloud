@@ -62,6 +62,7 @@ specific history collection. Migrated from the `docs/` root on
 - [runtime diagnostics information density closeout and development retrospective 2026 07 31](runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md)
 - [runtime stability observation 2026 07 09](runtime-stability-observation-2026-07-09.md)
 - [runtime stack decision history 2026 07 09](runtime-stack-decision-history-2026-07-09.md)
+- [security review scoped remediation closeout 2026 10 23](security-review-scoped-remediation-closeout-2026-10-23.md)
 - [seven session development synthesis and open issues 2026 08 04](seven-session-development-synthesis-and-open-issues-2026-08-04.md)
 - [single operator pre user development closeout and next stage 2026 08 18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md)
 - [single session ai development closeout and retrospective 2026 08 04](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)

@@ -148,6 +148,21 @@ When reporting security / system findings, follow this to avoid overstating risk
    startup guards, etc.) as the same default action; propose them separately and
    implement only after explicit user approval.
 
+## Deferred security follow-ups (opt-in)
+
+Do **not** start these unless the operator explicitly asks. Session closeout and
+rationale:
+[docs/history/engineering/2026/security-review-scoped-remediation-closeout-2026-10-23.md](docs/history/engineering/2026/security-review-scoped-remediation-closeout-2026-10-23.md).
+
+- CSP enforce (Admin/Portal split; keep Report-Only until approved)
+- Historical public-repo IP scrub (`git filter-repo`) — only with fork/mirror plan
+- Small hardening leftovers (Next security headers, weak-default startup guards,
+  env-key alignment, direct `cryptography` dependency)
+- Go-live **acceptance checklist** for already-merged remediations (healthy
+  probes, Admin-held provider keys, no non-empty prod `*_API_KEY`) — verification,
+  not an automatic production deploy
+- Unrelated business PRs (e.g. Portal #1199) stay on their own track
+
 ## Local deploy target and loopback conventions
 
 Keep workstation UX easy without putting real SSH targets in Git:
