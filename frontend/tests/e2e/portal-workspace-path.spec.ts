@@ -2179,6 +2179,11 @@ test('portal breadcrumbs appear only on secondary pages', async ({ page }) => {
 
 test('portal audit stays a bounded support deep link', async ({ page }) => {
   await installPortalMocks(page);
+  const requestedLimits: number[] = [];
+  await page.route('**/api/portal/account/audit-events**', async (route) => {
+    requestedLimits.push(Number(new URL(route.request().url()).searchParams.get('limit')));
+    await route.fallback();
+  });
 
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-account-deeplink="audit"]')).toHaveCount(1);
@@ -2196,12 +2201,18 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
     /activity for All sites|查看 全部站点 最近的操作/i
   );
   const auditTable = page.locator('[data-portal-audit="records-table"]');
+  const pagination = page.locator('[data-portal-audit="records-pagination"]');
   await expect(auditTable).toBeVisible();
   await expect(auditTable.locator('tbody tr')).toHaveCount(10);
-  await page.getByRole('button', { name: /Load more activity|加载更多活动|載入更多活動/i }).click();
-  await expect(auditTable.locator('tbody tr')).toHaveCount(12);
+  await expect(pagination.getByRole('button', { name: /Previous|上一页/i })).toBeDisabled();
+  await pagination.getByRole('button', { name: /Next|下一页/i }).click();
+  await expect(auditTable.locator('tbody tr')).toHaveCount(2);
+  await expect(pagination.getByRole('button', { name: /Next|下一页/i })).toBeDisabled();
+  await pagination.getByRole('button', { name: /Previous|上一页/i }).click();
+  await expect(auditTable.locator('tbody tr')).toHaveCount(10);
   await auditTable.getByText(/Support information|支持信息|支援資訊/i).first().click();
   await expect(auditTable.getByText('trace_portal_e2e')).toBeVisible();
+  expect(requestedLimits).toEqual([200]);
 });
 
 test('portal site record focuses on address, status, and support actions', async ({ page }) => {
@@ -2834,11 +2845,14 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
       await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
       await expect(filter).toHaveValue('site_attention');
       await expect(support).toHaveCount(0);
-      await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
-      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(12);
+      const pagination = page.locator('[data-portal-audit="records-pagination"]');
+      await pagination.getByRole('button', { name: /Next|下一页/i }).click();
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(2);
+      await expect(pagination.getByRole('button', { name: /Next|下一页/i })).toBeDisabled();
       await filter.selectOption('');
       await expect(page).toHaveURL(/\/portal\/audit$/);
       await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+      await expect(pagination.getByRole('button', { name: /Previous|上一页/i })).toBeDisabled();
       // Account menu chrome removed; Account is a primary-nav destination.
       await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
       await expect(page).toHaveURL(/\/portal\/account$/);
@@ -2846,29 +2860,36 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
   }
 }
 
-test('portal activity load-more failure retains rows and retries the same limit', async ({ page }) => {
+test('portal activity refresh failure retries the same bounded fetch', async ({ page }) => {
   await installPortalMocks(page);
-  let failed = true;
+  let failed = false;
   const requestedLimits: number[] = [];
   await page.route('**/api/portal/account/audit-events**', async (route) => {
     const limit = Number(new URL(route.request().url()).searchParams.get('limit'));
     requestedLimits.push(limit);
-    if (limit > 10 && failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'activity-more-failure');
+    if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'activity-refresh-failure');
     else await route.fallback();
   });
-  await page.goto('/portal/audit');
+  await page.goto('/portal/audit?site=site_attention');
   const rows = page.locator('[data-portal-audit="records-table"] tbody tr');
   await expect(rows).toHaveCount(10);
-  await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
+  failed = true;
+  await page.getByRole('button', { name: /Refresh|刷新/i }).click();
   await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
-  await expect(rows).toHaveCount(10);
+  await expect(page.locator('[data-portal-audit="records-table"]')).not.toBeVisible();
+  await expect(page.locator('[data-portal-header-metrics="title-end"]')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_attention');
+  await expect(page.getByText(/No activity in this view|当前视图里还没有活动/i)).toHaveCount(0);
   const support = page.locator('[data-portal-error="support-reference"]');
   await support.locator('summary').click();
-  await expect(support.getByText('activity-more-failure', { exact: true })).toBeVisible();
+  await expect(support.getByText('activity-refresh-failure', { exact: true })).toBeVisible();
   failed = false;
   await page.getByRole('button', { name: /Retry|重试/i }).click();
-  await expect(rows).toHaveCount(12);
-  expect(requestedLimits).toEqual([10, 30, 30]);
+  await expect(rows).toHaveCount(10);
+  await expect(page.locator('[data-portal-audit="records-table"]')).toBeVisible();
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_attention');
+  await expect(page).toHaveURL(/\/portal\/audit\?site=site_attention$/);
+  expect(requestedLimits).toEqual([200, 200, 200]);
   await expect(support).toHaveCount(0);
 });
 
