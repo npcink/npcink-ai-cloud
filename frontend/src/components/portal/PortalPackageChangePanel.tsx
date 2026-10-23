@@ -232,7 +232,7 @@ export function PortalPackageChangePanel({
   return (
     <>
       <div
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid gap-2.5 sm:grid-cols-3"
         role="radiogroup"
         aria-label={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
       >
@@ -258,7 +258,7 @@ export function PortalPackageChangePanel({
                 role="radio"
                 aria-checked={selected}
                 disabled={!choice.selectable || pendingAction !== null}
-                className="flex flex-1 flex-col items-start rounded-[14px] px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 dark:focus-visible:ring-[#2997ff] dark:focus-visible:ring-offset-slate-950"
+                className="flex flex-1 flex-col items-start rounded-[14px] px-3 py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 dark:focus-visible:ring-[#2997ff] dark:focus-visible:ring-offset-slate-950"
                 onClick={() => onSelectTier(choice.tier)}
                 data-portal-package-card={choice.tier}
               >
@@ -307,7 +307,7 @@ export function PortalPackageChangePanel({
         })}
       </div>
 
-      <section className="mt-5" aria-labelledby="portal-package-comparison-title">
+      <section className="mt-4" aria-labelledby="portal-package-comparison-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 id="portal-package-comparison-title" className="text-base font-semibold text-slate-950 dark:text-white">
@@ -335,14 +335,14 @@ export function PortalPackageChangePanel({
             <table className="w-full table-fixed border-collapse text-sm">
               <thead className="bg-[#f5f5f7] dark:bg-slate-900/70">
                 <tr>
-                  <th scope="col" className="px-3 py-3 text-left font-semibold text-slate-600 break-words dark:text-slate-300">
+                  <th scope="col" className="px-2.5 py-2.5 text-left font-semibold text-slate-600 break-words dark:text-slate-300">
                     {t('portal.billing.package_comparison_right_label', {}, 'Right')}
                   </th>
                   {comparisonTiers.map((tier) => (
                     <th
                       key={tier.tier_id}
                       scope="col"
-                      className={`px-3 py-3 text-right font-semibold break-words ${
+                      className={`px-2.5 py-2.5 text-right font-semibold break-words ${
                         selectedTier === tier.tier_id
                           ? 'bg-blue-50 text-[#0066cc] dark:bg-blue-950/25 dark:text-[#2997ff]'
                           : 'text-slate-950 dark:text-white'
@@ -361,7 +361,7 @@ export function PortalPackageChangePanel({
               <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-800 dark:bg-slate-950">
                 {visibleComparisonRows.map((row) => (
                   <tr key={row.key}>
-                    <th scope="row" className="px-3 py-3 text-left font-medium text-slate-600 break-words dark:text-slate-300">
+                    <th scope="row" className="px-2.5 py-2.5 text-left font-medium text-slate-600 break-words dark:text-slate-300">
                       {row.label}
                     </th>
                     {comparisonTiers.map((tier) => {
@@ -370,7 +370,7 @@ export function PortalPackageChangePanel({
                         <td
                           key={tier.tier_id}
                           data-comparison-state={right.state}
-                          className={`px-3 py-3 text-right font-semibold break-words ${
+                          className={`px-2.5 py-2.5 text-right font-semibold break-words ${
                           selectedTier === tier.tier_id
                             ? 'bg-blue-50/70 text-slate-950 dark:bg-blue-950/20 dark:text-white'
                             : right.state === 'unconfigured'

@@ -70,8 +70,7 @@ export default function PortalSupportRequestDetailPage() {
   const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
   const [feedback, setFeedback] = useState<PortalSupportRequestFeedback | null>(null);
   const [reply, setReply] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [attachOpen, setAttachOpen] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState<Array<{ id: string; name: string }>>([]);
   const [feedbackResolved, setFeedbackResolved] = useState(true);
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackComment, setFeedbackComment] = useState('');
@@ -142,8 +141,7 @@ export default function PortalSupportRequestDetailPage() {
     setAttachments([]);
     setFeedback(null);
     setReply('');
-    setAttachmentFile(null);
-    setAttachOpen(false);
+    setPendingUploads([]);
     setFeedbackResolved(true);
     setFeedbackRating(5);
     setFeedbackComment('');
@@ -208,25 +206,24 @@ export default function PortalSupportRequestDetailPage() {
     }
   };
 
-  const handleAttachmentUpload = async () => {
+  const uploadAttachmentFile = async (file: File) => {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
     if (!isAuthenticated || !capturedRequestId) return;
-    if (!attachmentFile) return;
     setIsUploadingAttachment(true);
     setError('');
     setNotice('');
     try {
-      const contentBase64 = await readFileAsBase64(attachmentFile);
+      const contentBase64 = await readFileAsBase64(file);
       if (
         contextRequestVersion !== contextRequestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
       const response = await portalClient.createSupportRequestAttachment(capturedRequestId, {
-        filename: attachmentFile.name,
-        content_type: attachmentFile.type || 'application/octet-stream',
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
         content_base64: contentBase64,
       });
       if (
@@ -236,9 +233,6 @@ export default function PortalSupportRequestDetailPage() {
       ) return;
       setSupportRequest(response.data.request);
       setAttachments((current) => [...current, response.data.attachment]);
-      setAttachmentFile(null);
-      setAttachOpen(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
       setNotice(t('portal.support_attachment_created', {}, 'Attachment uploaded.'));
     } catch (err) {
       if (
@@ -253,6 +247,21 @@ export default function PortalSupportRequestDetailPage() {
         && requestContextSiteId === contextSiteIdRef.current
         && capturedRequestId === requestIdRef.current
       ) setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleAttachmentFilesSelected = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const files = Array.from(fileList);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    for (const file of files) {
+      const pendingId = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
+      setPendingUploads((current) => [...current, { id: pendingId, name: file.name }]);
+      try {
+        await uploadAttachmentFile(file);
+      } finally {
+        setPendingUploads((current) => current.filter((item) => item.id !== pendingId));
+      }
     }
   };
 
@@ -459,29 +468,6 @@ export default function PortalSupportRequestDetailPage() {
           })}
       </div>
 
-      {attachments.length ? (
-        <div
-          className="flex flex-wrap gap-2"
-          data-portal-support="attachment-chips"
-        >
-          {attachments.map((attachment) => (
-            <button
-              key={attachment.attachment_id}
-              type="button"
-              className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-              onClick={() => void handleAttachmentDownload(attachment)}
-              title={attachment.filename}
-            >
-              <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{attachment.filename}</span>
-              <span className="shrink-0 text-slate-400">
-                {Math.ceil((attachment.byte_size || 0) / 1024)} KB
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       {showFeedbackUpdateLink ? (
         <div className="flex justify-center" data-portal-support="close-evaluation-update">
           <button
@@ -618,33 +604,55 @@ export default function PortalSupportRequestDetailPage() {
         className="sticky bottom-0 z-10 pt-2"
         data-portal-support="composer"
       >
-        {attachOpen ? (
+        <input
+          ref={fileInputRef}
+          className="sr-only"
+          type="file"
+          multiple
+          tabIndex={-1}
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+          onChange={(event) => void handleAttachmentFilesSelected(event.target.files)}
+          data-portal-support="composer-attach-input"
+        />
+        {attachments.length || pendingUploads.length ? (
           <div
-            className="mb-2 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/50"
-            data-portal-support="composer-attach-panel"
+            className="mb-2 flex flex-wrap items-center gap-2"
+            data-portal-support="attachment-chips"
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={fileInputRef}
-                className="input max-w-full flex-1 py-1.5 text-sm"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
-                onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
-              />
+            {attachments.map((attachment) => (
               <button
+                key={attachment.attachment_id}
                 type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={isUploadingAttachment || !attachmentFile}
-                onClick={() => void handleAttachmentUpload()}
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs text-slate-700 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200"
+                onClick={() => void handleAttachmentDownload(attachment)}
+                title={attachment.filename}
               >
-                {isUploadingAttachment
-                  ? t('common.saving', {}, 'Saving...')
-                  : t('portal.support_attachment_upload_action', {}, 'Upload attachment')}
+                <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{attachment.filename}</span>
+                <span className="shrink-0 text-slate-400">
+                  {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                </span>
               </button>
-            </div>
-            <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
-              {t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
-            </p>
+            ))}
+            {pendingUploads.map((pending) => (
+              <span
+                key={pending.id}
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-dashed border-slate-300 bg-slate-50/90 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300"
+                data-portal-support="attachment-pending"
+              >
+                <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{pending.name}</span>
+                <span className="shrink-0">{t('common.saving', {}, 'Saving...')}</span>
+              </span>
+            ))}
+            <span
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-400"
+              title={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+              aria-label={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+              data-portal-support="attachment-hint"
+            >
+              ⓘ
+            </span>
           </div>
         ) : null}
         <div
@@ -655,15 +663,19 @@ export default function PortalSupportRequestDetailPage() {
             <button
               type="button"
               className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
-                attachOpen
+                isUploadingAttachment || pendingUploads.length
                   ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
               }`}
               data-portal-support="composer-attach"
-              aria-expanded={attachOpen}
               aria-label={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
-              title={t('portal.support_attachment_add_optional', {}, 'Add attachment (optional)')}
-              onClick={() => setAttachOpen((open) => !open)}
+              title={t(
+                'portal.support_attachment_limit',
+                {},
+                'PDF, image, text, CSV, or JSON. Max 5 MB each.'
+              )}
+              disabled={false}
+              onClick={() => fileInputRef.current?.click()}
             >
               <PortalActionIcon id="attach" />
             </button>
