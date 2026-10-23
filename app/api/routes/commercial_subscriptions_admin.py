@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
 
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
@@ -13,6 +15,12 @@ from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 
 router = APIRouter(prefix="/admin", tags=["service"])
+
+
+class PlanSalesStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["active", "retired"]
 
 
 def _dict_value(value: object) -> dict[str, Any]:
@@ -136,6 +144,35 @@ def _record_service_failure(
         )
     except Exception:
         return
+
+
+@router.patch("/plans/{plan_id}/sales")
+async def update_admin_plan_sales_status(
+    plan_id: str, payload: PlanSalesStatusPayload, request: Request
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_admin_plan_sales_status,
+            plan_id=plan_id,
+            status=payload.status,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    result["receipt"] = _build_operator_receipt(
+        event_kind="plan_offer.sales_status.update",
+        scope_kind="plan_offer",
+        scope_id=str(result["offer_id"]),
+        outcome="succeeded",
+        effective_summary=f"Package sales status: {payload.status}",
+        audit_state="persisted",
+        idempotency_key=request.headers.get("Idempotency-Key", "").strip(),
+    )
+    return build_envelope(status="ok", message="package sales status updated", data=result,
+                          revision="m6")
 
 
 @router.get("/subscriptions")

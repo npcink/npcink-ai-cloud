@@ -34,8 +34,10 @@ error, provider, and quality evidence needed to prove that loop.
 
 Until that loop has sufficient real evidence:
 
-- do not expand broad Admin governance, dashboard, alert-ranking, or commercial
-  front-office scope;
+- keep broad governance and alert-ranking expansion bounded to actual evidence;
+- commercial development, notifications, and bounded Admin operations resumed
+  by operator decision on 2026-10-23; follow the
+  [sequential development plan](docs/engineering/commercial-development-next-stage-v1.md);
 - do not generate paid provider calls solely to manufacture observation data;
 - do not add orchestration infrastructure or move local WordPress truth into
   Cloud;

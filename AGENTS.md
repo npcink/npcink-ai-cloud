@@ -20,10 +20,13 @@ Paused product entrypoints (retain code; do not re-enable via settings):
 [reversible-feature-pauses-v1.md](docs/reversible-feature-pauses-v1.md),
 [seo-specialist-pause-v1.md](docs/seo-specialist-pause-v1.md).
 
-Commercial freeze (Phase 1): plans / credit-packs / subscriptions / orders / payments are
-**frozen for new development** — do not start new commercial features, and do not delete or
-disable the existing code. This is a development freeze, **not** a runtime pause: existing
-commercial reads and credit/entitlement paths stay operational. Reversal is a human decision.
+Commercial development resumed by operator decision on 2026-10-23: continue
+plans / credit-packs / subscriptions / orders / payments, customer notifications,
+and bounded Admin operations in sequential, independently verified batches.
+Follow [commercial-development-next-stage-v1.md](docs/engineering/commercial-development-next-stage-v1.md).
+The Phase 1 editor loop remains active. Development authorization does not
+authorize production Deploy, live sales activation, real payment/refund tests,
+price changes, or restoration of paused specialist capabilities.
 
 ## Follow-on (Phase 2–3)
 

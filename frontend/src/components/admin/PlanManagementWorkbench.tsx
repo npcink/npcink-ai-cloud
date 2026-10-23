@@ -5,6 +5,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { PlanSalesControl } from '@/components/admin/PlanSalesControl';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
@@ -72,6 +73,7 @@ type PlanDetailPayload = {
   sales_offer?: {
     amount: number;
     currency: string;
+    status: string;
   } | null;
   tier_summary: TierSummary;
   package_fit_cues: PackageFitCue[];
@@ -417,6 +419,22 @@ export function PlanManagementWorkbench({
 
           {activeTab === 'parameters' ? (
             <section aria-labelledby="plan-parameters-title">
+              {detail?.sales_offer ? (
+                <PlanSalesControl
+                  key={planId}
+                  planId={planId}
+                  status={detail.sales_offer.status}
+                  disabled={isSaving || hasUnsavedChanges}
+                  onSavingChange={setIsSaving}
+                  onSaved={async (status) => {
+                    setDetail((current) => current?.sales_offer ? {
+                      ...current, sales_offer: { ...current.sales_offer, status },
+                    } : current);
+                    await loadDetail(false);
+                    await onSaved();
+                  }}
+                />
+              ) : null}
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h4 id="plan-parameters-title" className="text-sm font-semibold text-slate-950 dark:text-white">
