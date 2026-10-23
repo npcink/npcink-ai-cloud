@@ -265,6 +265,7 @@ function AdminCoverageContent() {
     if (
       !force &&
       coverageRequestActiveRef.current &&
+      !coverageAbortControllerRef.current?.signal.aborted &&
       coverageRequestKeyRef.current === coverageRequestKey
     ) {
       return;

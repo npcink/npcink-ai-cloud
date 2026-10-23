@@ -919,7 +919,7 @@ test('model reference loading continues past the API page limit', async ({ page 
     });
   });
 
-  await page.goto('/admin/ai-resources?focus=model_ready');
+  await page.goto('/admin/ai-resources');
   const supplierRow = page.locator('[data-connection-id="model_ready"]');
   await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
   const dialog = page.getByRole('dialog');
