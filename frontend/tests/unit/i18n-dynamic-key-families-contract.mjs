@@ -26,6 +26,8 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'portal.notifications.event_':
+    'src/app/portal/notifications/page.tsx; bounded support_request_replied or unknown notification event label',
   'admin.ai_advisor.metric_':
     'src/app/admin/ai-advisor/page.tsx; bounded metric keys from src/features/admin/ai-advisor/advisor-presentation.ts',
   'admin.ai_advisor.action_':
