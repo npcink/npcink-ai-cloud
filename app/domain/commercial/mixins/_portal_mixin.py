@@ -10,6 +10,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
@@ -1849,6 +1850,38 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.portal_registration_code_invalid",
                     "portal registration code is invalid",
                 )
+            principal_id = str(active_code.principal_id or "").strip()
+            identity = repository.get_principal_identity_by_email(email=normalized_email)
+            if (identity.principal_id if identity else None) != (
+                discovered.principal_id if discovered else None
+            ):
+                raise CommercialConflictError(
+                    "service.portal_login_scope_changed", "portal identity changed; retry"
+                )
+            # A proof is bound to its original identity, not just its email.
+            # Never acquire a different identity/account lock after the proof lock.
+            if (
+                not principal_id
+                or (identity is not None and identity.principal_id != principal_id)
+                or (
+                    identity is None
+                    and repository.get_principal_identity_by_ref(principal_id=principal_id)
+                    is not None
+                )
+            ):
+                raise CommercialPermissionError(
+                    "service.portal_registration_code_invalid",
+                    "portal registration code is invalid",
+                )
+            if identity is not None and _principal_registration_access_is_blocked(
+                repository,
+                principal_id=principal_id,
+                principal_status=str(identity.status or ""),
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal registration is unavailable for this principal",
+                )
             if not verify_secret_hash(normalized_code, str(active_code.code_hash or "")):
                 active_code.attempt_count = int(active_code.attempt_count or 0) + 1
                 if active_code.attempt_count >= bounded_attempts:
@@ -1861,26 +1894,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 )
             active_code.status = PORTAL_LOGIN_CODE_STATUS_CONSUMED
             active_code.consumed_at = now
-            principal_id = str(active_code.principal_id or "").strip()
-            identity = repository.get_principal_identity_by_email(email=normalized_email)
-            if (identity.principal_id if identity else None) != (
-                discovered.principal_id if discovered else None
-            ):
-                raise CommercialConflictError(
-                    "service.portal_login_scope_changed", "portal identity changed; retry"
-                )
             if identity is not None:
-                principal_id = str(identity.principal_id or "").strip()
-                if _principal_registration_access_is_blocked(
-                    repository,
-                    principal_id=principal_id,
-                    principal_status=str(identity.status or ""),
-                ):
-                    session.commit()
-                    raise CommercialPermissionError(
-                        "service.principal_access_required",
-                        "portal registration is unavailable for this principal",
-                    )
                 memberships = repository.list_accounts_for_principal(
                     principal_id=principal_id,
                     membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
@@ -1906,11 +1920,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     }
 
             account_id = str(registration_metadata.get("account_id") or "").strip()
-            if not principal_id:
-                principal_id = _new_principal_id()
             if not account_id:
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
-            account = repository.upsert_account(
+            account = Account(
                 account_id=account_id,
                 name=normalized_email,
                 status=ACCOUNT_STATUS_ACTIVE,
@@ -1920,16 +1932,28 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "created_via": "portal_register",
                 },
             )
-            identity = repository.upsert_principal_identity(
-                principal_id=principal_id,
-                email=normalized_email,
-                status=PRINCIPAL_STATUS_ACTIVE,
-                metadata_json={
-                    "source": "portal_self_registration",
-                    "identity_type": IDENTITY_TYPE_USER,
-                },
-                last_login_at=now,
-            )
+            session.add(account)
+            if identity is None:
+                identity = Principal(
+                    principal_id=principal_id,
+                    email=normalized_email,
+                    status=PRINCIPAL_STATUS_ACTIVE,
+                    metadata_json={
+                        "source": "portal_self_registration",
+                        "identity_type": IDENTITY_TYPE_USER,
+                    },
+                    last_login_at=now,
+                )
+                session.add(identity)
+            # Missing rows cannot be locked. Unique INSERT constraints close the
+            # race after discovery; an upsert would overwrite a concurrent owner.
+            try:
+                session.flush()
+            except IntegrityError as error:
+                raise CommercialConflictError(
+                    "service.portal_login_scope_changed", "portal identity changed; retry"
+                ) from error
+            identity.last_login_at = now
             repository.upsert_account_user_membership(
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,

@@ -398,3 +398,230 @@ def test_email_change_failure_rolls_back_code_version_and_current_row(setup, mon
             select(PortalLoginCode).where(PortalLoginCode.purpose == "portal_email_change")
         )
         assert code.status == "pending"
+
+
+def _registration_state(url):
+    """Read persisted identity/scope/session/proof state without token or OTP material."""
+    with get_session(url) as session:
+        return {
+            "principals": list(
+                session.execute(
+                    select(
+                        Principal.principal_id,
+                        Principal.email,
+                        Principal.status,
+                        Principal.session_version,
+                    ).order_by(Principal.principal_id)
+                )
+            ),
+            "accounts": list(
+                session.execute(
+                    select(Account.account_id, Account.status).order_by(Account.account_id)
+                )
+            ),
+            "memberships": list(
+                session.execute(
+                    select(
+                        AccountUserMembership.membership_id,
+                        AccountUserMembership.account_id,
+                        AccountUserMembership.principal_id,
+                        AccountUserMembership.status,
+                    ).order_by(AccountUserMembership.membership_id)
+                )
+            ),
+            "sessions": list(
+                session.execute(
+                    select(
+                        PortalSession.session_id,
+                        PortalSession.principal_id,
+                        PortalSession.session_version,
+                        PortalSession.absolute_expires_at,
+                    ).order_by(PortalSession.session_id)
+                )
+            ),
+            "proofs": list(
+                session.execute(
+                    select(
+                        PortalLoginCode.code_id, PortalLoginCode.status, PortalLoginCode.consumed_at
+                    ).order_by(PortalLoginCode.code_id)
+                )
+            ),
+        }
+
+
+@pytest.mark.parametrize("after_change", ["active", "disabled", "closed"])
+def test_registration_old_proof_cannot_restore_changed_or_disabled_identity(setup, after_change):
+    url, client, service = setup
+    if after_change == "closed":
+        from app.domain.commercial.identity import USER_ALLOWED_ACTION_MANAGE_BILLING
+
+        with get_session(url) as session:
+            session.get(AccountUserMembership, "registry_m").allowed_actions_json = [
+                USER_ALLOWED_ACTION_MANAGE_BILLING
+            ]
+            session.commit()
+    login(setup)
+    old = service.issue_portal_registration_code(email="registry@example.test", ttl_seconds=600)
+    change = service.issue_portal_email_change_code(
+        principal_id="registry_p", new_email="new@example.test", ttl_seconds=600
+    )
+    changed = client.post(
+        "/portal/v1/account/email-change/verify",
+        headers={"Idempotency-Key": "old-registration-change"},
+        json={"new_email": "new@example.test", "code": change["code"]},
+    )
+    assert changed.status_code == 200, changed.text
+    if after_change == "disabled":
+        service.disable_admin_portal_user(principal_id="registry_p", reason="local regression")
+    elif after_change == "closed":
+        closure = service.issue_portal_account_deletion_code(
+            principal_id="registry_p", ttl_seconds=600
+        )
+        closed = client.post(
+            "/portal/v1/account/deletion/confirm",
+            headers={"Idempotency-Key": "old-registration-close"},
+            json={"code": closure["code"]},
+        )
+        assert closed.status_code == 200, closed.text
+    before = _registration_state(url)
+    client.cookies.clear()
+    response = client.post(
+        "/portal/v1/register/verify", json={"email": "registry@example.test", "code": old["code"]}
+    )
+    assert response.status_code == 401, response.text
+    assert response.json()["error_code"] == "auth.portal_registration_code_invalid"
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) is None
+    assert _registration_state(url) == before
+
+
+def test_registration_proof_must_match_locked_current_email_owner(setup):
+    url, client, service = setup
+    proof = service.issue_portal_registration_code(email="registry@example.test", ttl_seconds=600)
+    with get_session(url) as session:
+        session.get(Principal, "registry_p").email = "moved@example.test"
+        session.add(
+            Principal(principal_id="current_owner", email="registry@example.test", status="active")
+        )
+        session.commit()
+    before = _registration_state(url)
+    response = client.post(
+        "/portal/v1/register/verify", json={"email": "registry@example.test", "code": proof["code"]}
+    )
+    assert response.status_code == 401, response.text
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) is None
+    assert _registration_state(url) == before
+
+
+def test_registration_rejects_reserved_identity_materialized_while_waiting(setup, monkeypatch):
+    from app.adapters.repositories.commercial_repository import CommercialRepository
+
+    url, client, service = setup
+    proof = service.issue_portal_registration_code(email="reserved@example.test", ttl_seconds=600)
+    original = CommercialRepository.list_portal_login_codes
+    observed = {}
+
+    def materialize(self, **kwargs):
+        if (
+            kwargs.get("for_update")
+            and kwargs.get("purpose") == "portal_registration"
+            and not observed
+        ):
+            with get_session(url) as session:
+                code = session.scalar(
+                    select(PortalLoginCode).where(PortalLoginCode.email == "reserved@example.test")
+                )
+                session.add(
+                    Principal(
+                        principal_id=code.principal_id,
+                        email="already-realized@example.test",
+                        status="disabled",
+                        session_version=7,
+                    )
+                )
+                session.commit()
+            observed["state"] = _registration_state(url)
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(CommercialRepository, "list_portal_login_codes", materialize)
+    response = client.post(
+        "/portal/v1/register/verify", json={"email": "reserved@example.test", "code": proof["code"]}
+    )
+    assert response.status_code == 401, response.text
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) is None
+    assert observed and _registration_state(url) == observed["state"]
+
+
+@pytest.mark.parametrize("target", ["unknown_site", "peer_site"])
+def test_site_selection_rejects_inaccessible_target_with_envelope_without_rotation(setup, target):
+    from app.core.models import Site
+
+    url, client, _ = setup
+    with get_session(url) as session:
+        session.add(Account(account_id="peer_account", name="Peer", status="active"))
+        session.flush()
+        session.add(
+            Site(site_id="peer_site", account_id="peer_account", name="Peer", status="active")
+        )
+        session.commit()
+    token, claims, _ = login(setup)
+    before = _registration_state(url)
+    response = client.post("/portal/v1/session/site", json={"site_id": target})
+    assert response.status_code == 403, response.text
+    assert response.json()["status"] == "error"
+    assert response.json()["error_code"] == "portal.site_access_required"
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) == token
+    current = jwt.decode(
+        client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN), options={"verify_signature": False}
+    )
+    assert (current["sid"], current["exp"]) == (claims["sid"], claims["exp"])
+    assert _registration_state(url) == before
+
+
+def test_registration_insert_conflict_retries_without_overwriting_concurrent_identity(
+    setup, monkeypatch
+):
+    url, client, service = setup
+    proof = service.issue_portal_registration_code(
+        email="insert-race@example.test", ttl_seconds=600
+    )
+    original = Session.flush
+    observed = {}
+
+    def materialize_before_insert(self, *args, **kwargs):
+        pending = next(
+            (
+                row
+                for row in self.new
+                if isinstance(row, Principal) and row.email == "insert-race@example.test"
+            ),
+            None,
+        )
+        if pending is not None and not observed:
+            observed["triggered"] = True
+            with get_session(url) as other:
+                other.add(
+                    Principal(
+                        principal_id=pending.principal_id,
+                        email="concurrent-owner@example.test",
+                        status="disabled",
+                        session_version=9,
+                    )
+                )
+                other.commit()
+            observed["state"] = _registration_state(url)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", materialize_before_insert)
+    response = client.post(
+        "/portal/v1/register/verify",
+        json={"email": "insert-race@example.test", "code": proof["code"]},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "service.portal_login_scope_changed"
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) is None
+    assert observed and _registration_state(url) == observed["state"]

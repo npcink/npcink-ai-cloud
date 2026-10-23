@@ -3460,6 +3460,13 @@ async def select_portal_session_site(
             strict_site=True,
             session_metadata=issued.metadata(),
         )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     response = JSONResponse(

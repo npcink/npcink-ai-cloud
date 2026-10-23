@@ -1079,3 +1079,122 @@ def test_registry_postgres_export_logout_commit_order(closure_database, monkeypa
         )
         assert session.get(Principal, "prn_close").session_version == 1
         assert session.get(PortalSession, "pg_export_fixture").revoked_at is not None
+
+
+@pytest.mark.parametrize("phase", ["proof_wait", "before_insert"])
+def test_registry_postgres_registration_reserved_identity_race(closure_database, phase):
+    """Realize a reserved principal on another connection at either discovery gap."""
+    from sqlalchemy.engine import Engine
+
+    from app.core.models import PortalSession
+    from app.domain.commercial.errors import CommercialServiceError
+    from app.domain.portal_sessions.service import PortalSessionIssuer
+
+    url, settings = closure_database, _registry_settings(closure_database)
+    service = CommercialService(url)
+    email = "reserved-race@example.test"
+    proof = service.issue_portal_registration_code(email=email, ttl_seconds=600)
+    with get_session(url) as session:
+        code = session.scalar(select(PortalLoginCode).where(PortalLoginCode.email == email))
+        code_id, principal_id = code.code_id, code.principal_id
+        reserved_account = code.metadata_json["account_id"]
+        original_counts = tuple(
+            session.scalar(select(func.count()).select_from(model))
+            for model in (Account, AccountUserMembership, PortalSession)
+        )
+    ready, release, rendezvous, backend = Event(), Event(), Barrier(2), []
+
+    def before(connection, cursor, statement, parameters, context, executemany):
+        if not current_thread().name.startswith("registration-reservation-race"):
+            return
+        sql = statement.upper()
+        matches = (
+            phase == "proof_wait" and "FROM PORTAL_LOGIN_CODES" in sql and "FOR UPDATE" in sql
+        ) or (phase == "before_insert" and "INSERT INTO PRINCIPALS" in sql)
+        if not matches:
+            return
+        connection.execute(text("SET LOCAL lock_timeout = '8s'"))
+        backend.append(connection.scalar(text("SELECT pg_backend_pid()")))
+        ready.set()
+        rendezvous.wait(timeout=5)
+        if phase == "before_insert":
+            assert release.wait(8)
+
+    def verify():
+        try:
+            service.verify_portal_registration_code(
+                email=email,
+                code=proof["code"],
+                max_attempts=5,
+                session_issuer=PortalSessionIssuer(settings, 3600, "registration"),
+            )
+        except CommercialServiceError as error:
+            return error.status_code
+        return 200
+
+    event.listen(Engine, "before_cursor_execute", before)
+    try:
+        with (
+            get_session(url) as owner,
+            ThreadPoolExecutor(1, thread_name_prefix="registration-reservation-race") as executor,
+        ):
+            if phase == "proof_wait":
+                owner.scalar(
+                    select(PortalLoginCode)
+                    .where(PortalLoginCode.code_id == code_id)
+                    .with_for_update()
+                )
+            future = executor.submit(verify)
+            try:
+                assert ready.wait(5)
+                rendezvous.wait(timeout=5)
+                if phase == "proof_wait":
+                    # Observe actual proof-row lock wait before making the reserved
+                    # identity visible. The other connection retains the pending code.
+                    observer = create_engine(url, hide_parameters=True)
+                    try:
+                        with observer.connect() as connection:
+                            deadline = monotonic() + 5
+                            while not connection.scalar(
+                                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                                {"pid": backend[0]},
+                            ):
+                                assert monotonic() < deadline, (
+                                    "proof query never reached a PostgreSQL lock wait"
+                                )
+                                sleep(0.02)
+                    finally:
+                        observer.dispose()
+                owner.add(
+                    Principal(
+                        principal_id=principal_id,
+                        email="realized-owner@example.test",
+                        status="disabled",
+                        session_version=7,
+                    )
+                )
+                owner.commit()
+                release.set()
+                assert future.result(timeout=10) == (403 if phase == "proof_wait" else 409)
+            finally:
+                release.set()
+                owner.rollback()
+    finally:
+        event.remove(Engine, "before_cursor_execute", before)
+    with get_session(url) as session:
+        principal = session.get(Principal, principal_id)
+        assert (principal.email, principal.status, principal.session_version) == (
+            "realized-owner@example.test",
+            "disabled",
+            7,
+        )
+        code = session.get(PortalLoginCode, code_id)
+        assert code.status == "pending" and code.consumed_at is None
+        assert session.get(Account, reserved_account) is None
+        assert (
+            tuple(
+                session.scalar(select(func.count()).select_from(model))
+                for model in (Account, AccountUserMembership, PortalSession)
+            )
+            == original_counts
+        )
