@@ -214,6 +214,65 @@ class SmtpPortalEmailSender(PortalEmailSender):
                 f"failed to deliver portal email change code to '{recipient_email}': {error}"
             ) from error
 
+    @property
+    def supports_data_export(self) -> bool:
+        return True
+
+    def send_data_export_code(
+        self,
+        *,
+        recipient_email: str,
+        principal_id: str,
+        code: str,
+        expires_in_seconds: int,
+        project_name: str,
+        locale: str = "zh-CN",
+    ) -> None:
+        english = self._normalize_locale(locale) == "en"
+        title = (
+            "Download your Cloud personal data copy" if english else "下载你的 Cloud 本人数据副本"
+        )
+        intro = (
+            "This code confirms control of your current email for this download only. "
+            "The copy includes your profile, membership, public support conversations, "
+            "sent attachment metadata and personal notifications. It excludes attachment files "
+            "and account billing or usage. It is not a complete legal data portability report."
+            if english
+            else "此验证码仅确认你本次下载时对当前邮箱的控制权。副本包含本人资料、成员关系、"
+            "公开工单对话、已发送附件信息和个人通知；不含附件文件、账号账务或用量，"
+            "也不是完整的法律数据可携带性报告。"
+        )
+        note = (
+            "Expires in 5 minutes. If you did not request this copy, ignore this email. "
+            "Do not share this code."
+            if english
+            else "5 分钟内有效。如非本人申请，请忽略邮件，勿分享验证码。"
+        )
+        message = EmailMessage()
+        message["Subject"] = f"{self._display_project_name(project_name)} — {title}"
+        message["From"] = self._format_from_header()
+        message["To"] = recipient_email
+        if self.reply_to:
+            message["Reply-To"] = self.reply_to
+        self._set_message_body(
+            message,
+            text_body=f"{title}\n{intro}\n{code}\n{note}",
+            html_body=self._build_html_email(
+                project_name=project_name,
+                eyebrow=title,
+                title=title,
+                intro=intro,
+                code=code,
+                details=[],
+                note=note,
+            ),
+        )
+        try:
+            self._ensure_delivery_headers(message)
+            self._deliver(message)
+        except Exception:
+            raise PortalEmailDeliveryError("Failed to deliver personal data copy email") from None
+
     def send_account_deletion_code(
         self,
         *,

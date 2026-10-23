@@ -478,3 +478,133 @@ def test_all_portal_sessions_revoked_api_and_version_readback(parent_database):
 
     _migrate(parent_database, REVISION)
     assert_session_revocation_api_readback(parent_database)
+# Data copy proof deliberately reuses the guarded, migrated disposable schema.
+# Local opt-in skips are not PostgreSQL acceptance.
+def _export_call(url, operation, payload):
+    from app.domain.portal_data_export import DataExportError, execute_data_export
+
+    try:
+        return execute_data_export(
+            database_url=url,
+            principal_id="prn_close",
+            session_version=1,
+            site_id="site_close",
+            operation=operation,
+            payload=payload,
+            sender_available=True,
+        )
+    except DataExportError as error:
+        return error.status
+
+
+def test_data_export_postgres_single_consume_and_no_receipt(closure_database):
+    from app.core.models import ReplayReceipt
+
+    url = closure_database
+    issued = _export_call(url, "code", {})
+    assert isinstance(issued, dict)
+    payload = {"challenge_id": issued["challenge_id"], "code": issued["code"]}
+    barrier = Barrier(2)
+
+    def confirm():
+        barrier.wait(timeout=10)
+        return _export_call(url, "confirm", payload)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = [
+            f.result(timeout=15) for f in [executor.submit(confirm), executor.submit(confirm)]
+        ]
+    assert sum(isinstance(r, bytes) for r in results) == 1
+    assert [r for r in results if isinstance(r, int)][0] in (400, 409)
+    with get_session(url) as session:
+        assert session.get(PortalLoginCode, payload["challenge_id"]).status == "consumed"
+        assert list(session.scalars(select(ReplayReceipt))) == []
+        assert session.get(Principal, "prn_close").session_version == 1
+
+
+@pytest.mark.parametrize("change", ["version", "email", "member", "account"])
+def test_data_export_postgres_rechecks_after_scope_lock_wait(closure_database, change):
+    from sqlalchemy.engine import Engine
+
+    url = closure_database
+    issued = _export_call(url, "code", {})
+    assert isinstance(issued, dict)
+    payload = {"challenge_id": issued["challenge_id"], "code": issued["code"]}
+    waiting = Event()
+
+    def before(conn, cursor, statement, parameters, context, many):
+        if current_thread().name.startswith("export-race") and "FOR UPDATE" in statement:
+            waiting.set()
+
+    event.listen(Engine, "before_cursor_execute", before)
+    try:
+        with (
+            get_session(url) as writer,
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="export-race") as executor,
+        ):
+            account = writer.scalar(
+                select(Account).where(Account.account_id == "acct_close").with_for_update()
+            )
+            principal = writer.scalar(
+                select(Principal).where(Principal.principal_id == "prn_close").with_for_update()
+            )
+            if change == "version":
+                principal.session_version += 1
+            if change == "email":
+                principal.email = "changed@example.test"
+            if change == "account":
+                account.status = "closed"
+            if change == "member":
+                writer.get(AccountUserMembership, "mem_close").status = "revoked"
+            writer.flush()
+            future = executor.submit(_export_call, url, "confirm", payload)
+            assert waiting.wait(timeout=3), "export must reach the locked scope before release"
+            writer.commit()
+            assert future.result(timeout=10) in (400, 401, 403, 409)
+    finally:
+        event.remove(Engine, "before_cursor_execute", before)
+    with get_session(url) as session:
+        assert session.get(PortalLoginCode, payload["challenge_id"]).status != "consumed"
+
+
+def test_data_export_postgres_bound_failure_preserves_code(closure_database):
+    url = closure_database
+    issued = _export_call(url, "code", {})
+    assert isinstance(issued, dict)
+    payload = {"challenge_id": issued["challenge_id"], "code": issued["code"]}
+    with get_session(url) as session:
+        session.add(
+            SupportRequest(
+                request_id="huge-export",
+                account_id="acct_close",
+                principal_id="prn_close",
+                title="Huge text",
+                description="界" * 800000,
+            )
+        )
+        session.commit()
+    assert _export_call(url, "confirm", payload) == 413
+    with get_session(url) as session:
+        code = session.get(PortalLoginCode, payload["challenge_id"])
+        assert code.status == "pending" and code.attempt_count == 0
+        session.get(SupportRequest, "huge-export").description = "Small"
+        session.commit()
+    assert isinstance(_export_call(url, "confirm", payload), bytes)
+
+
+def test_data_export_postgres_lock_timeout_preserves_code(closure_database, monkeypatch):
+    from app.domain import portal_data_export
+
+    url = closure_database
+    issued = _export_call(url, "code", {})
+    assert isinstance(issued, dict)
+    payload = {"challenge_id": issued["challenge_id"], "code": issued["code"]}
+    monkeypatch.setattr(portal_data_export, "BUDGET_SECONDS", 0.25)
+    with get_session(url) as writer, ThreadPoolExecutor(max_workers=1) as executor:
+        writer.scalar(select(Account).where(Account.account_id == "acct_close").with_for_update())
+        started = monotonic()
+        assert executor.submit(_export_call, url, "confirm", payload).result(timeout=4) == 504
+        assert monotonic() - started < 3
+        writer.rollback()
+    with get_session(url) as session:
+        assert session.get(PortalLoginCode, payload["challenge_id"]).status == "pending"
