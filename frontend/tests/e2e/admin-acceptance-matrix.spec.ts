@@ -57,6 +57,7 @@ async function expectDesktopRouteBaseline(page: Page, route: RouteAcceptance) {
     '/admin/coverage': '/admin/subscriptions',
     '/admin/plans': '/admin/subscriptions',
     '/admin/credit-packs': '/admin/subscriptions',
+    '/admin/economics': '/admin/subscriptions',
     '/admin/external-services': '/admin/ai-resources',
     '/admin/vector-settings': '/admin/ai-resources',
     '/admin/site-compliance': '/admin/service-settings',
