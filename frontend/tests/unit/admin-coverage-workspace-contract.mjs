@@ -38,8 +38,8 @@ assert.doesNotMatch(
 
 assert.match(
   coverageSource + serviceSource,
-  /data-ui="coverage-pagination"[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
-  'Coverage pagination must be URL-backed while filtering and ordering happen before service pagination'
+  /data-ui="coverage-quiet-pagination"[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
+  'Coverage Quiet pagination must be URL-backed while filtering and ordering happen before service pagination'
 );
 
 assert.match(
@@ -68,7 +68,7 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
+  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*admin\.coverage\.status_filter_label[\s\S]*coverage-status-pills[\s\S]*coverage-filter-toolbar[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
   'Coverage defaults to customers needing action and the clear action restores that URL-owned default'
 );
 
@@ -166,6 +166,43 @@ assert.doesNotMatch(
   coverageSource,
   /invoice_create|createCheckout|paymentIntent|wordpress_write|auto_apply|publish_to_wordpress/i,
   'Coverage workspace must not introduce commercial front-office or WordPress write actions'
+);
+
+
+assert.match(
+  coverageSource,
+  /DEFAULT_PAGE_SIZE = 10/,
+  'Quiet coverage queue default page size must be 10'
+);
+
+assert.match(
+  coverageSource,
+  /data-ui="coverage-status-pills"[\s\S]*BackofficeFilterPill[\s\S]*data-ui="coverage-filter-toolbar"/,
+  'Coverage status must use Quiet filter pills above the compact secondary toolbar'
+);
+
+assert.match(
+  coverageSource,
+  /data-ui="coverage-quiet-pagination"[\s\S]*common\.pagination_summary/,
+  'Quiet coverage queue must always show range / total pagination'
+);
+
+assert.match(
+  coverageSource,
+  /summaryItems=\{\[[\s\S]*filter_needs_action[\s\S]*translateStatusLabel\('error'[\s\S]*\]\}/,
+  'header summary must keep actionable needs-action and error signals'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /summary_total[\s\S]*common\.updated_at/,
+  'header summary must not keep decorative total/updated metric wall entries'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /PortalRowActions|PortalBreadcrumb|from '@\/components\/portal/,
+  'Coverage Quiet must not import Portal component suites'
 );
 
 console.log('admin_coverage_workspace_contract: ok');

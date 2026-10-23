@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -101,9 +102,10 @@ type CoverageWorkQueue = {
 
 const coverageClient = createApiClient({ idempotencyPrefix: 'admin_coverage' });
 
-const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 const QUEUE_VIEWS = new Set<QueueView>(['needs_action', 'all', 'error', 'warning', 'ok', 'inactive']);
 const QUEUE_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
+const QUEUE_VIEW_ORDER: QueueView[] = ['needs_action', 'error', 'warning', 'ok', 'inactive', 'all'];
 
 function normalizeQueueView(value: string | null): QueueView {
   return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'needs_action';
@@ -449,7 +451,7 @@ function AdminCoverageContent() {
     { value: 'inactive', label: translateStatusLabel('inactive', t), count: visibleSummary.inactive },
     {
       value: 'all',
-      label: t('common.all', {}, 'All'),
+      label: t('admin.coverage.filter_all_statuses', {}, 'All service statuses'),
       count: visibleSummary.total,
     },
   ];
@@ -478,11 +480,16 @@ function AdminCoverageContent() {
           </button>
         )}
         summaryItems={[
-          { label: t('admin.coverage.summary_total', {}, 'Total'), value: formatInteger(visibleSummary.total) },
-          { label: t('admin.coverage.filter_needs_action', {}, 'Needs action'), value: formatInteger(visibleSummary.needs_action), toneClassName: visibleSummary.needs_action > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
-          { label: translateStatusLabel('error', t), value: formatInteger(visibleSummary.error), toneClassName: visibleSummary.error > 0 ? 'text-rose-600 dark:text-rose-300' : undefined },
-          { label: translateStatusLabel('warning', t), value: formatInteger(visibleSummary.warning), toneClassName: visibleSummary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
-          { label: t('common.updated_at', {}, 'Updated'), value: activeQueue.generated_at ? formatDate(activeQueue.generated_at) : t('common.unknown', {}, 'Unknown') },
+          {
+            label: t('admin.coverage.filter_needs_action', {}, 'Needs action'),
+            value: formatInteger(visibleSummary.needs_action),
+            toneClassName: visibleSummary.needs_action > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
+          },
+          {
+            label: translateStatusLabel('error', t),
+            value: formatInteger(visibleSummary.error),
+            toneClassName: visibleSummary.error > 0 ? 'text-rose-600 dark:text-rose-300' : undefined,
+          },
         ]}
       />
 
@@ -503,30 +510,86 @@ function AdminCoverageContent() {
         className="overflow-hidden p-0"
         aria-busy={isQueueTransition || isRefreshing}
       >
-          <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
-            <div className="flex justify-end">
-              <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
+          <div className="space-y-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800 md:px-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+                  {t('admin.coverage.queue_list_title', {}, 'Customers needing service attention')}
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  {t(
+                    'admin.coverage.queue_list_desc',
+                    {},
+                    'Status, reason, and search filters are applied across the full coverage queue by the service API.'
+                  )}
+                </p>
+              </div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400" role="status">
                 {t(
-                  'admin.coverage.pagination_range',
+                  'admin.coverage.result_count',
                   {
-                    start: formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0),
-                    end: formatInteger(pagination.offset + visibleItems.length),
+                    visible: formatInteger(visibleItems.length),
                     total: formatInteger(pagination.total),
                   },
-                  `${formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
-                )} · {isQueueTransition
-                  ? t('common.loading', {}, 'Loading...')
-                  : `${t('common.updated_at', {}, 'Updated')} ${activeQueue.generated_at
-                  ? formatDate(activeQueue.generated_at)
-                  : t('common.unknown', {}, 'Unknown')}`}
+                  `${formatInteger(visibleItems.length)} on this page · ${formatInteger(pagination.total)} total`
+                )}
+                {isQueueTransition || isRefreshing
+                  ? ` · ${t('common.loading', {}, 'Loading...')}`
+                  : ''}
               </p>
             </div>
 
             <div
-              data-ui="coverage-filter-toolbar"
-              className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(12.5rem,1.35fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.68fr)_auto]"
+              role="group"
+              aria-label={t('admin.coverage.status_filter_label', {}, 'Service status')}
+              data-ui="coverage-status-pills"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
             >
-              <label className="min-w-0">
+              {QUEUE_VIEW_ORDER.map((status) => {
+                const filter = filters.find((entry) => entry.value === status);
+                if (!filter) return null;
+                const active = view === status;
+                const tone =
+                  status === 'error'
+                    ? 'danger'
+                    : status === 'warning' || status === 'needs_action'
+                      ? 'warning'
+                      : status === 'ok'
+                        ? 'success'
+                        : status === 'inactive'
+                          ? 'info'
+                          : 'neutral';
+                return (
+                  <BackofficeFilterPill
+                    key={status}
+                    active={active}
+                    aria-pressed={active}
+                    tone={tone}
+                    onClick={() => {
+                      setView(status);
+                      setOffset(0);
+                      updateQueueUrl({
+                        status,
+                        q: searchQuery.trim() || null,
+                        reason: reasonFilter || null,
+                        sort,
+                        offset: null,
+                        focus: null,
+                      });
+                    }}
+                  >
+                    {filter.label}
+                    <span className="ml-1 tabular-nums opacity-70">{formatInteger(filter.count)}</span>
+                  </BackofficeFilterPill>
+                );
+              })}
+            </div>
+
+            <div
+              data-ui="coverage-filter-toolbar"
+              className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+            >
+              <label className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-200 sm:min-w-[14rem]">
                 <span className="sr-only">
                   {t('common.search', {}, 'Search')}
                 </span>
@@ -548,34 +611,7 @@ function AdminCoverageContent() {
                   }}
                 />
               </label>
-              <label className="min-w-0">
-                <span className="sr-only">
-                  {t('admin.coverage.status_filter_label', {}, 'Service status')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={view}
-                  onChange={(event) => {
-                    const nextValue = normalizeQueueView(event.target.value);
-                    setView(nextValue);
-                    setOffset(0);
-                    updateQueueUrl({
-                      status: nextValue,
-                      q: searchQuery.trim() || null,
-                      reason: reasonFilter || null,
-                      sort,
-                      offset: null,
-                    });
-                  }}
-                >
-                  {filters.map((filter) => (
-                    <option key={filter.value} value={filter.value}>
-                      {filter.label} · {formatInteger(filter.count)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="min-w-0">
+              <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-44">
                 <span className="sr-only">
                   {t('admin.coverage.reason_filter_label', {}, 'Reason')}
                 </span>
@@ -603,7 +639,7 @@ function AdminCoverageContent() {
                   ))}
                 </select>
               </label>
-              <label className="min-w-0">
+              <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-44">
                 <span className="sr-only">
                   {t('admin.coverage.sort_label', {}, 'Sort')}
                 </span>
@@ -628,7 +664,7 @@ function AdminCoverageContent() {
                   <option value="customer">{t('admin.coverage.sort_customer', {}, 'Customer name')}</option>
                 </select>
               </label>
-              <div className="flex">
+              <div className="flex items-center gap-2 sm:ml-auto">
                 <span
                   className="inline-flex"
                   title={t('common.clear_filters', {}, 'Clear filters')}
@@ -636,7 +672,7 @@ function AdminCoverageContent() {
                 >
                   <button
                     type="button"
-                    className="btn btn-secondary h-11 w-11 shrink-0 p-0"
+                    className="btn btn-secondary btn-sm h-9 w-9 shrink-0 p-0"
                     aria-label={t('common.clear_filters', {}, 'Clear filters')}
                     disabled={!searchQuery && !reasonFilter && view === 'needs_action' && sort === 'priority'}
                     onClick={() => {
@@ -645,11 +681,11 @@ function AdminCoverageContent() {
                       setView('needs_action');
                       setSort('priority');
                       setOffset(0);
-                      updateQueueUrl({ q: null, reason: null, status: null, sort: null, offset: null });
+                      updateQueueUrl({ q: null, reason: null, status: null, sort: null, offset: null, focus: null });
                     }}
                   >
                     <svg
-                      className="h-5 w-5"
+                      className="h-4 w-4"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -853,50 +889,49 @@ function AdminCoverageContent() {
             />
           )}
 
-          {pagination.total > 0 ? (
-            <div
-              data-ui="coverage-pagination"
-              className="flex flex-col gap-3 border-t border-slate-200/80 px-4 py-3 text-sm dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p className="text-slate-500 dark:text-slate-400" role="status">
-                {t(
-                  'admin.coverage.pagination_range',
-                  {
-                    start: formatInteger(pagination.offset + 1),
-                    end: formatInteger(pagination.offset + visibleItems.length),
-                    total: formatInteger(pagination.total),
-                  },
-                  `${formatInteger(pagination.offset + 1)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
-                )}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={isRefreshing || pagination.offset <= 0}
-                  onClick={() => {
-                    const previousOffset = Math.max(0, pagination.offset - pagination.limit);
-                    setOffset(previousOffset);
-                    updateQueueUrl({ offset: String(previousOffset) });
-                  }}
-                >
-                  {t('common.previous', {}, 'Previous')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={isRefreshing || !pagination.hasMore}
-                  onClick={() => {
-                    const nextOffset = pagination.offset + pagination.limit;
-                    setOffset(nextOffset);
-                    updateQueueUrl({ offset: String(nextOffset) });
-                  }}
-                >
-                  {t('common.next', {}, 'Next')}
-                </button>
-              </div>
+          <nav
+            data-ui="coverage-quiet-pagination"
+            className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800"
+            aria-label={t('common.pagination', {}, 'Pagination')}
+          >
+            <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
+              {t(
+                'common.pagination_summary',
+                {
+                  start: String(pagination.total > 0 ? pagination.offset + 1 : 0),
+                  end: String(pagination.offset + visibleItems.length),
+                  total: String(pagination.total),
+                },
+                `${pagination.total > 0 ? pagination.offset + 1 : 0}-${pagination.offset + visibleItems.length} of ${pagination.total}`
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={isRefreshing || pagination.offset <= 0}
+                onClick={() => {
+                  const previousOffset = Math.max(0, pagination.offset - pagination.limit);
+                  setOffset(previousOffset);
+                  updateQueueUrl({ offset: String(previousOffset) });
+                }}
+              >
+                {t('common.previous', {}, 'Previous')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={isRefreshing || !pagination.hasMore}
+                onClick={() => {
+                  const nextOffset = pagination.offset + pagination.limit;
+                  setOffset(nextOffset);
+                  updateQueueUrl({ offset: String(nextOffset) });
+                }}
+              >
+                {t('common.next_page', {}, 'Next page')}
+              </button>
             </div>
-          ) : null}
+          </nav>
       </BackofficeSectionPanel>
 
       <AdminInspectorDrawer
