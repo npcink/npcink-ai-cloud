@@ -1209,6 +1209,7 @@ export interface PortalCreditPack {
 }
 
 export interface PortalCreditPackCatalogPayload {
+  commercial_available?: boolean;
   site_id?: string;
   catalog_version?: string;
   period_policy?: string;
@@ -1301,6 +1302,7 @@ export interface PortalPlanComparisonRight {
 }
 
 export interface PortalPlanOfferListPayload {
+  commercial_available?: boolean;
   items: PortalPlanOffer[];
   comparison_tiers?: PortalPlanComparisonTier[];
   trial?: {

@@ -77,12 +77,13 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 include_inactive=False,
             )
         return {
+            "commercial_available": not service.settings.commercial_emergency_stop,
             "catalog_version": CREDIT_PACK_CATALOG_VERSION,
             "period_policy": CREDIT_PACK_PERIOD_POLICY,
             "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
             "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
             "grant_event_type": CREDIT_LEDGER_EVENT_GRANT,
-            "items": items,
+            "items": [] if service.settings.commercial_emergency_stop else items,
         }
 
     def get_admin_credit_pack_catalog(self) -> dict[str, object]:
@@ -554,6 +555,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 existing = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing is not None:
                     return self._serialize_credit_pack_payment_order(existing)
+            self._assert_commercial_sales_available()
             if repository.get_account(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",

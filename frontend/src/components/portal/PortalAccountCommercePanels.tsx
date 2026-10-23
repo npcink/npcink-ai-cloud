@@ -287,6 +287,8 @@ export function PortalAccountCommercePanels() {
   ) : null;
 
   const comparisonTiers = planOffers?.comparison_tiers || [];
+  const salesAvailable = planOffers?.commercial_available !== false
+    && creditPacks?.commercial_available !== false;
 
   const handleConfirmPackageSelection = () => {
     if (!selectedPackageTier || packagePending !== null) return;
@@ -424,7 +426,9 @@ export function PortalAccountCommercePanels() {
                   )}
                 </p>
                 <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  {trialStatusTitle}
+                  {salesAvailable
+                    ? trialStatusTitle
+                    : t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.')}
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[25rem]">
@@ -432,6 +436,7 @@ export function PortalAccountCommercePanels() {
                   <button
                     type="button"
                     className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-secondary' : 'btn-primary'}`}
+                    disabled={!salesAvailable}
                     onClick={() => {
                       setPackageError(null);
                       setSelectedPackageTier(null);
@@ -439,12 +444,15 @@ export function PortalAccountCommercePanels() {
                       setActiveCommercialDialog('package');
                     }}
                   >
-                    {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
+                    {salesAvailable
+                      ? t('portal.billing.upgrade_action', {}, 'Upgrade package')
+                      : t('portal.package.offer_unavailable', {}, 'Unavailable')}
                   </button>
-                  {availableCreditPacks.length > 0 ? (
+                  {availableCreditPacks.length > 0 || !salesAvailable ? (
                     <button
                       type="button"
                       className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-primary' : 'btn-secondary'}`}
+                      disabled={!salesAvailable}
                       onClick={() => {
                         setCreditPackError(null);
                         setSelectedCreditPackId(null);
@@ -457,7 +465,8 @@ export function PortalAccountCommercePanels() {
                 </div>
                 <button
                   type="button"
-                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-300 dark:hover:text-blue-200"
+                  disabled={!salesAvailable}
+                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300 dark:hover:text-blue-200"
                   onClick={() => {
                     setPackageError(null);
                     setActiveCommercialDialog('trial');

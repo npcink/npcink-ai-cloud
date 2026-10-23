@@ -21,6 +21,7 @@ from app.api.auth import (
     enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
     enforce_portal_oauth_state_request_rate_limit,
+    enforce_portal_subscription_order_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
 )
@@ -101,6 +102,26 @@ def _portal_login_code_rate_limit_response(
         data={"retry_after_seconds": retry_after_seconds},
         headers={"Retry-After": str(retry_after_seconds)},
     )
+
+
+def _portal_commercial_sales_guard(
+    request: Request,
+    *,
+    order_account_id: str = "",
+) -> JSONResponse | None:
+    if get_cloud_services(request).settings.commercial_emergency_stop:
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="service.commercial_temporarily_paused",
+            message="New purchases and trials are temporarily unavailable. Please try again later.",
+        )
+    if order_account_id:
+        try:
+            enforce_portal_subscription_order_rate_limit(request, account_id=order_account_id)
+        except PortalBearerTokenError as error:
+            return _portal_login_code_rate_limit_response(request, error)
+    return None
 
 
 class PortalSessionSitePayload(BaseModel):
@@ -406,6 +427,7 @@ def _portal_credit_pack_catalog_data(
 ) -> dict[str, object]:
     catalog = _dict_value(value)
     data: dict[str, object] = {
+        "commercial_available": catalog.get("commercial_available", True),
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "period_policy": str(catalog.get("period_policy") or ""),
         "expiry_policy": str(catalog.get("expiry_policy") or ""),
@@ -512,6 +534,7 @@ def _portal_started_trial_data(value: object) -> dict[str, object]:
 def _portal_plan_offer_list_data(value: object) -> dict[str, object]:
     offers = _dict_value(value)
     return {
+        "commercial_available": offers.get("commercial_available", True),
         "items": [
             _portal_plan_offer_data(item) for item in _object_list(offers.get("items"))
         ],
@@ -3268,6 +3291,9 @@ async def start_portal_account_plan_trial(
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
+    sales_guard = _portal_commercial_sales_guard(request)
+    if sales_guard is not None:
+        return sales_guard
     try:
         result = await run_in_threadpool(
             _get_commercial_service(request).start_account_plan_trial,
@@ -3329,6 +3355,9 @@ async def create_portal_account_subscription_order(
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
+    sales_guard = _portal_commercial_sales_guard(request, order_account_id=account_id)
+    if sales_guard is not None:
+        return sales_guard
     try:
         result = await run_in_threadpool(
             _get_commercial_service(request).create_account_subscription_payment_order,
@@ -3932,6 +3961,9 @@ async def create_portal_account_credit_pack_order(
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
+    sales_guard = _portal_commercial_sales_guard(request, order_account_id=account_id)
+    if sales_guard is not None:
+        return sales_guard
     try:
         order = await run_in_threadpool(
             _get_commercial_service(request).create_credit_pack_payment_order,
@@ -5420,6 +5452,11 @@ async def create_portal_site_credit_pack_order(
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
+    sales_guard = _portal_commercial_sales_guard(
+        request, order_account_id=str(access.get("account_id") or "")
+    )
+    if sales_guard is not None:
+        return sales_guard
     try:
         order = await run_in_threadpool(
             _get_commercial_service(request).create_credit_pack_payment_order,

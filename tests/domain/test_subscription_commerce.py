@@ -20,6 +20,7 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SCHEDULED,
     AccountSubscription,
     PaymentOrder,
+    PlanOffer,
     SubscriptionOrder,
     TrialClaim,
 )
@@ -101,6 +102,104 @@ def _pay(
         amount=float(order["amount"]),
         audit_context=_audit(f"{key}-paid"),
     )
+
+
+def test_emergency_stop_does_not_seed_or_change_offers_and_recovers(tmp_path: Path) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_stop")
+    service.settings.commercial_emergency_stop = True
+    offers = service.list_account_plan_offers(account_id="acct_stop")
+    assert offers["commercial_available"] is False
+    assert offers["items"] == []
+    assert offers["trial"]["allowed_tiers"] == []
+    with get_session(database_url) as session:
+        assert session.scalar(select(PlanOffer)) is None
+    service.settings.commercial_emergency_stop = False
+    assert len(service.list_account_plan_offers(account_id="acct_stop")["items"]) == 2
+    service.settings.commercial_emergency_stop = True
+    service.list_account_plan_offers(account_id="acct_stop")
+    with get_session(database_url) as session:
+        offers = session.scalars(select(PlanOffer)).all()
+        assert {offer.status for offer in offers} == {"active"}
+        assert {offer.amount for offer in offers} == {Decimal("15.00"), Decimal("29.00")}
+
+
+def test_emergency_stop_allows_existing_settlement_replay_and_refunds(tmp_path: Path) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_stop_settle")
+    _account(service, "acct_stop_pack")
+    subscription_order = service.create_account_subscription_payment_order(
+        account_id="acct_stop_settle",
+        offer_id="plus_monthly_v1",
+        audit_context=_audit("before-stop"),
+    )
+    pack = service.create_credit_pack_payment_order(
+        account_id="acct_stop_pack", pack_id="pack_small", audit_context=_audit("pack-before-stop")
+    )
+    service.settings.commercial_emergency_stop = True
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.create_account_subscription_payment_order(
+            account_id="acct_stop_settle",
+            offer_id="pro_monthly_v1",
+            audit_context=_audit("new-order"),
+        )
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.start_account_plan_trial(account_id="acct_stop_settle", tier_id="plus")
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.create_credit_pack_payment_order(
+            account_id="acct_stop_settle", pack_id="pack_small"
+        )
+    replay = service.create_account_subscription_payment_order(
+        account_id="acct_stop_settle",
+        offer_id="plus_monthly_v1",
+        audit_context=_audit("before-stop"),
+    )
+    assert replay["order"]["order_id"] == subscription_order["order"]["order_id"]
+    assert (
+        service.create_credit_pack_payment_order(
+            account_id="acct_stop_pack",
+            pack_id="pack_small",
+            audit_context=_audit("pack-before-stop"),
+        )["order_id"]
+        == pack["order_id"]
+    )
+    paid = service.mark_payment_order_paid(
+        order_id=subscription_order["order"]["order_id"],
+        provider_event_id="stop-subscription-paid",
+        amount=15.0,
+        audit_context=_audit("settle-subscription"),
+    )
+    assert paid["subscription"]["plan_id"] == "plus"
+    pack_paid = service.mark_payment_order_paid(
+        order_id=pack["order_id"],
+        provider_event_id="stop-pack-paid",
+        amount=99.0,
+        audit_context=_audit("settle-pack"),
+    )
+    assert pack_paid["credit_ledger_entry"]["ai_credit_delta"] == 10000.0
+    pack_refund = service.request_payment_refund(
+        order_id=pack["order_id"], audit_context=_audit("refund-pack")
+    )
+    refunded = service.mark_payment_refund_succeeded(
+        refund_id=pack_refund["refund_id"],
+        provider_event_id="stop-pack-refunded",
+        audit_context=_audit("refunded-pack"),
+    )
+    assert refunded["credit_ledger_entry"]["ai_credit_delta"] == -10000.0
+    subscription_refund = service.request_payment_refund(
+        order_id=subscription_order["order"]["order_id"],
+        audit_context=_audit("refund-subscription"),
+    )
+    restored = service.mark_payment_refund_succeeded(
+        refund_id=subscription_refund["refund_id"],
+        provider_event_id="stop-subscription-refunded",
+        audit_context=_audit("refunded-subscription"),
+    )
+    assert restored["restored_subscription"]["plan_id"] == "free"
 
 
 def test_public_plan_catalog_reads_published_versions_and_active_offers(

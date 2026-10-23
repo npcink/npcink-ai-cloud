@@ -798,6 +798,170 @@ def _configure_portal_qq_settings(
     assert response.status_code == 200, response.text
 
 
+def _commercial_guard_account(client: TestClient, account_id: str) -> dict[str, object]:
+    settings = client.app.state.services.settings
+    service = CommercialService(settings.database_url, settings=settings)
+    service.upsert_account(account_id=account_id, name=account_id, bind_default_free=True)
+    site_id = f"site_{account_id}"
+    site = client.post(
+        "/internal/service/sites",
+        json={"site_id": site_id, "account_id": account_id, "name": site_id, "status": "active"},
+        headers=build_internal_headers(idempotency_key=f"site-{account_id}"),
+    )
+    assert site.status_code == 200, site.text
+    return _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email=f"{account_id}@example.com",
+        idempotency_key=f"member-{account_id}",
+    )
+
+
+def test_commercial_order_limit_is_shared_by_account_and_preserves_replay(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "guard_a")
+    site_id = str(grant["portal_site_id"])
+    principal_id = str(grant["principal_id"])
+    requests = [
+        ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+        ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+        (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_medium"}),
+    ]
+    for index, (path, payload) in enumerate(requests):
+        response = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"order-{index}"
+            ),
+        )
+        assert response.status_code == 200, response.text
+    replay = client.post(
+        requests[0][0],
+        json=requests[0][1],
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="order-0"
+        ),
+    )
+    assert replay.status_code == 200, replay.text
+    for index, (path, payload) in enumerate(requests):
+        limited = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"limited-{index}"
+            ),
+        )
+        assert limited.status_code == 429, limited.text
+        assert limited.json()["error_code"] == "portal.subscription_order_rate_limited"
+        assert 1 <= int(limited.headers["Retry-After"]) <= 60
+        assert limited.json()["data"]["retry_after_seconds"] == int(limited.headers["Retry-After"])
+    other = _commercial_guard_account(client, "guard_b")
+    independent = client.post(
+        requests[1][0],
+        json=requests[1][1],
+        headers=build_portal_headers(
+            principal_id=str(other["principal_id"]),
+            site_id=str(other["portal_site_id"]),
+            idempotency_key="independent-order",
+        ),
+    )
+    assert independent.status_code == 200, independent.text
+    with get_session(database_url) as session:
+        receipts = session.scalars(
+            select(ReplayReceipt).where(
+                ReplayReceipt.scope_kind == "portal_order_account",
+                ReplayReceipt.scope_id == "guard_a",
+            )
+        ).all()
+        assert len(receipts) == 3
+        for receipt in receipts:
+            receipt.created_at = datetime.now(UTC) - timedelta(seconds=61)
+            receipt.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    recovered = client.post(
+        requests[1][0],
+        json=requests[1][1],
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="after-window"
+        ),
+    )
+    assert recovered.status_code == 200, recovered.text
+
+
+def test_commercial_emergency_stop_masks_catalogs_blocks_new_writes_and_recovers(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "guard_stop")
+    site_id = str(grant["portal_site_id"])
+    principal_id = str(grant["principal_id"])
+    settings = client.app.state.services.settings
+    headers = build_portal_headers(principal_id=principal_id, site_id=site_id)
+    assert client.get("/portal/v1/account/plan-offers", headers=headers).json()["data"]["items"]
+    settings.commercial_emergency_stop = True
+    for path in (
+        "/portal/v1/account/plan-offers",
+        "/portal/v1/account/credit-packs",
+        f"/portal/v1/sites/{site_id}/credit-packs",
+    ):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["commercial_available"] is False
+        assert response.json()["data"]["items"] == []
+    catalog = client.get("/open/plan-catalog").json()["data"]
+    assert all(
+        item["availability"] == "unavailable"
+        for item in catalog["tiers"]
+        if item["tier_id"] in {"plus", "pro"}
+    )
+    for index, (path, payload) in enumerate(
+        [
+            ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+            ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+            (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+            ("/portal/v1/account/plan-trials", {"tier_id": "plus"}),
+        ]
+    ):
+        response = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"stopped-{index}"
+            ),
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["error_code"] == "service.commercial_temporarily_paused"
+    history = client.get("/portal/v1/account/payment-orders", headers=headers)
+    assert history.status_code == 200, history.text
+    settings.commercial_emergency_stop = False
+    restored = client.get("/portal/v1/account/plan-offers", headers=headers).json()["data"]
+    assert restored["commercial_available"] is True
+    assert len(restored["items"]) == 2
+    trial = client.post(
+        "/portal/v1/account/plan-trials",
+        json={"tier_id": "plus"},
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="trial-after-recovery"
+        ),
+    )
+    assert trial.status_code == 200, trial.text
+    assert trial.json()["data"]["subscription"]["status"] == "trialing"
+    with get_session(database_url) as session:
+        audit = session.scalar(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.account_id == "guard_stop",
+            ServiceAuditEvent.event_kind == "subscription.paid_trial.start_or_upgrade",
+        ))
+        assert audit is not None
+        snapshot = session.scalar(select(AccountEntitlementSnapshot).where(
+            AccountEntitlementSnapshot.account_id == "guard_stop",
+            AccountEntitlementSnapshot.status == "active",
+        ))
+        assert snapshot is not None
+        assert snapshot.plan_version_id == "plus_v1"
+        assert snapshot.budgets_json["max_ai_credits_per_period"] == 3000
+
+
 def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     fake_sender = FakePortalEmailSender()
     database_url, client = _build_client(tmp_path, portal_email_sender=fake_sender)

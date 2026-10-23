@@ -121,6 +121,7 @@ function buildPortalSession(
 async function installPortalMocks(
   page: Page,
   options: {
+    commercialEmergencyStop?: boolean;
     paymentReturnFlow?: boolean;
     paymentReturnProcessingStep?: boolean;
     delaySessionRefresh?: boolean;
@@ -664,6 +665,10 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/credit-packs') {
+      if (options.commercialEmergencyStop) {
+        await fulfillJson(route, { commercial_available: false, items: [] });
+        return;
+      }
       await fulfillJson(route, {
         site_id: '',
         account_id: 'acct_portal',
@@ -879,6 +884,13 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/plan-offers') {
+      if (options.commercialEmergencyStop) {
+        await fulfillJson(route, {
+          commercial_available: false, items: [], comparison_tiers: [],
+          trial: { available: false, state: 'unavailable', allowed_tiers: [] },
+        });
+        return;
+      }
       await fulfillJson(route, {
         account_id: 'acct_portal',
         principal_id: 'principal_portal',
@@ -1719,6 +1731,26 @@ async function installPortalMocks(
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
 }
+
+test('commercial emergency stop disables purchase and trial CTAs and recovers', async ({ page }, testInfo) => {
+  const options = { commercialEmergencyStop: true };
+  const state = await installPortalMocks(page, options);
+  await page.goto('/portal/account');
+  const commerce = page.locator('[data-portal-account="commerce"]');
+  await expect(commerce.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
+  const actions = commerce.locator('#package-options button');
+  await expect(actions).toHaveCount(3);
+  for (const action of await actions.all()) await expect(action).toBeDisabled();
+  await expect(commerce.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('commercial-paused.png'), fullPage: true });
+  expect(state.portalStateMutationRequestCount()).toBe(0);
+  options.commercialEmergencyStop = false;
+  await page.reload();
+  await expect(commerce.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toBeEnabled();
+  await expect(commerce.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeEnabled();
+  for (const action of await actions.all()) await expect(action).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('commercial-restored.png'), fullPage: true });
+});
 
 test('portal workspace interaction path: account overview to site detail and service pages', async ({
   page,

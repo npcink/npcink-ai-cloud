@@ -134,8 +134,13 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     )
 
                 requires_offer = tier_id in {"plus", "pro"}
-                available = plan_version is not None and plan_active and (
-                    not requires_offer or offer is not None
+                available = (
+                    plan_version is not None
+                    and plan_active
+                    and (not requires_offer or offer is not None)
+                    and not (
+                        cast(Any, self).settings.commercial_emergency_stop and tier_id != "free"
+                    )
                 )
                 comparison_rights = comparison.get("comparison_rights")
                 if not isinstance(comparison_rights, dict):
@@ -179,7 +184,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                             )
                         ),
                         "trial_enabled": bool(
-                            offer.trial_enabled if offer is not None else False
+                            offer.trial_enabled if offer is not None and available else False
                         ),
                         "trial_days": int(
                             offer.trial_days if offer is not None else 0
@@ -208,10 +213,14 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             repository = CommercialSubscriptionLifecycleRepository(session)
             self._require_commerce_account(repository, account_id)
             self._ensure_standard_plan_offers_in_session(repository)
-            accessible_offers = repository.list_plan_offers(
-                account_id=account_id,
-                status=PLAN_OFFER_STATUS_ACTIVE,
-                now=now,
+            accessible_offers = (
+                []
+                if cast(Any, self).settings.commercial_emergency_stop
+                else repository.list_plan_offers(
+                    account_id=account_id,
+                    status=PLAN_OFFER_STATUS_ACTIVE,
+                    now=now,
+                )
             )
             canonical_standard_offer_ids = {
                 str(settings["offer_id"]) for settings in STANDARD_PLAN_OFFERS.values()
@@ -256,6 +265,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 )
             session.commit()
             return {
+                "commercial_available": not cast(Any, self).settings.commercial_emergency_stop,
                 "items": [self._serialize_plan_offer(offer) for offer in offers],
                 "comparison_tiers": comparison_tiers,
                 "trial": self._serialize_account_trial_eligibility(
@@ -372,7 +382,6 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
-            self._ensure_standard_plan_offers_in_session(repository)
             if idempotency_key:
                 existing_payment = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing_payment is not None:
@@ -387,6 +396,9 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                             existing_subscription_order
                         ),
                     }
+
+            self._assert_commercial_sales_available()
+            self._ensure_standard_plan_offers_in_session(repository)
 
             service._reconcile_account_subscription_state_in_session(
                 repository=repository,
@@ -671,6 +683,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         trial_ai_credit_limit: int | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        self._assert_commercial_sales_available()
         service = cast(Any, self)
         now = service.now_factory()
         normalized_tier = str(tier_id or "").strip().lower()
@@ -1403,6 +1416,9 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         self,
         repository: CommercialSubscriptionLifecycleRepository,
     ) -> None:
+        # Stop bootstrap writes without interrupting reads or existing settlement.
+        if cast(Any, self).settings.commercial_emergency_stop:
+            return
         service = cast(Any, self)
         for tier_id in STANDARD_PLAN_OFFERS:
             plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(

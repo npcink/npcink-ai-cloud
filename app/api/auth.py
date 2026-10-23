@@ -512,6 +512,7 @@ def _enforce_portal_request_rate_limit(
     *,
     scopes: tuple[tuple[str, str, int], ...],
     error_code: str,
+    window_seconds: int = PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
 ) -> None:
     services = get_cloud_services(request)
     bounded_scopes = tuple(
@@ -550,7 +551,7 @@ def _enforce_portal_request_rate_limit(
                         scope_kind=scope_kind,
                         scope_id=scope_id,
                         now=now,
-                        window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
+                        window_seconds=window_seconds,
                         max_requests=max_requests,
                     )
                 except RequestAuthError as error:
@@ -571,7 +572,7 @@ def _enforce_portal_request_rate_limit(
                     path=request.url.path,
                     trace_id=trace_id,
                     now=now,
-                    ttl_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
+                    ttl_seconds=window_seconds,
                 )
             session.commit()
     except RequestAuthError as error:
@@ -619,6 +620,21 @@ def enforce_portal_oauth_state_request_rate_limit(request: Request) -> None:
             ),
         ),
         error_code="portal.oauth_state_rate_limited",
+    )
+
+
+def enforce_portal_subscription_order_rate_limit(
+    request: Request,
+    *,
+    account_id: str,
+    limit_per_account: int = 3,
+    window_seconds: int = 60,
+) -> None:
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=(("portal_order_account", account_id, limit_per_account),),
+        error_code="portal.subscription_order_rate_limited",
+        window_seconds=window_seconds,
     )
 
 
