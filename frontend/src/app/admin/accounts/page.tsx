@@ -7,6 +7,7 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import {
   BackofficeEmptyState,
   BackofficePageHeader,
@@ -14,7 +15,6 @@ import {
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
@@ -100,7 +100,8 @@ const ACCOUNTS_RETURN_CONTEXT_POLICY = {
 } as const;
 const INTERNAL_TEST_ACCOUNT_RE = /(^|[_-])(smoke)([_-]|$)|codex_image_smoke|site_knowledge_smoke/i;
 const ACCOUNT_SORTS = new Set<AccountSort>(['display_name', 'created_at']);
-const PAGE_SIZE = 25;
+const ACCOUNT_PAGE_SIZE = 10;
+const ACCOUNT_STATUS_FILTERS = ['', 'active', 'inactive', 'suspended'] as const;
 const accountsClient = createApiClient({ idempotencyPrefix: 'admin_accounts' });
 
 function isMalformedAccountText(value?: string): boolean {
@@ -189,6 +190,72 @@ function normalizeOffset(value: string | null): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function normalizeAccountLimit(value: string | null): number {
+  const parsed = Number(value || ACCOUNT_PAGE_SIZE);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100
+    ? parsed
+    : ACCOUNT_PAGE_SIZE;
+}
+
+type QuietQueuePaginationProps = {
+  offset: number;
+  limit: number;
+  total: number;
+  isLoading?: boolean;
+  onOffsetChange: (offset: number) => void;
+};
+
+/** Quiet footer: always show range / total (shared ListPagination hides single-page). */
+function QuietQueuePagination({
+  offset,
+  limit,
+  total,
+  isLoading = false,
+  onOffsetChange,
+}: QuietQueuePaginationProps) {
+  const { t } = useLocale();
+  const safeTotal = Math.max(0, total);
+  const safeOffset = Math.max(0, offset);
+  const start = safeTotal > 0 ? safeOffset + 1 : 0;
+  const end = Math.min(safeOffset + limit, safeTotal);
+  const hasPrevious = safeOffset > 0;
+  const hasNext = safeOffset + limit < safeTotal;
+
+  return (
+    <nav
+      className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800"
+      aria-label={t('common.pagination', {}, 'Pagination')}
+      data-ui="customer-directory-quiet-pagination"
+    >
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {t(
+          'common.pagination_summary',
+          { start: String(start), end: String(end), total: String(safeTotal) },
+          `${start}-${end} of ${safeTotal}`
+        )}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasPrevious || isLoading}
+          onClick={() => onOffsetChange(Math.max(0, safeOffset - limit))}
+        >
+          {t('common.previous', {}, 'Previous')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasNext || isLoading}
+          onClick={() => onOffsetChange(safeOffset + limit)}
+        >
+          {t('common.next_page', {}, 'Next page')}
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function AccountsContent() {
   const { t } = useLocale();
   const toast = useToast();
@@ -201,6 +268,7 @@ function AccountsContent() {
   const showInternalAccounts = searchParams.get('internal') === '1';
   const sort = normalizeSort(searchParams.get('sort'));
   const offset = normalizeOffset(searchParams.get('offset'));
+  const limit = normalizeAccountLimit(searchParams.get('limit'));
   const queueReturnTo = useMemo(() => buildAdminQueueReturnTo({
     pathname,
     searchParams: searchParamsKey,
@@ -243,10 +311,10 @@ function AccountsContent() {
     if (appliedStatus) params.set('status', appliedStatus);
     if (!showInternalAccounts) params.set('exclude_internal', 'true');
     params.set('sort', sort);
-    params.set('limit', String(PAGE_SIZE));
+    params.set('limit', String(limit));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedQuery, appliedStatus, offset, showInternalAccounts, sort]);
+  }, [appliedQuery, appliedStatus, limit, offset, showInternalAccounts, sort]);
 
   const updateDirectoryUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -254,7 +322,8 @@ function AccountsContent() {
       Object.entries(patch).forEach(([key, value]) => {
         const isDefault =
           (key === 'sort' && value === 'display_name') ||
-          (key === 'offset' && value === '0');
+          (key === 'offset' && value === '0') ||
+          (key === 'limit' && value === String(ACCOUNT_PAGE_SIZE));
         if (!value || isDefault) nextParams.delete(key);
         else nextParams.set(key, value);
       });
@@ -323,20 +392,6 @@ function AccountsContent() {
     () => (showInternalAccounts ? accounts : accounts.filter((account) => !isInternalAccount(account))),
     [accounts, showInternalAccounts]
   );
-  const pageSummary = useMemo(
-    () => ({
-      active: visibleAccounts.filter((account) => account.status === 'active').length,
-      loginReady: visibleAccounts.filter(
-        (account) => account.identity_relationship_state === 'healthy'
-      ).length,
-      sites: visibleAccounts.reduce((sum, account) => sum + account.site_count, 0),
-      subscriptions: visibleAccounts.reduce(
-        (sum, account) => sum + account.subscription_count,
-        0
-      ),
-    }),
-    [visibleAccounts]
-  );
   const isShowingRetainedResults = Boolean(
     loadError && loadedRequestKey && loadedRequestKey !== requestKey
   );
@@ -353,6 +408,7 @@ function AccountsContent() {
       status: null,
       internal: null,
       sort: null,
+      limit: null,
       offset: null,
     });
   };
@@ -451,22 +507,6 @@ function AccountsContent() {
             label: t('admin.accounts.summary_customers', {}, 'Customers'),
             value: formatInteger(total),
           },
-          {
-            label: t('admin.accounts.summary_active', {}, 'Active accounts'),
-            value: formatInteger(pageSummary.active),
-          },
-          {
-            label: t('admin.accounts.summary_login_ready', {}, 'Login ready'),
-            value: formatInteger(pageSummary.loginReady),
-          },
-          {
-            label: t('common.sites', {}, 'Sites'),
-            value: formatInteger(pageSummary.sites),
-          },
-          {
-            label: t('common.subscriptions', {}, 'Subscriptions'),
-            value: formatInteger(pageSummary.subscriptions),
-          },
         ]}
       />
 
@@ -521,12 +561,45 @@ function AccountsContent() {
 
       <BackofficeSectionPanel className="overflow-hidden p-0">
         <div
+          role="group"
+          aria-label={t('admin.accounts.status_filter_label', {}, 'Account status')}
+          data-ui="customer-directory-status-pills"
+          className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800"
+        >
+          {ACCOUNT_STATUS_FILTERS.map((status) => {
+            const active = appliedStatus === status;
+            const tone =
+              status === 'active'
+                ? 'success'
+                : status === 'suspended'
+                  ? 'danger'
+                  : status === 'inactive'
+                    ? 'warning'
+                    : 'neutral';
+            return (
+              <BackofficeFilterPill
+                key={status || 'all'}
+                active={active}
+                aria-pressed={active}
+                tone={tone}
+                onClick={() =>
+                  updateDirectoryUrl({ status: status || null, offset: null })
+                }
+              >
+                {status
+                  ? t(`status.${status}`, {}, status)
+                  : t('admin.accounts.all_statuses', {}, 'All account states')}
+              </BackofficeFilterPill>
+            );
+          })}
+        </div>
+        <div
           data-ui="customer-directory-toolbar"
-          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-end"
+          className="flex flex-col gap-2 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800 sm:flex-row sm:flex-wrap sm:items-center"
         >
           <form
             data-ui="customer-directory-search"
-            className="flex min-w-0 gap-2 lg:w-full lg:max-w-2xl"
+            className="flex min-w-0 flex-1 gap-2 sm:min-w-[14rem]"
             onSubmit={applySearch}
           >
             <label className="min-w-0 flex-1">
@@ -543,26 +616,11 @@ function AccountsContent() {
                 onChange={(event) => setDraftQuery(event.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary btn-sm whitespace-nowrap">
               {t('common.search', {}, 'Search')}
             </button>
           </form>
-          <label className="lg:w-48">
-            <span className="sr-only">{t('common.status', {}, 'Status')}</span>
-            <select
-              className="input w-full"
-              value={appliedStatus}
-              onChange={(event) =>
-                updateDirectoryUrl({ status: event.target.value || null, offset: null })
-              }
-            >
-              <option value="">{t('admin.accounts.all_statuses', {}, 'All account states')}</option>
-              <option value="active">{t('status.active', {}, 'Active')}</option>
-              <option value="inactive">{t('status.inactive', {}, 'Inactive')}</option>
-              <option value="suspended">{t('status.suspended', {}, 'Suspended')}</option>
-            </select>
-          </label>
-          <label className="lg:w-48">
+          <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-48">
             <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
             <select
               className="input w-full"
@@ -584,7 +642,7 @@ function AccountsContent() {
           </label>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-secondary btn-sm whitespace-nowrap sm:ml-auto"
             disabled={!hasFilters && !draftQuery}
             onClick={clearFilters}
           >
@@ -634,9 +692,9 @@ function AccountsContent() {
             )}
             bodyClassName="overflow-x-auto"
             footer={(
-              <ListPagination
+              <QuietQueuePagination
                 offset={offset}
-                limit={PAGE_SIZE}
+                limit={limit}
                 total={total}
                 isLoading={isRefreshing}
                 onOffsetChange={(nextOffset) =>

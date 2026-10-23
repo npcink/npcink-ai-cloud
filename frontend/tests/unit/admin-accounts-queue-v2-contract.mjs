@@ -29,6 +29,37 @@ assert.match(
   /BackofficePageHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*<table/,
   'customer directory must use one compact header, summary strip, and semantic directory table'
 );
+
+assert.match(
+  directorySource,
+  /ACCOUNT_PAGE_SIZE = 10/,
+  'Quiet customer directory default page size must be 10'
+);
+assert.match(
+  directorySource,
+  /data-ui="customer-directory-status-pills"[\s\S]*BackofficeFilterPill[\s\S]*data-ui="customer-directory-toolbar"/,
+  'account status must use Quiet filter pills above the compact secondary toolbar'
+);
+assert.match(
+  directorySource,
+  /data-ui="customer-directory-toolbar"[\s\S]*customer-directory-search[\s\S]*admin\.accounts\.sort_label[\s\S]*clear_filters/,
+  'search, sort, and clear must share one Quiet secondary toolbar'
+);
+assert.match(
+  directorySource,
+  /data-ui="customer-directory-quiet-pagination"[\s\S]*common\.pagination_summary/,
+  'Quiet customer directory must always show range / total pagination'
+);
+assert.match(
+  directorySource,
+  /summaryItems=\{\[[\s\S]*summary_customers[\s\S]*\]\}/,
+  'header summary must keep the filtered customer total'
+);
+assert.doesNotMatch(
+  directorySource,
+  /summary_active[\s\S]*summary_login_ready[\s\S]*common\.sites[\s\S]*common\.subscriptions/,
+  'header summary must not keep decorative page-scoped metric wall entries'
+);
 assert.doesNotMatch(
   directorySource,
   /AccountRisk|accountRisk|riskToneClassName|risk_reason|account-inspector|focus:|aria-controls="account-inspector"/,
@@ -40,7 +71,7 @@ assert.match(
   /usePathname[\s\S]*useRouter[\s\S]*useSearchParams/,
   'customer directory state must remain addressable'
 );
-for (const parameter of ['q', 'status', 'internal', 'sort', 'offset']) {
+for (const parameter of ['q', 'status', 'internal', 'sort', 'limit', 'offset']) {
   assert.match(
     directorySource,
     new RegExp(`searchParams\\.get\\('${parameter}'\\)|${parameter}:`),

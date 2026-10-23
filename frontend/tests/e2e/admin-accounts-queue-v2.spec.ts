@@ -207,7 +207,11 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(directoryRows.nth(1)).toContainText('Beta Customer');
   await expect(directoryRows.nth(2)).toContainText('Zeta Customer');
 
-  await page.getByRole('combobox').nth(0).selectOption('suspended');
+  const statusPills = page.locator('[data-ui="customer-directory-status-pills"]');
+  await expect(statusPills).toBeVisible();
+  await expect(page.locator('[data-ui="customer-directory-quiet-pagination"]')).toContainText(/1-3|第 1–3|1–3/);
+
+  await statusPills.getByRole('button', { name: /^Suspended$|^已停用$|^已暂停$/i }).click();
   await expect(page).toHaveURL(/status=suspended/);
   await expect(directoryRows).toHaveCount(1);
   await expect(directoryRows).toContainText('Zeta Customer');
@@ -218,7 +222,7 @@ test('customer directory persists customer filters and opens the specified custo
 
   await page.reload();
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Zeta');
-  await expect(page.getByRole('combobox').nth(0)).toHaveValue('suspended');
+  await expect(statusPills.getByRole('button', { name: /^Suspended$|^已停用$|^已暂停$/i })).toHaveAttribute('aria-pressed', 'true');
   await expect(directoryRows).toContainText('Zeta Customer');
 
   const detailHref = await directoryRows
