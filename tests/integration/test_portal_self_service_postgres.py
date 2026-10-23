@@ -999,25 +999,27 @@ def test_registry_postgres_failed_issue_preserves_proof(closure_database, monkey
 
     url, service = closure_database, CommercialService(closure_database)
     proof = service.issue_portal_login_code(email="close@example.test", ttl_seconds=600)
-    if failure == "sign":
+    # Restore injection before readback and fixture/schema cleanup, even on failure.
+    with monkeypatch.context() as injected:
+        if failure == "sign":
 
-        def fail(*args, **kwargs):
-            raise RuntimeError("synthetic signing failure")
+            def fail(*args, **kwargs):
+                raise RuntimeError("synthetic signing failure")
 
-        monkeypatch.setattr("app.domain.portal_sessions.service.build_portal_session_token", fail)
-    else:
+            injected.setattr("app.domain.portal_sessions.service.build_portal_session_token", fail)
+        else:
 
-        def fail(self):
-            raise RuntimeError("synthetic commit failure")
+            def fail(self):
+                raise RuntimeError("synthetic commit failure")
 
-        monkeypatch.setattr(Session, "commit", fail)
-    with pytest.raises(RuntimeError):
-        service.verify_portal_login_code(
-            email="close@example.test",
-            code=proof["code"],
-            max_attempts=5,
-            session_issuer=PortalSessionIssuer(_registry_settings(url), 3600, "email_code"),
-        )
+            injected.setattr(Session, "commit", fail)
+        with pytest.raises(RuntimeError):
+            service.verify_portal_login_code(
+                email="close@example.test",
+                code=proof["code"],
+                max_attempts=5,
+                session_issuer=PortalSessionIssuer(_registry_settings(url), 3600, "email_code"),
+            )
     with get_session(url) as session:
         assert (
             session.scalar(
