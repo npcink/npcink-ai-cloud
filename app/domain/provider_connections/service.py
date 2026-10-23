@@ -1110,7 +1110,7 @@ class ProviderConnectionAdminService:
         ):
             secretless = True
         resolved_kind = _string(payload.get("kind") or normalized_provider_type)
-        if resolved_kind not in SUPPORTED_CONNECTION_KINDS:
+        if resolved_kind.lower() not in SUPPORTED_CONNECTION_KINDS:
             raise ProviderConnectionAdminError(
                 "provider_connection.kind_unsupported",
                 f"unsupported provider kind: {resolved_kind!r}; "

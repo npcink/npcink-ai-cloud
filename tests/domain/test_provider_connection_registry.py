@@ -17,6 +17,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
+    build_provider_adapter_from_connection,
     build_provider_adapters,
     resolve_execution_provider_adapters,
 )
@@ -1757,5 +1758,34 @@ def test_save_connection_accepts_supported_runtime_and_compatible_kinds(
             row = session.get(ProviderConnection, "supported_kind")
             assert row is not None
             assert row.config_json["kind"] == kind
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("kind", ["OPENAI_COMPATIBLE", "OpenAI-Compatible"])
+def test_save_connection_preserves_case_insensitive_kind_on_resave(
+    tmp_path: Path, kind: str
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    payload = {
+        "connection_id": "mixed_case_kind",
+        "provider_id": "custom_provider",
+        "provider_type": "openai_compatible",
+        "kind": kind,
+        "secretless": True,
+    }
+    try:
+        service.save_connection(payload)
+        service.save_connection(payload, connection_id="mixed_case_kind")
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, "mixed_case_kind")
+            assert row is not None
+            assert row.config_json["kind"] == kind
+            assert isinstance(
+                build_provider_adapter_from_connection(settings, row), OpenAIProviderAdapter
+            )
     finally:
         dispose_engine(database_url)
