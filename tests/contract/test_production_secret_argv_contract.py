@@ -232,7 +232,7 @@ elif path == "/admin/service-settings":
     response_headers.append("Location: /admin/login")
 elif path == "/open/payments/alipay/return":
     status = "303"
-    response_headers.append("Location: /portal/billing?payment_return=alipay")
+    response_headers.append("Location: /portal/account?payment_return=alipay#payment-orders")
 elif path == "/open/payments/alipay/notify":
     status = "400"
 elif path == "/portal/v1/auth/code/request":

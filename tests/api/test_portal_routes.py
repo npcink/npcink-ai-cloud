@@ -6715,8 +6715,8 @@ def test_open_alipay_notify_marks_pro_monthly_order_paid(
     )
     assert return_response.status_code == 303
     assert return_response.headers["location"] == (
-        f"/portal/billing?payment_return=alipay&out_trade_no={external_order_no}"
-        "&trade_status=TRADE_SUCCESS"
+        f"/portal/account?payment_return=alipay&out_trade_no={external_order_no}"
+        "&trade_status=TRADE_SUCCESS#payment-orders"
     )
     with get_session(database_url) as session:
         payment_order = session.get(PaymentOrder, str(order["order_id"]))

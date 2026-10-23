@@ -195,7 +195,8 @@ ok "admin service settings is protected"
 http_request "GET" "${BASE_URL%/}/open/payments/alipay/return?out_trade_no=preflight&trade_status=TRADE_SUCCESS"
 case "${HTTP_STATUS}" in
 	303)
-		assert_location_contains "/portal/billing" "enabled Alipay return should redirect to Portal billing"
+		assert_location_contains "/portal/account" "enabled Alipay return should redirect to Portal account"
+		assert_location_contains "#payment-orders" "enabled Alipay return should target account payment orders"
 		assert_location_contains "payment_return=alipay" "enabled Alipay return should mark provider in redirect"
 		ok "Alipay return callback is enabled"
 		;;
