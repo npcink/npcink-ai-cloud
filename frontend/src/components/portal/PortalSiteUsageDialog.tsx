@@ -683,7 +683,11 @@ export function PortalSiteUsageDialog({
       title={dialogTitle}
       description={dialogDescription}
       size="2xl"
-      className="h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      className={
+        selectedCreditEvent
+          ? 'rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]'
+          : 'h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]'
+      }
     >
       <div className="flex min-h-full flex-col gap-4" data-portal-billing="site-usage-dialog">
         {!siteId ? (

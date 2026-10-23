@@ -18,7 +18,8 @@ assert.doesNotMatch(dialog, /onWindowChange=/, 'embedded trend must not render i
 assert.match(dialog, /range !== '1h'[\s\S]*startAt[\s\S]*endAt/, '1h records use an explicit start/end range');
 
 // 2. Fixed height, inner scroll, sticky header.
-assert.match(dialog, /className="h-\[min\(90vh,48rem\)\]/, 'dialog height must be fixed, not max-h');
+assert.match(dialog, /h-\[min\(90vh,48rem\)\]/, 'list/trend dialog height stays fixed');
+assert.match(dialog, /selectedCreditEvent\s*\?[\s\S]{0,80}rounded-\[18px\]/, 'event detail drops fixed tall height');
 assert.match(dialog, /sticky -top-4 z-20[^"]*bg-white[^"]*"\s*data-portal-usage="site-dialog-header"/, 'summary/range/tabs header must stick');
 
 // 3. Units + punctuation.
