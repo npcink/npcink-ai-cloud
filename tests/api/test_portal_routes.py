@@ -1118,7 +1118,40 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert failed_notification_response.json()["data"]["request"]["waiting_on"] == "customer"
     assert "smtp.internal" not in failed_notification_response.text
 
+    disposable_attachment_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/attachments",
+        json={
+            "filename": "discarded-note.txt",
+            "content_type": "text/plain",
+            "content_base64": "cGF5bWVudCBub3Rl",
+        },
+        headers=_portal_cookie_headers(idempotency_key="portal-support-discard-upload-001"),
+    )
+    assert disposable_attachment_response.status_code == 200
+    discarded_attachment = disposable_attachment_response.json()["data"]["attachment"]
+    discarded_id = discarded_attachment["attachment_id"]
+    delete_response = client.delete(
+        f"/portal/v1/support-requests/{request_id}/attachments/{discarded_id}",
+        headers=_portal_cookie_headers(idempotency_key="portal-support-discard-delete-001"),
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    _assert_no_portal_support_internal_fields(delete_response.json()["data"])
+    assert delete_response.json()["data"]["attachment"] == discarded_attachment
+    assert client.get(
+        f"/portal/v1/support-requests/{request_id}/attachments/{discarded_id}"
+    ).status_code == 404
+
     with get_session(database_url) as session:
+        deletion_audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "support_request.attachment_deleted",
+                ServiceAuditEvent.scope_id == request_id,
+            )
+        )
+        assert deletion_audit is not None
+        assert deletion_audit.payload_json["attachment_id"] == discarded_id
+        assert deletion_audit.payload_json["byte_size"] == len(b"payment note")
+        assert session.get(SupportRequestAttachment, discarded_id) is None
         audit_kinds = {
             event.event_kind
             for event in session.scalars(
@@ -1130,6 +1163,7 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
         }
     assert audit_kinds == {
         "support_request.attachment_created",
+        "support_request.attachment_deleted",
         "support_request.created",
         "support_request.feedback_submitted",
         "support_request.message_created",

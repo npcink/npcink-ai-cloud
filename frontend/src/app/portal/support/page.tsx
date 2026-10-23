@@ -301,7 +301,6 @@ function PortalSupportContent() {
                     type="button"
                     role="tab"
                     aria-selected={selected}
-                    aria-pressed={selected}
                     className={cn(
                       'inline-flex h-7 items-center rounded-full px-2.5 text-xs font-medium transition',
                       selected

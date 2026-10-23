@@ -165,7 +165,7 @@ for (const [name, source] of [
 ]) {
   assert.match(source, /<PortalWorkspaceHeader/, `${name} must use the shared Portal workspace header`);
 }
-assert.match(paymentOrderHistory, /role="tab"[\s\S]*min-h-11/);
+assert.match(paymentOrderHistory, /role="tab"[\s\S]*inline-flex h-7[\s\S]*rounded-full/, 'PC payment status filters use compact pills');
 assert.match(billing, /resolvePackageStatusDetail/);
 assert.match(billing, /<PortalEntitlementUsage/);
 assert.doesNotMatch(billing, /PortalBreadcrumb/, 'Package top-level page must not show a Service breadcrumb');
@@ -187,12 +187,12 @@ assert.match(creditPackDialog, /selectedPackId === pack\.pack_id[\s\S]*onConfirm
 assert.match(packagePanel, /border-2 bg-white[\s\S]*focus-visible:ring-\[#0071e3\]/);
 assert.match(accountCommerce, /size="3xl"\s+className="portal-commercial-dialog /, 'package change dialog must use the Modal 3xl size');
 assert.doesNotMatch(accountCommerce + creditPackDialog + siteUsageDialog, /portal-commercial-dialog max-w-|size="xl"\s+className="[^"]*max-w-/, 'portal dialogs must not override Modal width with className');
-assert.match(modal, /'2xl': 'max-w-4xl'[\s\S]*'3xl': 'max-w-5xl'/, 'Modal must expose the formal 2xl/3xl portal sizes');
+assert.match(modal, /'2xl': 'max-w-4xl'[\s\S]*'3xl': 'max-w-3xl'/, 'Modal must expose the formal site-usage size and the narrowed package size');
 assert.match(siteUsageDialog, /size="2xl"/, 'site usage dialog must use the Modal 2xl size');
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_credit_snapshot/);
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_purchase_amount/);
 assert.match(paymentOrderHistory, /<details[\s\S]*portal\.usage\.payment_orders_title[\s\S]*<\/details>/);
-assert.match(paymentOrderHistory, /open=\{Number\(counts\.pending \|\| 0\) > 0\}/);
+assert.match(paymentOrderHistory, /<details[\s\S]*\sopen\s+data-portal-account="payment-orders"/, 'Existing account payment orders remain visible initially');
 
 assert.doesNotMatch(support, /<h2[^>]*>[\s\S]*portal\.support_request_list_title[\s\S]*<\/h2>/);
 assert.doesNotMatch(support, /PortalBreadcrumb/, 'Tickets list top-level page must not show a Service breadcrumb');

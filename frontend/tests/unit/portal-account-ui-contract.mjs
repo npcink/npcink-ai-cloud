@@ -162,8 +162,8 @@ assert.match(
 );
 assert.match(
   accountSource,
-  /data-portal-account="billing-commerce"/,
-  'account center keeps the billing-commerce mount region for payment orders'
+  /data-portal-account="payment-orders-section"/,
+  'account center keeps a dedicated payment-orders mount region'
 );
 
 const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
@@ -206,12 +206,12 @@ assert.match(
 assert.match(
   paymentHistorySource,
   /data-portal-account="payment-orders-status-filter"/,
-  'status filter must live in the status column header (and mobile fallback)'
+  'payment orders must expose the shared status filter'
 );
-assert.doesNotMatch(
+assert.match(
   paymentHistorySource,
-  /role="tablist"/,
-  'payment order status tabs move into the status column filter'
+  /role="tablist"[\s\S]*role="tab"[\s\S]*aria-selected=\{selected\}/,
+  'payment order status pills must expose the selected tab accessibly'
 );
 assert.match(
   paymentHistorySource,
