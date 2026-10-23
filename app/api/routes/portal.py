@@ -79,7 +79,10 @@ from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
     resolve_site_relink_policy,
 )
-from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
+from app.domain.site_knowledge.metrics import (
+    ACCOUNT_USAGE_SOURCE_TYPES,
+    SiteKnowledgeObservabilityService,
+)
 from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
@@ -101,6 +104,34 @@ def _portal_login_code_rate_limit_response(
         data={"retry_after_seconds": retry_after_seconds},
         headers={"Retry-After": str(retry_after_seconds)},
     )
+
+
+class PortalSiteKnowledgeUsageItem(BaseModel):
+    site_id: str
+    site_name: str
+    status: str
+    used: int = Field(ge=0, description="Count in the response metering_unit; not bytes or chunks.")
+    last_indexed_at: str
+    indexed_document_count: int | None = Field(default=None, description="Text alias of used.")
+
+
+class PortalSiteKnowledgeUsageData(BaseModel):
+    source_type: Literal["text", "media", "video", "pdf"]
+    metering_unit: Literal["document", "image", "video", "pdf"]
+    total_used: int
+    items: list[PortalSiteKnowledgeUsageItem]
+    generated_at: str
+    sites: list[PortalSiteKnowledgeUsageItem] | None = None
+    total_indexed_document_count: int | None = None
+    indexed_document_limit: int | None = None
+
+
+class PortalSiteKnowledgeUsageResponse(BaseModel):
+    status: str
+    error_code: str
+    message: str
+    data: PortalSiteKnowledgeUsageData
+    meta: dict[str, str]
 
 
 class PortalSessionSitePayload(BaseModel):
@@ -3549,8 +3580,25 @@ async def get_portal_account_usage_summary(
     )
 
 
-@router.get("/account/site-knowledge-usage")
-async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
+@router.get(
+    "/account/site-knowledge-usage",
+    response_model=PortalSiteKnowledgeUsageResponse,
+    response_model_exclude_none=True,
+    responses={400: {"description": "Unsupported source_type"}},
+)
+async def get_portal_account_site_knowledge_usage(
+    request: Request,
+    source_type: str = Query(
+        default="text",
+        max_length=32,
+        json_schema_extra={"enum": list(ACCOUNT_USAGE_SOURCE_TYPES)},
+        description=(
+            "Usage bucket to aggregate: text (default, all non-media documents), "
+            "media (indexed images); video/pdf are reserved and return empty items. "
+            "Unknown values return 400."
+        ),
+    ),
+) -> Any:
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=False,
@@ -3574,28 +3622,36 @@ async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
     )
     if isinstance(site_ids, JSONResponse):
         return site_ids
+    normalized_source_type = str(source_type).strip().lower()
+    if normalized_source_type not in ACCOUNT_USAGE_SOURCE_TYPES:
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="portal.site_knowledge_usage.source_type_invalid",
+            message="source_type must be one of: text, media, video, pdf",
+        )
     commercial_service = _get_commercial_service(request)
-    quota_summary = await run_in_threadpool(
-        commercial_service.get_portal_account_quota_summary,
-        account_id
+    result = await run_in_threadpool(
+        SiteKnowledgeObservabilityService(
+            commercial_service.database_url
+        ).get_account_document_breakdown,
+        site_ids=site_ids,
+        source_type=normalized_source_type,
     )
-    vector_limit = next(
-        (
-            int(item.get("limit") or 0)
-            for item in _object_list(quota_summary.get("resource_limits"))
-            if str(item.get("key") or "") == "vector_documents"
-        ),
-        0,
-    )
-    result = await run_in_threadpool(SiteKnowledgeObservabilityService(
-        commercial_service.database_url
-    ).get_account_document_breakdown, site_ids=site_ids)
-    result.update(
-        {
-            "generated_at": datetime.now(UTC).isoformat(),
-            "indexed_document_limit": vector_limit,
-        }
-    )
+    result["generated_at"] = datetime.now(UTC).isoformat()
+    if normalized_source_type == "text":
+        quota_summary = await run_in_threadpool(
+            commercial_service.get_portal_account_quota_summary,
+            account_id
+        )
+        result["indexed_document_limit"] = next(
+            (
+                int(item.get("limit") or 0)
+                for item in _object_list(quota_summary.get("resource_limits"))
+                if str(item.get("key") or "") == "vector_documents"
+            ),
+            0,
+        )
     return _portal_route_envelope(
         message="portal account site knowledge usage loaded",
         data=result,

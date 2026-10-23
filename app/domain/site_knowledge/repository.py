@@ -322,6 +322,7 @@ class SiteKnowledgeRepository:
         self,
         site_ids: list[str],
         *,
+        source_type: str | None = None,
         exclude_source_type: str | None = None,
     ) -> list[dict[str, object]]:
         normalized_site_ids = list(
@@ -332,6 +333,8 @@ class SiteKnowledgeRepository:
         if not normalized_site_ids:
             return []
         join_condition = SiteKnowledgeDocument.site_id == Site.site_id
+        if source_type is not None:
+            join_condition &= SiteKnowledgeDocument.source_type == source_type
         if exclude_source_type is not None:
             join_condition &= SiteKnowledgeDocument.source_type != exclude_source_type
         statement = (
