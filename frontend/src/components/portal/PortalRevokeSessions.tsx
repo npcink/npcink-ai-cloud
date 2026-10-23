@@ -16,6 +16,12 @@ export function PortalRevokeSessions() {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const pending = useRef(false);
+  const outcomeMessages = {
+    failed: t('portal.account.revoke_failed'),
+    unknown: t('portal.account.revoke_unknown'),
+    unavailable: t('portal.account.revoke_unavailable'),
+    ended: t('portal.account.revoke_ended'),
+  };
 
   const returnToLogin = () => {
     publishPortalNotificationCount(0);
@@ -83,7 +89,7 @@ export function PortalRevokeSessions() {
         )}
       >
         <div aria-busy={busy}>
-          {outcome ? <p role="alert" className="text-sm leading-6">{t(`portal.account.revoke_${outcome}`)}</p> : null}
+          {outcome ? <p role="alert" className="text-sm leading-6">{outcomeMessages[outcome]}</p> : null}
         </div>
       </Modal>
     </div>
