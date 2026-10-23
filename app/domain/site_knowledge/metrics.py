@@ -25,6 +25,18 @@ from app.domain.site_knowledge.contracts import (
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 
+# Portal usage buckets. "text" matches the vector_documents entitlement
+# (all non-media documents); media filters indexed image source records.
+# A bucket's metering unit is the quantity each row's `used` field counts:
+# text = documents, media = indexed images, video/pdf = reserved source types.
+ACCOUNT_USAGE_SOURCE_TYPES = ("text", "media", "video", "pdf")
+ACCOUNT_USAGE_METERING_UNITS = {
+    "text": "document",
+    "media": "image",
+    "video": "video",
+    "pdf": "pdf",
+}
+
 
 def cleanup_site_knowledge_observability(
     database_url: str,
@@ -298,17 +310,59 @@ class SiteKnowledgeObservabilityService:
             "errors": [self._error_summary(row) for row in error_rows],
         }
 
-    def get_account_document_breakdown(self, *, site_ids: list[str]) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(
-                site_ids, exclude_source_type="media"
+    def get_account_document_breakdown(
+        self,
+        *,
+        site_ids: list[str],
+        source_type: str = "text",
+    ) -> dict[str, object]:
+        normalized_source_type = str(source_type).strip().lower()
+        if normalized_source_type not in ACCOUNT_USAGE_SOURCE_TYPES:
+            raise ValueError(
+                f"unsupported site knowledge usage source type: {source_type!r}"
             )
-        return {
-            "sites": sites,
-            "total_indexed_document_count": sum(
-                _coerce_int(site.get("indexed_document_count"), default=0) for site in sites
-            ),
+        with get_session(self.database_url) as session:
+            repository = SiteKnowledgeRepository(session)
+            if normalized_source_type == "text":
+                sites = repository.list_document_counts_by_site(
+                    site_ids, exclude_source_type="media"
+                )
+            elif normalized_source_type == "media":
+                sites = repository.list_document_counts_by_site(
+                    site_ids, source_type=normalized_source_type
+                )
+            else:
+                # Reserved buckets: no ingestion/counting contract is enabled yet.
+                sites = []
+        rows: list[dict[str, object]] = []
+        for site in sites:
+            used = _coerce_int(site.get("indexed_document_count"), default=0)
+            # Non-text buckets only list sites that actually hold the resource,
+            # so an unused account returns items: [] for empty-state rendering.
+            if normalized_source_type != "text" and used <= 0:
+                continue
+            row: dict[str, object] = {
+                "site_id": str(site.get("site_id") or ""),
+                "site_name": str(site.get("site_name") or ""),
+                "status": str(site.get("status") or ""),
+                "used": used,
+                "last_indexed_at": str(site.get("last_indexed_at") or ""),
+            }
+            if normalized_source_type == "text":
+                # Legacy field consumed by the existing portal text breakdown.
+                row["indexed_document_count"] = used
+            rows.append(row)
+        total_used = sum(_coerce_int(row.get("used"), default=0) for row in rows)
+        payload: dict[str, object] = {
+            "source_type": normalized_source_type,
+            "metering_unit": ACCOUNT_USAGE_METERING_UNITS[normalized_source_type],
+            "items": rows,
+            "total_used": total_used,
         }
+        if normalized_source_type == "text":
+            payload["sites"] = rows
+            payload["total_indexed_document_count"] = total_used
+        return payload
 
     def _latest_snapshots(
         self,
