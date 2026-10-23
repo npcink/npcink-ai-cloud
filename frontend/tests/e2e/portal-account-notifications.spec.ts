@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const BASE_URL = process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || 'http://127.0.0.1:3325';
-type Scenario = { empty?: boolean; failInbox?: boolean; failRead?: boolean; failRequest?: boolean; failConfirm?: boolean };
+type Scenario = { empty?: boolean; failInbox?: boolean; failRead?: boolean; failRequest?: boolean; failConfirm?: boolean; pendingCode?: boolean };
 
 async function installMocks(page: Page, scenario: Scenario = {}, locale = 'en') {
   const unexpected: string[] = [];
@@ -48,6 +48,7 @@ async function installMocks(page: Page, scenario: Scenario = {}, locale = 'en') 
       for (const item of items) if (!item.is_read && (path.endsWith('read-all') || path.includes(`/${item.notification_id}/`))) { item.is_read = true; marked += 1; }
       await respond(route, { marked_read_count: marked, unread_count: items.filter((item) => !item.is_read).length });
     } else if (path === '/account/deletion/request' && method === 'POST') {
+      if (scenario.pendingCode) { await respond(route, {}, 400, 'service.portal_account_deletion_code_pending'); return; }
       await respond(route, scenario.failRequest ? {} : { email: 'member@example.test', delivery: 'email', expires_in_seconds: 600 }, scenario.failRequest ? 403 : 200, scenario.failRequest ? 'service.portal_account_closure_unavailable' : '');
     } else if (path === '/account/deletion/confirm' && method === 'POST') {
       await respond(route, {}, scenario.failConfirm ? 401 : 200, scenario.failConfirm ? 'auth.account_deletion_code_invalid' : '');
@@ -153,9 +154,12 @@ test('closure code error, cancellation and successful sign-out', async ({ page }
   await expect(page.locator('[data-portal-account="payment-orders-section"]')).toBeVisible();
   await page.getByRole('button', { name: 'Review account closure', exact: true }).click();
   await expect(dialog.getByLabel('Account closure verification code', { exact: true })).toHaveValue('');
-  await dialog.getByRole('button', { name: 'Review and request a new code', exact: true }).click();
-  await expect(dialog.getByText('Step 1 of 2 · Review account closure')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Send closure verification code', exact: true }).click();
+  mock.scenario.pendingCode = true;
+  await dialog.getByLabel('Account closure verification code', { exact: true }).fill('654321');
+  await dialog.getByRole('button', { name: 'Request a new code', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('existing code is still active');
+  await expect(dialog.getByLabel('Account closure verification code', { exact: true })).toHaveValue('654321');
+  await screenshot(page, info, 'account-closure-pending-code');
   expect(mock.calls.filter((call) => call === 'POST /account/deletion/request')).toHaveLength(2);
   mock.scenario.failConfirm = false;
   await dialog.getByLabel('Account closure verification code', { exact: true }).fill('654321');

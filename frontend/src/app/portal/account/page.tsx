@@ -76,13 +76,14 @@ function AccountPageContent() {
     setClosureError('');
   };
 
-  const handleClosure = async () => {
+  const handleClosure = async (requestNewCode = false) => {
     setClosureBusy(true);
     setClosureError('');
     try {
-      if (closureStep === 'review') {
+      if (closureStep === 'review' || requestNewCode) {
         const response = await portalClient.requestAccountDeletionCode(locale);
         setClosureEmail(response.data.email);
+        setClosureCode('');
         setClosureStep('code');
       } else {
         await portalClient.confirmAccountDeletion(closureCode.trim());
@@ -94,6 +95,8 @@ function AccountPageContent() {
       const key = error instanceof ApiError
         && error.errorCode === 'service.portal_account_closure_unavailable'
         ? 'portal.account.closure_unavailable'
+        : error instanceof ApiError && error.errorCode === 'service.portal_account_deletion_code_pending'
+          ? 'portal.account.closure_code_pending'
         : error instanceof ApiError && error.errorCode === 'auth.account_deletion_code_invalid'
           ? 'portal.account.closure_code_invalid'
           : 'portal.account.closure_failed';
@@ -505,7 +508,7 @@ function AccountPageContent() {
                 {t('portal.account.closure_code')}
                 <input className="input" inputMode="numeric" autoComplete="one-time-code" value={closureCode} maxLength={6} onChange={(event) => setClosureCode(event.target.value.replace(/\D/g, ''))} />
               </label>
-              <button type="button" className="text-sm text-blue-700 hover:underline dark:text-blue-300" disabled={closureBusy} onClick={() => { setClosureStep('review'); setClosureCode(''); setClosureError(''); }}>
+              <button type="button" className="text-sm text-blue-700 hover:underline dark:text-blue-300" disabled={closureBusy} onClick={() => void handleClosure(true)}>
                 {t('portal.account.closure_restart')}
               </button>
             </>
