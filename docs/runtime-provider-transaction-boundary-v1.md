@@ -61,11 +61,23 @@ the dispatch checkpoint does not fabricate a terminal result or callback.
 An unexpected exception or process loss after dispatch may leave a durable
 `running` run and conservative spend reservation. Completion and upstream cost
 are then uncertain. Do not automatically replay that run or manufacture usage
-or callback evidence. Existing runtime diagnostics and the operator's
-`mark_stale_running_failed` recovery require evidence and a reason. A transaction
-rollback after dispatch cannot undo the committed admission or earlier attempt
-evidence. This is an intentional checkpoint boundary, not an all-or-nothing
-transaction spanning an external Provider.
+evidence or a successful result. Inline runs have two time-based fallbacks, and
+neither claims a Provider outcome:
+
+- the 180 s inline lease stops admission from counting the row, so an orphan
+  cannot hold a site's whole concurrency budget;
+- after a per-run grace derived from the configured Provider budget and never
+  shorter than 30 minutes, the runtime queue worker applies a bounded auto-fail
+  (`runtime.stale_running_auto_failed`) under a row lock. The worker rechecks
+  status, execution pattern and age before writing. It records a normal failed
+  terminal state and schedules the normal terminal callback for that failure; it
+  creates no Provider-call evidence, usage meter, credit, or result.
+
+Existing runtime diagnostics and the operator's `mark_stale_running_failed`
+recovery still cover runs inside the grace window and require evidence and a
+reason. A transaction rollback after dispatch cannot undo the committed
+admission or earlier attempt evidence. This is an intentional checkpoint
+boundary, not an all-or-nothing transaction spanning an external Provider.
 
 ## Verification and operation
 

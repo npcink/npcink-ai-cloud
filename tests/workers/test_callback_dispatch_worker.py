@@ -68,6 +68,7 @@ def test_worker_applies_backoff_preserves_heartbeat_and_closes_dispatcher(
                 "max_stale_queued": 0,
                 "max_callback_overdue": 8,
                 "max_running_stale_suggestions": 0,
+                "max_stale_running_auto_fail": 0,
             }
             repairs.append(clock[0])
             return {"redelivered_callback_overdue_total": 0}

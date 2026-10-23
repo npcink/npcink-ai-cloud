@@ -64,9 +64,15 @@ RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE = "runtime.callback_dispatch
 # Provider. An unexpected exception or process loss can leave that durable
 # `running` row behind. Admission stops counting such a run once it is older than
 # this lease, so a single orphan cannot hold a site's whole inline concurrency
-# budget. The run row itself is never rewritten here: the provider outcome is
-# unknown and fabricating terminal usage or callback evidence stays forbidden.
+# budget. Admission alone never rewrites the row; the bounded auto-fail below
+# handles it after a much longer grace window.
 RUNTIME_INLINE_RUN_LEASE_SECONDS = 180
+# Time-based liveness fallback for inline runs that outlive every Provider
+# timeout by a wide margin. The worker marks them failed without replaying the
+# request, recording Provider usage, or claiming a Provider outcome. The distinct
+# error code keeps this separate from Provider errors and operator repairs.
+RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS = 1800
+RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE = "runtime.stale_running_auto_failed"
 ABUSE_GUARD_ATTENTION_RATIO = 0.8
 ABUSE_GUARD_CRITICAL_RATIO = 1.0
 RUNTIME_STORAGE_MODE_NO_STORE = "no_store"
