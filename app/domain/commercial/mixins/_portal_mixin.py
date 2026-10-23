@@ -9,10 +9,19 @@ from typing import Any, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
+from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
+    ACCOUNT_STATUS_CLOSED,
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
     CREDIT_LEDGER_EVENT_CONSUME,
@@ -25,9 +34,22 @@ from app.core.models import (
     PORTAL_OAUTH_STATE_STATUS_CONSUMED,
     PORTAL_OAUTH_STATE_STATUS_EXPIRED,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
+    PRINCIPAL_SITE_BINDING_STATUS_RELEASED,
     PRINCIPAL_STATUS_ACTIVE,
     PRINCIPAL_STATUS_DISABLED,
+    SITE_ACCOUNT_BINDING_STATUS_RELEASED,
+    SITE_API_KEY_STATUS_REVOKED,
+    Account,
+    AccountSubscription,
+    AccountUserMembership,
+    PaymentOrder,
+    PaymentRefund,
+    Principal,
+    PrincipalSiteBinding,
     Site,
+    SiteAccountBinding,
+    SiteApiKey,
+    SubscriptionOrder,
 )
 from app.core.security import build_secret_hash, derive_stable_secret_digest, verify_secret_hash
 from app.domain.commercial.audit_context import ServiceAuditContext
@@ -38,6 +60,7 @@ from app.domain.commercial.errors import (
 )
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_USER,
+    USER_ALLOWED_ACTION_MANAGE_BILLING,
     USER_ROLE_OWNER,
     _new_principal_id,
     _normalize_principal_email,
@@ -52,6 +75,7 @@ from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixi
 PORTAL_LOGIN_CODE_PURPOSE_LOGIN = "portal_login"
 PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE = "portal_email_change"
 PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION = "portal_registration"
+PORTAL_LOGIN_CODE_PURPOSE_ACCOUNT_DELETION = "account_deletion"
 
 
 def _normalize_identity_provider(provider: str) -> str:
@@ -2140,3 +2164,366 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "service.invalid_target_package",
             "target package must be Free, Pro, or Agency",
         )
+
+    def _lock_portal_account_closure_scope(
+        self,
+        session: Session,
+        principal_id: str,
+    ) -> tuple[Principal, Account, list[SiteAccountBinding], list[PrincipalSiteBinding]]:
+        """Reject ambiguous ownership and unresolved commerce before any closure write.
+
+        Lock the identity and account in the same order on request and confirm.
+        No billing state is changed by this operation.
+        """
+
+        def reject() -> None:
+            raise CommercialPermissionError(
+                "service.portal_account_closure_unavailable",
+                "Self-service closure requires one exclusively owned account with no "
+                "unresolved commercial activity; contact support otherwise.",
+            )
+
+        identity = session.scalar(
+            select(Principal)
+            .where(
+                Principal.principal_id == principal_id,
+            )
+            .with_for_update()
+        )
+        if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
+            reject()
+        assert identity is not None
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership)
+                .where(
+                    AccountUserMembership.principal_id == principal_id,
+                    AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                )
+                .with_for_update()
+            )
+        )
+        if len(memberships) != 1:
+            reject()
+        membership = memberships[0]
+        account = session.scalar(
+            select(Account)
+            .where(
+                Account.account_id == membership.account_id,
+            )
+            .with_for_update()
+        )
+        if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
+            reject()
+        assert account is not None
+        owners = list(
+            session.scalars(
+                select(AccountUserMembership)
+                .where(
+                    AccountUserMembership.account_id == account.account_id,
+                    AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                )
+                .with_for_update()
+            )
+        )
+        if (
+            len(owners) != 1
+            or owners[0].principal_id != principal_id
+            or membership.role != USER_ROLE_OWNER
+            or USER_ALLOWED_ACTION_MANAGE_BILLING not in (membership.allowed_actions_json or [])
+        ):
+            reject()
+        site_bindings = list(
+            session.scalars(
+                select(SiteAccountBinding)
+                .where(
+                    SiteAccountBinding.account_id == account.account_id,
+                    SiteAccountBinding.released_at.is_(None),
+                )
+                .with_for_update()
+            )
+        )
+        principal_bindings = list(
+            session.scalars(
+                select(PrincipalSiteBinding)
+                .where(
+                    PrincipalSiteBinding.principal_id == principal_id,
+                    PrincipalSiteBinding.released_at.is_(None),
+                )
+                .with_for_update()
+            )
+        )
+        site_ids = {binding.site_id for binding in site_bindings}
+        # A legacy account_id without a current binding is ambiguous, not permission
+        # to leave an active key alive after closure or to revoke another owner.
+        owned_sites = list(
+            session.scalars(
+                select(Site)
+                .where(
+                    Site.account_id == account.account_id,
+                )
+                .with_for_update()
+            )
+        )
+        if any(site.site_id not in site_ids for site in owned_sites):
+            reject()
+        # Never revoke a key for another principal's or account's site.
+        if any(
+            binding.account_id != account.account_id or binding.site_id not in site_ids
+            for binding in principal_bindings
+        ):
+            reject()
+        if site_ids:
+            sites = list(
+                session.scalars(select(Site).where(Site.site_id.in_(site_ids)).with_for_update())
+            )
+            other_bindings = list(
+                session.scalars(
+                    select(PrincipalSiteBinding)
+                    .where(
+                        PrincipalSiteBinding.site_id.in_(site_ids),
+                        PrincipalSiteBinding.released_at.is_(None),
+                    )
+                    .with_for_update()
+                )
+            )
+            if (
+                len(sites) != len(site_ids)
+                or any(site.account_id != account.account_id for site in sites)
+                or any(
+                    binding.principal_id != principal_id or binding.account_id != account.account_id
+                    for binding in other_bindings
+                )
+            ):
+                reject()
+        subscriptions = list(
+            session.scalars(
+                select(AccountSubscription)
+                .where(
+                    AccountSubscription.account_id == account.account_id,
+                )
+                .with_for_update()
+            )
+        )
+        # Free access can be closed; paid/trial/scheduled/debt states need support.
+        if any(
+            subscription.status != "canceled"
+            and (
+                subscription.plan_id != "free"
+                or subscription.status != "active"
+                or subscription.scheduled_plan_id is not None
+            )
+            for subscription in subscriptions
+        ):
+            reject()
+        if session.scalar(
+            select(SubscriptionOrder.subscription_order_id)
+            .where(
+                SubscriptionOrder.account_id == account.account_id,
+                SubscriptionOrder.status.in_(["pending_payment", "paid"]),
+            )
+            .limit(1)
+        ):
+            reject()
+        payments = list(
+            session.scalars(
+                select(PaymentOrder)
+                .where(
+                    PaymentOrder.account_id == account.account_id,
+                )
+                .with_for_update()
+            )
+        )
+        # Conservatively leave all paid but unrefunded transactions to support.
+        if any(payment.status not in {"canceled", "refunded"} for payment in payments):
+            reject()
+        if payments and session.scalar(
+            select(PaymentRefund.refund_id)
+            .where(
+                PaymentRefund.order_id.in_([payment.order_id for payment in payments]),
+                PaymentRefund.status.in_(["requested", "unknown"]),
+            )
+            .limit(1)
+        ):
+            reject()
+        return identity, account, site_bindings, principal_bindings
+
+    def issue_portal_account_deletion_code(
+        self,
+        *,
+        principal_id: str,
+        ttl_seconds: int,
+    ) -> dict[str, object]:
+        """向当前登录邮箱发送账号注销验证码。
+
+        purpose: account_deletion，与 login / email_change 分离，便于独立识别和过期清理。
+        """
+        normalized_principal_id = str(principal_id or "").strip()
+        now = self.now_factory()
+        expires_at = now + timedelta(seconds=max(60, int(ttl_seconds or 0)))
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        code_hash = build_secret_hash(code)
+
+        with get_session(self.database_url) as session:
+            repository = CommercialIdentityRepository(session)
+            identity, account, _, _ = self._lock_portal_account_closure_scope(
+                session,
+                normalized_principal_id,
+            )
+            current_email = str(identity.email or "").strip().lower()
+            if not current_email:
+                raise CommercialValidationError(
+                    "service.portal_account_deletion_email_missing",
+                    "cannot issue deletion code without a verified contact email",
+                )
+            existing_active = repository.list_portal_login_codes(
+                email=current_email,
+                principal_id=normalized_principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_ACCOUNT_DELETION,
+                active_only=True,
+                now=now,
+                limit=5,
+            )
+            if existing_active:
+                raise CommercialValidationError(
+                    "service.portal_account_deletion_code_pending",
+                    "a recent deletion code has already been issued for this account",
+                )
+            repository.create_portal_login_code(
+                code_id=f"plc_{uuid4().hex}",
+                email=current_email,
+                principal_id=normalized_principal_id,
+                code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_ACCOUNT_DELETION,
+                expires_at=expires_at,
+                metadata_json={
+                    "purpose": PORTAL_LOGIN_CODE_PURPOSE_ACCOUNT_DELETION,
+                    "account_id": account.account_id,
+                    "requested_at": self._serialize_datetime(now),
+                },
+            )
+            session.commit()
+        return {
+            "principal_id": normalized_principal_id,
+            "email": current_email,
+            "code": code,
+            "expires_at": self._serialize_datetime(expires_at),
+            "expires_in_seconds": max(60, int(ttl_seconds or 0)),
+        }
+
+    def verify_and_execute_portal_account_deletion(
+        self,
+        *,
+        principal_id: str,
+        code: str,
+        max_attempts: int,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        """Disable an exclusively owned login and close its sole service account.
+
+        This retains identity, billing, content and audit records. It is not data erasure.
+        """
+        now = self.now_factory()
+        principal_id = str(principal_id or "").strip()
+        code = str(code or "").strip()
+        invalid = CommercialPermissionError(
+            "service.portal_account_deletion_code_invalid",
+            "portal account deletion code is invalid",
+        )
+        if not code.isdigit():
+            raise invalid
+        with get_session(self.database_url) as session:
+            repository = CommercialIdentityRepository(session)
+            identity, account, site_bindings, principal_bindings = (
+                self._lock_portal_account_closure_scope(
+                    session,
+                    principal_id,
+                )
+            )
+            codes = repository.list_portal_login_codes(
+                email=str(identity.email or "").strip().lower(),
+                principal_id=principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_ACCOUNT_DELETION,
+                active_only=True,
+                now=now,
+                limit=1,
+                for_update=True,
+            )
+            if not codes:
+                raise invalid
+            active_code = codes[0]
+            if (active_code.metadata_json or {}).get("account_id") != account.account_id:
+                raise invalid
+            if not verify_secret_hash(code, str(active_code.code_hash or "")):
+                active_code.attempt_count = int(active_code.attempt_count or 0) + 1
+                if active_code.attempt_count >= max(1, max_attempts):
+                    active_code.status = PORTAL_LOGIN_CODE_STATUS_LOCKED
+                    active_code.consumed_at = now
+                session.commit()
+                raise invalid
+            active_code.status = PORTAL_LOGIN_CODE_STATUS_CONSUMED
+            active_code.consumed_at = now
+            identity.status = PRINCIPAL_STATUS_DISABLED
+            identity.session_version = int(identity.session_version or 1) + 1
+            identity.metadata_json = {
+                **(identity.metadata_json or {}),
+                "closed_at": self._serialize_datetime(now),
+                "closed_reason": "self_service_closure",
+            }
+            account.status = ACCOUNT_STATUS_CLOSED
+            account.metadata_json = {
+                **(account.metadata_json or {}),
+                "closed_at": self._serialize_datetime(now),
+                "closed_reason": "principal_self_service_deletion",
+            }
+            access_repository = CommercialAccessRepository(session)
+            revoked_memberships = access_repository.revoke_account_user_memberships(
+                principal_id=principal_id
+            )
+            for binding in principal_bindings:
+                binding.status = PRINCIPAL_SITE_BINDING_STATUS_RELEASED
+                binding.released_at = now
+                binding.release_reason = "account_closed"
+            for site_binding in site_bindings:
+                site_binding.status = SITE_ACCOUNT_BINDING_STATUS_RELEASED
+                site_binding.released_at = now
+                site_binding.release_reason = "account_closed"
+            site_ids = [binding.site_id for binding in site_bindings]
+            keys = (
+                list(
+                    session.scalars(
+                        select(SiteApiKey)
+                        .where(
+                            SiteApiKey.site_id.in_(site_ids),
+                            SiteApiKey.status != SITE_API_KEY_STATUS_REVOKED,
+                        )
+                        .with_for_update()
+                    )
+                )
+                if site_ids
+                else []
+            )
+            for key in keys:
+                key.status = SITE_API_KEY_STATUS_REVOKED
+                key.revoked_at = now
+                key.metadata_json = {**(key.metadata_json or {}), "revoke_reason": "account_closed"}
+            payload: dict[str, object] = {
+                "principal_id": principal_id,
+                "account_ids": [account.account_id],
+                "closed_accounts": 1,
+                "revoked_memberships": revoked_memberships,
+                "released_principal_bindings": len(principal_bindings),
+                "released_site_bindings": len(site_bindings),
+                "revoked_api_keys": len(keys),
+            }
+            self._record_service_audit_in_session(
+                repository=CommercialServiceAuditRepository(session),
+                audit_context=audit_context,
+                event_kind="account.self_service_deletion",
+                outcome="succeeded",
+                scope_kind="principal",
+                scope_id=principal_id,
+                payload_json=payload,
+            )
+            session.commit()
+        return payload

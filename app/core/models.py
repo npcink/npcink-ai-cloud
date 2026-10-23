@@ -45,6 +45,7 @@ SITE_API_KEY_STATUS_EXPIRED = "expired"
 
 ACCOUNT_STATUS_ACTIVE = "active"
 ACCOUNT_STATUS_SUSPENDED = "suspended"
+ACCOUNT_STATUS_CLOSED = "closed"
 
 PORTAL_LOGIN_CODE_STATUS_PENDING = "pending"
 PORTAL_LOGIN_CODE_STATUS_CONSUMED = "consumed"
@@ -2330,3 +2331,43 @@ class MediaDerivativeJobMetric(Base):
         index=True,
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class PortalNotification(Base):
+    """Portal 站内通知（收件箱 MVP）。
+
+    仅支持工单公开回复，与回复及审计同事务写入。SMTP 在提交后尽力发送。
+    """
+
+    __tablename__ = "portal_notifications"
+    __table_args__ = (
+        Index(
+            "ix_portal_notifications_account_created",
+            "account_id",
+            text("created_at DESC"),
+        ),
+        Index(
+            "ix_portal_notifications_account_unread",
+            "account_id",
+            "is_read",
+            text("created_at DESC"),
+        ),
+    )
+
+    notification_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.account_id"),
+    )
+    principal_id: Mapped[str | None] = mapped_column(
+        ForeignKey("principals.principal_id"),
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str | None] = mapped_column(Text)
+    link_href: Mapped[str | None] = mapped_column(String(1024))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
