@@ -1,9 +1,10 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-const base = process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || 'http://127.0.0.1:3213';
 type Mode = 'success' | 'rejected' | 'lost-active' | 'lost-ended' | 'lost-unavailable' | 'server-error' | 'timeout-response';
 
-async function fixture(page: Page, mode: Mode = 'success') {
+async function fixture(page: Page, baseURL: string | undefined, mode: Mode = 'success') {
+  if (!baseURL) throw new Error('Portal tests require the Playwright project baseURL');
+  const origin = new URL(baseURL).origin;
   let submitted = 0;
   let readbacks = 0;
   let active = true;
@@ -15,15 +16,15 @@ async function fixture(page: Page, mode: Mode = 'success') {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents.push(request.url()); });
   await page.context().addCookies([
-    { name: 'npcink_portal_session_token', value: 'offline-revoke-fixture', url: base },
-    { name: 'npcink_locale', value: 'zh-CN', url: base },
+    { name: 'npcink_portal_session_token', value: 'offline-revoke-fixture', url: origin },
+    { name: 'npcink_locale', value: 'zh-CN', url: origin },
   ]);
   const reply = (route: Route, data: unknown, status = 200, error = '') => route.fulfill({
     status, contentType: 'application/json', body: JSON.stringify({ status: status === 200 ? 'ok' : 'error', data, message: 'fixture', error_code: error, meta: { trace_id: 'q3-offline', revision: 'q3-local' } }),
   });
   await page.context().route('**/*', async (route) => {
     const url = new URL(route.request().url());
-    if (url.origin !== new URL(base).origin) { unexpected.push(`external:${url.host}`); await route.abort(); return; }
+    if (url.origin !== origin) { unexpected.push(`external:${url.host}`); await route.abort(); return; }
     if (!url.pathname.startsWith('/api/')) { await route.continue(); return; }
     const path = url.pathname.replace('/api/portal', '');
     const method = route.request().method();
@@ -46,7 +47,7 @@ async function fixture(page: Page, mode: Mode = 'success') {
     else if (path === '/account/payment-orders') await reply(route, { items: [], total_count: 0, counts: { all: 0, pending: 0 }, limit: 10, offset: 0 });
     else { unexpected.push(`${method} ${path}`); await route.abort(); }
   });
-  await page.goto(`${base}/portal/account`);
+  await page.goto(new URL('/portal/account', baseURL).href);
   const trigger = page.locator('[data-portal-account="revoke-sessions"] button');
   await expect(trigger).toBeVisible();
   return { trigger, submitted: () => submitted, readbacks: () => readbacks, documents, errors, unexpected,
@@ -62,8 +63,8 @@ async function confirm(page: Page) {
   return dialog.getByRole('button', { name: '确认全部退出', exact: true });
 }
 
-test('cancel restores focus; busy confirmation submits once; success starts a new login document', async ({ page }, info) => {
-  const mock = await fixture(page);
+test('cancel restores focus; busy confirmation submits once; success starts a new login document', async ({ page, baseURL }, info) => {
+  const mock = await fixture(page, baseURL);
   await mock.trigger.click();
   await confirm(page);
   await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
@@ -88,8 +89,8 @@ test('cancel restores focus; busy confirmation submits once; success starts a ne
 });
 
 for (const mode of ['rejected', 'lost-active', 'lost-ended', 'lost-unavailable', 'server-error', 'timeout-response'] as const) {
-  test(`honest outcome and session readback: ${mode}`, async ({ page }, info) => {
-    const mock = await fixture(page, mode);
+  test(`honest outcome and session readback: ${mode}`, async ({ page, baseURL }, info) => {
+    const mock = await fixture(page, baseURL, mode);
     await mock.trigger.click();
     await (await confirm(page)).click();
     const alert = page.getByRole('dialog').getByRole('alert');
@@ -114,9 +115,9 @@ for (const mode of ['rejected', 'lost-active', 'lost-ended', 'lost-unavailable',
   });
 }
 
-test('English copy via locale control keeps cancellation local on mobile', async ({ page }, info) => {
+test('English copy via locale control keeps cancellation local on mobile', async ({ page, baseURL }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const mock = await fixture(page);
+  const mock = await fixture(page, baseURL);
   await page.locator('button[aria-controls="portal-mobile-nav"]').click();
   await page.getByRole('button', { name: '语言', exact: true }).click();
   await page.getByRole('option', { name: 'English' }).click();
