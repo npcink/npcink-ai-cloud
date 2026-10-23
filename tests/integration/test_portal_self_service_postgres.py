@@ -754,19 +754,16 @@ def test_registry_postgres_unique_fk_and_caller_rollback(registry_database):
         session.flush()
         session.rollback()
     with get_session(registry_database) as session:
+        registry_table = _registry_table(session)
         assert (
             session.execute(
-                select(_registry_table(session)).where(
-                    _registry_table(session).c.session_id == "rolled_back"
-                )
+                select(registry_table).where(registry_table.c.session_id == "rolled_back")
             ).first()
             is None
         )
         assert (
             session.execute(
-                select(_registry_table(session)).where(
-                    _registry_table(session).c.session_id == "session_registry"
-                )
+                select(registry_table).where(registry_table.c.session_id == "session_registry")
             ).first()
             is not None
         )
