@@ -419,4 +419,6 @@ def test_subscription_commerce_mixin_uses_lifecycle_transaction_repository() -> 
         if isinstance(node, ast.Call)
         and ast.unparse(node.func) == "CommercialSubscriptionLifecycleRepository"
     ]
-    assert len(constructions) == 7
+    # Sales availability adds one bounded lifecycle transaction; it must not
+    # reintroduce the retired broad CommercialRepository facade.
+    assert len(constructions) == 8
