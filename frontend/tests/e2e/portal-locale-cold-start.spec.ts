@@ -142,7 +142,8 @@ test('stored English waits for a held Navbar chunk to hydrate its Chinese SSR', 
   let markHeld!: () => void;
   const held = new Promise<void>(resolve => { markHeld = resolve; });
   const heldChunks: string[] = [];
-  await page.route('**/_next/static/chunks/*.js', async route => {
+  // Webpack nests route chunks under app/; Turbopack can emit them at the root.
+  await page.route('**/_next/static/chunks/**/*.js', async route => {
     if (new URL(route.request().url()).origin !== new URL(baseURL!).origin || route.request().method() !== 'GET') return route.fallback();
     const response = await route.fetch({ maxRedirects: 0 });
     expect(response.status()).toBe(200);
