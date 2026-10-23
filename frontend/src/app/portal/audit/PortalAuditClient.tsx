@@ -49,7 +49,7 @@ const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
 };
 
 const SUCCESSFUL_AUDIT_OUTCOMES = new Set(['success', 'succeeded', 'ok', 'completed']);
-const AUDIT_PAGE_SIZE = 20;
+const AUDIT_PAGE_SIZE = 10;
 const AUDIT_FETCH_LIMIT = 200;
 
 type ActivityReadError = { message: string; reference: string };

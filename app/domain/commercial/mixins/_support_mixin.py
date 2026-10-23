@@ -822,6 +822,68 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 )
             }
 
+    def delete_portal_support_request_attachment(
+        self,
+        *,
+        principal_id: str,
+        request_id: str,
+        attachment_id: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        normalized_principal_id = str(principal_id or "").strip()
+        now = self.now_factory()
+        with get_session(self.database_url) as session:
+            repository = CommercialSupportRepository(session)
+            request = repository.get_support_request(str(request_id or "").strip())
+            attachment = repository.get_support_request_attachment(
+                str(attachment_id or "").strip()
+            )
+            if (
+                request is None
+                or attachment is None
+                or attachment.request_id != request.request_id
+                or request.principal_id != normalized_principal_id
+                or attachment.visibility != SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                or attachment.uploader_kind != SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+            ):
+                raise CommercialNotFoundError(
+                    "service.support_request_attachment_not_found",
+                    "support request attachment was not found",
+                )
+            access_repository = CommercialAccessRepository(session)
+            self._assert_portal_account_access_in_session(
+                repository=access_repository,
+                principal_id=normalized_principal_id,
+                account_id=str(request.account_id or ""),
+            )
+            attachment_payload = self._serialize_portal_support_request_attachment(attachment)
+            repository.delete_support_request_attachment(attachment, activity_at=now)
+            payload: dict[str, object] = {
+                "request": self._serialize_portal_support_request(request),
+                "attachment": attachment_payload,
+            }
+            audit_repository = CommercialServiceAuditRepository(session)
+            self._record_service_audit_in_session(
+                repository=audit_repository,
+                audit_context=audit_context,
+                event_kind="support_request.attachment_deleted",
+                outcome="succeeded",
+                account_id=str(request.account_id or ""),
+                site_id=str(request.site_id or ""),
+                scope_kind="support_request",
+                scope_id=str(request.request_id),
+                payload_json={
+                    "request_id": str(request.request_id),
+                    "attachment_id": str(attachment_payload.get("attachment_id") or ""),
+                    "visibility": str(attachment_payload.get("visibility") or ""),
+                    "byte_size": int(attachment_payload.get("byte_size") or 0),
+                    "content_type": str(attachment_payload.get("content_type") or ""),
+                    "deleted_at": self._serialize_datetime(now),
+                },
+            )
+            session.commit()
+        return payload
+
     def get_admin_support_request_attachment(
         self,
         *,

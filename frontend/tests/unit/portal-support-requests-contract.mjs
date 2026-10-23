@@ -185,6 +185,16 @@ assert.match(
   /data-portal-support="composer"[\s\S]*data-portal-support="reply-actions"[\s\S]*composer-attach[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
   'Ticket detail must use a compact composer with attach, refresh, and send'
 );
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="attachment-chips"[\s\S]*data-portal-support="attachment-remove"/,
+  'Composer attachment chips must expose a remove control'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="attachment-pending"[\s\S]*data-portal-support="attachment-pending-remove"/,
+  'Pending upload chips must expose a cancel/remove control'
+);
 assert.doesNotMatch(
   portalSupportDetailPageSource,
   /data-portal-support="reply-reopen-notice"[\s\S]*border-amber-200 bg-amber-50/,

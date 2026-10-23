@@ -4469,6 +4469,59 @@ async def get_portal_support_request_attachment(
     )
 
 
+@router.delete("/support-requests/{request_id}/attachments/{attachment_id}")
+async def delete_portal_support_request_attachment(
+    request: Request,
+    request_id: str,
+    attachment_id: str,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_support_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).delete_portal_support_request_attachment,
+            principal_id=auth.principal_id,
+            request_id=request_id,
+            attachment_id=attachment_id,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request attachment deleted",
+        data=result,
+    )
+
+
 @router.post("/support-requests/{request_id}/feedback")
 async def submit_portal_support_request_feedback(
     request: Request,

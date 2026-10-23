@@ -561,6 +561,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.support_attachment_limit': 'PDF, image, text, CSV, or JSON. Max 5 MB each.',
     'portal.support_attachment_upload_action': 'Upload attachment',
     'portal.support_attachment_add_optional': 'Add attachment (optional)',
+    'portal.support_attachment_remove': 'Remove attachment',
     'portal.support_attachment_created': 'Attachment uploaded.',
     'portal.support_feedback_title': 'Close evaluation',
     'portal.support_feedback_desc':
@@ -6561,6 +6562,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.support_attachment_limit': '支持 PDF、图片、文本、CSV 或 JSON。单个最大 5 MB。',
     'portal.support_attachment_upload_action': '上传附件',
     'portal.support_attachment_add_optional': '添加附件（可选）',
+    'portal.support_attachment_remove': '移除附件',
     'portal.support_attachment_created': '附件已上传。',
     'portal.support_feedback_title': '关闭评价',
     'portal.support_feedback_desc': '确认问题是否已解决；如果未解决，工单会重新打开。',

@@ -67,7 +67,8 @@ export default function PortalSupportRequestDetailPage() {
   const contextSiteId = session?.selected_context?.site.site_id || '';
   const [supportRequest, setSupportRequest] = useState<PortalSupportRequest | null>(null);
   const [messages, setMessages] = useState<PortalSupportRequestMessage[]>([]);
-  const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
+  /** Composer chips only — session drafts (not every historical request attachment). */
+  const [composerDrafts, setComposerDrafts] = useState<PortalSupportRequestAttachment[]>([]);
   const [feedback, setFeedback] = useState<PortalSupportRequestFeedback | null>(null);
   const [reply, setReply] = useState('');
   const [pendingUploads, setPendingUploads] = useState<Array<{ id: string; name: string }>>([]);
@@ -87,6 +88,8 @@ export default function PortalSupportRequestDetailPage() {
   const detailRequestVersionRef = useRef(0);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cancelledPendingRef = useRef<Set<string>>(new Set());
+  const removingAttachmentIdsRef = useRef<Set<string>>(new Set());
 
   const loadDetail = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
@@ -106,7 +109,6 @@ export default function PortalSupportRequestDetailPage() {
       ) return;
       setSupportRequest(response.data.request);
       setMessages(response.data.messages || []);
-      setAttachments(response.data.attachments || []);
       setFeedback(response.data.feedback || null);
       if (response.data.feedback) {
         setFeedbackResolved(response.data.feedback.resolved);
@@ -138,10 +140,12 @@ export default function PortalSupportRequestDetailPage() {
     detailRequestVersionRef.current += 1;
     setSupportRequest(null);
     setMessages([]);
-    setAttachments([]);
+    setComposerDrafts([]);
     setFeedback(null);
     setReply('');
     setPendingUploads([]);
+    cancelledPendingRef.current = new Set();
+    removingAttachmentIdsRef.current = new Set();
     setFeedbackResolved(true);
     setFeedbackRating(5);
     setFeedbackComment('');
@@ -206,7 +210,7 @@ export default function PortalSupportRequestDetailPage() {
     }
   };
 
-  const uploadAttachmentFile = async (file: File) => {
+  const uploadAttachmentFile = async (file: File, pendingId: string) => {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
@@ -221,6 +225,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
+      if (cancelledPendingRef.current.has(pendingId)) return;
       const response = await portalClient.createSupportRequestAttachment(capturedRequestId, {
         filename: file.name,
         content_type: file.type || 'application/octet-stream',
@@ -231,8 +236,20 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
+      if (cancelledPendingRef.current.has(pendingId)) {
+        // User cancelled while upload finished — delete so selection truly clears.
+        try {
+          await portalClient.deleteSupportRequestAttachment(
+            capturedRequestId,
+            response.data.attachment.attachment_id
+          );
+        } catch {
+          // Best-effort cleanup; chip already gone.
+        }
+        return;
+      }
       setSupportRequest(response.data.request);
-      setAttachments((current) => [...current, response.data.attachment]);
+      setComposerDrafts((current) => [...current, response.data.attachment]);
       setNotice(t('portal.support_attachment_created', {}, 'Attachment uploaded.'));
     } catch (err) {
       if (
@@ -240,6 +257,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
+      if (cancelledPendingRef.current.has(pendingId)) return;
       setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
@@ -256,12 +274,56 @@ export default function PortalSupportRequestDetailPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
     for (const file of files) {
       const pendingId = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
+      cancelledPendingRef.current.delete(pendingId);
       setPendingUploads((current) => [...current, { id: pendingId, name: file.name }]);
       try {
-        await uploadAttachmentFile(file);
+        await uploadAttachmentFile(file, pendingId);
       } finally {
         setPendingUploads((current) => current.filter((item) => item.id !== pendingId));
+        cancelledPendingRef.current.delete(pendingId);
       }
+    }
+  };
+
+  const handlePendingUploadCancel = (pendingId: string) => {
+    cancelledPendingRef.current.add(pendingId);
+    setPendingUploads((current) => current.filter((item) => item.id !== pendingId));
+  };
+
+  const handleComposerDraftRemove = async (attachment: PortalSupportRequestAttachment) => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    const attachmentId = attachment.attachment_id;
+    if (!isAuthenticated || !capturedRequestId || !attachmentId) return;
+    if (removingAttachmentIdsRef.current.has(attachmentId)) return;
+    removingAttachmentIdsRef.current.add(attachmentId);
+    // Optimistic Quiet remove from composer chips.
+    setComposerDrafts((current) => current.filter((item) => item.attachment_id !== attachmentId));
+    setError('');
+    try {
+      const response = await portalClient.deleteSupportRequestAttachment(capturedRequestId, attachmentId);
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
+      setSupportRequest(response.data.request);
+    } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
+      // Restore chip if delete failed.
+      setComposerDrafts((current) => (
+        current.some((item) => item.attachment_id === attachmentId)
+          ? current
+          : [...current, attachment]
+      ));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+    } finally {
+      removingAttachmentIdsRef.current.delete(attachmentId);
     }
   };
 
@@ -614,35 +676,62 @@ export default function PortalSupportRequestDetailPage() {
           onChange={(event) => void handleAttachmentFilesSelected(event.target.files)}
           data-portal-support="composer-attach-input"
         />
-        {attachments.length || pendingUploads.length ? (
+        {composerDrafts.length || pendingUploads.length ? (
           <div
             className="mb-2 flex flex-wrap items-center gap-2"
             data-portal-support="attachment-chips"
           >
-            {attachments.map((attachment) => (
-              <button
+            {composerDrafts.map((attachment) => (
+              <span
                 key={attachment.attachment_id}
-                type="button"
-                className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs text-slate-700 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200"
-                onClick={() => void handleAttachmentDownload(attachment)}
-                title={attachment.filename}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200/90 bg-white/95 py-1 pl-3 pr-1 text-xs text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200"
+                data-portal-support="attachment-chip"
               >
-                <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{attachment.filename}</span>
-                <span className="shrink-0 text-slate-400">
-                  {Math.ceil((attachment.byte_size || 0) / 1024)} KB
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="inline-flex min-w-0 items-center gap-2 rounded-full py-0.5 text-left transition hover:text-slate-950 dark:hover:text-white"
+                  onClick={() => void handleAttachmentDownload(attachment)}
+                  title={attachment.filename}
+                >
+                  <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{attachment.filename}</span>
+                  <span className="shrink-0 text-slate-400">
+                    {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  aria-label={t('portal.support_attachment_remove', {}, 'Remove attachment')}
+                  title={t('portal.support_attachment_remove', {}, 'Remove attachment')}
+                  data-portal-support="attachment-remove"
+                  onClick={() => void handleComposerDraftRemove(attachment)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </span>
             ))}
             {pendingUploads.map((pending) => (
               <span
                 key={pending.id}
-                className="inline-flex max-w-full items-center gap-2 rounded-full border border-dashed border-slate-300 bg-slate-50/90 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300"
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-slate-300 bg-slate-50/90 py-1 pl-3 pr-1 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300"
                 data-portal-support="attachment-pending"
               >
-                <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{pending.name}</span>
-                <span className="shrink-0">{t('common.saving', {}, 'Saving...')}</span>
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{pending.name}</span>
+                  <span className="shrink-0">{t('common.saving', {}, 'Saving...')}</span>
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base leading-none text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  aria-label={t('portal.support_attachment_remove', {}, 'Remove attachment')}
+                  title={t('portal.support_attachment_remove', {}, 'Remove attachment')}
+                  data-portal-support="attachment-pending-remove"
+                  onClick={() => handlePendingUploadCancel(pending.id)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
               </span>
             ))}
             <span

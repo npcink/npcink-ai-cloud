@@ -2324,6 +2324,17 @@ export class PortalClient {
     );
   }
 
+  async deleteSupportRequestAttachment(
+    requestId: string,
+    attachmentId: string
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; attachment: PortalSupportRequestAttachment }>> {
+    return this.request(
+      'DELETE',
+      `/support-requests/${requestId}/attachments/${attachmentId}`,
+      undefined
+    );
+  }
+
   async submitSupportRequestFeedback(
     requestId: string,
     payload: SubmitPortalSupportRequestFeedbackPayload
