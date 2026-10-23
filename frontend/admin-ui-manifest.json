@@ -251,7 +251,8 @@
     "/admin/ai-advisor": "diagnostic",
     "/admin/service-settings": "configuration",
     "/admin/site-compliance": "configuration",
-    "/admin/usage-statistics": "diagnostic"
+    "/admin/usage-statistics": "diagnostic",
+    "/admin/economics": "diagnostic"
   },
   "legacyRouteLocalDialogs": [],
   "legacyRouteLocalCredentials": []

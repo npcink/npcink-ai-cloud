@@ -286,6 +286,7 @@ consolidation.
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Customers (Tickets tab) | Keep; timeline-first ticket detail |
 | `/admin/plans` | Customer Operations | `queue` | Commercial records (Packages tab) | Canonical catalog plus shared package-management workbench |
 | `/admin/credit-packs` | Customer Operations | `configuration` | Commercial records (Credit packs tab) | Independent purchasable credit-pack directory; edit one pack at a time |
+| `/admin/economics` | Customer Operations | `diagnostic` | Commercial records (Unit economics tab) | Read-only monthly usage and receipts; browser-only bill allocation; current subscription count snapshots; no commercial writes |
 | `/admin/ai-resources` | Configuration | `queue` | External capabilities | Keep model-provider connections and model visibility together |
 | `/admin/external-services` | Configuration | `configuration` | External capabilities (Search and images tab) | Fixed Cloud runtime service directory for web search and stock-image sources |
 | `/admin/vector-settings` | Configuration | `configuration` | External capabilities (Site vector service tab) | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |

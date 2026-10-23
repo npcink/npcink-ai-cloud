@@ -38,7 +38,7 @@ assert.match(source, /buildAdminQueueReturnTo[\s\S]*currentQueueHref[\s\S]*build
 assert.doesNotMatch(source, /admin\.back_to_coverage/, 'the independent subscription workspace must not offer a parent-workspace return action');
 assert.match(
   layoutSource,
-  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_commercial_records'[\s\S]*activePrefixes: \['\/admin\/coverage', '\/admin\/plans', '\/admin\/credit-packs'\]/,
+  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_commercial_records'[\s\S]*activePrefixes: \['\/admin\/coverage', '\/admin\/plans', '\/admin\/credit-packs', '\/admin\/economics'\]/,
   'subscription queue and detail routes must own the commercial sidebar entry'
 );
 

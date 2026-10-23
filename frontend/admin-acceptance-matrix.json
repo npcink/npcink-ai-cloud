@@ -105,6 +105,15 @@
       ]
     },
     {
+      "routePattern": "/admin/economics",
+      "smokePath": "/admin/economics",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": [
+        "tests/e2e/admin-economics.spec.ts"
+      ]
+    },
+    {
       "routePattern": "/admin/external-services",
       "smokePath": "/admin/external-services",
       "pageModel": "configuration",

@@ -40,6 +40,7 @@ def _execute(monkeypatch, target, *, url=SYNTHETIC_URL, environment="preview"):
 @pytest.mark.parametrize(
     "target",
     [
+        "tests/integration/test_admin_economics_postgres.py",
         "tests/integration/test_portal_self_service_postgres.py",
         "tests/integration/test_portal_self_service_postgres.py::test_same_code_two_sessions_close_at_most_once",
         "/workspace/tests/integration/test_portal_postgres_acceptance.py::test_activity_index_postgres_round_trip",
