@@ -94,3 +94,41 @@ deployed_at_utc=`2026-10-23T07:40:01Z`，Alembic=`20261017_0088 (head)`。
 工作树由 A02 接手保留，维持锁定；交付尚未合并，不能清理。
 
 M4_OBSERVATION_RECEIPT date=2026-10-23; route=existing-preview-status-and-loopback; sync=not occurred; focused=not occurred; promotion=not occurred; operations=0 sync/0 deploy; stable_502=not measured; m4_only=not measured; coordination=other dirty Portal candidate retained
+
+
+## 后续整合 checkpoint（总规划 handback）
+
+最新整合基线为已合入的 `364787b5ea779178b5f7153848db0440c4c5e77b`，包含
+C1 #1216、B02 #1217 和 A01 #1206。保留原 `13c9dcde`、B01 及 #1205 四提交
+为祖先，不从 A01 未合分支取源码；相对该 master 仍限原有 36 个意图文件。
+本节取代上文的旧排期/许可步骤；原基线测试和 M4 只读快照仅为历史证据。
+
+- 修正 AGENTS、README、Phase 1 与 next-stage 的范围漂移：本批只允许既有
+  Plus/Pro 月套餐、积分包、共享 14 天试用及必要保护，其他商业扩展继续冻结。
+  通知、注销、Admin 扩展、视频/PDF、导出/2FA、支付回跳 IA 均非本批授权。
+- Portal 路由冲突同时保留知识库 DTO 与商业保护函数；前端冲突保留 Quiet IA，
+  套餐/试用由套餐页弹窗承载，账号只承载支付历史。附件删除/下载/审计、
+  知识库 DTO、新断言与 B02 的显式 live smoke 保护保留，不整文件回盖。
+- 紧急停止时套餐弹窗显示暂停、试用按钮禁用、积分包不可选；恢复后可查看
+  既有试用资格。写操作本地保护位于发起新付款窗口之前；最终以服务端为准。
+- 保留 C1 三个交叉测试文件的语义与支持仓库构造计数 14，叠加销售生命周期计数。
+  支付回跳重试 mock 改为持续故障直到测试显式恢复，避免两个目录读取者把
+  一次性故障提前消耗；未修改支付回跳业务实现。
+- 本地商业/附件/知识库/签名回调回归 212 passed、1 skipped；全前端 mjs
+  契约通过，22 项聚焦 Vitest 通过，Ruff/targeted mypy、构建、ESLint 通过。
+  初次默认 Python 过旧，改用工作树虚拟环境后契约通过。构建与 tsc 并发曾
+  造成生成类型瞬态缺失，已在构建结束后串行重跑 tsc 通过。
+- PC mock 回归首轮最终构建 12 passed、1 failed（上述一次性故障 fixture）；
+  修复后该失败用例单独重跑通过；核心购买暂停/恢复、Quiet IA 与知识库场景通过。
+  初次本地浏览器仅停在安装状态，是构建缺少测试环境标记，已按测试配置纠正，
+  未放松业务 setup 边界。
+- PostgreSQL 目标扩为 6 个独立 schema 用例：共享账户并发限流、共享试用不延长、
+  两档新用户购买/试用、下架恢复、既有订单幂等结算/模拟退款。复用现有业务断言；
+  本地未配置 opt-in 时 6 skipped，不算 PostgreSQL 通过。
+
+总规划已交付 A02 独占 M4 候选验证窗口；先声明精确提交，再执行标准 sync，
+仅 fingerprint 要求才 deploy。尚未放行 PR/合并；候选不 promote、不称 accepted。
+下一步在该候选完成 PG、实际环境开关关/开/恢复、真实容器浏览器与 PC 自检，
+将运行时收据单独保存在会话产物，不把 mock/历史记录冒充本候选运行时证据。
+真实交易、Provider 花费及生产仍无授权。建议最终用 B01+#1205 单一交付路径，
+由总规划安排一个 PR；本会话不抢先处置 #1205 或其他 PR。

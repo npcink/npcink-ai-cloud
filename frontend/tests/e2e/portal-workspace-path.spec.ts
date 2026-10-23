@@ -146,7 +146,6 @@ async function installPortalMocks(
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
-  let paymentReturnEntitlementsFailed = false;
   let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
   const accountProjectionRequests: string[] = [];
@@ -313,9 +312,7 @@ async function installPortalMocks(
       if (
         options.failPaymentReturnEntitlements
         && paymentReturnConfirmed
-        && !paymentReturnEntitlementsFailed
       ) {
-        paymentReturnEntitlementsFailed = true;
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
         return;
       }
@@ -2035,10 +2032,8 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
 test('confirmed Alipay return can retry when account totals fail to refresh', async ({
   page,
 }) => {
-  await installPortalMocks(page, {
-    paymentReturnFlow: true,
-    failPaymentReturnEntitlements: true,
-  });
+  const options = { paymentReturnFlow: true, failPaymentReturnEntitlements: true };
+  await installPortalMocks(page, options);
 
   await page.goto(
     '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
@@ -2054,6 +2049,8 @@ test('confirmed Alipay return can retry when account totals fail to refresh', as
   await expect(
     notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
   ).toBeVisible();
+  // Both Quiet billing catalog consumers must see the fault until manual retry.
+  options.failPaymentReturnEntitlements = false;
   await notice.getByRole('button', { name: /Retry|重试/i }).click();
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
     '12,419'
