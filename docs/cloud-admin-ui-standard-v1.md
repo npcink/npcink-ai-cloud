@@ -13,7 +13,8 @@ This document composes with:
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
-- [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).
+- [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md);
+- [Admin UI Spec (Quiet queue tables)](admin-ui-spec.md) — Quiet pagination, filter pills, header density, and delivery self-check for queue tables; does not replace this standard.
 
 If a visual preference conflicts with product ownership, security, audit, or
 accessibility, preserve the stronger boundary first.

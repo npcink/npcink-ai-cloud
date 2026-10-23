@@ -15,7 +15,8 @@ Status: active standard.
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)；
 - [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md)；
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)；
-- [Parallel AI Collaboration Standard v1](parallel-ai-collaboration-standard-v1.md)。
+- [Parallel AI Collaboration Standard v1](parallel-ai-collaboration-standard-v1.md)；
+- [Admin UI Spec（Quiet 队列表）](admin-ui-spec.md) — Quiet 队列表分页 / 胶囊 / 自检；不替代本手册与 UI Standard。
 
 如果本文与产品所有权、安全、凭据、审计、发布或无障碍规则冲突，以更强的
 边界为准。
