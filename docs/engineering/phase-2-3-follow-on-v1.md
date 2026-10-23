@@ -49,11 +49,16 @@ Working rules (unchanged):
   (`count_active_runs`); root cause remains trigger-gated in
   [deferred-engineering-triggers-v1.md](../deferred-engineering-triggers-v1.md)
   Reviewed Item 8.
-- Phase 2 ops: inventory M4 `run_records` with `status=running` and
-  `execution_pattern=inline` older than the lease; prefer a **read-only
-  report**, then a small, explicit cleanup (mark-finished / failed) script or
-  admin path that is **opt-in**, audited, and does not auto-terminate fresh
-  runs. Do not weaken
+- The runtime queue worker now applies a bounded auto-fail to inline runs stuck
+  beyond `RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS`: it writes
+  `runtime.stale_running_auto_failed` only after a row-lock recheck, creates no
+  Provider usage, and lets the normal terminal callback fire. The effective
+  threshold is per run — never shorter than 30 minutes and extended by the
+  run's configured timeout/retry budget so a live Provider call is not raced.
+- Phase 2 ops: keep the **read-only** inventory
+  (`scripts/list-stale-inline-running-runs.py`) for M4 observation and use the
+  operator `mark_stale_running_failed` path for rows inside the grace window.
+  Do not weaken
   [runtime-provider-transaction-boundary-v1.md](../runtime-provider-transaction-boundary-v1.md).
 - M4 sync/deploy already drains recent in-flight inline runs before API
   recreate (#1177); that is not a substitute for cleaning pre-lease orphans.

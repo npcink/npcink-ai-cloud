@@ -146,6 +146,8 @@ from app.domain.runtime.models import (
     RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
+    RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS,
+    RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
     RUNTIME_STORAGE_MODE_RESULT_ONLY,
@@ -2410,12 +2412,15 @@ class RuntimeService:
         max_stale_queued: int = 0,
         max_callback_overdue: int = 0,
         max_running_stale_suggestions: int = 20,
+        max_stale_running_auto_fail: int = 0,
         site_id: str | None = None,
     ) -> dict[str, object]:
         normalized_worker_id = str(worker_id or "").strip() or "runtime_worker"
         queued_limit = max(0, int(max_stale_queued))
         callback_limit = max(0, int(max_callback_overdue))
         suggestion_limit = max(0, int(max_running_stale_suggestions))
+        auto_fail_limit = max(0, int(max_stale_running_auto_fail))
+        current_time = datetime.now(UTC)
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
@@ -2446,6 +2451,18 @@ class RuntimeService:
                 if suggestion_limit > 0
                 else []
             )
+            stale_inline_auto_fail_runs = (
+                repository.list_stale_inline_running_runs(
+                    processing_started_before=(
+                        current_time
+                        - timedelta(seconds=RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS)
+                    ),
+                    site_id=site_id,
+                    limit=auto_fail_limit,
+                )
+                if auto_fail_limit > 0
+                else []
+            )
             session.commit()
 
         audit_context = ServiceAuditContext(
@@ -2458,6 +2475,8 @@ class RuntimeService:
         )
         requeued_stale_queued: list[dict[str, object]] = []
         redelivered_callback_overdue: list[dict[str, object]] = []
+        auto_failed_stale_running: list[dict[str, object]] = []
+        auto_failed_run_ids: set[str] = set()
         running_stale_suggestions: list[dict[str, object]] = []
 
         for run in stale_queued_runs:
@@ -2496,8 +2515,24 @@ class RuntimeService:
                 }
             )
 
-        current_time = datetime.now(UTC)
+        for run in stale_inline_auto_fail_runs:
+            try:
+                auto_fail = self._auto_fail_stale_running_run(
+                    run_id=run.run_id,
+                    site_id=site_id,
+                    audit_context=audit_context,
+                    current_time=current_time,
+                )
+            except RuntimeErrorBase:
+                continue
+            if auto_fail is None:
+                continue
+            auto_failed_stale_running.append(auto_fail)
+            auto_failed_run_ids.add(str(auto_fail.get("run_id") or ""))
+
         for run in running_stale_runs:
+            if run.run_id in auto_failed_run_ids:
+                continue
             if not self._is_running_run_stale(run, current_time):
                 continue
             running_stale_suggestions.append(
@@ -2517,11 +2552,108 @@ class RuntimeService:
             "site_id": site_id or "",
             "requeued_stale_queued_total": len(requeued_stale_queued),
             "redelivered_callback_overdue_total": len(redelivered_callback_overdue),
+            "auto_failed_stale_running_total": len(auto_failed_stale_running),
             "running_stale_operator_queue_total": len(running_stale_suggestions),
             "requeued_stale_queued": requeued_stale_queued,
             "redelivered_callback_overdue": redelivered_callback_overdue,
+            "auto_failed_stale_running": auto_failed_stale_running,
             "running_stale_operator_queue": running_stale_suggestions,
         }
+
+    def _auto_fail_stale_running_run(
+        self,
+        *,
+        run_id: str,
+        site_id: str | None,
+        audit_context: ServiceAuditContext,
+        current_time: datetime,
+    ) -> dict[str, object] | None:
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            run = repository.get_run_for_update(run_id)
+            if run is None or (site_id and run.site_id != site_id):
+                return None
+            if run.status != "running" or run.execution_pattern != "inline":
+                return None
+            if run.processing_started_at is None:
+                return None
+            processing_started_at = self.run_projector.normalize_timestamp(
+                run.processing_started_at
+            )
+            auto_fail_after_seconds = self._stale_running_auto_fail_after_seconds(run)
+            if processing_started_at > (current_time - timedelta(seconds=auto_fail_after_seconds)):
+                return None
+            age_seconds = max(
+                0,
+                int((current_time - processing_started_at).total_seconds()),
+            )
+            before = self._serialize_runtime_diagnostic_run(run)
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+                error_message=(
+                    f"stale inline run auto-failed after {age_seconds}s without terminal evidence"
+                ),
+            )
+            after = self._serialize_runtime_diagnostic_run(run)
+            canonical_run_id = str(run.canonical_run_id or "")
+            account_id = run.account_id
+            run_site_id = run.site_id
+            subscription_id = run.subscription_id
+            plan_version_id = run.plan_version_id
+            session.commit()
+
+        self.commercial_service.record_service_audit_event(
+            audit_context=audit_context,
+            event_kind="runtime.repair.auto_fail_stale_running",
+            outcome="succeeded",
+            account_id=account_id,
+            site_id=run_site_id,
+            subscription_id=subscription_id,
+            plan_version_id=plan_version_id,
+            scope_kind="runtime_run",
+            scope_id=run_id,
+            payload_json={
+                "run_id": run_id,
+                "canonical_run_id": canonical_run_id,
+                "before": before,
+                "after": after,
+                "repair_action": "auto_fail_stale_running",
+                "mode": "bounded_auto_fail",
+                "auto_fail_after_seconds": auto_fail_after_seconds,
+                "age_seconds": age_seconds,
+                "error_code": RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+            },
+        )
+        return {
+            "run_id": run_id,
+            "canonical_run_id": canonical_run_id,
+            "status": "failed",
+            "error_code": RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+            "auto_fail_after_seconds": auto_fail_after_seconds,
+            "age_seconds": age_seconds,
+        }
+
+    def _stale_running_auto_fail_after_seconds(self, run: RunRecord) -> int:
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        timeout_seconds = max(0, self._coerce_int(policy.get("timeout_ms"), default=0)) // 1000
+        retry_max = max(
+            self._coerce_int(policy.get("retry_max"), default=0),
+            self._coerce_int(policy.get("max_retries"), default=0),
+        )
+        attempts_per_candidate = max(1, retry_max + 1)
+        # A run may legitimately consume its timeout across two candidate chains.
+        # One extra attempt of headroom keeps the fallback from racing a live
+        # Provider call.
+        configured_budget_seconds = (
+            timeout_seconds * (attempts_per_candidate * 2 + 1)
+            + RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS
+        )
+        return max(
+            RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS,
+            configured_budget_seconds,
+        )
 
     def list_runtime_guard_events(
         self,

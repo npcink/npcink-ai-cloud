@@ -101,6 +101,7 @@ def main() -> None:
                     max_stale_queued=0,
                     max_callback_overdue=settings.runtime_callback_batch_size,
                     max_running_stale_suggestions=0,
+                    max_stale_running_auto_fail=0,
                 )
             callbacks = service.dispatch_pending_callbacks(
                 max_callbacks=settings.runtime_callback_batch_size,

@@ -29,9 +29,10 @@ commercial reads and credit/entitlement paths stay operational. Reversal is a hu
 
 After Phase 1 loop evidence: continue Phase 2 portal e2e triage (assertion
 batches through #1196 merged; screenshot baseline + residual failures need a
-fresh master re-scan — see follow-on §2.1), clean up orphan `running` inline
-runs (lease already prevents lockout), and polish Portal 502/busy UX.
-Production Deploy stays human-gated.
+fresh master re-scan — see follow-on §2.1), watch the bounded auto-fail for
+orphan `running` inline runs (the lease prevents lockout; the worker fails a
+row after a per-run grace of at least 30 minutes), and polish Portal 502/busy
+UX. Production Deploy stays human-gated.
 Details: [phase-2-3-follow-on-v1.md](docs/engineering/phase-2-3-follow-on-v1.md).
 Deferred orphan root-cause remains trigger-gated in
 [deferred-engineering-triggers-v1.md](docs/deferred-engineering-triggers-v1.md)
