@@ -488,6 +488,47 @@ class Principal(Base):
     )
 
 
+class PortalSession(Base):
+    """Dormant login registry; B1 does not change Portal authentication."""
+
+    __tablename__ = "portal_sessions"
+    __table_args__ = (
+        CheckConstraint("length(session_id) BETWEEN 1 AND 64", name="ck_portal_sessions_id"),
+        CheckConstraint("session_version > 0", name="ck_portal_sessions_version"),
+        CheckConstraint(
+            "absolute_expires_at > created_at", name="ck_portal_sessions_expiry"
+        ),
+        CheckConstraint(
+            "auth_method IN ('email_code', 'registration', 'qq')",
+            name="ck_portal_sessions_auth_method",
+        ),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoke_reason IS NULL) OR "
+            "(revoked_at IS NOT NULL AND revoke_reason IS NOT NULL "
+            "AND length(revoke_reason) BETWEEN 1 AND 64 AND revoked_at >= created_at)",
+            name="ck_portal_sessions_revocation",
+        ),
+        CheckConstraint(
+            "client_hint IS NULL OR length(client_hint) BETWEEN 1 AND 120",
+            name="ck_portal_sessions_client_hint",
+        ),
+        Index("ix_portal_sessions_principal_created", "principal_id", "created_at", "session_id"),
+        Index("ix_portal_sessions_expiry", "absolute_expires_at"),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(
+        ForeignKey("principals.principal_id", name="fk_portal_sessions_principal")
+    )
+    session_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoke_reason: Mapped[str | None] = mapped_column(String(64))
+    auth_method: Mapped[str] = mapped_column(String(32))
+    client_hint: Mapped[str | None] = mapped_column(String(120))
+
+
 class PrincipalSiteBinding(Base):
     __tablename__ = "principal_site_bindings"
     __table_args__ = (
