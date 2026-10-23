@@ -13,6 +13,8 @@ as current truth.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
+| 接续 10-23 规划讨论收口与发布前联调待办 | [规划讨论会话收口 — 2026-10-23](history/engineering/2026/planning-discussion-session-closeout-2026-10-23.md) — 已合 #1163/#1164、AGENTS；未完成 Deploy/自动验收/真生成/编辑器收据；含执行任务书摘要与 IT-* 用例表；关规划会话≠第一阶段完成 |
+| 跑通第一阶段编辑器闭环（Deploy/smoke/真写作验收单） | [Phase 1 closed-loop runbook — 2026-10-19](engineering/phase-1-closed-loop-runbook-2026-10-19.md) — 逐步命令与人工点击；不授权 Deploy；联调详情见上条收口文 |
 | 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史；第11节列完整未完事项，区分当前试用、推荐优化暂缓、工具小修、商业候选及已完成旧项 |
 | 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
