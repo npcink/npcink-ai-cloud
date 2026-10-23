@@ -123,6 +123,9 @@ PORTAL_BASELINE_PLUGIN_SLUGS = (
 )
 ERROR_RATE_HIGH_THRESHOLD = 0.05
 LATENCY_WARNING_MS = 3000
+# editor_assist latency_ms is LLM wall-clock, not Cloud connection RTT.
+# Exclude from totals/site avg used for latency_high (Portal "站点连接").
+LATENCY_HEALTH_EXCLUDED_EVENT_KIND_PREFIX = "addon.editor_assist."
 CATALOG_CHURN_THRESHOLD = 4
 ATTENTION_WORKFLOW_STATUSES = {
     "active",
@@ -137,6 +140,22 @@ ATTENTION_STATE_ACTIONS = {
 }
 
 type SQLAFilter = ColumnElement[bool]
+
+
+def _connection_health_latency_ms() -> ColumnElement[Any]:
+    """Latency expression for connection health averages.
+
+    Drops addon.editor_assist.* so ordinary LLM generation time does not
+    raise plugin_observability.latency_high / Portal site-connection warnings.
+    """
+    return case(
+        (
+            ~PluginObservabilityEvent.event_kind.like(
+                f"{LATENCY_HEALTH_EXCLUDED_EVENT_KIND_PREFIX}%"
+            ),
+            PluginObservabilityEvent.latency_ms,
+        ),
+    )
 
 
 class PluginObservabilityService:
@@ -239,7 +258,7 @@ class PluginObservabilityService:
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.max(PluginObservabilityEvent.received_at),
                 ).where(*base_conditions)
             ).one()
@@ -445,7 +464,7 @@ class PluginObservabilityService:
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.max(PluginObservabilityEvent.received_at),
                 ).where(*base_conditions)
             ).one()
@@ -523,7 +542,7 @@ class PluginObservabilityService:
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.count(func.distinct(PluginObservabilityEvent.plugin_slug)),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -1254,7 +1273,7 @@ class PluginObservabilityService:
                     severity="warning",
                     code="plugin_observability.latency_high",
                     title="High average latency",
-                    detail=f"Average plugin event latency is {avg_latency_ms}ms.",
+                    detail=f"Average connection-related plugin event latency is {avg_latency_ms}ms.",
                     site_id=site_id,
                     suggested_action="Inspect the slow plugin and recent event kinds.",
                 )
