@@ -393,7 +393,7 @@ function PortalHome() {
             {},
             'The current package has no AI credits available. Buy AI credits or change the package before continuing.'
           ),
-          href: isFreePackage ? '/portal/billing#usage' : '/portal/account#package-options',
+          href: isFreePackage ? '/portal/billing#usage' : '/portal/billing?action=upgrade',
           action: isFreePackage
             ? t('portal.home.usage_action', {}, 'View usage')
             : t('portal.home.billing_action', {}, 'Review package'),
@@ -431,7 +431,7 @@ function PortalHome() {
               tone: 'warn' as const,
               label: t('portal.home.capacity_attention_title', { resource: resourceLabel }, `${resourceLabel} needs attention`),
               detail: buildResourceDetail(resource),
-              href: '/portal/account#package-options',
+              href: '/portal/billing?action=upgrade',
               action: t('portal.home.billing_action', {}, 'Review package'),
             }];
           }
@@ -440,7 +440,7 @@ function PortalHome() {
             tone: 'warn' as const,
             label: t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention'),
             detail: overLimitResources.map(buildResourceDetail).join(' '),
-            href: '/portal/account#package-options',
+            href: '/portal/billing?action=upgrade',
             action: t('portal.home.billing_action', {}, 'Review package'),
           }];
         })()

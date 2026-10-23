@@ -152,31 +152,41 @@ assert.match(
 
 assert.match(
   accountSource,
-  /PortalAccountCommercePanels[\s\S]*data-portal-account="billing-commerce"|data-portal-account="billing-commerce"[\s\S]*PortalAccountCommercePanels/,
-  'account center must host package management and payment orders'
+  /PortalAccountCommercePanels[\s\S]*surface="account"|surface="account"[\s\S]*PortalAccountCommercePanels/,
+  'account center must host payment-order commerce with surface=account'
+);
+assert.match(
+  accountSource,
+  /data-portal-account="billing-commerce"/,
+  'account center keeps the billing-commerce mount region for payment orders'
 );
 
 const commerceSource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const paymentHistorySource = readFileSync(resolve(FRONTEND_ROOT, 'src/components/portal/PortalPaymentOrderHistory.tsx'), 'utf8');
-assert.match(
+assert.doesNotMatch(
   commerceSource,
-  /data-portal-account="package-summary"[\s\S]*upgrade-package/,
-  'account commerce must keep a one-line plan summary with Upgrade package'
+  /data-portal-account="package-summary"|data-portal-account="upgrade-package"/,
+  'account commerce must not render the plan summary row or Upgrade package CTA'
 );
 assert.doesNotMatch(
   commerceSource,
   /data-portal-account="goto-billing"|portal\.account\.goto_billing/,
-  'account commerce must not keep Open Package / 前往套餐 beside the summary (upgrades live in the package dialog)'
+  'account commerce must not keep Open Package / 前往套餐'
 );
 assert.match(
   commerceSource,
-  /data-portal-account="upgrade-package"[\s\S]*setActiveCommercialDialog\('package'\)|setActiveCommercialDialog\('package'\)[\s\S]*upgrade-package/,
-  'Upgrade package must open the account plan upgrade dialog'
+  /surface === 'account'[\s\S]*paymentOrdersCard/,
+  'account surface renders payment orders only'
+);
+assert.match(
+  commerceSource,
+  /surface === 'billing'[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/,
+  'billing surface hosts the package dialog without an account summary row'
 );
 assert.doesNotMatch(
   commerceSource,
   /portal\.usage\.credit_pack_buy_action[\s\S]*portal\.package\.trial_entry_action|portal\.package\.trial_entry_action[\s\S]*portal\.usage\.credit_pack_buy_action/,
-  'account commerce must not bring back buy-credits / trial CTA stack beside the package summary'
+  'account commerce must not bring back buy-credits / trial CTA stack on the account surface'
 );
 assert.match(
   paymentHistorySource,

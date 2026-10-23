@@ -13,6 +13,7 @@ import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog
 import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
 import type { Site } from '@/lib/portal-client';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
+import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import {
   PortalErrorState,
   PortalLoadingState,
@@ -168,15 +169,14 @@ function PortalBillingContent() {
     }
   }, [entitlements, isLoading, searchParams]);
 
-  // Upgrade / manage intents now live on Account.
+  // Payment-order anchors stay on Account; package upgrade intents stay on this page.
   useEffect(() => {
-    const requestedAction = searchParams.get('action');
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
-    if (requestedAction === 'upgrade' || hash === '#package-options' || hash === '#payment-orders') {
+    if (hash === '#payment-orders') {
       const params = new URLSearchParams(searchParams.toString());
-      const targetHash = hash === '#payment-orders' ? '#payment-orders' : '#package-options';
+      params.delete('action');
       const qs = params.toString();
-      router.replace(`/portal/account${qs ? `?${qs}` : ''}${targetHash}`);
+      router.replace(`/portal/account${qs ? `?${qs}` : ''}#payment-orders`);
     }
   }, [router, searchParams]);
 
@@ -261,7 +261,7 @@ function PortalBillingContent() {
         currentPage="billing"
         primaryAction={
           packageStatus !== 'warning' ? (
-            <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
+            <Link href="/portal/billing?action=upgrade" className="btn btn-secondary btn-sm">
               {t('portal.billing.manage_title', {}, 'Manage package')}
             </Link>
           ) : null
@@ -282,6 +282,8 @@ function PortalBillingContent() {
         refreshBilling={loadBilling}
         refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
       />
+
+      <PortalAccountCommercePanels surface="billing" />
 
       {error ? (
         <PortalErrorState

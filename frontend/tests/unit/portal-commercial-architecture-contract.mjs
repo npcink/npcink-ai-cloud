@@ -11,8 +11,13 @@ const commerceSource = readFileSync(
 
 assert.match(
   accountSource,
-  /PortalAccountCommercePanels/,
-  'account center hosts package, trial, and payment-order commerce panels'
+  /PortalAccountCommercePanels[\s\S]*surface="account"/,
+  'account center hosts payment-order commerce panels'
+);
+assert.match(
+  billingSource,
+  /PortalAccountCommercePanels[\s\S]*surface="billing"/,
+  'package page hosts package / credit / trial commerce dialogs'
 );
 
 for (const boundary of [

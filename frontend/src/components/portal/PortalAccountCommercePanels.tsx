@@ -45,10 +45,18 @@ function normalizePaymentText(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
 }
 
-export function PortalAccountCommercePanels() {
+export type PortalAccountCommerceSurface = 'account' | 'billing';
+
+type PortalAccountCommercePanelsProps = {
+  /** account: payment orders only. billing: package/credit/trial dialogs (no plan summary row). */
+  surface: PortalAccountCommerceSurface;
+};
+
+export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePanelsProps) {
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const { isAuthenticated, refresh } = useSession();
+  const catalogEnabled = isAuthenticated && surface === 'billing';
   const {
     entitlements,
     creditPacks,
@@ -57,7 +65,7 @@ export function PortalAccountCommercePanels() {
     error,
     load: loadBilling,
   } = usePortalCommercialCatalog({
-    isAuthenticated,
+    isAuthenticated: catalogEnabled,
     t,
   });
   const {
@@ -94,23 +102,36 @@ export function PortalAccountCommercePanels() {
   const handledUpgradeIntentRef = useRef('');
 
   useEffect(() => {
+    if (surface !== 'billing') return;
     const requestedTier = searchParams.get('plan');
     const requestedAction = searchParams.get('action');
-    const intentKey = `${requestedAction}:${requestedTier}`;
-    if (
-      requestedAction !== 'upgrade'
-      || (requestedTier !== 'plus' && requestedTier !== 'pro')
-      || handledUpgradeIntentRef.current === intentKey
-      || !(planOffers?.items || []).some((offer) => offer.tier_id === requestedTier)
-    ) {
+    const intentKey = `${requestedAction || ''}:${requestedTier || ''}`;
+    if (!requestedAction || handledUpgradeIntentRef.current === intentKey) return;
+
+    if (requestedAction === 'credits') {
+      handledUpgradeIntentRef.current = intentKey;
+      setCreditPackError(null);
+      setActiveCommercialDialog('credits');
       return;
     }
+
+    if (requestedAction !== 'upgrade') return;
+
+    if (requestedTier === 'plus' || requestedTier === 'pro') {
+      const offers = planOffers?.items || [];
+      if (!offers.some((offer) => offer.tier_id === requestedTier)) {
+        // Wait until catalog resolves so a deep-linked tier can preselect when present.
+        if (isLoading || planOffers === null) return;
+      } else {
+        setSelectedPackageTier(requestedTier);
+      }
+    }
+
     handledUpgradeIntentRef.current = intentKey;
     setPackageError(null);
-    setSelectedPackageTier(requestedTier);
     setShowOnlyPackageDifferences(false);
     setActiveCommercialDialog('package');
-  }, [planOffers?.items, searchParams]);
+  }, [surface, planOffers, planOffers?.items, isLoading, searchParams]);
 
   useEffect(() => {
     const allowedTiers = planOffers?.trial?.allowed_tiers || [];
@@ -387,12 +408,21 @@ export function PortalAccountCommercePanels() {
 
 
 
+  if (surface === 'account') {
+    return (
+      <div className="space-y-5" data-portal-account="commerce">
+        {paymentOrdersCard}
+      </div>
+    );
+  }
+
   if (isLoading && !entitlements && !planOffers && !creditPacks) {
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} compact />;
   }
 
   return (
-    <div className="space-y-5" data-portal-account="commerce">
+    <div className="space-y-5" data-portal-account="commerce" data-portal-billing="package-commerce">
+      <div id="package-options" className="scroll-mt-24" hidden aria-hidden="true" />
       {paymentLaunchNotice}
 
       {error ? (
@@ -404,46 +434,6 @@ export function PortalAccountCommercePanels() {
           </button>
         </PortalCard>
       ) : null}
-
-      {!error && entitlements ? (
-        <div
-          id="package-options"
-          className="scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40"
-          data-portal-account="package-summary"
-        >
-          <p className="min-w-0 text-sm text-slate-700 dark:text-slate-200">
-            <span className="font-medium text-slate-950 dark:text-white">
-              {t('portal.account.commerce_title', {}, 'Package and payments')}
-            </span>
-            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-            <span>
-              {currentPlanId
-                ? t(
-                    'portal.account.current_plan_summary',
-                    { plan: currentPlanId.toUpperCase() },
-                    'Current plan: {{plan}}'
-                  )
-                : trialStatusTitle}
-            </span>
-          </p>
-          <div className="flex shrink-0 flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              data-portal-account="upgrade-package"
-              onClick={() => {
-                setPackageError(null);
-                setShowOnlyPackageDifferences(false);
-                setActiveCommercialDialog('package');
-              }}
-            >
-              {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {paymentOrdersCard}
 
       <Modal
         isOpen={activeCommercialDialog === 'package'}

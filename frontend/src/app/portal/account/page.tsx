@@ -439,7 +439,7 @@ function AccountPageContent() {
       </PortalSection>
 
       <div className="space-y-3" data-portal-account="billing-commerce">
-        <PortalAccountCommercePanels />
+        <PortalAccountCommercePanels surface="account" />
       </div>
 
       <Modal

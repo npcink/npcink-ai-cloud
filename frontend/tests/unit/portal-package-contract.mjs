@@ -123,15 +123,20 @@ assert.match(
   /active_sites[\s\S]*package_status_site_label/,
   'Portal package status must classify active-site capacity as a site limit'
 );
+assert.doesNotMatch(
+  accountCommerceSource,
+  /data-portal-account="package-summary"|data-portal-account="upgrade-package"/,
+  'Portal account commerce must not keep a plan summary row; upgrade lives on the package page dialog'
+);
 assert.match(
   accountCommerceSource,
-  /data-portal-account="package-summary"[\s\S]*upgrade-package/,
-  'Portal account commerce keeps a one-line package summary with Upgrade package as the plan entry'
+  /surface === 'billing'[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/,
+  'Portal package dialog is hosted on the billing surface of commerce panels'
 );
 assert.doesNotMatch(
   accountCommerceSource,
-  /creditNeedsAttention|credit_pack_buy_action|trial_entry_action/,
-  'Portal account commerce must not restack buy-credits / trial CTAs (upgrades live in the package dialog)'
+  /creditNeedsAttention|trial_entry_action/,
+  'Portal account commerce must not restack trial CTAs beside payment orders'
 );
 assert.match(
   creditPackDialogSource,
@@ -160,13 +165,18 @@ assert.equal(
 );
 assert.match(
   accountPageSource,
-  /PortalAccountCommercePanels/,
-  'Portal account page must host manage-package and payment-orders commerce panels'
+  /PortalAccountCommercePanels[\s\S]*surface="account"/,
+  'Portal account page must host payment-orders commerce panels'
+);
+assert.match(
+  billingPageSource,
+  /PortalAccountCommercePanels[\s\S]*surface="billing"/,
+  'Portal billing/plan page hosts the package change dialog via commerce panels'
 );
 assert.doesNotMatch(
   billingPageSource,
-  /const paymentOrdersCard =|id="package-options"/,
-  'Portal billing/plan page must not keep manage-package or payment-orders blocks'
+  /const paymentOrdersCard =/,
+  'Portal billing/plan page must not keep payment-orders blocks inline'
 );
 assert.match(
   paymentReturnNoticeSource,
