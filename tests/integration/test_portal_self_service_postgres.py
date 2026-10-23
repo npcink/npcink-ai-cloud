@@ -143,7 +143,7 @@ def _seed(url):
 
 @pytest.fixture
 def closure_database(parent_database):
-    _migrate(parent_database, "20261024_0090")
+    _migrate(parent_database, "20261024_0091")
     _seed(parent_database)
     _seed_export_session(parent_database)
     return parent_database
@@ -477,7 +477,7 @@ def test_all_portal_sessions_revoked_api_and_version_readback(parent_database):
     """Actual API against a unique guarded PG schema; never touches demo sessions."""
     from tests.api.test_portal_session_revocation import assert_session_revocation_api_readback
 
-    _migrate(parent_database, "20261024_0090")
+    _migrate(parent_database, "20261024_0091")
     assert_session_revocation_api_readback(parent_database)
 # Data copy proof deliberately reuses the guarded, migrated disposable schema.
 # Local opt-in skips are not PostgreSQL acceptance.
@@ -652,34 +652,41 @@ def registry_database(portal_database):
     return portal_database
 
 
+def _registry_table(session):
+    """B1 historical0090 schema must not depend on later ORM columns."""
+    from sqlalchemy import MetaData, Table
+
+    return Table("portal_sessions", MetaData(), autoload_with=session.connection())
+
+
 def _registry_row(**overrides):
     from datetime import timedelta
 
     now = datetime(2026, 10, 24, tzinfo=UTC)
     values = dict(
-        session_id="session_registry", principal_id="prn_registry", session_version=1,
-        created_at=now, absolute_expires_at=now + timedelta(hours=1),
+        session_id="session_registry",
+        principal_id="prn_registry",
+        session_version=1,
+        created_at=now,
+        absolute_expires_at=now + timedelta(hours=1),
         auth_method="email_code",
     )
     values.update(overrides)
-    from app.core.models import PortalSession
-
-    return PortalSession(**values)
+    return values
 
 
 def test_registry_postgres_migration_round_trip(registry_database):
-    from app.core.models import PortalSession
-
     with get_session(registry_database) as session:
         inspector = inspect(session.connection())
         assert {i["name"] for i in inspector.get_indexes("portal_sessions")} == {
-            "ix_portal_sessions_principal_created", "ix_portal_sessions_expiry"
+            "ix_portal_sessions_principal_created",
+            "ix_portal_sessions_expiry",
         }
         assert len(inspector.get_check_constraints("portal_sessions")) == 6
-        session.add(_registry_row())
+        session.execute(_registry_table(session).insert().values(**_registry_row()))
         session.commit()
     with get_session(registry_database) as session:
-        row = session.get(PortalSession, "session_registry")
+        row = session.execute(select(_registry_table(session))).one()
         assert row.principal_id == "prn_registry"
         assert row.session_version == 1
         assert row.created_at == datetime(2026, 10, 24, tzinfo=UTC)
@@ -691,49 +698,48 @@ def test_registry_postgres_migration_round_trip(registry_database):
         assert session.scalar(text("SELECT version_num FROM alembic_version")) == REVISION
     _migrate(registry_database, REGISTRY_REVISION)
     with get_session(registry_database) as session:
-        assert session.scalar(select(func.count()).select_from(PortalSession)) == 0
+        assert session.scalar(select(func.count()).select_from(_registry_table(session))) == 0
 
 
-@pytest.mark.parametrize("overrides,sqlstate", [
-    ({"session_id": ""}, "23514"),
-    ({"session_version": 0}, "23514"),
-    ({"session_version": None}, "23502"),
-    ({"absolute_expires_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
-    ({"auth_method": "admin"}, "23514"),
-    ({"revoke_reason": "logout"}, "23514"),
-    ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
-    ({"revoked_at": datetime(2026, 10, 23, tzinfo=UTC), "revoke_reason": "logout"}, "23514"),
-    ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC), "revoke_reason": ""}, "23514"),
-    ({"client_hint": ""}, "23514"),
-    ({"client_hint": "x" * 121}, "22001"),
-    ({"principal_id": "missing-principal"}, "23503"),
-])
+@pytest.mark.parametrize(
+    "overrides,sqlstate",
+    [
+        ({"session_id": ""}, "23514"),
+        ({"session_version": 0}, "23514"),
+        ({"session_version": None}, "23502"),
+        ({"absolute_expires_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
+        ({"auth_method": "admin"}, "23514"),
+        ({"revoke_reason": "logout"}, "23514"),
+        ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
+        ({"revoked_at": datetime(2026, 10, 23, tzinfo=UTC), "revoke_reason": "logout"}, "23514"),
+        ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC), "revoke_reason": ""}, "23514"),
+        ({"client_hint": ""}, "23514"),
+        ({"client_hint": "x" * 121}, "22001"),
+        ({"principal_id": "missing-principal"}, "23503"),
+    ],
+)
 def test_registry_postgres_rejects_invalid_rows(registry_database, overrides, sqlstate):
     from sqlalchemy.exc import DataError, IntegrityError
 
-    from app.core.models import PortalSession
-
     with get_session(registry_database) as session:
         with pytest.raises((IntegrityError, DataError)) as caught:
-            session.add(_registry_row(**overrides))
+            session.execute(_registry_table(session).insert().values(**_registry_row(**overrides)))
             session.flush()
         assert getattr(caught.value.orig, "sqlstate", None) == sqlstate
         session.rollback()
     with get_session(registry_database) as session:
-        assert session.scalar(select(func.count()).select_from(PortalSession)) == 0
+        assert session.scalar(select(func.count()).select_from(_registry_table(session))) == 0
 
 
 def test_registry_postgres_unique_fk_and_caller_rollback(registry_database):
     from sqlalchemy.exc import IntegrityError
 
-    from app.core.models import PortalSession
-
     with get_session(registry_database) as session:
-        session.add(_registry_row())
+        session.execute(_registry_table(session).insert().values(**_registry_row()))
         session.commit()
     with get_session(registry_database) as session:
         with pytest.raises(IntegrityError) as duplicate:
-            session.add(_registry_row())
+            session.execute(_registry_table(session).insert().values(**_registry_row()))
             session.flush()
         assert getattr(duplicate.value.orig, "sqlstate", None) == "23505"
         session.rollback()
@@ -742,12 +748,28 @@ def test_registry_postgres_unique_fk_and_caller_rollback(registry_database):
             session.flush()
         assert getattr(referenced.value.orig, "sqlstate", None) == "23503"
         session.rollback()
-        session.add(_registry_row(session_id="rolled_back"))
+        session.execute(
+            _registry_table(session).insert().values(**_registry_row(session_id="rolled_back"))
+        )
         session.flush()
         session.rollback()
     with get_session(registry_database) as session:
-        assert session.get(PortalSession, "rolled_back") is None
-        assert session.get(PortalSession, "session_registry") is not None
+        assert (
+            session.execute(
+                select(_registry_table(session)).where(
+                    _registry_table(session).c.session_id == "rolled_back"
+                )
+            ).first()
+            is None
+        )
+        assert (
+            session.execute(
+                select(_registry_table(session)).where(
+                    _registry_table(session).c.session_id == "session_registry"
+                )
+            ).first()
+            is not None
+        )
         assert session.get(Principal, "prn_registry") is not None
 
 
@@ -765,9 +787,10 @@ def test_registry_postgres_principal_lock_is_transaction_scoped(registry_databas
         assert getattr(caught.value.orig, "sqlstate", None) == "55P03"
         contender.rollback()
         owner.rollback()
-        assert PortalSessionRepository(contender).lock_principal(
-            principal_id="prn_registry"
-        ) is not None
+        assert (
+            PortalSessionRepository(contender).lock_principal(principal_id="prn_registry")
+            is not None
+        )
         contender.rollback()
 
 
@@ -1384,3 +1407,321 @@ def test_sessions_postgres_replay_waiting_for_caller_revoke_fails_closed(
     assert first.revoked_count == 1 and second == 401
     _b3a_assert_auth(url, caller, False)
     _b3a_assert_auth(url, revoker, True)
+
+
+# T1 dormant storage; no issuer, factor verifier or user activation path.
+TOTP_REVISION = "20261024_0091"
+
+
+@pytest.fixture
+def totp_database(portal_database):
+    _migrate(portal_database, REGISTRY_REVISION)
+    with get_session(portal_database) as session:
+        session.add(Principal(principal_id="prn_registry", email="totp-storage@example.test"))
+        session.flush()
+        session.execute(_registry_table(session).insert().values(**_registry_row()))
+        session.commit()
+    _migrate(portal_database, TOTP_REVISION)
+    return portal_database
+
+
+def _totp_factor(**overrides):
+    from app.core.models import PortalTotpFactor
+
+    values = dict(
+        principal_id="prn_registry",
+        factor_version=1,
+        state="disabled",
+        recovery_generation=0,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    values.update(overrides)
+    return PortalTotpFactor(**values)
+
+
+def test_totp_postgres_migration_preserves_legacy_session_and_safe_downgrade(totp_database):
+    from app.core.models import PortalSession
+
+    url = totp_database
+    with get_session(url) as session:
+        row = session.get(PortalSession, "session_registry")
+        assert (
+            row.factor_version,
+            row.primary_authenticated_at,
+            row.second_factor_verified_at,
+            row.second_factor_method,
+        ) == (None,) * 4
+        original = row.session_version, row.created_at, row.absolute_expires_at
+        inspector = inspect(session.connection())
+        assert {"portal_totp_factors", "portal_recovery_codes", "portal_auth_challenges"} <= set(
+            inspector.get_table_names()
+        )
+        assert len(inspector.get_check_constraints("portal_totp_factors")) == 6
+        assert len(inspector.get_check_constraints("portal_sessions")) == 7
+    _migrate(url, REGISTRY_REVISION, downgrade=True)
+    with get_session(url) as session:
+        row = session.execute(select(_registry_table(session))).one()
+        assert (row.session_version, row.created_at, row.absolute_expires_at) == original
+        assert "factor_version" not in row._mapping
+        assert "portal_totp_factors" not in inspect(session.connection()).get_table_names()
+    _migrate(url, TOTP_REVISION)
+    with get_session(url) as session:
+        assert session.get(PortalSession, "session_registry").factor_version is None
+
+
+@pytest.mark.parametrize(
+    "overrides,sqlstate",
+    [
+        ({"factor_version": 0}, "23514"),
+        ({"state": "enabled"}, "23514"),
+        ({"pending_setup_id": "incomplete"}, "23514"),
+        ({"last_accepted_counter": -1}, "23514"),
+        ({"principal_id": "missing"}, "23503"),
+        ({"recovery_generation": None}, "23502"),
+    ],
+)
+def test_totp_postgres_factor_constraints(totp_database, overrides, sqlstate):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.models import PortalTotpFactor
+
+    with get_session(totp_database) as session:
+        session.add(_totp_factor(**overrides))
+        with pytest.raises(IntegrityError) as error:
+            session.flush()
+        assert error.value.orig.sqlstate == sqlstate
+        session.rollback()
+    with get_session(totp_database) as session:
+        assert session.scalar(select(func.count()).select_from(PortalTotpFactor)) == 0
+
+
+def test_totp_postgres_unique_fk_rollback_and_downgrade_guard(totp_database):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.models import PortalTotpFactor
+
+    url = totp_database
+    with get_session(url) as session:
+        session.add(_totp_factor())
+        session.flush()
+        session.rollback()
+    with get_session(url) as session:
+        assert session.get(PortalTotpFactor, "prn_registry") is None
+        session.add(_totp_factor())
+        session.commit()
+    with get_session(url) as session:
+        session.add(_totp_factor())
+        with pytest.raises(IntegrityError) as error:
+            session.flush()
+        assert error.value.orig.sqlstate == "23505"
+        session.rollback()
+        # Remove only the preexisting registry row to isolate the new FK floor.
+        session.execute(_registry_table(session).delete())
+        session.commit()
+        session.delete(session.get(Principal, "prn_registry"))
+        with pytest.raises(IntegrityError) as error:
+            session.flush()
+        assert error.value.orig.sqlstate == "23503"
+        session.rollback()
+    with pytest.raises(RuntimeError, match="empty dormant storage"):
+        _migrate(url, REGISTRY_REVISION, downgrade=True)
+    with get_session(url) as session:
+        assert session.scalar(text("SELECT version_num FROM alembic_version")) == TOTP_REVISION
+        assert session.get(PortalTotpFactor, "prn_registry").factor_version == 1
+
+
+def test_totp_postgres_factor_locks_refresh_and_serialize(closure_database, monkeypatch):
+    from app.adapters.repositories.portal_totp_repository import PortalTotpRepository
+    from app.core.models import PortalTotpFactor
+    from app.domain.portal_sessions.service import lock_login_scope
+
+    url = closure_database
+    with get_session(url) as session:
+        session.add(_totp_factor(principal_id="prn_close"))
+        session.commit()
+
+    def increment():
+        with get_session(url) as session:
+            # Pre-read to exercise populate_existing after a real waiting lock.
+            stale = session.get(PortalTotpFactor, "prn_close")
+            lock_login_scope(session, "prn_close")
+            row = PortalTotpRepository(session).lock_factor(principal_id="prn_close")
+            assert row is stale
+            row.factor_version += 1
+            version = row.factor_version
+            session.commit()
+            return version
+
+    assert _run_registry_ordered_pair(url, monkeypatch, increment, increment) == (2, 3)
+    with get_session(url) as session:
+        assert session.get(PortalTotpFactor, "prn_close").factor_version == 3
+        assert session.get(Principal, "prn_close").session_version == 1
+
+
+def test_totp_postgres_seed_inventory_apply_and_flushed_rollback(totp_database, monkeypatch):
+    from app.core.models import PortalTotpFactor
+    from app.domain.runtime import runtime_data_reencryption as module
+    from tests.contract.test_runtime_data_encryption_migration import (
+        _seed_totp_slots,
+        _settings,
+        _totp_snapshot,
+    )
+
+    url = totp_database
+    old = _seed_totp_slots(url)
+    settings = _settings(url)
+    mapping = (module.LegacyRuntimeDataKey("old-totp", old.runtime_data_encryption_secret),)
+    from app.core.secrets import encrypt_portal_totp_seed
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        row.pending_seed_ciphertext = encrypt_portal_totp_seed(b"synthetic-pending", settings=old)
+        session.commit()
+    before = _totp_snapshot(url)
+    original_set = module._set_ciphertext
+    with monkeypatch.context() as injected:
+
+        def fail(record, ciphertext):
+            from sqlalchemy.orm import object_session
+
+            original_set(record, ciphertext)
+            object_session(record.owner).flush()
+            raise RuntimeError("synthetic flushed write failure")
+
+        injected.setattr(module, "_set_ciphertext", fail)
+        with pytest.raises(module.RuntimeDataReencryptionError, match="re-encryption failed"):
+            module.apply_runtime_data_reencryption(
+                url,
+                settings=settings,
+                legacy_root_secrets=(),
+                legacy_envelope_keys=mapping,
+                maintenance_confirmed=True,
+            )
+    assert _totp_snapshot(url) == before
+    result = module.apply_runtime_data_reencryption(
+        url,
+        settings=settings,
+        legacy_root_secrets=(),
+        legacy_envelope_keys=mapping,
+        maintenance_confirmed=True,
+    )
+    assert (result.total, result.current, result.migrated) == (2, 2, 2)
+    assert module.verify_runtime_data_ciphertexts(url, settings=settings).current == 2
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        assert (row.factor_version, row.last_accepted_counter, row.recovery_generation) == (
+            4,
+            42,
+            3,
+        )
+
+
+def test_totp_postgres_new_revision_missing_table_fails_closed(totp_database):
+    from app.domain.runtime.runtime_data_reencryption import (
+        RuntimeDataReencryptionError,
+        inventory_runtime_data_ciphertexts,
+    )
+    from tests.contract.test_runtime_data_encryption_migration import _settings
+
+    url = totp_database
+    with get_session(url) as session:
+        session.execute(text("DROP TABLE portal_totp_factors"))
+        session.commit()
+    with pytest.raises(RuntimeDataReencryptionError, match="incomplete"):
+        inventory_runtime_data_ciphertexts(url, settings=_settings(url))
+
+
+@pytest.mark.parametrize(
+    "kind,overrides",
+    [
+        ("recovery", {"generation": 0}),
+        ("recovery", {"factor_version": 0}),
+        ("recovery", {"code_hash": ""}),
+        ("recovery", {"consumed_at": datetime(2026, 10, 23, tzinfo=UTC)}),
+        ("challenge", {"attempt_count": 6}),
+        ("challenge", {"purpose": "admin"}),
+        ("challenge", {"purpose": "disable"}),
+        ("challenge", {"bound_factor_version": -1}),
+        ("challenge", {"bound_session_id": "sid"}),
+    ],
+)
+def test_totp_postgres_recovery_challenge_constraints(totp_database, kind, overrides):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.models import PortalRecoveryCode
+    from tests.domain.test_portal_totp_repository import NOW, challenge
+
+    if kind == "recovery":
+        values = dict(
+            code_id="recovery",
+            principal_id="prn_registry",
+            factor_version=1,
+            generation=1,
+            code_hash="synthetic-hash",
+            created_at=NOW,
+        )
+        values.update(overrides)
+        row = PortalRecoveryCode(**values)
+    else:
+        row = challenge(principal_id="prn_registry", **overrides)
+    with get_session(totp_database) as session:
+        session.add(row)
+        with pytest.raises(IntegrityError) as error:
+            session.flush()
+        assert error.value.orig.sqlstate == "23514"
+        session.rollback()
+
+
+def test_totp_postgres_factor_row_lock_is_transaction_owned(totp_database):
+    from sqlalchemy.exc import OperationalError
+
+    from app.adapters.repositories.portal_totp_repository import PortalTotpRepository
+    from app.core.models import PortalTotpFactor
+
+    url = totp_database
+    with get_session(url) as session:
+        session.add(_totp_factor())
+        session.commit()
+    with get_session(url) as owner, get_session(url) as contender:
+        stale = contender.get(PortalTotpFactor, "prn_registry")
+        locked = PortalTotpRepository(owner).lock_factor(principal_id="prn_registry")
+        locked.factor_version = 2
+        contender.execute(text("SET LOCAL lock_timeout = '150ms'"))
+        with pytest.raises(OperationalError) as error:
+            PortalTotpRepository(contender).lock_factor(principal_id="prn_registry")
+        assert error.value.orig.sqlstate == "55P03"
+        contender.rollback()
+        owner.commit()
+        refreshed = PortalTotpRepository(contender).lock_factor(principal_id="prn_registry")
+        assert refreshed is stale and refreshed.factor_version == 2
+        contender.rollback()
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        {"factor_version": 1},
+        {"second_factor_method": "totp"},
+        {"factor_version": 1, "primary_authenticated_at": datetime(2026, 10, 24, tzinfo=UTC)},
+        {
+            "primary_authenticated_at": datetime(2026, 10, 24, tzinfo=UTC),
+            "second_factor_verified_at": datetime(2026, 10, 24, tzinfo=UTC),
+            "second_factor_method": "totp",
+        },
+    ],
+)
+def test_totp_postgres_partial_session_evidence_rejected(totp_database, evidence):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.models import PortalSession
+
+    with get_session(totp_database) as session:
+        row = session.get(PortalSession, "session_registry")
+        for name, value in evidence.items():
+            setattr(row, name, value)
+        with pytest.raises(IntegrityError) as error:
+            session.flush()
+        assert error.value.orig.sqlstate == "23514"
+        session.rollback()
+    with get_session(totp_database) as session:
+        assert session.get(PortalSession, "session_registry").factor_version is None

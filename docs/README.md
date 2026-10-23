@@ -24,6 +24,7 @@ as current truth.
 | 查三仓 pause 对照（任务 id / runtime 键 / 错误码 / 冒烟行归属） | [可恢复功能暂停 v1 — Cross-repo对照](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists) — Cloud `PAUSED_*`；互链 Addon [PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) / `docs/reversible-feature-pauses-v1.md` 与 Toolbox 同名文档；**不解冻** |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
 | 查 Portal 会话登记边界及分批启用条件 | [Portal session registry v1](portal-session-registry-v1.md) — B1 仅休眠存储，不改变现有登录；B2/B3 切换、撤销和回滚契约 |
+| 查 Portal TOTP 休眠存储与加密库存 | [Portal TOTP storage v1](portal-totp-v1.md) — T1 无启用/认证入口；状态约束、历史 schema 与重加密门禁 |
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
 | 接续10月18日冻结生产发布、回退与未完成验收 | [生产部署收尾与开发复盘](history/production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md) — 精确4a版本已部署、Qwen目录降级、归档恢复边界、操作者验收台账及旧会话归档条件 |
