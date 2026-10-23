@@ -58,13 +58,13 @@
 
 **工作包顺序：**
 
-1. 读 `AGENTS.md` 与 phase-1 / pause / deploy / smoke / WP connector runbook  
-2. 与 Npc 锁定 Deploy 目标 SHA；Addon 固定约定版本（收口日实测 **0.4.4**）  
-3. **仅在人工授权后**按 `deploy/PRODUCTION_GITHUB_DEPLOY.md` Deploy  
-4. **Deploy 后必跑自动验收**（IT-AUTO-*）  
-5. 受控真生成（IT-RUN-01）  
-6. 编辑器闭环 IT-ED-01～04（摘要/slug 为 P1）  
-7. 按 live 是否含暂停集抽检 IT-PAUSE-*  
+1. 读 `AGENTS.md` 与 phase-1 / pause / deploy / smoke / WP connector runbook
+2. 与 Npc 锁定 Deploy 目标 SHA；Addon 固定约定版本（收口日实测 **0.4.4**）
+3. **仅在人工授权后**按 `deploy/PRODUCTION_GITHUB_DEPLOY.md` Deploy
+4. **Deploy 后必跑自动验收**（IT-AUTO-*）
+5. 受控真生成（IT-RUN-01）
+6. 编辑器闭环 IT-ED-01～04（摘要/slug 为 P1）
+7. 按 live 是否含暂停集抽检 IT-PAUSE-*
 8. 出联调报告回报 Npc / 规划归档
 
 **人工门禁：** Deploy 按钮、站点 HMAC / 邮箱 OTP / 付费额度、编辑器「采用」若无法全自动。
@@ -92,14 +92,14 @@
 
 ## 6. 本会话清理动作（收口日）
 
-- 从最新 `origin/master` 开分支 `docs/planning-session-closeout-20261023` 入库本文与 runbook。  
-- PR 合入前/后：仅移除 worktree `npcink-ai-cloud-master-closeout`；删除本会话本地分支（已合或已推送后）。  
+- 从最新 `origin/master` 开分支 `docs/planning-session-closeout-20261023` 入库本文与 runbook。
+- PR 合入前/后：仅移除 worktree `npcink-ai-cloud-master-closeout`；删除本会话本地分支（已合或已推送后）。
 - **未**改动主仓 `/Users/muze/gitee/npcink-ai-cloud` 工作区；**未** Deploy Production；**未** `worktree remove` 其它路径。
 
 ## 7. 经验沉淀（给后续代理）
 
-1. 一人多 AI：按仓/面切片，统一部署窗口合并；脏工作区禁止叠需求。  
-2. AI 交付默认四件套：实现 → 文档一句 → 自动测试 → 可粘贴验证收据。  
-3. 规范变更走 PR；入口半页 + 链细则，避免双源（`AGENTS.md` 为准）。  
-4. 「工程已齐」≠「飞轮已转」；第一阶段只认采用收据。  
+1. 一人多 AI：按仓/面切片，统一部署窗口合并；脏工作区禁止叠需求。
+2. AI 交付默认四件套：实现 → 文档一句 → 自动测试 → 可粘贴验证收据。
+3. 规范变更走 PR；入口半页 + 链细则，避免双源（`AGENTS.md` 为准）。
+4. 「工程已齐」≠「飞轮已转」；第一阶段只认采用收据。
 5. 关会话前必须把待办写入 `docs/history/...`，否则下一会话会丢上下文。
