@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
+  SUPPORT_REQUEST_PAGE_SIZE,
   buildSupportRequestsQuery,
+  normalizeSupportRequestLimit,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
@@ -45,14 +47,15 @@ describe('Support request directory model', () => {
           attention: 'waiting_for_operator',
         },
         'risk',
-        20
+        10
       )
     );
 
+    expect(SUPPORT_REQUEST_PAGE_SIZE).toBe(10);
     expect(Object.fromEntries(query)).toEqual({
-      limit: '20',
+      limit: '10',
       sort: 'risk',
-      offset: '20',
+      offset: '10',
       status: 'open',
       topic: 'billing',
       q: 'customer@example.com',
@@ -60,10 +63,14 @@ describe('Support request directory model', () => {
     });
   });
 
-  it('normalizes offset and server sort without inventing values', () => {
+  it('normalizes offset, limit, and server sort without inventing values', () => {
     expect(normalizeSupportRequestOffset('-1')).toBe(0);
     expect(normalizeSupportRequestOffset('12.5')).toBe(0);
     expect(normalizeSupportRequestOffset('40')).toBe(40);
+    expect(normalizeSupportRequestLimit(null)).toBe(10);
+    expect(normalizeSupportRequestLimit('20')).toBe(20);
+    expect(normalizeSupportRequestLimit('0')).toBe(10);
+    expect(normalizeSupportRequestLimit('101')).toBe(10);
     expect(normalizeSupportRequestSort('unknown')).toBe('risk');
     expect(normalizeSupportRequestSort('updated_at')).toBe('updated_at');
   });
@@ -118,11 +125,11 @@ describe('Support request directory model', () => {
 
 describe('Support request query policy', () => {
   it('uses a stable hierarchical directory key', () => {
-    expect(supportRequestKeys.directory('limit=20&status=open')).toEqual([
+    expect(supportRequestKeys.directory('limit=10&status=open')).toEqual([
       'admin',
       'support-requests',
       'directory',
-      'limit=20&status=open',
+      'limit=10&status=open',
     ]);
   });
 

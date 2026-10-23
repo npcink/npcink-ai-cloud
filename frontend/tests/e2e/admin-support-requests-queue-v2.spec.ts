@@ -125,6 +125,7 @@ async function installSupportQueueMocks(page: Page) {
     });
     const sort = url.searchParams.get('sort') || 'risk';
     const offset = Number(url.searchParams.get('offset') || 0);
+    const limit = Number(url.searchParams.get('limit') || 10);
     const riskRank = (ticket: TicketFixture) => {
       const active = ticket.status === 'open' || ticket.status === 'in_progress';
       const overdue = ticket.waiting_on === 'operator' && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime();
@@ -138,13 +139,13 @@ async function installSupportQueueMocks(page: Page) {
       if (sort === 'updated_at') return -updatedDifference;
       return riskRank(left) - riskRank(right) || updatedDifference;
     });
-    const items = orderedItems.slice(offset, offset + 20);
+    const items = orderedItems.slice(offset, offset + limit);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
         items,
-        pagination: { total: filteredItems.length, limit: 20, offset, has_more: offset + items.length < filteredItems.length },
+        pagination: { total: filteredItems.length, limit, offset, has_more: offset + items.length < filteredItems.length },
         summary: {
           open: filteredItems.filter((ticket) => ticket.status === 'open').length,
           in_progress: filteredItems.filter((ticket) => ticket.status === 'in_progress').length,
@@ -198,15 +199,18 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(page.locator('[data-ui="admin-context-drawer"]')).toHaveCount(0);
   expect(mocks.getRequestCount()).toBe(1);
 
-  const toolbarControls = [
+  const viewPills = page.locator('[data-ui="support-request-view-pills"]');
+  await expect(viewPills).toBeVisible();
+  await expect(page.locator('[data-ui="support-request-quiet-pagination"]')).toContainText(/1-4|第 1–4/);
+
+  const secondaryToolbarControls = [
     page.getByLabel(/Search tickets|搜索工单/i),
-    page.getByLabel(/Ticket view|工单视图/i),
     page.getByLabel(/Ticket topic|工单类型/i),
     page.getByLabel(/Sort|排序/i),
     page.getByRole('button', { name: /^Apply$|^应用$/i }),
     page.getByRole('button', { name: /^Clear filters$|^清除筛选$/i }),
   ];
-  const toolbarCenters = await Promise.all(toolbarControls.map(async (control) => {
+  const toolbarCenters = await Promise.all(secondaryToolbarControls.map(async (control) => {
     const box = await control.boundingBox();
     expect(box).not.toBeNull();
     return box!.y + box!.height / 2;
@@ -218,14 +222,14 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(rows.nth(1)).toContainText('Site connection needs review');
   await expect(rows.nth(2)).toContainText('Usage total needs explanation');
 
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:waiting_for_operator');
+  await viewPills.getByRole('button', { name: /Waiting for support|等待客服/i }).click();
   await expect(page).toHaveURL(/attention=waiting_for_operator/);
   await expect(rows).toHaveCount(2);
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:overdue');
+  await viewPills.getByRole('button', { name: /^Overdue$|^已超时$/i }).click();
   await expect(page).toHaveURL(/attention=overdue/);
   await expect(rows).toHaveCount(1);
 
-  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
+  await viewPills.getByRole('button', { name: /^Open$|^待处理$/i }).click();
   await expect(page).toHaveURL(/status=open/);
   await expect(rows).toHaveCount(2);
 

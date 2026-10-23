@@ -9,6 +9,7 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -16,7 +17,6 @@ import {
   BackofficePageStack,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
@@ -34,6 +34,7 @@ import {
   SUPPORT_REQUEST_TOPICS,
   ageHours,
   buildSupportRequestsQuery,
+  normalizeSupportRequestLimit,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
@@ -60,6 +61,65 @@ function statusTone(status: SupportRequestStatus): string {
   return 'read_only';
 }
 
+type QuietQueuePaginationProps = {
+  offset: number;
+  limit: number;
+  total: number;
+  isLoading?: boolean;
+  onOffsetChange: (offset: number) => void;
+};
+
+/** Pilot Quiet footer: always show range / total (shared ListPagination hides single-page). */
+function QuietQueuePagination({
+  offset,
+  limit,
+  total,
+  isLoading = false,
+  onOffsetChange,
+}: QuietQueuePaginationProps) {
+  const { t } = useLocale();
+  const safeTotal = Math.max(0, total);
+  const safeOffset = Math.max(0, offset);
+  const start = safeTotal > 0 ? safeOffset + 1 : 0;
+  const end = Math.min(safeOffset + limit, safeTotal);
+  const hasPrevious = safeOffset > 0;
+  const hasNext = safeOffset + limit < safeTotal;
+
+  return (
+    <nav
+      className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800"
+      aria-label={t('common.pagination', {}, 'Pagination')}
+      data-ui="support-request-quiet-pagination"
+    >
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {t(
+          'common.pagination_summary',
+          { start: String(start), end: String(end), total: String(safeTotal) },
+          `${start}-${end} of ${safeTotal}`
+        )}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasPrevious || isLoading}
+          onClick={() => onOffsetChange(Math.max(0, safeOffset - limit))}
+        >
+          {t('common.previous', {}, 'Previous')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasNext || isLoading}
+          onClick={() => onOffsetChange(safeOffset + limit)}
+        >
+          {t('common.next_page', {}, 'Next page')}
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 export function SupportRequestsWorkspace() {
   const { t } = useLocale();
   const toast = useToast();
@@ -80,6 +140,7 @@ export function SupportRequestsWorkspace() {
     : '';
   const sort = normalizeSupportRequestSort(queueParams.get('sort'));
   const offset = normalizeSupportRequestOffset(queueParams.get('offset'));
+  const limit = normalizeSupportRequestLimit(queueParams.get('limit'));
   const focusedRequestId = queueParams.get('focus') || '';
 
   const [queryDraft, setQueryDraft] = useState(appliedQuery);
@@ -97,9 +158,10 @@ export function SupportRequestsWorkspace() {
           attention: appliedAttention,
         },
         sort,
-        offset
+        offset,
+        limit
       ),
-    [appliedAttention, appliedQuery, appliedStatus, appliedTopic, offset, sort]
+    [appliedAttention, appliedQuery, appliedStatus, appliedTopic, limit, offset, sort]
   );
   const directoryQuery = useSupportRequestsDirectory(requestKey);
   const updateRequest = useSupportRequestUpdate();
@@ -115,7 +177,6 @@ export function SupportRequestsWorkspace() {
   });
   const summary = directory?.summary || {};
   const total = Number(directory?.pagination?.total || 0);
-  const loadedAt = directory?.loadedAt ? new Date(directory.loadedAt) : null;
   const hasLoaded = Boolean(directory);
   const isLoading = directoryQuery.isPending && !hasLoaded;
   const isRefreshing = directoryQuery.isFetching;
@@ -126,8 +187,15 @@ export function SupportRequestsWorkspace() {
   const updateQueueUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(queueParamsKey);
     Object.entries(changes).forEach(([key, value]) => {
-      if (!value || (key === 'sort' && value === 'risk')) params.delete(key);
-      else params.set(key, value);
+      if (
+        !value
+        || (key === 'sort' && value === 'risk')
+        || (key === 'limit' && value === String(SUPPORT_REQUEST_PAGE_SIZE))
+      ) {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
     });
     const next = params.toString();
     setQueueParamsKey(next);
@@ -181,7 +249,16 @@ export function SupportRequestsWorkspace() {
 
   const clearFilters = () => {
     setQueryDraft('');
-    updateQueueUrl({ attention: null, status: null, topic: null, q: null, sort: null, offset: null, focus: null });
+    updateQueueUrl({
+      attention: null,
+      status: null,
+      topic: null,
+      q: null,
+      sort: null,
+      limit: null,
+      offset: null,
+      focus: null,
+    });
   };
 
   const queueView = appliedAttention
@@ -240,7 +317,6 @@ export function SupportRequestsWorkspace() {
 
   const hasFilters = Boolean(appliedAttention || appliedStatus || appliedTopic || appliedQuery || sort !== 'risk');
   const waitingForOperatorCount = Number(summary?.waiting_for_operator || 0);
-  const waitingForCustomerCount = Number(summary?.waiting_for_customer || 0);
   const overdueCount = Number(summary?.overdue || 0);
   const selectedRisk = selectedRequest ? requestRisk(selectedRequest) : null;
   const selectedAge = selectedRequest ? ageHours(selectedRequest.waiting_since || selectedRequest.created_at) : null;
@@ -277,9 +353,6 @@ export function SupportRequestsWorkspace() {
         summaryItems={[
           { label: t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support'), value: formatInteger(waitingForOperatorCount), toneClassName: waitingForOperatorCount ? 'text-amber-600 dark:text-amber-300' : undefined },
           { label: t('admin.support_requests_overdue', {}, 'Overdue'), value: formatInteger(overdueCount), toneClassName: overdueCount ? 'text-rose-600 dark:text-rose-300' : undefined },
-          { label: t('admin.support_requests_waiting_for_customer', {}, 'Waiting for customer'), value: formatInteger(waitingForCustomerCount) },
-          { label: t('admin.support_requests_total', {}, 'Filtered total'), value: formatInteger(total) },
-          { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
         ]}
       />
 
@@ -304,41 +377,85 @@ export function SupportRequestsWorkspace() {
         dataUi="support-request-table"
         density="compact"
         bodyClassName="overflow-hidden"
-        headerActions={<AdminQueueKeyboardHint />}
-        footer={<ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />}
+        headerActions={(
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <div
+              role="group"
+              aria-label={t('admin.support_requests_view_filter_label', {}, 'Ticket view')}
+              data-ui="support-request-view-pills"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
+            >
+              <BackofficeFilterPill
+                active={!queueView}
+                aria-pressed={!queueView}
+                onClick={() => updateQueueView('')}
+              >
+                {t('admin.support_requests_view_all', {}, 'All tickets')}
+              </BackofficeFilterPill>
+              <BackofficeFilterPill
+                active={queueView === 'attention:waiting_for_operator'}
+                aria-pressed={queueView === 'attention:waiting_for_operator'}
+                tone="warning"
+                onClick={() => updateQueueView('attention:waiting_for_operator')}
+              >
+                {t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}
+              </BackofficeFilterPill>
+              <BackofficeFilterPill
+                active={queueView === 'attention:overdue'}
+                aria-pressed={queueView === 'attention:overdue'}
+                tone="danger"
+                onClick={() => updateQueueView('attention:overdue')}
+              >
+                {t('admin.support_requests_overdue', {}, 'Overdue')}
+              </BackofficeFilterPill>
+              {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => (
+                <BackofficeFilterPill
+                  key={status}
+                  active={queueView === `status:${status}`}
+                  aria-pressed={queueView === `status:${status}`}
+                  tone={status === 'open' ? 'warning' : status === 'resolved' ? 'success' : 'neutral'}
+                  onClick={() => updateQueueView(`status:${status}`)}
+                >
+                  {t(`admin.support_status_${status}`, {}, status)}
+                </BackofficeFilterPill>
+              ))}
+            </div>
+            <AdminQueueKeyboardHint />
+          </div>
+        )}
+        footer={(
+          <QuietQueuePagination
+            offset={offset}
+            limit={limit}
+            total={total}
+            isLoading={isRefreshing}
+            onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })}
+          />
+        )}
       >
         <form
           data-ui="support-request-toolbar"
           onSubmit={applySearch}
-          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6"
+          className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 sm:flex-row sm:flex-wrap sm:items-center"
         >
-          <label className="text-sm text-slate-700 dark:text-slate-200 xl:col-span-2">
+          <label className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-200 sm:min-w-[14rem]">
             <span className="sr-only">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
             <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            <span className="sr-only">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
-            <select className="input w-full" value={queueView} onChange={(event) => updateQueueView(event.target.value)}>
-              <option value="">{t('common.all', {}, 'All')}</option>
-              <option value="attention:waiting_for_operator">{t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}</option>
-              <option value="attention:overdue">{t('admin.support_requests_overdue', {}, 'Overdue')}</option>
-              {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => <option key={status} value={`status:${status}`}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-            </select>
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-40">
             <span className="sr-only">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</span>
             <select className="input w-full" value={appliedTopic} onChange={(event) => updateQueueUrl({ topic: event.target.value || null, offset: null, focus: null })}>
               {SUPPORT_REQUEST_TOPICS.map((topic) => <option key={topic || 'all'} value={topic}>{topic ? t(`portal.support_topic_${topic}`, {}, topic) : t('admin.support_topic_all', {}, 'All topics')}</option>)}
             </select>
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-44">
             <span className="sr-only">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
             <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
               <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
               <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
             </select>
           </label>
-          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap sm:ml-auto">
             <button type="submit" className="btn btn-primary btn-sm">{t('common.apply', {}, 'Apply')}</button>
             <button type="button" className="btn btn-secondary btn-sm" disabled={!hasFilters && !queryDraft} onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button>
           </div>

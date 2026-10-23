@@ -6,7 +6,7 @@ import type {
   SupportRequestSort,
 } from './types';
 
-export const SUPPORT_REQUEST_PAGE_SIZE = 20;
+export const SUPPORT_REQUEST_PAGE_SIZE = 10;
 export const SUPPORT_REQUEST_STATUS_FILTERS = [
   '',
   'open',
@@ -39,6 +39,13 @@ export function normalizeSupportRequestOffset(value: string | null): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+export function normalizeSupportRequestLimit(value: string | null): number {
+  const parsed = Number(value || SUPPORT_REQUEST_PAGE_SIZE);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100
+    ? parsed
+    : SUPPORT_REQUEST_PAGE_SIZE;
+}
+
 export function normalizeSupportRequestSort(
   value: string | null
 ): SupportRequestSort {
@@ -50,10 +57,11 @@ export function normalizeSupportRequestSort(
 export function buildSupportRequestsQuery(
   filters: SupportRequestFilters,
   sort: SupportRequestSort,
-  offset: number
+  offset: number,
+  limit: number = SUPPORT_REQUEST_PAGE_SIZE
 ): string {
   const params = new URLSearchParams();
-  params.set('limit', String(SUPPORT_REQUEST_PAGE_SIZE));
+  params.set('limit', String(limit));
   params.set('sort', sort);
   if (offset > 0) params.set('offset', String(offset));
   if (filters.status) params.set('status', filters.status);
