@@ -3390,6 +3390,7 @@ import pytest
 portal_pg_targets = (
     "tests/integration/test_portal_postgres_acceptance.py",
     "tests/integration/test_portal_self_service_postgres.py",
+    "tests/integration/test_admin_economics_postgres.py",
 )
 explicit_portal_pg = any(
     argument.split("::", 1)[0] == target

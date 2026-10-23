@@ -67,6 +67,7 @@ assert.doesNotMatch(
 );
 
 const translationLockedFiles = [
+  resolve(root, 'src/app/admin/economics/page.tsx'),
   resolve(root, 'src/app/admin/layout.tsx'),
   resolve(root, 'src/app/admin/login/page.tsx'),
   resolve(root, 'src/app/admin/page.tsx'),

@@ -516,7 +516,10 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await page.goto('/admin/subscriptions');
   const main = page.locator('main');
   await expect(adminPrimaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
-  await expect(workspaceTabs.getByRole('link')).toHaveCount(4);
+  await expect(workspaceTabs.getByRole('link')).toHaveCount(5);
+  expect(await workspaceTabs.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([
+    '/admin/coverage', '/admin/subscriptions', '/admin/plans', '/admin/credit-packs', '/admin/economics',
+  ]);
   await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
   await expect(breadcrumb).toContainText(/Commercial records|商业记录/i);
   await expect(breadcrumb).toContainText(/Subscriptions|订阅/i);
@@ -549,7 +552,10 @@ test('admin operator path stays usable on mobile viewport', async ({ page }) => 
   await page.goto('/admin/subscriptions');
   const mobileWorkspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
   await expect(mobileWorkspaceTabs).toBeVisible();
-  await expect(mobileWorkspaceTabs.getByRole('link')).toHaveCount(4);
+  await expect(mobileWorkspaceTabs.getByRole('link')).toHaveCount(5);
+  expect(await mobileWorkspaceTabs.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([
+    '/admin/coverage', '/admin/subscriptions', '/admin/plans', '/admin/credit-packs', '/admin/economics',
+  ]);
   await expect(mobileWorkspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
   const workspaceOverflow = await mobileWorkspaceTabs.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(workspaceOverflow).toBeLessThanOrEqual(1);

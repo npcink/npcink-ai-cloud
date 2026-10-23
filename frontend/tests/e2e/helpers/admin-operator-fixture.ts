@@ -431,6 +431,11 @@ export async function installAdminMocks(
       return;
     }
 
+    if (pathname === '/api/admin/economics/usage-by-family' || pathname === '/api/admin/economics/revenue') {
+      await fulfillJson(route, pathname.endsWith('/usage-by-family') ? { families: {} } : { net_revenue_cny: 0, active_paid_accounts: 0, trialing_accounts: 0, subscription_revenue_cny: 0, credit_pack_revenue_cny: 0, refunds_cny: 0, account_counts_scope: 'current_snapshot' });
+      return;
+    }
+
     if (pathname === '/api/admin/overview') {
       await fulfillJson(route, {
         generated_at: '2026-04-06T10:00:00Z',
