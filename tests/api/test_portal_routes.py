@@ -15,7 +15,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.engine import make_url
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
@@ -1033,7 +1033,15 @@ def test_commercial_durable_order_replays_after_receipt_loss_during_stop(
         if legacy_order:
             metadata = dict(order.metadata_json)
             metadata.pop("portal_request_fingerprint", None)
-            order.metadata_json = metadata
+            # Model an already-legacy row without advancing its business timestamp.
+            session.execute(
+                update(PaymentOrder)
+                .where(PaymentOrder.order_id == original_id)
+                .values(
+                    metadata_json=metadata,
+                    updated_at=order.updated_at,
+                )
+            )
         session.commit()
 
     def unexpected_new_order(*args: Any, **kwargs: Any) -> None:
