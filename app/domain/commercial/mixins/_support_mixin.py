@@ -82,6 +82,14 @@ SUPPORT_REQUEST_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 SUPPORT_REQUEST_ATTACHMENT_MAX_COUNT = 10
 
 
+def _is_customer_attachment_draft(attachment: SupportRequestAttachment) -> bool:
+    # Operator request-level attachments predate message linking and remain readable.
+    return (
+        attachment.uploader_kind == SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+        and not str(attachment.message_id or "").strip()
+    )
+
+
 def _normalize_support_status(value: str, *, allow_empty: bool = False) -> str:
     normalized = str(value or "").strip().lower()
     if allow_empty and not normalized:
@@ -474,6 +482,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "attachments": [
                     self._serialize_support_request_attachment(attachment)
                     for attachment in attachments
+                    if not _is_customer_attachment_draft(attachment)
                 ],
                 "feedback": self._serialize_support_request_feedback(feedback)
                 if feedback is not None
@@ -965,7 +974,12 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
             )
-            if request is None or attachment is None or attachment.request_id != request.request_id:
+            if (
+                request is None
+                or attachment is None
+                or attachment.request_id != request.request_id
+                or _is_customer_attachment_draft(attachment)
+            ):
                 raise CommercialNotFoundError(
                     "service.support_request_attachment_not_found",
                     "support request attachment was not found",
