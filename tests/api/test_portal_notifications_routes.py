@@ -38,6 +38,7 @@ ALPHA_ACCOUNT = "acct_portal_notifications_alpha"
 BETA_ACCOUNT = "acct_portal_notifications_beta"
 ALPHA_SITE = "site_portal_notifications_alpha"
 BETA_SITE = "site_portal_notifications_beta"
+PEER_PRINCIPAL = "prn_portal_notifications_peer"
 
 
 @pytest.fixture
@@ -104,6 +105,39 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
                     status="active",
                     bound_at=datetime.now(UTC),
                     metadata_json={"source": "test"},
+                )
+            )
+        session.add(
+            Principal(
+                principal_id=PEER_PRINCIPAL,
+                email="portal-peer@example.com",
+                status=PRINCIPAL_STATUS_ACTIVE,
+                session_version=1,
+            )
+        )
+        session.add(
+            AccountUserMembership(
+                membership_id="mem_notifications_peer",
+                principal_id=PEER_PRINCIPAL,
+                account_id=ALPHA_ACCOUNT,
+                role="owner",
+                status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                allowed_actions_json=list(resolve_principal_allowed_actions()),
+            )
+        )
+        for notification_id, recipient in [
+            ("pnotif_peer_private", PEER_PRINCIPAL),
+            ("pnotif_legacy_unaddressed", None),
+        ]:
+            session.add(
+                PortalNotification(
+                    notification_id=notification_id,
+                    account_id=ALPHA_ACCOUNT,
+                    principal_id=recipient,
+                    event_type="support_request_replied",
+                    title="Private support title",
+                    body="Private support reply",
+                    is_read=False,
                 )
             )
         session.add(
@@ -241,8 +275,8 @@ def test_marking_a_single_notification_read_is_account_scoped(
         "/portal/v1/notifications/pnotif_beta_unread/read",
         headers=_alpha_headers(idempotency_key="notif-read-alpha-002"),
     )
-    assert foreign.status_code == 200
-    assert foreign.json()["data"]["marked_read_count"] == 0
+    assert foreign.status_code == 404
+    assert foreign.json()["error_code"] == "portal.notification_not_found"
 
     listed = client.get("/portal/v1/notifications", headers=_alpha_headers())
     assert listed.json()["data"]["unread_count"] == 0
@@ -310,3 +344,70 @@ def test_notification_read_replay_and_csrf_and_permission(portal_client):
         membership.allowed_actions_json = []
         session.commit()
     assert client.get("/portal/v1/notifications", headers=_alpha_headers()).status_code == 403
+
+
+def test_same_account_recipients_cannot_list_count_or_mark_each_others_notifications(portal_client):
+    database_url, client = portal_client
+    peer_headers = _headers(PEER_PRINCIPAL, site_id="")
+    own = client.get("/portal/v1/notifications", headers=_alpha_headers()).json()["data"]
+    peer = client.get("/portal/v1/notifications?unread_only=true", headers=peer_headers)
+    assert peer.status_code == 200
+    peer_data = peer.json()["data"]
+    assert own["total_count"] == 2 and own["unread_count"] == 1
+    assert peer_data["total_count"] == 1 and peer_data["unread_count"] == 1
+    assert [item["notification_id"] for item in peer_data["items"]] == ["pnotif_peer_private"]
+    assert "Private support" not in str(own)
+    for notification_id, headers in [
+        ("pnotif_peer_private", _alpha_headers(idempotency_key="alpha-read-peer")),
+        ("pnotif_alpha_unread", {**peer_headers, "idempotency-key": "peer-read-alpha"}),
+        ("pnotif_legacy_unaddressed", _alpha_headers(idempotency_key="alpha-read-null")),
+    ]:
+        denied = client.post(f"/portal/v1/notifications/{notification_id}/read", headers=headers)
+        assert denied.status_code == 404
+        assert denied.json()["error_code"] == "portal.notification_not_found"
+    marked = client.post(
+        "/portal/v1/notifications/read-all",
+        headers=_alpha_headers(idempotency_key="alpha-only-read-all"),
+    )
+    assert marked.status_code == 200
+    assert marked.json()["data"] == {"marked_read_count": 1, "unread_count": 0}
+    assert client.get("/portal/v1/notifications", headers=peer_headers).json()["data"][
+        "unread_count"
+    ] == 1
+    with get_session(database_url) as session:
+        assert session.get(PortalNotification, "pnotif_alpha_unread").is_read
+        for notification_id in (
+            "pnotif_peer_private", "pnotif_beta_unread", "pnotif_legacy_unaddressed",
+        ):
+            item = session.get(PortalNotification, notification_id)
+            assert not item.is_read and item.read_at is None
+
+
+def test_public_support_reply_inbox_belongs_to_original_submitter_only(portal_client):
+    from app.core.models import SupportRequest
+    from app.domain.commercial.service import CommercialService
+
+    database_url, client = portal_client
+    with get_session(database_url) as session:
+        session.add(SupportRequest(
+            request_id="sr_recipient", account_id=ALPHA_ACCOUNT, principal_id=ALPHA_PRINCIPAL,
+            email="portal-notifications-alpha@example.com", title="Submitter private question",
+            description="A private support request",
+        ))
+        session.commit()
+    result = CommercialService(database_url).create_admin_support_request_message(
+        request_id="sr_recipient", body="Private operator answer",
+    )
+    notification_id = f"pnotif_support_{result['message']['message_id']}"
+    with get_session(database_url) as session:
+        item = session.get(PortalNotification, notification_id)
+        assert item.account_id == ALPHA_ACCOUNT and item.principal_id == ALPHA_PRINCIPAL
+    own = client.get("/portal/v1/notifications", headers=_alpha_headers()).json()["data"]
+    assert notification_id in {item["notification_id"] for item in own["items"]}
+    peer = client.get(
+        "/portal/v1/notifications", headers=_headers(PEER_PRINCIPAL, site_id=""),
+    ).json()["data"]
+    assert peer["total_count"] == 1 and peer["unread_count"] == 1
+    assert notification_id not in {item["notification_id"] for item in peer["items"]}
+    assert "Submitter private question" not in str(peer)
+    assert "Private operator answer" not in str(peer)

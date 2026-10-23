@@ -17,6 +17,7 @@ from app.adapters.repositories.commercial_service_audit_repository import (
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     Account,
+    AccountUserMembership,
     PortalNotification,
     Principal,
     ServiceAuditEvent,
@@ -42,7 +43,16 @@ def support_db(tmp_path: Path) -> Iterator[str]:
     with get_session(url) as session:
         session.add(Account(account_id="acct_reply", name="Reply", status="active"))
         session.add(Principal(principal_id="prn_reply", email="reply@example.com", status="active"))
+        session.add(Principal(
+            principal_id="prn_peer", email="peer@example.com", status="active",
+        ))
         session.flush()
+        for principal_id in ("prn_reply", "prn_peer"):
+            session.add(AccountUserMembership(
+                membership_id=f"mem_{principal_id}", account_id="acct_reply",
+                principal_id=principal_id, role="owner", status="active",
+                allowed_actions_json=["view_audit"],
+            ))
         session.add(
             SupportRequest(
                 request_id="sr_reply",
@@ -83,7 +93,9 @@ def test_reply_and_notification_and_audit_commit_together(support_db):
         message_id = result["message"]["message_id"]
         notification = session.get(PortalNotification, f"pnotif_support_{message_id}")
         assert notification.account_id == "acct_reply"
+        assert notification.principal_id == session.get(SupportRequest, "sr_reply").principal_id
         assert notification.principal_id == "prn_reply"
+        assert notification.principal_id != "prn_peer"
         assert notification.event_type == "support_request_replied"
         assert notification.link_href == "/portal/support/sr_reply"
         assert notification.body == "Here is your answer"

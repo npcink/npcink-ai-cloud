@@ -58,6 +58,7 @@ class CommercialNotificationRepository:
         self,
         *,
         account_id: str,
+        principal_id: str,
         limit: int = 50,
         offset: int = 0,
         unread_only: bool = False,
@@ -65,6 +66,7 @@ class CommercialNotificationRepository:
         statement = (
             select(PortalNotification)
             .where(PortalNotification.account_id == account_id)
+            .where(PortalNotification.principal_id == principal_id)
             .order_by(PortalNotification.created_at.desc())
             .limit(max(1, int(limit)))
             .offset(max(0, int(offset)))
@@ -77,10 +79,12 @@ class CommercialNotificationRepository:
         self,
         *,
         account_id: str,
+        principal_id: str,
         unread_only: bool = False,
     ) -> int:
         statement = select(func.count(PortalNotification.notification_id)).where(
-            PortalNotification.account_id == account_id
+            PortalNotification.account_id == account_id,
+            PortalNotification.principal_id == principal_id,
         )
         if unread_only:
             statement = statement.where(PortalNotification.is_read.is_(False))
@@ -91,11 +95,13 @@ class CommercialNotificationRepository:
         *,
         notification_id: str,
         account_id: str,
+        principal_id: str,
     ) -> PortalNotification | None:
         return self.session.scalar(
             select(PortalNotification).where(
                 PortalNotification.notification_id == notification_id,
                 PortalNotification.account_id == account_id,
+                PortalNotification.principal_id == principal_id,
             )
         )
 
@@ -106,6 +112,7 @@ class CommercialNotificationRepository:
         *,
         notification_id: str,
         account_id: str,
+        principal_id: str,
         now: datetime,
     ) -> int:
         result = cast(
@@ -114,6 +121,7 @@ class CommercialNotificationRepository:
                 update(PortalNotification)
                 .where(PortalNotification.notification_id == notification_id)
                 .where(PortalNotification.account_id == account_id)
+                .where(PortalNotification.principal_id == principal_id)
                 .where(PortalNotification.is_read.is_(False))
                 .values(is_read=True, read_at=now)
             ),
@@ -124,6 +132,7 @@ class CommercialNotificationRepository:
         self,
         *,
         account_id: str,
+        principal_id: str,
         now: datetime,
     ) -> int:
         result = cast(
@@ -131,6 +140,7 @@ class CommercialNotificationRepository:
             self.session.execute(
                 update(PortalNotification)
                 .where(PortalNotification.account_id == account_id)
+                .where(PortalNotification.principal_id == principal_id)
                 .where(PortalNotification.is_read.is_(False))
                 .values(is_read=True, read_at=now)
             ),

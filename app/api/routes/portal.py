@@ -6086,7 +6086,7 @@ async def list_portal_notifications(
     offset: int = 0,
     unread_only: bool = False,
 ) -> Any:
-    """列出当前登录 principal 所属 account 的站内通知。
+    """列出当前 account 内发送给当前登录 principal 的站内通知。
 
     - 需要活跃 principal 鉴权 + account 级 member 权限
     - 默认返回最近 50 条，支持 unread_only / limit / offset
@@ -6119,16 +6119,19 @@ async def list_portal_notifications(
         repository = CommercialNotificationRepository(session)
         notifications = repository.list_account_notifications(
             account_id=account_id,
+            principal_id=auth.principal_id,
             limit=effective_limit,
             offset=effective_offset,
             unread_only=unread_only,
         )
         unread_count = repository.count_account_notifications(
             account_id=account_id,
+            principal_id=auth.principal_id,
             unread_only=True,
         )
         total_count = repository.count_account_notifications(
             account_id=account_id,
+            principal_id=auth.principal_id,
         )
         session.expunge_all()
     items = [
@@ -6191,14 +6194,27 @@ async def mark_portal_notification_read(
     now = datetime.now(UTC)
     with get_session(services.settings.database_url) as session:
         repository = CommercialNotificationRepository(session)
+        if repository.get_notification(
+            notification_id=notification_id,
+            account_id=account_id,
+            principal_id=auth.principal_id,
+        ) is None:
+            return portal_json_error(
+                request,
+                status_code=404,
+                error_code="portal.notification_not_found",
+                message="Notification was not found",
+            )
         matched = repository.mark_read(
             notification_id=notification_id,
             account_id=account_id,
+            principal_id=auth.principal_id,
             now=now,
         )
         session.commit()
         unread_count = repository.count_account_notifications(
             account_id=account_id,
+            principal_id=auth.principal_id,
             unread_only=True,
         )
     return _portal_route_envelope(
@@ -6215,7 +6231,7 @@ async def mark_portal_notification_read(
 async def mark_all_portal_notifications_read(
     request: Request,
 ) -> Any:
-    """标记当前 account 所有未读通知为已读。"""
+    """标记当前 account 内当前 principal 的所有未读通知为已读。"""
     same_origin = _portal_same_origin_guard(request, always=True)
     if same_origin is not None:
         return same_origin
@@ -6244,11 +6260,13 @@ async def mark_all_portal_notifications_read(
         repository = CommercialNotificationRepository(session)
         marked = repository.mark_all_read(
             account_id=account_id,
+            principal_id=auth.principal_id,
             now=now,
         )
         session.commit()
         unread_count = repository.count_account_notifications(
             account_id=account_id,
+            principal_id=auth.principal_id,
             unread_only=True,
         )
     return _portal_route_envelope(
