@@ -1,6 +1,7 @@
 'use client';
 
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
+import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import {
   type PortalPaymentOrder,
   type PortalPaymentOrderListPayload,
@@ -74,7 +75,10 @@ function resolvePaymentOrderTitle(order: PortalPaymentOrder, t: TranslateFn): st
 function resolvePaymentOrderStatusLabel(order: PortalPaymentOrder, t: TranslateFn): string {
   const status = normalizePaymentText(order.status);
   const code = normalizePaymentText(order.status_detail?.code);
-  if (code.includes('expired')) return t('portal.usage.payment_order_status_expired', {}, 'Expired');
+  // Closed-tab family: badge matches Tab「已关闭」; reason stays in detail / title.
+  if (code.includes('expired') || status === 'expired') {
+    return t('portal.usage.payment_orders_tab_closed', {}, 'Closed');
+  }
   if (code.includes('awaiting_payment_confirmation') || status === 'pending') {
     return t('portal.usage.payment_order_status_waiting_confirmation', {}, 'Waiting for payment confirmation');
   }
@@ -82,9 +86,20 @@ function resolvePaymentOrderStatusLabel(order: PortalPaymentOrder, t: TranslateF
   if (code.includes('refund') || status === 'refunded') return t('portal.usage.payment_order_status_refunded', {}, 'Refunded');
   if (status === 'failed') return t('portal.usage.payment_order_status_failed', {}, 'Failed');
   if (status === 'canceled' || status === 'cancelled') {
-    return t('portal.usage.payment_order_status_canceled', {}, 'Canceled');
+    return t('portal.usage.payment_orders_tab_closed', {}, 'Closed');
   }
   return t('portal.usage.payment_order_status_unknown', {}, 'To confirm');
+}
+
+function isPortalPaymentOrderClosedFamily(order: PortalPaymentOrder): boolean {
+  const status = normalizePaymentText(order.status);
+  const code = normalizePaymentText(order.status_detail?.code);
+  return (
+    code.includes('expired')
+    || status === 'expired'
+    || status === 'canceled'
+    || status === 'cancelled'
+  );
 }
 
 function resolvePaymentProviderLabel(order: PortalPaymentOrder, t: TranslateFn): string {
@@ -155,6 +170,14 @@ export function PortalPaymentOrderHistory({
   const orders = payload?.items || [];
   const total = Number(payload?.pagination?.total || 0);
   const pageEnd = Math.min(offset + orders.length, total);
+  const hasActionableRows = orders.some(
+    (order) => paymentOrderAllowsAction(order, 'continue_payment') || paymentOrderAllowsAction(order, 'cancel'),
+  );
+  const paymentOrdersHelp = t(
+    'portal.usage.payment_orders_desc',
+    {},
+    'Payment results follow verified Alipay notifications. Unpaid orders close after 30 minutes; canceled orders remain visible here for 7 days.',
+  );
   const tabs: Array<{ id: PortalPaymentOrderStatusGroup; label: string }> = [
     { id: 'all', label: t('portal.usage.payment_orders_tab_all', {}, 'All') },
     { id: 'pending', label: t('portal.usage.payment_orders_tab_pending', {}, 'Pending') },
@@ -234,8 +257,22 @@ export function PortalPaymentOrderHistory({
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
-          <span className="block text-sm font-semibold text-gray-950 dark:text-white">
-            {t('portal.usage.payment_orders_title', {}, 'Payment orders')}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold text-gray-950 dark:text-white">
+              {t('portal.usage.payment_orders_title', {}, 'Payment orders')}
+            </span>
+            <span
+              className="inline-flex"
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              onKeyDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+            >
+              <PortalInfoHint
+                label={t('portal.usage.payment_orders_title', {}, 'Payment orders')}
+                aria-label={paymentOrdersHelp}
+                data-portal-account="payment-orders-help"
+                detail={paymentOrdersHelp}
+              />
+            </span>
           </span>
           <span className="mt-1 block text-sm text-gray-600 dark:text-gray-400">
             {t(
@@ -251,18 +288,11 @@ export function PortalPaymentOrderHistory({
         </span>
         <span aria-hidden="true" className="shrink-0 text-lg text-slate-500 transition-transform group-open:rotate-180">⌄</span>
       </summary>
-      <div className="border-t border-slate-200 px-5 pb-5 pt-4 dark:border-slate-800">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {t(
-            'portal.usage.payment_orders_desc',
-            {},
-            'Payment results follow verified Alipay notifications. Unpaid orders close after 30 minutes; canceled orders remain visible here for 7 days.'
-          )}
-        </p>
+      <div className="border-t border-slate-200 px-5 pb-5 pt-3 dark:border-slate-800">
         <div
           role="tablist"
           aria-label={t('portal.usage.payment_orders_filter_label', {}, 'Filter payment orders')}
-          className="mt-4 inline-flex max-w-full gap-1 overflow-x-auto rounded-[0.875rem] bg-slate-100 p-1 dark:bg-slate-900"
+          className="inline-flex max-w-full gap-1 overflow-x-auto rounded-[0.875rem] bg-slate-100 p-1 dark:bg-slate-900"
         >
           {tabs.map((tab) => {
             const selected = tab.id === statusGroup;
@@ -288,36 +318,53 @@ export function PortalPaymentOrderHistory({
             );
           })}
         </div>
-        {error ? <p className="mt-3 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
-        <div className="mt-4" role="tabpanel">
+        {error ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
+        <div className="mt-3" role="tabpanel">
           {isLoading && orders.length === 0 ? (
             <PortalLoadingState message={t('portal.usage.payment_orders_loading', {}, 'Loading payment orders...')} compact />
           ) : orders.length > 0 ? (
             <>
               <div className="hidden overflow-x-auto lg:block" data-portal-billing="payment-orders-table">
-                <table className="w-full min-w-[980px] text-left text-sm">
+                <table className="w-full table-fixed text-left text-sm">
                   <caption className="sr-only">
-                    {t('portal.usage.payment_orders_desc', {}, 'Payment order history')}
+                    {paymentOrdersHelp}
                   </caption>
                   <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
-                      <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
-                      <th scope="col" className="px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
-                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.payment_order_purchase_amount', {}, 'Amount')}</th>
-                      <th scope="col" className="px-3 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
-                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                      <th scope="col" className="w-[42%] px-3 py-3 font-medium">{t('portal.usage.payment_order_column', {}, 'Order')}</th>
+                      <th scope="col" className="w-[16%] px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
+                      <th scope="col" className="w-[14%] px-3 py-3 text-right font-medium">{t('portal.usage.payment_order_purchase_amount', {}, 'Amount')}</th>
+                      <th scope="col" className="w-[18%] px-3 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
+                      {hasActionableRows ? (
+                        <th scope="col" className="w-[10%] px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
                     {orders.map((order) => {
                       const isPending = isPortalPaymentOrderPending(order);
+                      const showDetail = isPending || isPortalPaymentOrderClosedFamily(order);
+                      const detailText = showDetail ? resolvePaymentOrderDetail(order, t) : '';
+                      const isExpireCountdown = Boolean(isPending && order.expires_at);
+                      const timeLabel = isExpireCountdown
+                        ? t(
+                            'portal.usage.payment_order_expires_at',
+                            { time: formatDate(order.expires_at) },
+                            `Complete payment before ${formatDate(order.expires_at)}`
+                          )
+                        : order.created_at ? formatDate(order.created_at) : '—';
+                      const timeTitle = isExpireCountdown
+                        ? formatDate(order.expires_at)
+                        : order.created_at ? formatDate(order.created_at) : undefined;
                       return (
                         <tr key={order.order_id} data-payment-order-id={order.order_id} className="align-middle">
-                          <th scope="row" className="max-w-[28rem] px-3 py-4 font-normal">
-                            <p className="font-semibold text-slate-950 dark:text-white">{resolvePaymentOrderTitle(order, t)}</p>
-                            {isPending ? (
-                              <p className="mt-1 line-clamp-2 text-xs font-normal leading-5 text-slate-500 dark:text-slate-400">
-                                {resolvePaymentOrderDetail(order, t)}
+                          <th scope="row" className="min-w-0 px-3 py-4 font-normal">
+                            <p className="truncate font-semibold text-slate-950 dark:text-white" title={resolvePaymentOrderTitle(order, t)}>
+                              {resolvePaymentOrderTitle(order, t)}
+                            </p>
+                            {detailText ? (
+                              <p className="mt-1 line-clamp-2 text-xs font-normal leading-5 text-slate-500 dark:text-slate-400" title={detailText}>
+                                {detailText}
                               </p>
                             ) : null}
                             {order.purchase_kind === 'credit_pack' && Number(order.credit_pack?.ai_credits || 0) > 0 ? (
@@ -329,7 +376,7 @@ export function PortalPaymentOrderHistory({
                                 )}
                               </p>
                             ) : null}
-                            <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400" title={order.order_id}>
+                            <p className="mt-1 truncate text-xs font-medium text-slate-500 dark:text-slate-400" title={order.order_id}>
                               {t(
                                 'portal.usage.payment_order_provider_reference',
                                 {
@@ -340,8 +387,10 @@ export function PortalPaymentOrderHistory({
                               )}
                             </p>
                           </th>
-                          <td className="whitespace-nowrap px-3 py-4">
-                            <PortalStatusBadge label={resolvePaymentOrderStatusLabel(order, t)} status={order.status || 'pending'} />
+                          <td className="px-3 py-4">
+                            <span title={detailText || undefined}>
+                              <PortalStatusBadge label={resolvePaymentOrderStatusLabel(order, t)} status={order.status || 'pending'} />
+                            </span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-right font-semibold text-slate-950 dark:text-white">
                             {formatPortalCurrency(Number(order.amount || 0), {
@@ -349,18 +398,14 @@ export function PortalPaymentOrderHistory({
                               to: DEFAULT_PORTAL_CURRENCY,
                             })}
                           </td>
-                          <td className="max-w-[14rem] px-3 py-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {isPending && order.expires_at
-                              ? t(
-                                  'portal.usage.payment_order_expires_at',
-                                  { time: formatDate(order.expires_at) },
-                                  `Complete payment before ${formatDate(order.expires_at)}`
-                                )
-                              : order.created_at ? formatDate(order.created_at) : '—'}
+                          <td className="px-3 py-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            <span className={isExpireCountdown ? 'block' : 'block whitespace-nowrap'} title={timeTitle}>{timeLabel}</span>
                           </td>
-                          <td className="px-3 py-4">
-                            {renderOrderActions(order, 'flex flex-wrap items-center justify-end gap-2')}
-                          </td>
+                          {hasActionableRows ? (
+                            <td className="px-3 py-4">
+                              {renderOrderActions(order, 'flex flex-wrap items-center justify-end gap-2')}
+                            </td>
+                          ) : null}
                         </tr>
                       );
                     })}
@@ -371,14 +416,27 @@ export function PortalPaymentOrderHistory({
               <div className="divide-y divide-slate-200 border-y border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800 lg:hidden">
                 {orders.map((order) => {
                   const isPending = isPortalPaymentOrderPending(order);
+                  const showDetail = isPending || isPortalPaymentOrderClosedFamily(order);
+                  const detailText = showDetail ? resolvePaymentOrderDetail(order, t) : '';
+                  const timeLabel = isPending && order.expires_at
+                    ? t('portal.usage.payment_order_expires_at', { time: formatDate(order.expires_at) }, `Complete payment before ${formatDate(order.expires_at)}`)
+                    : order.created_at ? formatDate(order.created_at) : '—';
+                  const orderHasActions = (
+                    paymentOrderAllowsAction(order, 'continue_payment')
+                    || paymentOrderAllowsAction(order, 'cancel')
+                  );
                   return (
                     <div key={order.order_id} data-payment-order-mobile-id={order.order_id} className="grid gap-3 px-4 py-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-slate-950 dark:text-white">{resolvePaymentOrderTitle(order, t)}</p>
-                          <PortalStatusBadge label={resolvePaymentOrderStatusLabel(order, t)} status={order.status || 'pending'} />
+                          <span title={detailText || undefined}>
+                            <PortalStatusBadge label={resolvePaymentOrderStatusLabel(order, t)} status={order.status || 'pending'} />
+                          </span>
                         </div>
-                        {isPending ? <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{resolvePaymentOrderDetail(order, t)}</p> : null}
+                        {detailText ? (
+                          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400" title={detailText}>{detailText}</p>
+                        ) : null}
                         {order.purchase_kind === 'credit_pack' && Number(order.credit_pack?.ai_credits || 0) > 0 ? (
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {t('portal.usage.payment_order_credit_snapshot', { credits: formatNumber(Number(order.credit_pack?.ai_credits || 0)) }, `${formatNumber(Number(order.credit_pack?.ai_credits || 0))} AI credits in this order`)}
@@ -393,11 +451,11 @@ export function PortalPaymentOrderHistory({
                         <p className="font-semibold text-slate-950 dark:text-white">
                           {formatPortalCurrency(Number(order.amount || 0), { from: normalizePortalCurrency(order.currency), to: DEFAULT_PORTAL_CURRENCY })}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {isPending && order.expires_at ? t('portal.usage.payment_order_expires_at', { time: formatDate(order.expires_at) }, `Complete payment before ${formatDate(order.expires_at)}`) : order.created_at ? formatDate(order.created_at) : '—'}
+                        <p className="mt-1 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400" title={timeLabel !== '—' ? timeLabel : undefined}>
+                          {timeLabel}
                         </p>
                       </div>
-                      {renderOrderActions(order, 'flex flex-wrap items-center gap-2')}
+                      {orderHasActions ? renderOrderActions(order, 'flex flex-wrap items-center gap-2') : null}
                     </div>
                   );
                 })}

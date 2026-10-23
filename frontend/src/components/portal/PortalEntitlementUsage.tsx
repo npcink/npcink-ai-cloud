@@ -4,9 +4,9 @@ import { portalClient, type PortalAccountSiteKnowledgeUsagePayload } from '@/lib
 import type { Locale } from '@/lib/i18n';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
-import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { resolveBillingQuotaRowPresentation } from '@/lib/portal-billing-status';
+import { Modal } from '@/components/ui/Modal';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
@@ -115,10 +115,6 @@ export function PortalEntitlementUsage({
     setSiteKnowledgeUsageError('');
     setSiteKnowledgeUsageLoading(false);
   }, []);
-  const siteKnowledgeUsageDialogRef = useDialogFocusManagement<HTMLElement>(
-    siteKnowledgeUsageOpen,
-    closeSiteKnowledgeUsage,
-  );
   const openSiteKnowledgeUsage = useCallback(async (resourceKey: string) => {
     const key = String(resourceKey || '').trim();
     if (!key) return;
@@ -468,7 +464,8 @@ export function PortalEntitlementUsage({
         </div>
       )}
 
-      {siteKnowledgeUsageOpen && siteKnowledgeBreakdownKey ? (() => {
+      {(() => {
+        if (!siteKnowledgeBreakdownKey) return null;
         const breakdownKey = siteKnowledgeBreakdownKey;
         const breakdownFetchable = KNOWLEDGE_SITE_BREAKDOWN_FETCHABLE.has(breakdownKey);
         const siteKnowledgeUsage = siteKnowledgeUsageByType[breakdownKey] || null;
@@ -501,71 +498,69 @@ export function PortalEntitlementUsage({
           && (Boolean(siteKnowledgeUsage) || showQuietNoBreakdown);
 
         return (
-          <div className="fixed inset-0 z-50" data-portal-knowledge-breakdown={breakdownKey}>
-            <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={closeSiteKnowledgeUsage} />
-            <aside ref={siteKnowledgeUsageDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="site-knowledge-usage-title" className="absolute left-1/2 top-1/2 flex max-h-[85vh] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-950">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-                <div>
-                  <h2 id="site-knowledge-usage-title" className="text-xl font-semibold text-slate-950 dark:text-white">{breakdownTitle}</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{breakdownDesc}</p>
-                </div>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={closeSiteKnowledgeUsage}>{t('common.close')}</button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-5 py-5">
-                {siteKnowledgeUsageLoading ? (
-                  <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div>
-                ) : siteKnowledgeUsageError ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{siteKnowledgeUsageError}</div>
-                ) : showBody ? (
-                  <>
-                    <dl className="mb-5 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
-                        <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_total_label', {}, 'Account total')}</dt>
-                        <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
-                          {formatNumber(totalCount)}
-                          {!totalUnlimited ? ` / ${formatNumber(totalLimit)}` : ''}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
-                        <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_limit_label', {}, 'Package limit')}</dt>
-                        <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
-                          {totalUnlimited
-                            ? t('common.unlimited', {}, 'Unlimited')
-                            : formatNumber(totalLimit)}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                      {showQuietNoBreakdown ? (
-                        <p className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400" data-portal-knowledge-breakdown-empty="quiet">
-                          {t('portal.usage.site_knowledge_no_site_breakdown', {}, 'Per-site details are not available yet.')}
-                        </p>
-                      ) : siteKnowledgeUsage && siteKnowledgeUsage.sites.length ? (
-                        siteKnowledgeUsage.sites.map((site) => {
-                          const share = siteKnowledgeUsage.total_indexed_document_count > 0
-                            ? Math.round((site.indexed_document_count / siteKnowledgeUsage.total_indexed_document_count) * 100)
-                            : 0;
-                          return (
-                            <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p>
-                                <p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p>
-                              </div>
-                              <strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.indexed_document_count)}</strong>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <p className="px-4 py-5 text-sm text-slate-500">{t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}</p>
-                      )}
+          <Modal
+            isOpen={siteKnowledgeUsageOpen}
+            onClose={closeSiteKnowledgeUsage}
+            closeLabel={t('common.close', {}, 'Close')}
+            title={breakdownTitle}
+            description={breakdownDesc}
+            size="xl"
+            className="rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+          >
+            <div data-portal-knowledge-breakdown={breakdownKey}>
+              {siteKnowledgeUsageLoading ? (
+                <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div>
+              ) : siteKnowledgeUsageError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{siteKnowledgeUsageError}</div>
+              ) : showBody ? (
+                <>
+                  <dl className="mb-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
+                      <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_total_label', {}, 'Account total')}</dt>
+                      <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                        {formatNumber(totalCount)}
+                        {!totalUnlimited ? ` / ${formatNumber(totalLimit)}` : ''}
+                      </dd>
                     </div>
-                  </>
-                ) : null}
-              </div>
-            </aside>
-          </div>
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900">
+                      <dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_limit_label', {}, 'Package limit')}</dt>
+                      <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                        {totalUnlimited
+                          ? t('common.unlimited', {}, 'Unlimited')
+                          : formatNumber(totalLimit)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                    {showQuietNoBreakdown ? (
+                      <p className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400" data-portal-knowledge-breakdown-empty="quiet">
+                        {t('portal.usage.site_knowledge_no_site_breakdown', {}, 'Per-site details are not available yet.')}
+                      </p>
+                    ) : siteKnowledgeUsage && siteKnowledgeUsage.sites.length ? (
+                      siteKnowledgeUsage.sites.map((site) => {
+                        const share = siteKnowledgeUsage.total_indexed_document_count > 0
+                          ? Math.round((site.indexed_document_count / siteKnowledgeUsage.total_indexed_document_count) * 100)
+                          : 0;
+                        return (
+                          <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p>
+                              <p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p>
+                            </div>
+                            <strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.indexed_document_count)}</strong>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="px-4 py-5 text-sm text-slate-500">{t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}</p>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </Modal>
         );
-      })() : null}
+      })()}
     </section>
   );
 }
