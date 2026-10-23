@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -60,9 +61,7 @@ def build_provider_model_allowlist(
             execution_provider_ids=execution_provider_ids or set(),
         ):
             continue
-        model_ids = _normalize_id_list(config.get("model_ids"))
-        if not model_ids:
-            model_ids = _normalize_id_list(metadata.get("model_ids"))
+        model_ids = connection_model_ids(config, metadata)
         if not model_ids:
             continue
         model_ids = _effective_connection_model_ids(
@@ -118,6 +117,23 @@ def _normalize_id_list(value: object) -> list[str]:
         if text and text not in normalized:
             normalized.append(text)
     return normalized
+
+
+def connection_model_ids(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    normalize_ids: Callable[[object], list[str]] = _normalize_id_list,
+) -> list[str]:
+    """Read config model_ids first, retaining metadata as a legacy fallback.
+
+    Callers can preserve their existing normalization rules (including the
+    service projection's 128-character limit) while sharing source selection.
+    """
+    model_ids = normalize_ids(config.get("model_ids"))
+    if not model_ids:
+        model_ids = normalize_ids(metadata.get("model_ids"))
+    return model_ids
 
 
 def _effective_connection_model_ids(

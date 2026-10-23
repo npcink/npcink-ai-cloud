@@ -26,7 +26,11 @@ from app.adapters.providers.openai import (
     normalize_provider_image_output_hosts,
     normalize_provider_output_hosts,
 )
-from app.adapters.providers.registry import build_provider_adapter_from_connection
+from app.adapters.providers.registry import (
+    _RUNTIME_CONFIG_CONNECTION_KINDS,
+    SUPPORTED_CONNECTION_KINDS,
+    build_provider_adapter_from_connection,
+)
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import CatalogInstance, CatalogModel, ProviderConnection, RunRecord
@@ -41,6 +45,7 @@ from app.domain.image_generation.provider_fetch import (
     ProviderImageFetchError,
     fetch_provider_image_url,
 )
+from app.domain.provider_connections.model_allowlist import connection_model_ids
 from app.domain.provider_connections.projection import (
     public_config,
     public_image_evidence,
@@ -67,15 +72,6 @@ _SECRET_CONFIG_KEY_PARTS = (
     "password",
     "api_key",
     "apikey",
-)
-_RUNTIME_CONFIG_CONNECTION_KINDS = frozenset(
-    {
-        "web_search_provider",
-        "image_source_provider",
-        "embedding_provider",
-        "rerank_provider",
-        "vector_store_provider",
-    }
 )
 _PUBLIC_PROVIDER_TEST_ERROR_CODES = {
     "provider.auth_invalid": "provider.auth_invalid",
@@ -1113,10 +1109,18 @@ class ProviderConnectionAdminService:
             and normalized_provider_id == "jina_reader"
         ):
             secretless = True
+        resolved_kind = _string(payload.get("kind") or normalized_provider_type)
+        if resolved_kind not in SUPPORTED_CONNECTION_KINDS:
+            raise ProviderConnectionAdminError(
+                "provider_connection.kind_unsupported",
+                f"unsupported provider kind: {resolved_kind!r}; "
+                f"allowed kinds: {', '.join(sorted(SUPPORTED_CONNECTION_KINDS))}",
+                status_code=400,
+            )
         config_json = {
             **config,
             "provider_id": normalized_provider_id,
-            "kind": _string(payload.get("kind") or normalized_provider_type),
+            "kind": resolved_kind,
             "capability_ids": capability_ids,
             "runtime_profile_ids": runtime_profile_ids,
             "secretless": secretless,
@@ -1182,9 +1186,7 @@ class ProviderConnectionAdminService:
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
-        model_ids = _normalize_id_list(config.get("model_ids"))
-        if not model_ids:
-            model_ids = _normalize_id_list(metadata.get("model_ids"))
+        model_ids = connection_model_ids(config, metadata, normalize_ids=_normalize_id_list)
         provider_id = _string(config.get("provider_id") or row.connection_id)
         configured, credential_error = _credential_readiness(
             self.settings,
@@ -1352,9 +1354,9 @@ def _select_image_delivery_probe_target(
     row: ProviderConnection,
 ) -> tuple[CatalogModel, CatalogInstance]:
     config = _dict(row.config_json)
-    selected_model_ids = _normalize_id_list(config.get("model_ids"))
-    if not selected_model_ids:
-        selected_model_ids = _normalize_id_list(_dict(row.metadata_json).get("model_ids"))
+    selected_model_ids = connection_model_ids(
+        config, _dict(row.metadata_json), normalize_ids=_normalize_id_list
+    )
     if not selected_model_ids:
         raise ProviderConnectionAdminError(
             "provider_connection.image_probe_model_required",
@@ -1421,9 +1423,7 @@ def _merge_configured_catalog_candidates(
 
     config = _dict(row.config_json)
     metadata = _dict(row.metadata_json)
-    selected_model_ids = _normalize_id_list(config.get("model_ids"))
-    if not selected_model_ids:
-        selected_model_ids = _normalize_id_list(metadata.get("model_ids"))
+    selected_model_ids = connection_model_ids(config, metadata, normalize_ids=_normalize_id_list)
     if not selected_model_ids:
         return snapshot
 
