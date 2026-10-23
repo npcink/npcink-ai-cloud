@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, startTransition, ReactNode } from 'react';
 import {
   DEFAULT_LOCALE,
   persistLocale,
@@ -24,8 +24,12 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    setLocaleState(readStoredLocale());
+    // A parent effect can run before a nested Suspense boundary hydrates.
+    // Let it hydrate the default-language SSR before applying stored text.
+    startTransition(() => {
+      setMounted(true);
+      setLocaleState(readStoredLocale());
+    });
   }, []);
 
   const setLocale = useCallback((newLocale: Locale) => {
