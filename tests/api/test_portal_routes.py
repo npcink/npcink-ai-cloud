@@ -971,6 +971,29 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     portal_attachment_data = portal_attachment_response.json()["data"]
     _assert_no_portal_support_internal_fields(portal_attachment_data)
     portal_attachment = portal_attachment_data["attachment"]
+    assert not portal_attachment.get("message_id")
+
+    linked_message_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/messages",
+        json={
+            "body": "Attaching the payment note for review.",
+            "attachment_ids": [portal_attachment["attachment_id"]],
+        },
+        headers=_portal_cookie_headers(idempotency_key="portal-support-message-link-001"),
+    )
+    assert linked_message_response.status_code == 200, linked_message_response.text
+    linked_message_data = linked_message_response.json()["data"]
+    _assert_no_portal_support_internal_fields(linked_message_data)
+    assert linked_message_data["message"]["author_kind"] == "customer"
+    assert linked_message_data["attachments"]
+    assert (
+        linked_message_data["attachments"][0]["attachment_id"]
+        == portal_attachment["attachment_id"]
+    )
+    assert (
+        linked_message_data["attachments"][0]["message_id"]
+        == linked_message_data["message"]["message_id"]
+    )
 
     waiting_list_response = client.get(
         "/internal/service/admin/support-requests?attention=waiting_for_operator",

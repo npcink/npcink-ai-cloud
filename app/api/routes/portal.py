@@ -248,6 +248,7 @@ class PortalSupportRequestPayload(BaseModel):
 
 class PortalSupportRequestMessagePayload(BaseModel):
     body: str = Field(default="", max_length=4000)
+    attachment_ids: list[str] = Field(default_factory=list)
 
 
 class PortalSupportRequestAttachmentPayload(BaseModel):
@@ -4360,6 +4361,7 @@ async def create_portal_support_request_message(
             principal_id=auth.principal_id,
             request_id=request_id,
             body=payload.body,
+            attachment_ids=list(payload.attachment_ids or []),
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:

@@ -69,6 +69,8 @@ export default function PortalSupportRequestDetailPage() {
   const [messages, setMessages] = useState<PortalSupportRequestMessage[]>([]);
   /** Composer chips only — session drafts (not every historical request attachment). */
   const [composerDrafts, setComposerDrafts] = useState<PortalSupportRequestAttachment[]>([]);
+  /** Request attachments shown under chat bubbles by message_id. */
+  const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
   const [feedback, setFeedback] = useState<PortalSupportRequestFeedback | null>(null);
   const [reply, setReply] = useState('');
   const [pendingUploads, setPendingUploads] = useState<Array<{ id: string; name: string }>>([]);
@@ -109,6 +111,7 @@ export default function PortalSupportRequestDetailPage() {
       ) return;
       setSupportRequest(response.data.request);
       setMessages(response.data.messages || []);
+      setAttachments(response.data.attachments || []);
       setFeedback(response.data.feedback || null);
       if (response.data.feedback) {
         setFeedbackResolved(response.data.feedback.resolved);
@@ -141,6 +144,7 @@ export default function PortalSupportRequestDetailPage() {
     setSupportRequest(null);
     setMessages([]);
     setComposerDrafts([]);
+    setAttachments([]);
     setFeedback(null);
     setReply('');
     setPendingUploads([]);
@@ -180,18 +184,35 @@ export default function PortalSupportRequestDetailPage() {
     if (!isAuthenticated || !capturedRequestId) return;
     const body = reply.trim();
     if (!body) return;
+    if (pendingUploads.length || isUploadingAttachment) return;
+    const draftAttachmentIds = composerDrafts
+      .map((item) => item.attachment_id)
+      .filter(Boolean);
     setIsSubmitting(true);
     setError('');
     setNotice('');
     try {
-      const response = await portalClient.createSupportRequestMessage(capturedRequestId, { body });
+      const response = await portalClient.createSupportRequestMessage(capturedRequestId, {
+        body,
+        attachment_ids: draftAttachmentIds,
+      });
       if (
         contextRequestVersion !== contextRequestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
+      const linkedAttachments = response.data.attachments || composerDrafts.map((item) => ({
+        ...item,
+        message_id: response.data.message.message_id,
+      }));
       setSupportRequest(response.data.request);
       setMessages((current) => [...current, response.data.message]);
+      setAttachments((current) => {
+        const linkedIds = new Set(linkedAttachments.map((item) => item.attachment_id));
+        const kept = current.filter((item) => !linkedIds.has(item.attachment_id));
+        return [...kept, ...linkedAttachments];
+      });
+      setComposerDrafts([]);
       setReply('');
       setNotice(t('portal.support_message_created', {}, 'Reply submitted.'));
     } catch (err) {
@@ -497,6 +518,9 @@ export default function PortalSupportRequestDetailPage() {
               );
             }
             const isCustomer = message.author_kind !== 'operator';
+            const messageAttachments = attachments.filter(
+              (item) => item.message_id && item.message_id === message.message_id
+            );
             return (
               <div
                 key={message.message_id}
@@ -523,6 +547,34 @@ export default function PortalSupportRequestDetailPage() {
                     <p className="whitespace-pre-wrap text-sm leading-6">
                       {message.body}
                     </p>
+                    {messageAttachments.length ? (
+                      <ul
+                        className="mt-2 space-y-1.5"
+                        data-portal-support="bubble-attachments"
+                      >
+                        {messageAttachments.map((attachment) => (
+                          <li key={attachment.attachment_id}>
+                            <button
+                              type="button"
+                              className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs font-medium transition ${
+                                isCustomer
+                                  ? 'bg-white/12 text-white hover:bg-white/18 dark:bg-slate-950/15 dark:text-slate-950 dark:hover:bg-slate-950/25'
+                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+                              }`}
+                              data-portal-support="bubble-attachment"
+                              title={attachment.filename}
+                              onClick={() => void handleAttachmentDownload(attachment)}
+                            >
+                              <PortalActionIcon id="attach" className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{attachment.filename}</span>
+                              <span className={`shrink-0 tabular-nums ${isCustomer ? 'opacity-70' : 'text-slate-500 dark:text-slate-400'}`}>
+                                {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -779,7 +831,7 @@ export default function PortalSupportRequestDetailPage() {
                   rows={1}
                   onChange={(event) => setReply(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting) {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && reply.trim() && !isSubmitting && !pendingUploads.length && !isUploadingAttachment) {
                       event.preventDefault();
                       void handleReply();
                     }
@@ -801,7 +853,7 @@ export default function PortalSupportRequestDetailPage() {
             <button
               type="button"
               className="btn btn-primary shrink-0 rounded-full px-4"
-              disabled={isSubmitting || !reply.trim()}
+              disabled={isSubmitting || !reply.trim() || pendingUploads.length > 0 || isUploadingAttachment}
               onClick={() => void handleReply()}
             >
               {isSubmitting

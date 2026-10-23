@@ -1488,6 +1488,7 @@ export interface CreatePortalSupportRequestPayload {
 
 export interface CreatePortalSupportRequestMessagePayload {
   body: string;
+  attachment_ids?: string[];
 }
 
 export interface CreatePortalSupportRequestAttachmentPayload {
@@ -2302,7 +2303,11 @@ export class PortalClient {
   async createSupportRequestMessage(
     requestId: string,
     payload: CreatePortalSupportRequestMessagePayload
-  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; message: PortalSupportRequestMessage }>> {
+  ): Promise<PortalEnvelope<{
+    request: PortalSupportRequest;
+    message: PortalSupportRequestMessage;
+    attachments?: PortalSupportRequestAttachment[];
+  }>> {
     return this.request('POST', `/support-requests/${requestId}/messages`, payload);
   }
 
