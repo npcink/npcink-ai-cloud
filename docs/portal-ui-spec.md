@@ -29,7 +29,7 @@
 | 套餐容量黄条 | **对齐概览「我的站点」容量条**（`PortalSitesWorkspace` `data-portal-sites="capacity-alerts"`）：黄条表面 **`w-full`** 铺满内容列；行内标题区 `flex-1` + CTA `shrink-0`；**正文描述**加 **`max-w-md`**（28rem / 448px）提前换行，勿一行拉到 CTA；**禁止**对黄条表面用 `w-fit` / `max-w-prose` 收成半宽留白 |
 | Header | 无 `contextPanel` 时 **单列 stack**（`data-portal-header-layout=stack`）；描述全宽，禁止预留空右列 |
 | 行高 | `--portal-row-min-height` 等现有 portal shell；站点表标题与表间距约 **8–12px** |
-| 套餐页密度 | 标题「套餐」+ metrics rail；主列无「额度」大标题（软副标可选）；两列磁贴；AI 积分对齐图片库：主 `已扣/(已扣+可用)`、旁 `剩余: 可用`、同款进度条；主比例→「获取来源」Modal（`size="2xl"`）；「查看本期用量」→滚到站点用量列表；点站点→站点用量 Modal（趋势/记录，`size="2xl"`）；无空壳 included、无同值三行；黄条 `w-full` |
+| 套餐页密度 | 标题「套餐」+ metrics rail；主列无「额度」大标题（软副标可选）；两列磁贴；AI 积分对齐图片库：主 `已扣/(已扣+可用)`、旁 `剩余: 可用`、同款进度条；主比例→「获取来源」Modal（`size="2xl"`）；「查看本期用量」→滚到站点用量列表；点站点→站点用量 Modal（趋势/记录，`size="2xl"`）；无空壳 included、无同值三行；黄条 `w-full`；页头对齐工单紧凑 chrome；无可见 commerce 不占 space-y；**单站**满宽 + 安静副文案（不自动弹窗） |
 | 按钮层级 | 站点行仅主按钮「打开站点」图标可见；**WP 后台 / 停用 / 移除进 ⋯**；连接新站点 +/- 切换；容量「查看套餐」为图标 CTA |
 
 ---

@@ -445,21 +445,15 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} compact />;
   }
 
-  return (
-    <div className="space-y-5" data-portal-account="commerce" data-portal-billing="package-commerce">
-      <div id="package-options" className="scroll-mt-24" hidden aria-hidden="true" />
-      {paymentLaunchNotice}
+  const hasVisibleBillingChrome = Boolean(paymentLaunchNotice) || Boolean(error);
+  const anyCommercialDialogOpen = activeCommercialDialog !== null;
 
-      {error ? (
-        <PortalCard variant="portal" className="border-rose-200 bg-rose-50/80 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-          <p className="font-medium">{t('error.failed_load', {}, 'Failed to load')}</p>
-          <p className="mt-1">{error}</p>
-          <button type="button" className="btn btn-secondary btn-sm mt-3" onClick={() => void loadBilling()}>
-            {t('common.retry', {}, 'Retry')}
-          </button>
-        </PortalCard>
-      ) : null}
+  const packageOptionsAnchor = (
+    <div id="package-options" className="scroll-mt-24" hidden aria-hidden="true" />
+  );
 
+  const commercialDialogs = (
+    <>
       <Modal
         isOpen={activeCommercialDialog === 'package'}
         onClose={() => closeCommercialDialog()}
@@ -503,6 +497,36 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
       >
         {trialOptions}
       </Modal>
+    </>
+  );
+
+  // Quiet billing: no visible chrome → do not mount a space-y host that doubles
+  // PortalPageStack gaps. Keep dialogs mounted (null when closed) so deep-links work.
+  if (!hasVisibleBillingChrome && !anyCommercialDialogOpen) {
+    return (
+      <>
+        {packageOptionsAnchor}
+        {commercialDialogs}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-5" data-portal-account="commerce" data-portal-billing="package-commerce">
+      {packageOptionsAnchor}
+      {paymentLaunchNotice}
+
+      {error ? (
+        <PortalCard variant="portal" className="border-rose-200 bg-rose-50/80 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+          <p className="font-medium">{t('error.failed_load', {}, 'Failed to load')}</p>
+          <p className="mt-1">{error}</p>
+          <button type="button" className="btn btn-secondary btn-sm mt-3" onClick={() => void loadBilling()}>
+            {t('common.retry', {}, 'Retry')}
+          </button>
+        </PortalCard>
+      ) : null}
+
+      {commercialDialogs}
     </div>
   );
 }

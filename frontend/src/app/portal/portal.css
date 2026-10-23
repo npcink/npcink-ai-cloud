@@ -76,6 +76,18 @@
     border-bottom-width: 0;
   }
 
+  /* Package page: title + metrics rail — same compact chrome as tickets */
+  .portal-shell [data-portal-workspace-header="billing"] {
+    min-height: 0;
+    padding-bottom: 0.5rem;
+  }
+
+  /* Package page only: slightly tighter content pad (keep other portal pages at py-8) */
+  .portal-shell main:has([data-portal-workspace-header="billing"]) > .portal-content {
+    padding-top: 1.25rem;
+    padding-bottom: 1.5rem;
+  }
+
   .portal-shell .btn-sm,
   .portal-shell .btn.btn-sm,
   .portal-shell .portal-row-action-btn {

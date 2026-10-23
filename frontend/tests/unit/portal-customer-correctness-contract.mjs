@@ -57,6 +57,16 @@ assert.match(
   'package page must list visible sites and open usage for the chosen site'
 );
 assert.match(
+  siteUsageListSource,
+  /isSingleSite[\s\S]*site_usage_list_desc_single[\s\S]*data-portal-billing-site-layout=\{isSingleSite \? 'single' : 'multi'\}/,
+  'single-site package usage list must use full-width layout and quieter copy'
+);
+assert.doesNotMatch(
+  siteUsageListSource,
+  /setSiteUsageSite\(|auto-?open|useEffect\(\(\) => \{[\s\S]*onSelectSite/,
+  'site usage list must not auto-open a usage modal'
+);
+assert.match(
   billingSource,
   /<PortalSiteUsageDialog[\s\S]*isOpen=\{Boolean\(siteUsageSite\)\}[\s\S]*site=\{siteUsageSite\}/,
   'site usage Modal must be scoped to the site picked from the list'
