@@ -379,14 +379,14 @@ function AccountPageContent() {
                   <PortalInfoHint
                     detail={
                       qqProvider?.bound
-                        ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
-                        : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')
+                        ? t('portal.account.qq_bound_desc', undefined, 'You can use the bound QQ account for quick Portal login.')
+                        : t('portal.account.qq_unbound_desc', undefined, 'After binding, QQ can be used for quick login. Email remains the primary account.')
                     }
                   />
                 </div>
                 {qqProvider?.bound && qqProvider.binding?.display_name ? (
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                    {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
+                    {t('portal.account.qq_bound_as', undefined, 'Bound account')}: {qqProvider.binding.display_name}
                   </p>
                 ) : null}
                 {!qqProvider?.configured ? (
@@ -432,7 +432,7 @@ function AccountPageContent() {
           )}
       </PortalSection>
 
-      <div className="space-y-3" data-portal-account="billing-commerce">
+      <div className="space-y-3" data-portal-account="payment-orders-section">
         <PortalAccountCommercePanels surface="account" />
       </div>
 

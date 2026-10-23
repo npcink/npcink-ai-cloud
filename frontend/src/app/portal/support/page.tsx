@@ -37,7 +37,7 @@ import {
   getPortalSiteSecondaryLabel,
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
-import { formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
 const SUPPORT_TOPICS = ['billing', 'payment', 'site', 'usage', 'account', 'general'] as const;
 const SUPPORT_STATUSES: Array<PortalSupportRequestStatus | ''> = ['', 'open', 'in_progress', 'resolved', 'closed'];
@@ -288,24 +288,35 @@ function PortalSupportContent() {
             data-portal-support="header-actions"
           >
             <div
-              className="flex flex-wrap justify-end gap-2"
+              className="flex flex-wrap items-center justify-end gap-1.5"
+              role="tablist"
               data-portal-support="status-filters"
               aria-label={t('portal.support_filter_label', {}, 'Filter by status')}
             >
-              {SUPPORT_STATUSES.map((status) => (
-                <button
-                  key={status || 'all'}
-                  type="button"
-                  className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
-                  aria-pressed={statusFilter === status}
-                  onClick={() => {
-                    setOffset(0);
-                    setStatusFilter(status);
-                  }}
-                >
-                  {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-                </button>
-              ))}
+              {SUPPORT_STATUSES.map((status) => {
+                const selected = statusFilter === status;
+                return (
+                  <button
+                    key={status || 'all'}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-pressed={selected}
+                    className={cn(
+                      'inline-flex h-7 items-center rounded-full px-2.5 text-xs font-medium transition',
+                      selected
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800',
+                    )}
+                    onClick={() => {
+                      setOffset(0);
+                      setStatusFilter(status);
+                    }}
+                  >
+                    {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+                  </button>
+                );
+              })}
             </div>
             <button
               type="button"

@@ -204,7 +204,7 @@ export function PortalPaymentOrderHistory({
               >
                 {cancelPendingOrderId === order.order_id
                   ? t('common.saving', {}, 'Saving...')
-                  : t('portal.usage.payment_order_confirm_cancel', {}, 'Confirm cancel')}
+                  : t('portal.usage.payment_order_confirm_cancel', {}, 'Confirm cancel order')}
               </button>
               <button
                 type="button"
@@ -222,7 +222,7 @@ export function PortalPaymentOrderHistory({
               disabled={cancelPendingOrderId !== null}
               onClick={() => onCancelConfirmChange(order.order_id)}
             >
-              {t('portal.usage.payment_order_cancel', {}, 'Cancel')}
+              {t('portal.usage.payment_order_cancel', {}, 'Cancel order')}
             </button>
           )
         ) : null}

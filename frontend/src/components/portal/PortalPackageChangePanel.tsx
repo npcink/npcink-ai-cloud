@@ -331,18 +331,18 @@ export function PortalPackageChangePanel({
           ) : null}
         </div>
         {comparisonTiers.length > 0 ? (
-          <div className="mt-3 overflow-x-auto rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">
-            <table className="min-w-[42rem] w-full border-collapse text-sm">
+          <div className="mt-3 rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">
+            <table className="w-full table-fixed border-collapse text-sm">
               <thead className="bg-[#f5f5f7] dark:bg-slate-900/70">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">
+                  <th scope="col" className="px-3 py-3 text-left font-semibold text-slate-600 break-words dark:text-slate-300">
                     {t('portal.billing.package_comparison_right_label', {}, 'Right')}
                   </th>
                   {comparisonTiers.map((tier) => (
                     <th
                       key={tier.tier_id}
                       scope="col"
-                      className={`px-4 py-3 text-right font-semibold ${
+                      className={`px-3 py-3 text-right font-semibold break-words ${
                         selectedTier === tier.tier_id
                           ? 'bg-blue-50 text-[#0066cc] dark:bg-blue-950/25 dark:text-[#2997ff]'
                           : 'text-slate-950 dark:text-white'
@@ -361,7 +361,7 @@ export function PortalPackageChangePanel({
               <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-800 dark:bg-slate-950">
                 {visibleComparisonRows.map((row) => (
                   <tr key={row.key}>
-                    <th scope="row" className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300">
+                    <th scope="row" className="px-3 py-3 text-left font-medium text-slate-600 break-words dark:text-slate-300">
                       {row.label}
                     </th>
                     {comparisonTiers.map((tier) => {
@@ -370,7 +370,7 @@ export function PortalPackageChangePanel({
                         <td
                           key={tier.tier_id}
                           data-comparison-state={right.state}
-                          className={`px-4 py-3 text-right font-semibold ${
+                          className={`px-3 py-3 text-right font-semibold break-words ${
                           selectedTier === tier.tier_id
                             ? 'bg-blue-50/70 text-slate-950 dark:bg-blue-950/20 dark:text-white'
                             : right.state === 'unconfigured'

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
+import { useLocale } from '@/contexts/LocaleContext';
 import { cn } from '@/lib/utils';
 
 export type PortalRowActionConfirm = {
@@ -243,6 +244,7 @@ export function PortalRowActions({
   className,
   overflowTestId,
 }: PortalRowActionsProps) {
+  const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{
@@ -369,7 +371,7 @@ export function PortalRowActions({
       <Modal
         isOpen={Boolean(pendingConfirm)}
         onClose={() => setPendingConfirm(null)}
-        closeLabel={pendingConfirm?.confirm.cancelLabel || 'Close'}
+        closeLabel={pendingConfirm?.confirm.cancelLabel || t('common.close', {}, 'Close')}
         title={pendingConfirm?.confirm.title || pendingConfirm?.item.label}
         description={pendingConfirm?.confirm.description}
         size="sm"
@@ -381,7 +383,7 @@ export function PortalRowActions({
               className="btn btn-secondary"
               onClick={() => setPendingConfirm(null)}
             >
-              {pendingConfirm?.confirm.cancelLabel || 'Cancel'}
+              {pendingConfirm?.confirm.cancelLabel || t('common.cancel', {}, 'Cancel')}
             </button>
             <button
               type="button"
