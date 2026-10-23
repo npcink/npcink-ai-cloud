@@ -17,6 +17,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
+    build_provider_adapter_from_connection,
     build_provider_adapters,
     resolve_execution_provider_adapters,
 )
@@ -1694,3 +1695,97 @@ def test_runtime_projection_skips_unreadable_provider_connection_secret(
     assert connections["search_zhihu"]["secrets"]["credential"]["display"] == "unreadable"
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "kind_payload",
+    [{"kind": "foobar"}, {}],
+    ids=["unsupported-kind", "missing-kind-with-provider-specific-type"],
+)
+def test_save_connection_rejects_unsupported_kind(
+    tmp_path: Path, kind_payload: dict[str, str]
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    try:
+        with pytest.raises(ProviderConnectionAdminError) as exc_info:
+            service.save_connection(
+                {
+                    "connection_id": "invalid_kind",
+                    "provider_id": "tavily",
+                    "provider_type": "tavily",
+                    **kind_payload,
+                }
+            )
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_code == "provider_connection.kind_unsupported"
+        with get_session(database_url) as session:
+            assert session.get(ProviderConnection, "invalid_kind") is None
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "web_search_provider",
+        "image_source_provider",
+        "embedding_provider",
+        "rerank_provider",
+        "vector_store_provider",
+        "openai-compatible",
+        "openai_compatible",
+    ],
+)
+def test_save_connection_accepts_supported_runtime_and_compatible_kinds(
+    tmp_path: Path, kind: str
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    try:
+        service.save_connection(
+            {
+                "connection_id": "supported_kind",
+                "provider_id": "custom_provider",
+                "provider_type": kind,
+                "kind": kind,
+                "enabled": False,
+            }
+        )
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, "supported_kind")
+            assert row is not None
+            assert row.config_json["kind"] == kind
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("kind", ["OPENAI_COMPATIBLE", "OpenAI-Compatible"])
+def test_save_connection_preserves_case_insensitive_kind_on_resave(
+    tmp_path: Path, kind: str
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    payload = {
+        "connection_id": "mixed_case_kind",
+        "provider_id": "custom_provider",
+        "provider_type": "openai_compatible",
+        "kind": kind,
+        "secretless": True,
+    }
+    try:
+        service.save_connection(payload)
+        service.save_connection(payload, connection_id="mixed_case_kind")
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, "mixed_case_kind")
+            assert row is not None
+            assert row.config_json["kind"] == kind
+            assert isinstance(
+                build_provider_adapter_from_connection(settings, row), OpenAIProviderAdapter
+            )
+    finally:
+        dispose_engine(database_url)

@@ -34,6 +34,33 @@ OPENAI_COMPATIBLE_CONNECTION_KINDS = frozenset(
         "image_generation_provider",
     }
 )
+_RUNTIME_CONFIG_CONNECTION_KINDS = frozenset(
+    {
+        "web_search_provider",
+        "image_source_provider",
+        "embedding_provider",
+        "rerank_provider",
+        "vector_store_provider",
+    }
+)
+SUPPORTED_CONNECTION_KINDS = (
+    OPENAI_COMPATIBLE_CONNECTION_KINDS
+    | _RUNTIME_CONFIG_CONNECTION_KINDS
+    | frozenset(
+        {
+            "siliconflow",
+            "minimax",
+            "audio_provider",
+            "minimax_audio",
+            "anthropic",
+            "litellm",
+            "litellm_gateway",
+            "vllm",
+            "tei",
+            "openrouter",
+        }
+    )
+)
 ALLOWED_IMAGE_RESPONSE_FORMATS = frozenset({"url", "b64_json"})
 
 
