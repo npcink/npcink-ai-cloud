@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import {
   BackofficeEmptyState,
   BackofficePageHeader,
@@ -12,7 +13,6 @@ import {
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { ListPagination } from '@/components/ui/ListPagination';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -114,7 +114,9 @@ type QueueSort = 'priority' | 'expiry' | 'customer';
 type RiskLevel = 'critical' | 'warning' | 'monitor' | 'stable';
 type RiskFilter = 'needs_action' | 'all' | RiskLevel;
 
-const PAGE_SIZE = 20;
+const SUBSCRIPTION_PAGE_SIZE = 10;
+const STATUS_FILTERS = ['', 'past_due', 'expired', 'trialing', 'active'] as const;
+const RISK_FILTERS: RiskFilter[] = ['needs_action', 'critical', 'warning', 'monitor', 'stable', 'all'];
 const ALLOWED_STATUSES = new Set(['', 'past_due', 'expired', 'trialing', 'active', 'suspended', 'canceled']);
 const ALLOWED_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
 const ALLOWED_RISK_LEVELS = new Set<RiskLevel>(['critical', 'warning', 'monitor', 'stable']);
@@ -190,6 +192,72 @@ function normalizeOffset(value: string | null): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function normalizeSubscriptionLimit(value: string | null): number {
+  const parsed = Number(value || SUBSCRIPTION_PAGE_SIZE);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100
+    ? parsed
+    : SUBSCRIPTION_PAGE_SIZE;
+}
+
+type QuietQueuePaginationProps = {
+  offset: number;
+  limit: number;
+  total: number;
+  isLoading?: boolean;
+  onOffsetChange: (offset: number) => void;
+};
+
+/** Quiet footer: always show range / total (shared ListPagination hides single-page). */
+function QuietQueuePagination({
+  offset,
+  limit,
+  total,
+  isLoading = false,
+  onOffsetChange,
+}: QuietQueuePaginationProps) {
+  const { t } = useLocale();
+  const safeTotal = Math.max(0, total);
+  const safeOffset = Math.max(0, offset);
+  const start = safeTotal > 0 ? safeOffset + 1 : 0;
+  const end = Math.min(safeOffset + limit, safeTotal);
+  const hasPrevious = safeOffset > 0;
+  const hasNext = safeOffset + limit < safeTotal;
+
+  return (
+    <nav
+      className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800"
+      aria-label={t('common.pagination', {}, 'Pagination')}
+      data-ui="subscription-quiet-pagination"
+    >
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {t(
+          'common.pagination_summary',
+          { start: String(start), end: String(end), total: String(safeTotal) },
+          `${start}-${end} of ${safeTotal}`
+        )}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasPrevious || isLoading}
+          onClick={() => onOffsetChange(Math.max(0, safeOffset - limit))}
+        >
+          {t('common.previous', {}, 'Previous')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={!hasNext || isLoading}
+          onClick={() => onOffsetChange(safeOffset + limit)}
+        >
+          {t('common.next_page', {}, 'Next page')}
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function customerDisplayName(
   name: string | undefined,
   accountId: string,
@@ -229,6 +297,7 @@ function SubscriptionsContent() {
   const appliedRisk = normalizeRiskFilter(searchParams.get('risk'));
   const sort = normalizeSort(searchParams.get('sort'));
   const offset = normalizeOffset(searchParams.get('offset'));
+  const limit = normalizeSubscriptionLimit(searchParams.get('limit'));
   const focusedSubscriptionId = searchParams.get('focus') || '';
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -242,7 +311,6 @@ function SubscriptionsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [draftFilters, setDraftFilters] = useState({
     customer: appliedCustomer || appliedAccountId,
     plan_id: appliedPlanId,
@@ -263,10 +331,10 @@ function SubscriptionsContent() {
     if (appliedExpiresBefore) params.set('expires_before', appliedExpiresBefore);
     params.set('risk', appliedRisk);
     params.set('sort', sort);
-    params.set('limit', String(PAGE_SIZE));
+    params.set('limit', String(limit));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, offset, sort]);
+  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, limit, offset, sort]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
@@ -274,7 +342,8 @@ function SubscriptionsContent() {
       const isDefault =
         (key === 'risk' && value === 'needs_action') ||
         (key === 'sort' && value === 'priority') ||
-        (key === 'offset' && value === '0');
+        (key === 'offset' && value === '0') ||
+        (key === 'limit' && value === String(SUBSCRIPTION_PAGE_SIZE));
       if (!value || isDefault) nextParams.delete(key);
       else nextParams.set(key, value);
     });
@@ -308,7 +377,6 @@ function SubscriptionsContent() {
         setSubscriptions(nextItems);
         setTotal(nextTotal);
         setSummary(nextSummary);
-        setLoadedAt(new Date());
         hasLoadedRef.current = true;
         setHasLoaded(true);
       }
@@ -406,6 +474,7 @@ function SubscriptionsContent() {
       plan_id: null,
       expires_before: null,
       sort: null,
+      limit: null,
       offset: null,
       focus: null,
     });
@@ -427,8 +496,6 @@ function SubscriptionsContent() {
 
   if (isLoading && !hasLoaded) return <LoadingFallback />;
 
-  const statusFilters = ['', 'past_due', 'expired', 'trialing', 'active'];
-  const riskFilters: RiskFilter[] = ['needs_action', 'critical', 'warning', 'monitor', 'stable', 'all'];
   const hasFilters = Boolean(
     appliedRisk !== 'needs_action' ||
     appliedStatus ||
@@ -484,12 +551,6 @@ function SubscriptionsContent() {
             value: formatInteger(summary.warning),
             toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
           },
-          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
-          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
-          {
-            label: t('common.updated_at', {}, 'Updated'),
-            value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
-          },
         ]}
       />
 
@@ -518,13 +579,13 @@ function SubscriptionsContent() {
 
       <>
         <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
+          <div className="space-y-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800 md:px-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                   {t('admin.subscriptions.queue_list_title', {}, 'Customers needing service follow-up')}
                 </h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   {t(
                     'admin.subscriptions.queue_list_desc_v2',
                     {},
@@ -532,9 +593,9 @@ function SubscriptionsContent() {
                   )}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:justify-end">
                 <AdminQueueKeyboardHint />
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400" role="status">
                   {t(
                     'admin.subscriptions.result_count',
                     { visible: formatInteger(queuedSubscriptions.length), total: formatInteger(total) },
@@ -544,55 +605,85 @@ function SubscriptionsContent() {
               </div>
             </div>
 
+            <div
+              role="group"
+              aria-label={t('admin.subscriptions.risk_filter_label', {}, 'Follow-up state')}
+              data-ui="subscription-risk-pills"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
+            >
+              {RISK_FILTERS.map((risk) => {
+                const active = appliedRisk === risk;
+                const tone =
+                  risk === 'critical'
+                    ? 'danger'
+                    : risk === 'warning' || risk === 'needs_action'
+                      ? 'warning'
+                      : risk === 'stable'
+                        ? 'success'
+                        : risk === 'monitor'
+                          ? 'info'
+                          : 'neutral';
+                return (
+                  <BackofficeFilterPill
+                    key={risk}
+                    active={active}
+                    aria-pressed={active}
+                    tone={tone}
+                    onClick={() => updateQueueUrl({
+                      risk,
+                      offset: null,
+                      focus: null,
+                    })}
+                  >
+                    {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
+                  </BackofficeFilterPill>
+                );
+              })}
+            </div>
+
+            <div
+              role="group"
+              aria-label={t('admin.subscriptions.status_filter_label', {}, 'Subscription status')}
+              data-ui="subscription-status-pills"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
+            >
+              {STATUS_FILTERS.map((status) => {
+                const active = appliedStatus === status;
+                const tone =
+                  status === 'past_due' || status === 'expired'
+                    ? 'danger'
+                    : status === 'trialing'
+                      ? 'warning'
+                      : status === 'active'
+                        ? 'success'
+                        : 'neutral';
+                return (
+                  <BackofficeFilterPill
+                    key={status || 'all'}
+                    active={active}
+                    aria-pressed={active}
+                    tone={tone}
+                    onClick={() => updateQueueUrl({
+                      status: status || null,
+                      offset: null,
+                      focus: null,
+                    })}
+                  >
+                    {status
+                      ? t(`status.${status}`, undefined, status)
+                      : t('admin.subscriptions.all_statuses', {}, 'All subscription states')}
+                  </BackofficeFilterPill>
+                );
+              })}
+            </div>
+
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}
-              className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(7.5rem,0.72fr)_minmax(7.5rem,0.72fr)_minmax(8rem,0.95fr)_minmax(7.5rem,0.82fr)_minmax(8.5rem,0.88fr)_minmax(8rem,0.78fr)_auto]"
+              className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
             >
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.risk_filter_label', {}, 'Follow-up state')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedRisk}
-                  onChange={(event) => updateQueueUrl({
-                    risk: normalizeRiskFilter(event.target.value),
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {riskFilters.map((risk) => (
-                    <option key={risk} value={risk}>
-                      {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.status_filter_label', {}, 'Subscription status')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedStatus}
-                  onChange={(event) => updateQueueUrl({
-                    status: normalizeStatus(event.target.value) || null,
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {statusFilters.map((status) => (
-                    <option key={status || 'all'} value={status}>
-                      {status ? t(`status.${status}`, undefined, status) : t('common.all', {}, 'All')}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
-                </span>
+              <label className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-200 sm:min-w-[12rem]">
+                <span className="sr-only">{t('admin.subscriptions.customer_filter_label', {}, 'Customer')}</span>
                 <input
                   type="search"
                   className="input w-full"
@@ -601,10 +692,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('common.plan', {}, 'Package')}
-                </span>
+              <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-36">
+                <span className="sr-only">{t('common.plan', {}, 'Package')}</span>
                 <input
                   type="search"
                   className="input w-full"
@@ -613,10 +702,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, plan_id: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.expires_before')}
-                </span>
+              <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-40">
+                <span className="sr-only">{t('admin.expires_before')}</span>
                 <input
                   type="date"
                   className="input w-full"
@@ -624,10 +711,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, expires_before: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.sort_label', {}, 'Sort')}
-                </span>
+              <label className="text-sm text-slate-700 dark:text-slate-200 sm:w-44">
+                <span className="sr-only">{t('admin.subscriptions.sort_label', {}, 'Sort')}</span>
                 <select
                   className="input w-full"
                   value={sort}
@@ -638,36 +723,19 @@ function SubscriptionsContent() {
                   <option value="customer">{t('admin.subscriptions.sort_customer', {}, 'Customer name')}</option>
                 </select>
               </label>
-              <div className="flex items-end gap-2 md:col-span-2 xl:col-span-1">
-                <button type="submit" className="btn btn-primary flex-1 2xl:flex-none">
+              <div className="flex items-center gap-2 sm:ml-auto">
+                <button type="submit" className="btn btn-primary btn-sm whitespace-nowrap">
                   {t('admin.subscriptions.apply_filters', {}, 'Apply')}
                 </button>
-                <span
-                  className="inline-flex"
-                  title={t('common.clear_filters', {}, 'Clear filters')}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm whitespace-nowrap"
+                  aria-label={t('common.clear_filters', {}, 'Clear filters')}
+                  disabled={!hasFilters && !draftFilters.customer && !draftFilters.plan_id && !draftFilters.expires_before}
+                  onClick={clearFilters}
                 >
-                  <button
-                    type="button"
-                    className="btn btn-secondary h-11 w-11 shrink-0 p-0"
-                    aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!hasFilters && !draftFilters.customer && !draftFilters.plan_id && !draftFilters.expires_before}
-                    onClick={clearFilters}
-                  >
-                    <svg
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
-                      <path d="m16.5 16.5 4 4m0-4-4 4" />
-                    </svg>
-                  </button>
-                </span>
+                  {t('common.clear_filters', {}, 'Clear filters')}
+                </button>
               </div>
             </form>
           </div>
@@ -791,9 +859,9 @@ function SubscriptionsContent() {
             />
           )}
 
-          <ListPagination
+          <QuietQueuePagination
             offset={offset}
-            limit={PAGE_SIZE}
+            limit={limit}
             total={total}
             isLoading={isRefreshing}
             onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })}

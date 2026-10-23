@@ -175,6 +175,8 @@ test('subscription risk queue persists server filters and inspector focus while 
   const summaryStrip = pageHeader.locator('[data-density="compact"]');
   await expect(summaryStrip.getByText(/^Critical$|^严重风险$/i)).toBeVisible();
   await expect(summaryStrip.getByText(/^Warning$|^警告$/i)).toBeVisible();
+  await expect(summaryStrip.getByText(/^Monitor$|^待观察$/i)).toHaveCount(0);
+  await expect(page.locator('[data-ui="subscription-quiet-pagination"]')).toContainText(/1-2|第 1–2|1–2/);
   const headerScreenshotPath = testInfo.outputPath('admin-subscriptions-unified-header-pc.png');
   await pageHeader.screenshot({ path: headerScreenshotPath });
   await testInfo.attach('admin-subscriptions-unified-header-pc', {
@@ -185,32 +187,28 @@ test('subscription risk queue persists server filters and inspector focus while 
   const queueItems = page.locator('[data-ui="subscription-queue-item"]');
   await expect(queueItems.nth(0)).toContainText('Zeta Customer');
   await expect(queueItems.nth(1)).toContainText('Beta Customer');
-  await expect(page.getByRole('combobox', { name: /Follow-up state|处理状态/i })).toHaveValue('needs_action');
+  const riskPills = page.locator('[data-ui="subscription-risk-pills"]');
+  const statusPills = page.locator('[data-ui="subscription-status-pills"]');
+  await expect(riskPills).toBeVisible();
+  await expect(statusPills).toBeVisible();
+  await expect(riskPills.getByRole('button', { name: /Needs follow-up|需要处理/i })).toHaveAttribute('aria-pressed', 'true');
   const filterToolbar = page.locator('[data-ui="subscription-filter-toolbar"]');
   const filterControls = filterToolbar.locator('input, select, button');
-  await expect(filterControls).toHaveCount(8);
-  const filterControlBoxes = await filterControls.evaluateAll((elements) =>
-    elements.map((element) => {
-      const box = element.getBoundingClientRect();
-      return { top: box.top, bottom: box.bottom };
-    })
-  );
-  expect(Math.max(...filterControlBoxes.map((box) => box.bottom)) - Math.min(...filterControlBoxes.map((box) => box.bottom))).toBeLessThan(2);
-  expect(filterControlBoxes.every((box) => box.bottom > box.top)).toBe(true);
+  await expect(filterControls).toHaveCount(6);
   await expect(page.getByText(/Service coverage is currently stable|服务覆盖当前稳定/i)).toHaveCount(0);
   await expect(page.getByText(/acct_zeta|acct_beta|acct_alpha/i)).toHaveCount(0);
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toHaveCount(0);
   await expect(queueItems.nth(0).getByRole('button', { name: /^Inspect$|^检查$|^檢查$/i })).toHaveAttribute('aria-pressed', 'false');
 
-  await page.getByRole('combobox', { name: /Follow-up state|处理状态/i }).selectOption('all');
+  await riskPills.getByRole('button', { name: /All follow-up states|全部处理状态|^All$|^全部$/i }).click();
   await expect(queueItems).toHaveCount(3);
   const stableQueueItem = queueItems.filter({ hasText: 'Alpha Customer' });
   await expect(stableQueueItem).toHaveCount(1);
   await expect(
     stableQueueItem.getByText(/Service coverage is currently stable|服务覆盖当前稳定/i)
   ).toBeHidden();
-  await page.getByRole('combobox', { name: /Follow-up state|处理状态/i }).selectOption('needs_action');
-  await page.getByRole('combobox', { name: /Subscription status|订阅状态/i }).selectOption('active');
+  await riskPills.getByRole('button', { name: /Needs follow-up|需要处理/i }).click();
+  await statusPills.getByRole('button', { name: /^Active$|^活跃$|^生效中$/i }).click();
   await expect(page).toHaveURL(/status=active/);
   await expect(queueItems).toHaveCount(1);
 

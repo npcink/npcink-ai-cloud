@@ -10,7 +10,7 @@ assert.match(source, /BackofficePageHeader[\s\S]*secondaryAction=\{[\s\S]*summar
 assert.doesNotMatch(source, /BackofficeMetricStrip|BackofficeLayer|BackofficePrimaryPanel|BackofficeStackCard/, 'subscription queue must not regress to a section header, metric cards, or a landing-page hero');
 
 assert.match(source, /usePathname[\s\S]*useRouter[\s\S]*useSearchParams/, 'queue state must be addressable from the route');
-for (const parameter of ['risk', 'status', 'account_id', 'plan_id', 'expires_before', 'sort', 'offset', 'focus']) {
+for (const parameter of ['risk', 'status', 'account_id', 'plan_id', 'expires_before', 'sort', 'limit', 'offset', 'focus']) {
   assert.match(source, new RegExp(`searchParams\\.get\\('${parameter}'\\)|${parameter}:`), `${parameter} must participate in route-backed queue state`);
 }
 
@@ -21,7 +21,12 @@ assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\
 
 assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
-assert.match(source, /data-ui="subscription-filter-toolbar"[\s\S]*risk_filter_label[\s\S]*status_filter_label[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'risk, lifecycle, customer, package, expiry, and sort controls must share one toolbar');
+assert.match(source, /SUBSCRIPTION_PAGE_SIZE = 10/, 'Quiet subscription queue default page size must be 10');
+assert.match(source, /data-ui="subscription-risk-pills"[\s\S]*BackofficeFilterPill[\s\S]*data-ui="subscription-status-pills"[\s\S]*BackofficeFilterPill[\s\S]*data-ui="subscription-filter-toolbar"/, 'risk and lifecycle must use Quiet filter pills above the compact secondary toolbar');
+assert.match(source, /data-ui="subscription-filter-toolbar"[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'customer, package, expiry, and sort controls must share one Quiet secondary toolbar');
+assert.match(source, /data-ui="subscription-quiet-pagination"[\s\S]*common\.pagination_summary/, 'Quiet subscription queue must always show range / total pagination');
+assert.match(source, /summaryItems=\{\[[\s\S]*summary_critical_metric[\s\S]*summary_warning_metric[\s\S]*\]\}/, 'header summary must keep actionable critical/warning signals');
+assert.doesNotMatch(source, /summary_monitor_metric[\s\S]*summary_stable_metric[\s\S]*common\.updated_at/, 'header summary must not keep decorative metric wall entries');
 assert.doesNotMatch(source, /function subscriptionRiskLevel|function subscriptionPriority|subscriptions\]\.sort|subscriptions\)\.sort/, 'the browser must not rebuild subscription risk or global ordering');
 assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'subscriptions must render as a responsive task list');
 assert.doesNotMatch(source, /<table/, 'the primary subscription queue must not depend on a desktop table');
@@ -42,7 +47,7 @@ assert.match(
   'subscription queue and detail routes must own the commercial sidebar entry'
 );
 
-assert.match(source, /params\.set\('sort', sort\)[\s\S]*params\.set\('limit'[\s\S]*<ListPagination/, 'server-filtered results must send an explicit sort and keep pagination');
+assert.match(source, /params\.set\('sort', sort\)[\s\S]*params\.set\('limit'[\s\S]*<QuietQueuePagination/, 'server-filtered results must send an explicit sort and keep Quiet pagination');
 assert.match(source, /Filters, risk classification, and sorting are applied across all matching subscriptions by the service API/, 'the UI must state the backend-owned global queue scope');
 assert.match(source, /does not create checkout, payment, entitlement, or WordPress write controls/, 'inspector copy must preserve the Cloud service-plane boundary');
 
