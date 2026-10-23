@@ -608,3 +608,138 @@ def test_data_export_postgres_lock_timeout_preserves_code(closure_database, monk
         writer.rollback()
     with get_session(url) as session:
         assert session.get(PortalLoginCode, payload["challenge_id"]).status == "pending"
+
+
+# Registry B1: use real Alembic, not metadata.create_all/init_schema.
+REGISTRY_REVISION = "20261024_0090"
+
+
+@pytest.fixture
+def registry_database(portal_database):
+    _migrate(portal_database, REVISION)
+    with get_session(portal_database) as session:
+        assert "portal_sessions" not in inspect(session.connection()).get_table_names()
+    _migrate(portal_database, REGISTRY_REVISION)
+    with get_session(portal_database) as session:
+        session.add(Principal(principal_id="prn_registry", email="registry@example.test"))
+        session.commit()
+    return portal_database
+
+
+def _registry_row(**overrides):
+    from datetime import timedelta
+
+    now = datetime(2026, 10, 24, tzinfo=UTC)
+    values = dict(
+        session_id="session_registry", principal_id="prn_registry", session_version=1,
+        created_at=now, absolute_expires_at=now + timedelta(hours=1),
+        auth_method="email_code",
+    )
+    values.update(overrides)
+    from app.core.models import PortalSession
+
+    return PortalSession(**values)
+
+
+def test_registry_postgres_migration_round_trip(registry_database):
+    from app.core.models import PortalSession
+
+    with get_session(registry_database) as session:
+        inspector = inspect(session.connection())
+        assert {i["name"] for i in inspector.get_indexes("portal_sessions")} == {
+            "ix_portal_sessions_principal_created", "ix_portal_sessions_expiry"
+        }
+        assert len(inspector.get_check_constraints("portal_sessions")) == 6
+        session.add(_registry_row())
+        session.commit()
+    with get_session(registry_database) as session:
+        row = session.get(PortalSession, "session_registry")
+        assert row.principal_id == "prn_registry"
+        assert row.session_version == 1
+        assert row.created_at == datetime(2026, 10, 24, tzinfo=UTC)
+        assert row.revoked_at is None and row.client_hint is None
+    _migrate(registry_database, REVISION, downgrade=True)
+    with get_session(registry_database) as session:
+        assert "portal_sessions" not in inspect(session.connection()).get_table_names()
+        assert session.get(Principal, "prn_registry") is not None
+        assert session.scalar(text("SELECT version_num FROM alembic_version")) == REVISION
+    _migrate(registry_database, REGISTRY_REVISION)
+    with get_session(registry_database) as session:
+        assert session.scalar(select(func.count()).select_from(PortalSession)) == 0
+
+
+@pytest.mark.parametrize("overrides,sqlstate", [
+    ({"session_id": ""}, "23514"),
+    ({"session_version": 0}, "23514"),
+    ({"session_version": None}, "23502"),
+    ({"absolute_expires_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
+    ({"auth_method": "admin"}, "23514"),
+    ({"revoke_reason": "logout"}, "23514"),
+    ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC)}, "23514"),
+    ({"revoked_at": datetime(2026, 10, 23, tzinfo=UTC), "revoke_reason": "logout"}, "23514"),
+    ({"revoked_at": datetime(2026, 10, 24, tzinfo=UTC), "revoke_reason": ""}, "23514"),
+    ({"client_hint": ""}, "23514"),
+    ({"client_hint": "x" * 121}, "22001"),
+    ({"principal_id": "missing-principal"}, "23503"),
+])
+def test_registry_postgres_rejects_invalid_rows(registry_database, overrides, sqlstate):
+    from sqlalchemy.exc import DataError, IntegrityError
+
+    from app.core.models import PortalSession
+
+    with get_session(registry_database) as session:
+        with pytest.raises((IntegrityError, DataError)) as caught:
+            session.add(_registry_row(**overrides))
+            session.flush()
+        assert getattr(caught.value.orig, "sqlstate", None) == sqlstate
+        session.rollback()
+    with get_session(registry_database) as session:
+        assert session.scalar(select(func.count()).select_from(PortalSession)) == 0
+
+
+def test_registry_postgres_unique_fk_and_caller_rollback(registry_database):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.models import PortalSession
+
+    with get_session(registry_database) as session:
+        session.add(_registry_row())
+        session.commit()
+    with get_session(registry_database) as session:
+        with pytest.raises(IntegrityError) as duplicate:
+            session.add(_registry_row())
+            session.flush()
+        assert getattr(duplicate.value.orig, "sqlstate", None) == "23505"
+        session.rollback()
+        with pytest.raises(IntegrityError) as referenced:
+            session.delete(session.get(Principal, "prn_registry"))
+            session.flush()
+        assert getattr(referenced.value.orig, "sqlstate", None) == "23503"
+        session.rollback()
+        session.add(_registry_row(session_id="rolled_back"))
+        session.flush()
+        session.rollback()
+    with get_session(registry_database) as session:
+        assert session.get(PortalSession, "rolled_back") is None
+        assert session.get(PortalSession, "session_registry") is not None
+        assert session.get(Principal, "prn_registry") is not None
+
+
+def test_registry_postgres_principal_lock_is_transaction_scoped(registry_database):
+    from sqlalchemy.exc import OperationalError
+
+    from app.adapters.repositories.portal_session_repository import PortalSessionRepository
+
+    with get_session(registry_database) as owner, get_session(registry_database) as contender:
+        repo = PortalSessionRepository(owner)
+        assert repo.lock_principal(principal_id="prn_registry") is not None
+        contender.execute(text("SET LOCAL lock_timeout = '150ms'"))
+        with pytest.raises(OperationalError) as caught:
+            PortalSessionRepository(contender).lock_principal(principal_id="prn_registry")
+        assert getattr(caught.value.orig, "sqlstate", None) == "55P03"
+        contender.rollback()
+        owner.rollback()
+        assert PortalSessionRepository(contender).lock_principal(
+            principal_id="prn_registry"
+        ) is not None
+        contender.rollback()
