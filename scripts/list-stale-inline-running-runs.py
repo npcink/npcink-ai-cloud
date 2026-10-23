@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Read-only inventory of stale inline runs still stuck in status=running.
 
-Does not mutate the database. To finish an orphan, use the existing operator
-repair action ``mark_stale_running_failed`` (requires reason + evidence) via
+Does not mutate the database. The runtime queue worker auto-marks inline runs
+stuck beyond ``RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS`` as failed with
+``runtime.stale_running_auto_failed`` after a per-run Provider-budget grace.
+For a row inside that window, use the existing operator repair action
+``mark_stale_running_failed`` (requires reason + evidence) via
 ``POST /v1/runs/{run_id}/repair (site-key HMAC, scope runtime:execute)`` — see
-``RuntimeService.repair_run``. Do not invent an automatic mark-finished path;
-that conflicts with runtime-provider-transaction-boundary-v1.
+``RuntimeService.repair_run``.
 
 Usage (from repo root, against a reachable DATABASE_URL):
 

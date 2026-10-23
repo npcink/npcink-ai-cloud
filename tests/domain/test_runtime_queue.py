@@ -18,7 +18,13 @@ from app.adapters.queue.base import RuntimeQueueError
 from app.adapters.queue.redis_runtime_queue import RedisRuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import RunRecord, ServiceAuditEvent, Site
+from app.core.models import (
+    ProviderCallRecord,
+    RunRecord,
+    ServiceAuditEvent,
+    Site,
+    UsageMeterEvent,
+)
 from app.core.secrets import encrypt_runtime_terminal_callback_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.errors import (
@@ -84,6 +90,24 @@ def _register_runtime_callback(database_url: str, callback_url: str) -> None:
                 }
             }
         }
+        session.commit()
+
+
+def _force_running_run(
+    database_url: str,
+    run_id: str,
+    *,
+    processing_age: timedelta,
+) -> None:
+    with get_session(database_url) as session:
+        record = session.get(RunRecord, run_id)
+        assert record is not None
+        record.status = "running"
+        record.started_at = datetime.now(UTC) - processing_age - timedelta(minutes=5)
+        record.processing_started_at = datetime.now(UTC) - processing_age
+        record.finished_at = None
+        record.callback_status = "not_requested"
+        record.callback_next_attempt_at = None
         session.commit()
 
 
@@ -1041,6 +1065,263 @@ def test_bounded_auto_repairs_redeliver_callback_overdue_runs_and_surface_operat
         assert audit_event.actor_kind == "system_worker"
         assert audit_event.actor_ref == "callback_dispatch"
         assert audit_event.scope_id == callback_run.run_id
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_fail_stale_inline_run_after_auto_fail_grace(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    service = _runtime_service(database_url)
+    stale = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-auto-fail-inline-001",
+            trace_id="trace-queue-domain-auto-fail-inline-001",
+            input_payload={"messages": [{"role": "user", "content": "stale inline orphan"}]},
+        )
+    )
+    _force_running_run(database_url, stale.run_id, processing_age=timedelta(minutes=31))
+
+    with get_session(database_url) as session:
+        usage_events_before = len(list(session.scalars(select(UsageMeterEvent))))
+        provider_calls_before = len(list(session.scalars(select(ProviderCallRecord))))
+
+    repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=0,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=5,
+        max_stale_running_auto_fail=5,
+    )
+
+    assert repair["auto_failed_stale_running_total"] == 1
+    auto_failed = cast(list[dict[str, object]], repair["auto_failed_stale_running"])
+    assert auto_failed[0]["run_id"] == stale.run_id
+    assert auto_failed[0]["error_code"] == "runtime.stale_running_auto_failed"
+    assert cast(int, auto_failed[0]["age_seconds"]) >= 1800
+    assert repair["running_stale_operator_queue_total"] == 0
+
+    with get_session(database_url) as session:
+        record = session.get(RunRecord, stale.run_id)
+        assert record is not None
+        assert record.status == "failed"
+        assert record.error_code == "runtime.stale_running_auto_failed"
+        assert record.finished_at is not None
+        assert record.execution_input_ciphertext is None
+        assert len(list(session.scalars(select(UsageMeterEvent)))) == usage_events_before
+        assert len(list(session.scalars(select(ProviderCallRecord)))) == provider_calls_before
+        audit_event = session.scalar(
+            select(ServiceAuditEvent)
+            .where(ServiceAuditEvent.event_kind == "runtime.repair.auto_fail_stale_running")
+            .order_by(ServiceAuditEvent.created_at.desc(), ServiceAuditEvent.id.desc())
+        )
+        assert audit_event is not None
+        assert audit_event.actor_kind == "system_worker"
+        assert audit_event.actor_ref == "runtime_queue"
+        assert audit_event.scope_id == stale.run_id
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_keep_in_grace_long_budget_and_offload_runs_as_suggestions(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    service = _runtime_service(database_url)
+    in_grace = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-auto-fail-grace-001",
+            trace_id="trace-queue-domain-auto-fail-grace-001",
+            input_payload={"messages": [{"role": "user", "content": "inside grace"}]},
+        )
+    )
+    long_budget = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            timeout_seconds=3600,
+            idempotency_key="queue-domain-auto-fail-long-budget-001",
+            trace_id="trace-queue-domain-auto-fail-long-budget-001",
+            input_payload={"messages": [{"role": "user", "content": "long provider budget"}]},
+        )
+    )
+    offload = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            execution_pattern="whole_run_offload",
+            task_backend={"enabled": True, "mode": "polling"},
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-auto-fail-offload-001",
+            trace_id="trace-queue-domain-auto-fail-offload-001",
+            input_payload={"messages": [{"role": "user", "content": "offload run"}]},
+        )
+    )
+    _force_running_run(database_url, in_grace.run_id, processing_age=timedelta(minutes=20))
+    _force_running_run(database_url, long_budget.run_id, processing_age=timedelta(minutes=31))
+    _force_running_run(database_url, offload.run_id, processing_age=timedelta(minutes=31))
+
+    repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=0,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=5,
+        max_stale_running_auto_fail=5,
+    )
+
+    assert repair["auto_failed_stale_running_total"] == 0
+    suggestions = cast(list[dict[str, object]], repair["running_stale_operator_queue"])
+    assert {item["run_id"] for item in suggestions} == {
+        in_grace.run_id,
+        long_budget.run_id,
+        offload.run_id,
+    }
+
+    with get_session(database_url) as session:
+        for run_id in (in_grace.run_id, long_budget.run_id, offload.run_id):
+            record = session.get(RunRecord, run_id)
+            assert record is not None
+            assert record.status == "running"
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_auto_fail_respects_batch_limit(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    service = _runtime_service(database_url)
+    older = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-auto-fail-bounded-older-001",
+            trace_id="trace-queue-domain-auto-fail-bounded-older-001",
+            input_payload={"messages": [{"role": "user", "content": "older orphan"}]},
+        )
+    )
+    newer = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-auto-fail-bounded-newer-001",
+            trace_id="trace-queue-domain-auto-fail-bounded-newer-001",
+            input_payload={"messages": [{"role": "user", "content": "newer orphan"}]},
+        )
+    )
+    _force_running_run(database_url, older.run_id, processing_age=timedelta(minutes=40))
+    _force_running_run(database_url, newer.run_id, processing_age=timedelta(minutes=35))
+
+    first_repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=0,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=5,
+        max_stale_running_auto_fail=1,
+    )
+
+    assert first_repair["auto_failed_stale_running_total"] == 1
+    first_batch = cast(list[dict[str, object]], first_repair["auto_failed_stale_running"])
+    assert first_batch[0]["run_id"] == older.run_id
+
+    with get_session(database_url) as session:
+        newer_record = session.get(RunRecord, newer.run_id)
+        assert newer_record is not None
+        assert newer_record.status == "running"
+
+    second_repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=0,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=5,
+        max_stale_running_auto_fail=1,
+    )
+
+    assert second_repair["auto_failed_stale_running_total"] == 1
+    second_batch = cast(list[dict[str, object]], second_repair["auto_failed_stale_running"])
+    assert second_batch[0]["run_id"] == newer.run_id
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_schedule_terminal_callback_when_auto_failing(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+    _register_runtime_callback(database_url, "https://example.com/callback-auto-fail")
+
+    service = _runtime_service(database_url)
+    stale = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            task_backend={"callback_mode": "polling_preferred"},
+            idempotency_key="queue-domain-auto-fail-callback-001",
+            trace_id="trace-queue-domain-auto-fail-callback-001",
+            input_payload={"messages": [{"role": "user", "content": "callback orphan"}]},
+        )
+    )
+    _force_running_run(database_url, stale.run_id, processing_age=timedelta(minutes=31))
+
+    repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=0,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=5,
+        max_stale_running_auto_fail=5,
+    )
+
+    assert repair["auto_failed_stale_running_total"] == 1
+    with get_session(database_url) as session:
+        record = session.get(RunRecord, stale.run_id)
+        assert record is not None
+        assert record.status == "failed"
+        assert record.callback_status == "pending"
+        assert record.callback_next_attempt_at is not None
 
     dispose_engine(database_url)
 

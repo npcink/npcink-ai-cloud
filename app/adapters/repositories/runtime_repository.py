@@ -52,6 +52,10 @@ class RuntimeRepository:
     def get_run(self, run_id: str) -> RunRecord | None:
         return self.session.get(RunRecord, run_id)
 
+    def get_run_for_update(self, run_id: str) -> RunRecord | None:
+        statement = select(RunRecord).where(RunRecord.run_id == run_id).with_for_update()
+        return self.session.scalar(statement)
+
     def get_run_by_idempotency(
         self,
         site_id: str,
@@ -746,6 +750,27 @@ class RuntimeRepository:
                 ),
             },
         }
+
+    def list_stale_inline_running_runs(
+        self,
+        *,
+        processing_started_before: datetime,
+        site_id: str | None = None,
+        limit: int = 20,
+    ) -> list[RunRecord]:
+        statement = (
+            select(RunRecord)
+            .where(
+                RunRecord.status == "running",
+                RunRecord.execution_pattern == "inline",
+                RunRecord.processing_started_at.is_not(None),
+                RunRecord.processing_started_at <= processing_started_before,
+                *self._site_filters(site_id),
+            )
+            .order_by(RunRecord.processing_started_at.asc(), RunRecord.started_at.asc())
+            .limit(max(1, int(limit)))
+        )
+        return list(self.session.scalars(statement))
 
     def list_runtime_diagnostic_runs(
         self,

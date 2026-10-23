@@ -276,19 +276,26 @@ incident window were discarded, so neither explanation could be confirmed.
 the whole site out — is already fixed. PR #1171 (merged as `1cec47c1`) makes
 `count_active_runs` stop counting `running` rows older than
 `RUNTIME_INLINE_RUN_LEASE_SECONDS` (180 s) and was deployed to M4 on
-2026-10-21. Investigating the cause would not change that behaviour, and the
-two changes that *would* remove the cause were both rejected by existing
-contracts:
+2026-10-21. Then, on 2026-10-23, the operator accepted a separate bounded
+liveness fallback: the runtime queue worker auto-fails an inline run stuck
+beyond a per-run grace (never shorter than 30 minutes, extended by the run's
+configured timeout/retry budget) as `runtime.stale_running_auto_failed`, with a
+row-lock status/pattern/age recheck and no fabricated Provider usage. A
+permanent orphan therefore no longer waits for an operator, and the operator
+`mark_stale_running_failed` path still covers runs inside the grace window.
+
+The root cause remains unproven, and the change that *would* remove the
+process-loss cause is still rejected by an existing contract:
 
 - `tests/domain/test_runtime_provider_transactions.py::test_unknown_dispatch_failure_preserves_evidence_and_never_automatically_replays`
-  asserts an unknown dispatch failure leaves the run in `running`; terminating it
-  automatically is exactly the transition
-  `docs/runtime-provider-transaction-boundary-v1.md` forbids;
+  still asserts an unknown dispatch failure leaves the run in `running` at the
+  time of failure; that immediate behaviour is unchanged. Auto-fail is a
+  time-based worker fallback, not an immediate transition in the failure path;
 - `tests/contract/test_dev_frontend_dependency_guard.py` asserts `--reload-dir app`
   is present, so removing dev `--reload` deletes the behaviour that test guards.
 
-A root-cause fix therefore means changing an accepted standard rather than
-writing code, and one unproven sample does not justify that.
+A root-cause fix therefore still means changing an accepted standard rather
+than writing code, and one unproven sample does not justify that.
 
 **Trigger to act.** Any of:
 
