@@ -166,6 +166,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
 
 
   const handleStartPlanTrial = async (tierId: 'plus' | 'pro') => {
+    if (!salesAvailable) return;
     setPackagePending(`trial:${tierId}`);
     setPackageError(null);
     try {
@@ -181,6 +182,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   };
 
   const handleCreateSubscriptionOrder = async (offer: PortalPlanOffer) => {
+    if (!salesAvailable) return;
     const paymentWindow = preparePaymentWindow();
     setPackagePending(`order:${offer.tier_id}`);
     setPackageError(null);
@@ -225,6 +227,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   };
 
   const handleCreateCreditPackOrder = async (packId: string) => {
+    if (!salesAvailable) return;
     const paymentWindow = preparePaymentWindow();
     setCreditPackPending(packId);
     setCreditPackError(null);
@@ -287,7 +290,9 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
   const trialDays = Number(trial?.trial_days || selectedTrialOffer?.trial_days || 14);
   const activeTrialTier = String(trial?.highest_tier_id || trial?.tier_id || currentPlanId || '').toLowerCase();
   const activeTrialTierLabel = activeTrialTier === 'plus' ? 'Plus' : activeTrialTier === 'pro' ? 'Pro' : '';
-  const availableCreditPacks = creditPacks?.items || [];
+  const salesAvailable = planOffers?.commercial_available !== false
+    && creditPacks?.commercial_available !== false;
+  const availableCreditPacks = salesAvailable ? creditPacks?.items || [] : [];
   const selectedPackageOffer = selectedPackageTier && selectedPackageTier !== 'free'
     ? offersByTier.get(selectedPackageTier)
     : null;
@@ -349,7 +354,14 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
     void handleCreateCreditPackOrder(selectedCreditPackId);
   };
 
-  const packageOptions = (
+  const commercialPausedMessage = t('portal.billing.commercial_paused', {}, 'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.');
+  const commercialPausedNotice = !salesAvailable ? (
+    <p role="status" className="text-sm text-slate-600 dark:text-slate-300">
+      {commercialPausedMessage}
+    </p>
+  ) : null;
+
+  const packageOptions = salesAvailable ? (
     <PortalPackageChangePanel
       t={t}
       currentPlanId={currentPlanId}
@@ -367,7 +379,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
       onConfirm={handleConfirmPackageSelection}
       onAgencyPurchase={(offer) => void handleCreateSubscriptionOrder(offer)}
     />
-  );
+  ) : commercialPausedNotice;
 
   const trialStatusTitle = trialState === 'eligible'
     ? t('portal.package.trial_eligible_title', { days: String(trialDays) }, `${trialDays}-day paid-package trial available`)
@@ -395,7 +407,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
           ? t('portal.package.trial_blocked_desc', {}, 'This account already has an active paid package, so a trial cannot be started. Renew or change the package instead.')
           : t('portal.package.trial_unavailable_desc', {}, 'No self-service trial is available for this account. Package purchase remains available.');
 
-  const trialOptions = (
+  const trialOptions = salesAvailable ? (
     <PortalTrialEligibilityPanel
       t={t}
       state={trialState}
@@ -409,7 +421,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
       onSelectTier={setTrialTierSelection}
       onStartTrial={(tier) => void handleStartPlanTrial(tier)}
     />
-  );
+  ) : commercialPausedNotice;
 
   const paymentOrdersCard = (
     <div id="payment-orders" className="scroll-mt-24">
@@ -445,7 +457,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} compact />;
   }
 
-  const hasVisibleBillingChrome = Boolean(paymentLaunchNotice) || Boolean(error);
+  const hasVisibleBillingChrome = Boolean(paymentLaunchNotice) || Boolean(error) || !salesAvailable;
   const anyCommercialDialogOpen = activeCommercialDialog !== null;
 
   const packageOptionsAnchor = (
@@ -468,6 +480,17 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
       >
         {packageOptions}
+        <button
+          type="button"
+          className="btn btn-secondary mt-4"
+          disabled={!salesAvailable}
+          onClick={() => {
+            setPackageError(null);
+            setActiveCommercialDialog('trial');
+          }}
+        >
+          {t('portal.package.trial_eligibility_action', {}, 'Trial eligibility')}
+        </button>
       </Modal>
 
       <PortalCreditPackDialog
@@ -476,7 +499,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
         packs={availableCreditPacks}
         selectedPackId={selectedCreditPackId}
         pendingPackId={creditPackPending}
-        error={creditPackError}
+        error={creditPackError || (!salesAvailable ? commercialPausedMessage : null)}
         onClose={() => closeCommercialDialog()}
         onSelect={setSelectedCreditPackId}
         onConfirm={handleConfirmCreditPackSelection}
@@ -515,6 +538,7 @@ export function PortalAccountCommercePanels({ surface }: PortalAccountCommercePa
     <div className="space-y-5" data-portal-account="commerce" data-portal-billing="package-commerce">
       {packageOptionsAnchor}
       {paymentLaunchNotice}
+      {!anyCommercialDialogOpen ? commercialPausedNotice : null}
 
       {error ? (
         <PortalCard variant="portal" className="border-rose-200 bg-rose-50/80 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">

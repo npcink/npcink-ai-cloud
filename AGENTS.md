@@ -20,10 +20,20 @@ Paused product entrypoints (retain code; do not re-enable via settings):
 [reversible-feature-pauses-v1.md](docs/reversible-feature-pauses-v1.md),
 [seo-specialist-pause-v1.md](docs/seo-specialist-pause-v1.md).
 
-Commercial freeze (Phase 1): plans / credit-packs / subscriptions / orders / payments are
-**frozen for new development** — do not start new commercial features, and do not delete or
-disable the existing code. This is a development freeze, **not** a runtime pause: existing
-commercial reads and credit/entitlement paths stay operational. Reversal is a human decision.
+Commercial freeze (Phase 1) remains in effect outside the bounded existing-sales
+exception below. Do not start new commercial features, customer notification
+expansion, or broad Admin operations. Keep existing commercial reads and
+credit/entitlement paths operational; do not delete or disable existing code.
+Follow [commercial-development-next-stage-v1.md](docs/engineering/commercial-development-next-stage-v1.md).
+
+Operator decision on 2026-10-23 permits all eligible normal accounts to buy
+existing Plus/Pro monthly packages and credit packs, and to start the existing
+shared 14-day Plus/Pro trial. No invitation, account-age gate, or three-user
+allowlist is required. Preserve current prices and one-trial-per-customer rules.
+The three-user Free validation runs separately and does not gate this rollout.
+See the bounded rollout contract in the commercial next-stage document;
+production deployment/configuration and real transaction tests remain separate
+operations requiring explicit authorization.
 
 ## Follow-on (Phase 2–3)
 

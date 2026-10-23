@@ -345,6 +345,28 @@ def _claim_portal_mutation_once(
         )
 
 
+def release_unexecuted_portal_mutation(*, database_url: str, claim: PortalIdempotencyClaim) -> None:
+    """Release only our processing claim after a known pre-write rejection."""
+    with get_session(database_url) as session:
+        result = session.execute(
+            delete(PortalMutationIdempotencyReceipt).where(
+                PortalMutationIdempotencyReceipt.receipt_id == claim.receipt_id,
+                PortalMutationIdempotencyReceipt.principal_id == claim.principal_id,
+                PortalMutationIdempotencyReceipt.idempotency_key == claim.idempotency_key,
+                PortalMutationIdempotencyReceipt.request_fingerprint == claim.request_fingerprint,
+                PortalMutationIdempotencyReceipt.state == PORTAL_IDEMPOTENCY_STATE_PROCESSING,
+                PortalMutationIdempotencyReceipt.claim_token == claim.claim_token,
+            )
+        )
+        if int(getattr(result, "rowcount", 0) or 0) != 1:
+            raise PortalIdempotencyError(
+                409,
+                "portal.idempotency_in_progress",
+                "Portal claim ownership changed",
+            )
+        session.commit()
+
+
 def complete_portal_mutation(
     *,
     database_url: str,

@@ -57,6 +57,7 @@ export function formatPortalErrorMessage(
     switch (error.errorCode) {
       case 'portal.login_code_rate_limited':
       case 'portal.oauth_state_rate_limited':
+      case 'portal.subscription_order_rate_limited':
       case 'portal.email_change_rate_limited': {
         const retryAfterSeconds = readPositiveErrorNumber(
           error.details,
@@ -75,6 +76,12 @@ export function formatPortalErrorMessage(
           'Too many portal requests were sent in a short window. Wait a few minutes and try again.'
         );
       }
+      case 'service.commercial_temporarily_paused':
+        return t(
+          'portal.billing.commercial_paused',
+          undefined,
+          'New purchases and trials are temporarily unavailable. Existing orders and benefits remain available.'
+        );
       case 'auth.portal_login_code_invalid':
       case 'auth.portal_login_code_required':
       case 'auth.portal_email_change_code_invalid':

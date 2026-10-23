@@ -625,6 +625,7 @@ async def resolve_portal_request_context(
     allow_session_cookies: bool = False,
     session_required_error_code: str = "auth.portal_session_required",
     session_required_message: str = "portal session is required",
+    allow_business_reconciliation: bool = False,
 ) -> PortalAuthContext | JSONResponse:
     if _has_portal_request_headers(request):
         auth = await authorize_portal_request(
@@ -665,6 +666,7 @@ async def resolve_portal_request_context(
             body=await request.body(),
             site_id=auth.site_id,
         )
+        request.state.portal_request_fingerprint = fingerprint
         outcome = await run_in_threadpool(
             claim_portal_mutation,
             database_url=get_cloud_services(request).settings.database_url,
@@ -680,6 +682,11 @@ async def resolve_portal_request_context(
             settings=get_cloud_services(request).settings,
         )
     except PortalIdempotencyError as error:
+        if allow_business_reconciliation and error.error_code == "portal.idempotency_indeterminate":
+            # The fingerprint was checked before this error. Only a durable business
+            # replay may proceed; the order's pre-create guard must still fail closed.
+            request.state.portal_idempotency_reconciliation = True
+            return auth
         return portal_json_error(
             request,
             status_code=error.status_code,

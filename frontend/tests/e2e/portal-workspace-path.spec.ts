@@ -121,6 +121,7 @@ function buildPortalSession(
 async function installPortalMocks(
   page: Page,
   options: {
+    commercialEmergencyStop?: boolean;
     paymentReturnFlow?: boolean;
     paymentReturnProcessingStep?: boolean;
     delaySessionRefresh?: boolean;
@@ -145,7 +146,6 @@ async function installPortalMocks(
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
-  let paymentReturnEntitlementsFailed = false;
   let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
   const accountProjectionRequests: string[] = [];
@@ -312,9 +312,7 @@ async function installPortalMocks(
       if (
         options.failPaymentReturnEntitlements
         && paymentReturnConfirmed
-        && !paymentReturnEntitlementsFailed
       ) {
-        paymentReturnEntitlementsFailed = true;
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
         return;
       }
@@ -664,6 +662,10 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/credit-packs') {
+      if (options.commercialEmergencyStop) {
+        await fulfillJson(route, { commercial_available: false, items: [] });
+        return;
+      }
       await fulfillJson(route, {
         site_id: '',
         account_id: 'acct_portal',
@@ -879,10 +881,17 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/plan-offers') {
+      if (options.commercialEmergencyStop) {
+        await fulfillJson(route, {
+          commercial_available: false, items: [], comparison_tiers: [],
+          trial: { available: false, state: 'unavailable', allowed_tiers: [] },
+        });
+        return;
+      }
       await fulfillJson(route, {
         account_id: 'acct_portal',
         principal_id: 'principal_portal',
-        trial: { available: true, trial_days: 14 },
+        trial: { available: true, trial_days: 14, allowed_tiers: ['plus', 'pro'] },
         comparison_tiers: [
           {
             tier_id: 'free', label: 'Free', plan_id: 'free', plan_version_id: 'free_v1',
@@ -1720,6 +1729,39 @@ async function installPortalMocks(
   };
 }
 
+test('commercial emergency stop blocks package dialogs and preserves account history, then recovers', async ({ page }, testInfo) => {
+  const options = { commercialEmergencyStop: true };
+  const state = await installPortalMocks(page, options);
+  await page.goto('/portal/billing?action=upgrade');
+  const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
+  await expect(packageDialog.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toHaveCount(0);
+  await expect(packageDialog.getByRole('button', { name: /Trial eligibility|试用资格/i })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('commercial-paused.png'), fullPage: true });
+
+  await page.goto('/portal/billing?action=credits');
+  const creditDialog = page.getByRole('dialog', { name: /AI credit packs|AI 积分包/i });
+  await expect(creditDialog.getByRole('radio')).toHaveCount(0);
+  await expect(creditDialog.getByText(/New purchases and trials are temporarily unavailable|购买和新试用暂时不可用/)).toBeVisible();
+  await expect(creditDialog.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeDisabled();
+  await page.goto('/portal/account');
+  await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Trial eligibility|试用资格/i })).toHaveCount(0);
+  expect(state.portalStateMutationRequestCount()).toBe(0);
+
+  options.commercialEmergencyStop = false;
+  await page.goto('/portal/billing?action=upgrade');
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
+  await packageDialog.getByRole('button', { name: /Trial eligibility|试用资格/i }).click();
+  const trialDialog = page.getByRole('dialog', { name: /Trial eligibility|试用资格/i });
+  await expect(trialDialog.getByRole('button', { name: /Start 14-day Pro trial|开始 14 天 Pro 试用/i })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('commercial-restored.png'), fullPage: true });
+  await page.goto('/portal/billing?action=credits');
+  await creditDialog.getByRole('radio', { name: /Small AI credit pack|小 AI 积分包/i }).click();
+  await expect(creditDialog.getByRole('button', { name: /^Buy credits$|^购买积分$|^购买 AI 积分$/i })).toBeEnabled();
+  expect(state.portalStateMutationRequestCount()).toBe(0);
+});
+
 test('portal workspace interaction path: account overview to site detail and service pages', async ({
   page,
 }, testInfo) => {
@@ -1991,10 +2033,8 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
 test('confirmed Alipay return can retry when account totals fail to refresh', async ({
   page,
 }) => {
-  await installPortalMocks(page, {
-    paymentReturnFlow: true,
-    failPaymentReturnEntitlements: true,
-  });
+  const options = { paymentReturnFlow: true, failPaymentReturnEntitlements: true };
+  await installPortalMocks(page, options);
 
   await page.goto(
     '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
@@ -2010,6 +2050,8 @@ test('confirmed Alipay return can retry when account totals fail to refresh', as
   await expect(
     notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
   ).toBeVisible();
+  // Both Quiet billing catalog consumers must see the fault until manual retry.
+  options.failPaymentReturnEntitlements = false;
   await notice.getByRole('button', { name: /Retry|重试/i }).click();
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
     '12,419'

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
@@ -98,6 +99,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     self_serve_only=True,
                     now=now,
                 )
+                if self._offer_plan_is_published(repository, offer)
+                and (
+                    offer.tier_id not in STANDARD_PLAN_OFFERS
+                    or offer.offer_id == STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"]
+                )
             }
             tiers: list[dict[str, object]] = []
             for tier_id in tier_order:
@@ -134,8 +140,13 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     )
 
                 requires_offer = tier_id in {"plus", "pro"}
-                available = plan_version is not None and plan_active and (
-                    not requires_offer or offer is not None
+                available = (
+                    plan_version is not None
+                    and plan_active
+                    and (not requires_offer or offer is not None)
+                    and not (
+                        cast(Any, self).settings.commercial_emergency_stop and tier_id != "free"
+                    )
                 )
                 comparison_rights = comparison.get("comparison_rights")
                 if not isinstance(comparison_rights, dict):
@@ -179,7 +190,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                             )
                         ),
                         "trial_enabled": bool(
-                            offer.trial_enabled if offer is not None else False
+                            offer.trial_enabled if offer is not None and available else False
                         ),
                         "trial_days": int(
                             offer.trial_days if offer is not None else 0
@@ -208,10 +219,14 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             repository = CommercialSubscriptionLifecycleRepository(session)
             self._require_commerce_account(repository, account_id)
             self._ensure_standard_plan_offers_in_session(repository)
-            accessible_offers = repository.list_plan_offers(
-                account_id=account_id,
-                status=PLAN_OFFER_STATUS_ACTIVE,
-                now=now,
+            accessible_offers = (
+                []
+                if cast(Any, self).settings.commercial_emergency_stop
+                else repository.list_plan_offers(
+                    account_id=account_id,
+                    status=PLAN_OFFER_STATUS_ACTIVE,
+                    now=now,
+                )
             )
             canonical_standard_offer_ids = {
                 str(settings["offer_id"]) for settings in STANDARD_PLAN_OFFERS.values()
@@ -220,9 +235,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 offer
                 for offer in accessible_offers
                 if (
-                    offer.offer_id in canonical_standard_offer_ids
+                    (offer.offer_id in canonical_standard_offer_ids
+                     and offer.purchase_mode == PLAN_OFFER_PURCHASE_MODE_SELF_SERVE)
                     or (offer.tier_id == "agency" and offer.account_id == account_id)
                 )
+                and self._offer_plan_is_published(repository, offer)
             ]
             claim = repository.find_trial_claim(account_id=account_id)
             current = cast(Any, self)._select_primary_subscription(
@@ -256,6 +273,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 )
             session.commit()
             return {
+                "commercial_available": not cast(Any, self).settings.commercial_emergency_stop,
                 "items": [self._serialize_plan_offer(offer) for offer in offers],
                 "comparison_tiers": comparison_tiers,
                 "trial": self._serialize_account_trial_eligibility(
@@ -355,6 +373,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         provider: str = "alipay",
         site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
+        new_order_guard: Callable[[], None] | None = None,
+        replay_only: bool = False,
     ) -> dict[str, object]:
         service = cast(Any, self)
         now = service.now_factory()
@@ -372,10 +392,19 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
-            self._ensure_standard_plan_offers_in_session(repository)
             if idempotency_key:
                 existing_payment = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing_payment is not None:
+                    service._assert_commercial_order_replay(
+                        repository=repository,
+                        order=existing_payment,
+                        account_id=account_id,
+                        site_id=site_id,
+                        provider=normalized_provider,
+                        purchase_kind="subscription_plan",
+                        item_id=offer_id,
+                        audit_context=audit_context,
+                    )
                     existing_subscription_order = (
                         repository.get_subscription_order_by_payment_order(
                             existing_payment.order_id
@@ -387,6 +416,16 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                             existing_subscription_order
                         ),
                     }
+
+            if replay_only:
+                raise CommercialConflictError(
+                    "portal.idempotency_indeterminate",
+                    "The original Portal request requires reconciliation",
+                )
+            self._assert_commercial_sales_available()
+            if new_order_guard is not None:
+                new_order_guard()
+            self._ensure_standard_plan_offers_in_session(repository)
 
             service._reconcile_account_subscription_state_in_session(
                 repository=repository,
@@ -400,7 +439,9 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 now=now,
             )
             offer = repository.get_plan_offer(offer_id)
-            self._assert_offer_purchasable(offer, account_id=account_id, now=now)
+            self._assert_offer_purchasable(
+                offer, repository=repository, account_id=account_id, now=now
+            )
             assert offer is not None
             current = service._select_primary_subscription(
                 repository.list_account_subscriptions(account_id)
@@ -475,6 +516,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "source_subscription": self._subscription_snapshot(current),
                 "created_at": service._serialize_datetime(now),
             }
+            if audit_context is not None and audit_context.request_fingerprint:
+                metadata["portal_request_fingerprint"] = audit_context.request_fingerprint
             gateway = get_payment_gateway_provider(
                 normalized_provider,
                 config=service._payment_gateway_runtime_config(normalized_provider),
@@ -671,6 +714,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         trial_ai_credit_limit: int | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        self._assert_commercial_sales_available()
         service = cast(Any, self)
         now = service.now_factory()
         normalized_tier = str(tier_id or "").strip().lower()
@@ -764,10 +808,25 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                         "trial": self._serialize_trial_claim(claim),
                     }
 
-            plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
-                repository=repository,
-                tier_id=normalized_tier,
-            )
+            if normalized_tier in STANDARD_PLAN_OFFERS:
+                offer = repository.get_plan_offer(
+                    str(STANDARD_PLAN_OFFERS[normalized_tier]["offer_id"])
+                )
+                self._assert_offer_purchasable(
+                    offer, repository=repository, account_id=account_id, now=now
+                )
+                assert offer is not None
+                if not offer.trial_enabled or offer.trial_requires_approval:
+                    raise CommercialValidationError(
+                        "service.trial_not_offered",
+                        "The selected package does not offer a self-serve trial",
+                    )
+                plan_id, plan_version_id = offer.plan_id, offer.plan_version_id
+            else:
+                plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
+                    repository=repository,
+                    tier_id=normalized_tier,
+                )
             ai_credit_limit = self._resolve_trial_credit_limit(
                 tier_id=normalized_tier,
                 requested=trial_ai_credit_limit,
@@ -1403,8 +1462,24 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         self,
         repository: CommercialSubscriptionLifecycleRepository,
     ) -> None:
+        # Stop bootstrap writes without interrupting reads or existing settlement.
+        if cast(Any, self).settings.commercial_emergency_stop:
+            return
         service = cast(Any, self)
         for tier_id in STANDARD_PLAN_OFFERS:
+            # Bootstrap missing defaults only. Reads and checkout must not undo
+            # an operator's withdrawal or retarget an existing offer.
+            offer_id = str(STANDARD_PLAN_OFFERS[tier_id]["offer_id"])
+            if repository.get_plan_offer(offer_id) is not None:
+                continue
+            plan = repository.get_plan(tier_id)
+            if plan is not None and (
+                plan.status != PLAN_STATUS_ACTIVE
+                or not repository.list_plan_versions(
+                    plan_id=tier_id, status=PLAN_VERSION_STATUS_PUBLISHED, limit=1
+                )
+            ):
+                continue
             plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
                 repository=repository,
                 tier_id=tier_id,
@@ -1429,6 +1504,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         settings = STANDARD_PLAN_OFFERS[tier_id]
         offer_id = str(settings["offer_id"])
         existing = repository.get_plan_offer(offer_id)
+        if existing is not None:
+            repository.session.refresh(existing, with_for_update=True)
         amount = (
             self._money(sales_price_cny)
             if sales_price_cny is not None
@@ -1449,7 +1526,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             amount=amount,
             currency="CNY",
             purchase_mode=PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
-            status=PLAN_OFFER_STATUS_ACTIVE,
+            status=existing.status if existing is not None else PLAN_OFFER_STATUS_ACTIVE,
             trial_enabled=(existing.trial_enabled if existing is not None else True),
             trial_days=(
                 existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS
@@ -1474,10 +1551,15 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         self,
         offer: PlanOffer | None,
         *,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
     ) -> None:
-        if offer is None or offer.status != PLAN_OFFER_STATUS_ACTIVE:
+        if (
+            offer is None
+            or offer.status != PLAN_OFFER_STATUS_ACTIVE
+            or not self._offer_plan_is_published(repository, offer)
+        ):
             raise CommercialNotFoundError(
                 "service.plan_offer_not_found",
                 "The selected package offer is not available",
@@ -1489,7 +1571,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             )
         if offer.tier_id in STANDARD_PLAN_OFFERS:
             canonical_offer_id = str(STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"])
-            if offer.account_id is not None or offer.offer_id != canonical_offer_id:
+            if (
+                offer.account_id is not None
+                or offer.offer_id != canonical_offer_id
+                or offer.purchase_mode != PLAN_OFFER_PURCHASE_MODE_SELF_SERVE
+            ):
                 raise CommercialNotFoundError(
                     "service.plan_offer_not_found",
                     "The selected package offer is not available",
@@ -1504,6 +1590,65 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "service.plan_offer_expired",
                 "The selected package offer has expired",
             )
+
+    @staticmethod
+    def _offer_plan_is_published(
+        repository: CommercialSubscriptionLifecycleRepository, offer: PlanOffer
+    ) -> bool:
+        plan = repository.get_plan(offer.plan_id)
+        version = repository.get_plan_version(offer.plan_version_id)
+        return bool(
+            plan is not None
+            and plan.status == PLAN_STATUS_ACTIVE
+            and version is not None
+            and version.plan_id == offer.plan_id
+            and version.status == PLAN_VERSION_STATUS_PUBLISHED
+        )
+
+    def update_admin_plan_sales_status(
+        self,
+        *,
+        plan_id: str,
+        status: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        if status not in {PLAN_OFFER_STATUS_ACTIVE, PLAN_OFFER_STATUS_RETIRED}:
+            raise CommercialValidationError(
+                "service.plan_offer_status_invalid", "Sales status must be active or retired"
+            )
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            repository = CommercialSubscriptionLifecycleRepository(session)
+            offer = next(
+                (item for item in repository.list_plan_offers(self_serve_only=True)
+                 if item.plan_id == plan_id and item.tier_id in STANDARD_PLAN_OFFERS
+                 and item.offer_id == STANDARD_PLAN_OFFERS[item.tier_id]["offer_id"]),
+                None,
+            )
+            if offer is None:
+                raise CommercialNotFoundError(
+                    "service.plan_offer_not_found", "Publish the package rights before selling it"
+                )
+            session.refresh(offer, with_for_update=True)
+            offer.status = status
+            if status == PLAN_OFFER_STATUS_ACTIVE:
+                self._assert_offer_purchasable(
+                    offer, repository=repository, account_id="", now=service.now_factory()
+                )
+            payload = self._serialize_plan_offer(offer)
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="plan_offer.sales_status.update",
+                outcome="succeeded",
+                plan_id=plan_id,
+                plan_version_id=offer.plan_version_id,
+                scope_kind="plan_offer",
+                scope_id=offer.offer_id,
+                payload_json=payload,
+            )
+            session.commit()
+            return payload
 
     @staticmethod
     def _resolve_subscription_order_kind(

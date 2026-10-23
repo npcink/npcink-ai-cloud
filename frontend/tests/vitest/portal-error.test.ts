@@ -22,6 +22,19 @@ function apiError(errorCode: string, message: string, traceId = ''): ApiError {
 }
 
 describe('Portal customer-safe errors', () => {
+  it('explains paused sales and order throttling without exposing backend text', () => {
+    expect(formatPortalErrorMessage(
+      apiError('service.commercial_temporarily_paused', 'internal flag detail'), translate, 'Try again.'
+    )).toContain('Existing orders and benefits remain available');
+    const error = new ApiError({
+      statusCode: 429, errorCode: 'portal.subscription_order_rate_limited',
+      message: 'internal limit detail', details: { retry_after_seconds: 42 },
+    });
+    expect(formatPortalErrorMessage(error, translate, 'Try again.')).toBe(
+      'Too many requests. Try again in 42 seconds.'
+    );
+  });
+
   it('keeps internal codes out of the primary customer message', () => {
     const error = apiError('auth.portal_login_code_invalid', 'internal auth detail', 'trace-login');
 

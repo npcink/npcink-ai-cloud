@@ -21,6 +21,7 @@ from app.api.auth import (
     enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
     enforce_portal_oauth_state_request_rate_limit,
+    enforce_portal_subscription_order_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
 )
@@ -74,7 +75,11 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.site_monitoring_overview import SiteMonitoringOverviewService
-from app.domain.portal_idempotency import build_portal_business_idempotency_key
+from app.domain.portal_idempotency import (
+    PortalIdempotencyClaim,
+    build_portal_business_idempotency_key,
+    release_unexecuted_portal_mutation,
+)
 from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
     resolve_site_relink_policy,
@@ -104,6 +109,32 @@ def _portal_login_code_rate_limit_response(
         data={"retry_after_seconds": retry_after_seconds},
         headers={"Retry-After": str(retry_after_seconds)},
     )
+
+
+def _release_unexecuted_commercial_claim(request: Request) -> None:
+    claim = getattr(request.state, "portal_idempotency_claim", None)
+    if isinstance(claim, PortalIdempotencyClaim):
+        release_unexecuted_portal_mutation(
+            database_url=get_cloud_services(request).settings.database_url,
+            claim=claim,
+        )
+        request.state.portal_idempotency_claim = None
+
+
+def _portal_new_order_guard(request: Request, account_id: str) -> None:
+    enforce_portal_subscription_order_rate_limit(request, account_id=account_id)
+
+
+def _portal_commercial_sales_guard(request: Request) -> JSONResponse | None:
+    if get_cloud_services(request).settings.commercial_emergency_stop:
+        _release_unexecuted_commercial_claim(request)
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="service.commercial_temporarily_paused",
+            message="New purchases and trials are temporarily unavailable. Please try again later.",
+        )
+    return None
 
 
 class PortalSiteKnowledgeUsageItem(BaseModel):
@@ -438,6 +469,7 @@ def _portal_credit_pack_catalog_data(
 ) -> dict[str, object]:
     catalog = _dict_value(value)
     data: dict[str, object] = {
+        "commercial_available": catalog.get("commercial_available", True),
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "period_policy": str(catalog.get("period_policy") or ""),
         "expiry_policy": str(catalog.get("expiry_policy") or ""),
@@ -544,6 +576,7 @@ def _portal_started_trial_data(value: object) -> dict[str, object]:
 def _portal_plan_offer_list_data(value: object) -> dict[str, object]:
     offers = _dict_value(value)
     return {
+        "commercial_available": offers.get("commercial_available", True),
         "items": [
             _portal_plan_offer_data(item) for item in _object_list(offers.get("items"))
         ],
@@ -1363,6 +1396,9 @@ def _build_portal_audit_context(request: Request, principal_id: str) -> ServiceA
     audit_context = _build_audit_context(request)
     audit_context.actor_kind = "principal"
     audit_context.actor_ref = principal_id
+    audit_context.request_fingerprint = str(
+        getattr(request.state, "portal_request_fingerprint", "")
+    )
     raw_idempotency_key = request.headers.get("Idempotency-Key", "")
     if raw_idempotency_key:
         audit_context.idempotency_key = build_portal_business_idempotency_key(
@@ -3300,6 +3336,9 @@ async def start_portal_account_plan_trial(
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
+    sales_guard = _portal_commercial_sales_guard(request)
+    if sales_guard is not None:
+        return sales_guard
     try:
         result = await run_in_threadpool(
             _get_commercial_service(request).start_account_plan_trial,
@@ -3336,6 +3375,7 @@ async def create_portal_account_subscription_order(
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=True,
+        allow_business_reconciliation=True,
         allow_session_cookies=True,
     )
     if isinstance(auth, JSONResponse):
@@ -3369,8 +3409,15 @@ async def create_portal_account_subscription_order(
             provider=payload.provider,
             site_id=selected_site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
+            replay_only=bool(getattr(request.state, "portal_idempotency_reconciliation", False)),
+            new_order_guard=lambda: _portal_new_order_guard(request, account_id),
         )
+    except PortalBearerTokenError as error:
+        _release_unexecuted_commercial_claim(request)
+        return _portal_login_code_rate_limit_response(request, error)
     except CommercialServiceError as error:
+        if error.error_code == "service.commercial_temporarily_paused":
+            _release_unexecuted_commercial_claim(request)
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal subscription order created",
@@ -3964,6 +4011,7 @@ async def create_portal_account_credit_pack_order(
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=True,
+        allow_business_reconciliation=True,
         allow_session_cookies=True,
     )
     if isinstance(auth, JSONResponse):
@@ -3997,8 +4045,15 @@ async def create_portal_account_credit_pack_order(
             provider=payload.provider,
             site_id=selected_site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
+            replay_only=bool(getattr(request.state, "portal_idempotency_reconciliation", False)),
+            new_order_guard=lambda: _portal_new_order_guard(request, account_id),
         )
+    except PortalBearerTokenError as error:
+        _release_unexecuted_commercial_claim(request)
+        return _portal_login_code_rate_limit_response(request, error)
     except CommercialServiceError as error:
+        if error.error_code == "service.commercial_temporarily_paused":
+            _release_unexecuted_commercial_claim(request)
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit pack payment order created",
@@ -5516,6 +5571,7 @@ async def create_portal_site_credit_pack_order(
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=True,
+        allow_business_reconciliation=True,
         allow_session_cookies=True,
     )
     if isinstance(auth, JSONResponse):
@@ -5539,8 +5595,17 @@ async def create_portal_site_credit_pack_order(
             pack_id=payload.pack_id,
             provider=payload.provider,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
+            replay_only=bool(getattr(request.state, "portal_idempotency_reconciliation", False)),
+            new_order_guard=lambda: _portal_new_order_guard(
+                request, str(access.get("account_id") or "")
+            ),
         )
+    except PortalBearerTokenError as error:
+        _release_unexecuted_commercial_claim(request)
+        return _portal_login_code_rate_limit_response(request, error)
     except CommercialServiceError as error:
+        if error.error_code == "service.commercial_temporarily_paused":
+            _release_unexecuted_commercial_claim(request)
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal credit pack payment order created",

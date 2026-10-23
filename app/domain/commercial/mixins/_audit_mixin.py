@@ -20,6 +20,7 @@ from app.core.models import (
     ServiceAuditEvent,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
+from app.domain.commercial.errors import CommercialValidationError
 
 MAX_AUDIT_PAYLOAD_DEPTH = 8
 MAX_AUDIT_PAYLOAD_ITEMS = 100
@@ -67,6 +68,13 @@ class CommercialServiceAuditMixin:
         self.database_url = database_url
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
         self.settings = settings or get_settings()
+
+    def _assert_commercial_sales_available(self) -> None:
+        if self.settings.commercial_emergency_stop:
+            raise CommercialValidationError(
+                "service.commercial_temporarily_paused",
+                "New purchases and trials are temporarily unavailable. Please try again later.",
+            )
 
     def _serialize_service_audit_event(
         self,
