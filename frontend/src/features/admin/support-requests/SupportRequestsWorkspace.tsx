@@ -9,6 +9,7 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -305,33 +306,55 @@ export function SupportRequestsWorkspace() {
         density="compact"
         bodyClassName="overflow-hidden"
         headerActions={<AdminQueueKeyboardHint />}
-        footer={<ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />}
+        footer={(
+          <>
+            {total <= SUPPORT_REQUEST_PAGE_SIZE && offset === 0 ? (
+              <p data-ui="support-request-single-page-range" className="border-t border-slate-200 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                {t('common.pagination_summary', { start: total > 0 ? '1' : '0', end: String(total), total: String(total) })}
+              </p>
+            ) : null}
+            <ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />
+          </>
+        )}
       >
         <form
           data-ui="support-request-toolbar"
           onSubmit={applySearch}
-          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6"
+          className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800"
         >
-          <label className="text-sm text-slate-700 dark:text-slate-200 xl:col-span-2">
+          <div
+            role="group"
+            aria-label={t('admin.support_requests_view_filter_label', {}, 'Ticket view')}
+            data-ui="support-request-view-pills"
+            className="flex basis-full flex-wrap items-center gap-1.5"
+          >
+            <span className="mr-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
+            <BackofficeFilterPill active={!queueView} aria-pressed={!queueView} onClick={() => updateQueueView('')}>
+              {t('common.all', {}, 'All')}
+            </BackofficeFilterPill>
+            <BackofficeFilterPill active={queueView === 'attention:waiting_for_operator'} aria-pressed={queueView === 'attention:waiting_for_operator'} tone="warning" onClick={() => updateQueueView('attention:waiting_for_operator')}>
+              {t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}
+            </BackofficeFilterPill>
+            <BackofficeFilterPill active={queueView === 'attention:overdue'} aria-pressed={queueView === 'attention:overdue'} tone="danger" onClick={() => updateQueueView('attention:overdue')}>
+              {t('admin.support_requests_overdue', {}, 'Overdue')}
+            </BackofficeFilterPill>
+            {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => (
+              <BackofficeFilterPill key={status} active={queueView === `status:${status}`} aria-pressed={queueView === `status:${status}`} tone={status === 'open' ? 'warning' : status === 'resolved' ? 'success' : 'neutral'} onClick={() => updateQueueView(`status:${status}`)}>
+                {t(`admin.support_status_${status}`, {}, status)}
+              </BackofficeFilterPill>
+            ))}
+          </div>
+          <label className="min-w-[14rem] flex-1 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
             <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            <span className="sr-only">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
-            <select className="input w-full" value={queueView} onChange={(event) => updateQueueView(event.target.value)}>
-              <option value="">{t('common.all', {}, 'All')}</option>
-              <option value="attention:waiting_for_operator">{t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}</option>
-              <option value="attention:overdue">{t('admin.support_requests_overdue', {}, 'Overdue')}</option>
-              {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => <option key={status} value={`status:${status}`}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-            </select>
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="w-40 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</span>
             <select className="input w-full" value={appliedTopic} onChange={(event) => updateQueueUrl({ topic: event.target.value || null, offset: null, focus: null })}>
               {SUPPORT_REQUEST_TOPICS.map((topic) => <option key={topic || 'all'} value={topic}>{topic ? t(`portal.support_topic_${topic}`, {}, topic) : t('admin.support_topic_all', {}, 'All topics')}</option>)}
             </select>
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="w-44 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
             <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
               <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
@@ -345,15 +368,15 @@ export function SupportRequestsWorkspace() {
         </form>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[68rem] table-fixed text-left text-sm">
+          <table className="w-full min-w-[60rem] table-fixed text-left text-sm">
             <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
               <tr>
-                <th scope="col" className="w-44 px-3 py-2">{t('admin.support_requests_table_waiting', {}, 'Priority / waiting')}</th>
-                <th scope="col" className="w-[28%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
-                <th scope="col" className="w-36 px-3 py-2">{t('common.status')}</th>
-                <th scope="col" className="w-52 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
-                <th scope="col" className="w-36 px-3 py-2">{t('common.updated_at', {}, 'Updated')}</th>
-                <th scope="col" className="w-56 px-3 py-2 text-right">{t('common.actions', {}, 'Actions')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('admin.support_requests_table_waiting', {}, 'Priority / waiting')}</th>
+                <th scope="col" className="w-[24%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
+                <th scope="col" className="w-28 px-3 py-2">{t('common.status')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('common.updated_at', {}, 'Updated')}</th>
+                <th scope="col" className="w-64 px-3 py-2 text-right">{t('common.actions', {}, 'Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
@@ -380,7 +403,7 @@ export function SupportRequestsWorkspace() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <BackofficeStatusBadge status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
+                      <BackofficeStatusBadge className="whitespace-nowrap normal-case tracking-normal" status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">

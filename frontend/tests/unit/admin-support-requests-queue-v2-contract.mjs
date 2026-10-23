@@ -22,7 +22,10 @@ const drawerSource = readFileSync(
 assert.match(source, /BackofficePageHeader[\s\S]*secondaryAction=\{\([\s\S]*summaryItems=\{\[/, 'ticket queue must use the shared compact page header and operating summary');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeStackCard|support-request-queue-item/, 'ticket queue must not restore the old card stack or task cards');
 assert.match(source, /AdminDataTableFrame[\s\S]*dataUi="support-request-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/, 'ticket queue must use the shared full-width semantic table');
-assert.match(source, /data-ui="support-request-toolbar"[\s\S]*md:grid-cols-2[\s\S]*xl:grid-cols-6[\s\S]*xl:col-span-2[\s\S]*whitespace-nowrap/, 'four ticket filters and both actions must share one PC toolbar row');
+assert.match(source, /data-ui="support-request-toolbar"[\s\S]*role="group"[\s\S]*data-ui="support-request-view-pills"[\s\S]*BackofficeFilterPill/, 'existing mutually exclusive queue views must use labeled pills inside the table toolbar');
+assert.match(source, /SUPPORT_REQUEST_PAGE_SIZE = 10/, 'the ticket queue must request a fixed ten-row page');
+assert.match(source, /support-request-single-page-range[\s\S]*common.pagination_summary[\s\S]*<ListPagination/, 'single-page range text must complement the shared pagination primitive');
+assert.doesNotMatch(source, /QuietQueuePagination|normalizeSupportRequestLimit|setTimeout/, 'Quiet presentation must not duplicate pagination, add URL page sizes, or auto-apply search');
 
 for (const parameter of ['status', 'topic', 'attention', 'q', 'sort', 'offset', 'focus']) {
   assert.match(source, new RegExp(`queueParams\\.get\\('${parameter}'\\)`), `${parameter} must be URL-backed`);
