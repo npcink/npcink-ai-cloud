@@ -1883,6 +1883,40 @@ export class PortalClient {
     return this.request('POST', '/notifications/read-all');
   }
 
+  private async dataExportRequest(operation: 'code' | 'confirm', body: unknown): Promise<Response> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl || getPortalApiBaseUrl()}/account/data-export/${operation}`, {
+        method: 'POST', credentials: 'include', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        signal: AbortSignal.timeout(12_000),
+      });
+    } catch {
+      throw new ApiError({ statusCode: 0, errorCode: 'portal.data_export_network', message: 'Personal data copy unavailable' });
+    }
+    if (!response.ok) {
+      // Do not retain or log arbitrary response bodies in an ApiError.
+      throw new ApiError({ statusCode: response.status, errorCode: 'portal.data_export_failed', message: 'Personal data copy unavailable' });
+    }
+    return response;
+  }
+
+  async requestDataExportCode(locale: string): Promise<{ challenge_id: string; expires_in_seconds: number }> {
+    const response = await this.dataExportRequest('code', { locale });
+    const result = await response.json();
+    if (typeof result?.data?.challenge_id !== 'string') throw new Error('Personal data copy unavailable');
+    return result.data;
+  }
+
+  async downloadPersonalData(challenge_id: string, code: string): Promise<Blob> {
+    const response = await this.dataExportRequest('confirm', { challenge_id, code });
+    const body = await response.text();
+    if (new TextEncoder().encode(body).length > 2 * 1024 * 1024) throw new Error('Personal data copy unavailable');
+    const result = JSON.parse(body);
+    if (result?.schema !== 'cloud-principal-copy.v1' || !result.data) throw new Error('Personal data copy unavailable');
+    return new Blob([body], { type: 'application/json' });
+  }
+
   async requestAccountDeletionCode(locale: string): Promise<PortalEnvelope<{
     email: string; delivery: string; expires_in_seconds: number;
   }>> {

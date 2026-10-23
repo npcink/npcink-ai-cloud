@@ -253,6 +253,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Admin, Portal, Identity, and Commercial
 
+- [Cloud personal data copy v1](portal-personal-data-copy-v1.md) — bounded own-profile/support/notification JSON download with dedicated email reauthentication; excludes commercial and WordPress data
+
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
 - [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
 - [Account Site Knowledge usage breakdown v1](portal-site-knowledge-usage-contract-v1.md) — Portal account usage detail `source_type` filter contract (text/media/video/pdf); read-only; not a metering redesign
