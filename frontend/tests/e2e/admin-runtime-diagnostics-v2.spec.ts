@@ -11,7 +11,11 @@ import {
 } from './helpers/admin-visual-receipt';
 
 async function selectPanel(page: import('@playwright/test').Page, name: 'records' | 'trend' | 'overview') {
-  await page.locator(`#diagnostic-tab-${name}`).click();
+  const tab = page.locator(`#diagnostic-tab-${name}`);
+  await tab.click();
+  // URL-backed tab state can commit after the click completes.
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator(`#diagnostic-panel-${name}`)).toBeVisible();
 }
 
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
