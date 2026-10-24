@@ -86,7 +86,11 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
-    args = parser.parse_args()
+    # pnpm forwards its option separator to this Python entry point.
+    argv = sys.argv[1:]
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    args = parser.parse_args(argv)
 
     checks: dict[str, Any] = {}
     failures: list[str] = []
