@@ -182,3 +182,31 @@ NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT=/absolute/path/to/frontend \
 第二条显式运行本地浏览器 DOM/接口替身，所有请求由内存 fixture 应答，验证预检、
 采用/保存/刷新、错误草稿、保存失败及重复能力请求阻断；它不是已安装 WordPress、
 实际 Cloud 或真实 Provider 的证据。远程入口可单独回退，不影响 `--business` 离线入口。
+
+### 预检失败与导航超时分层（2026-10-25）
+
+原入口存在两个已用离线浏览器复现的工具问题：
+
+- WordPress 后台的 Gravatar 头像虽已被阻断，仍被算作关键边界违规，导致安全预检误报。
+  现在仅将 `secure.gravatar.com/avatar/<32 或 64 位十六进制指纹>` 的 GET 图片请求
+  归入 `optional_assets_blocked`；请求仍然中止。脚本、POST、未知跨域地址、方法覆盖
+  等继续触发关键违规，没有新增跨域放行。
+- 导航原来等待完整 `load`，且沿用了普通控件的 15 秒上限；非关键资源未结束也会造成超时。
+  现在按所选超时预算等待 `domcontentloaded`，再分别等待编辑器状态和目标段落可见，
+  不用固定延迟假定就绪。刷新回读使用相同导航规则。
+
+回执增加脱敏的 `document_status`、`timings_ms`、`failure_code` 和细分阶段：
+
+| 回执证据 | 含义与下一步 |
+| --- | --- |
+| `navigation_timeout_before_response` | 没收到主文档响应；先检查 DNS、TCP、TLS，不归咎于正文或模型 |
+| `navigation_timeout_after_response` | 已收到主文档响应，但 DOM 尚未就绪；检查页面与必需资源加载 |
+| `wait_editor_store` / `select_paragraph` | 区分编辑器状态未就绪与目标段落尚不可见 |
+| `open_ai_menu` / `check_rephrase` | 核对官方插件控件、翻译、启用状态；不触发生成补证据 |
+| `check_request_boundary` | 检查关键违规计数；预期头像阻断不掩盖其他违规 |
+
+不把原始浏览器错误、带查询参数的 URL、Cookie、nonce 或请求正文写入回执。
+CLI 失败时显示所停阶段及私有回执路径，不自动重试。
+
+这些离线用例只验证工具行为，不证明测试站连通、实际模型调用或业务验收通过。
+导航失败后保留脱敏回执并停止，不自动重试，也不据此修改站点或生产配置。
