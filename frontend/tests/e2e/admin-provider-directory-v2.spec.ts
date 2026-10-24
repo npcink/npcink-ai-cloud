@@ -919,7 +919,7 @@ test('model reference loading continues past the API page limit', async ({ page 
     });
   });
 
-  await page.goto('/admin/ai-resources?focus=model_ready');
+  await page.goto('/admin/ai-resources');
   const supplierRow = page.locator('[data-connection-id="model_ready"]');
   await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
   const dialog = page.getByRole('dialog');
@@ -1170,6 +1170,8 @@ test('provider model health stays a collapsed read-only evidence panel', async (
 });
 
 test('provider failures show localized reasons in toast and row feedback', async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
   await installProviderDirectoryHarness(page);
@@ -1206,4 +1208,5 @@ test('provider failures show localized reasons in toast and row feedback', async
     await expect(page.getByText('provider catalog request failed', { exact: false })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
+  expect(pageErrors, 'handled provider failures must not escape the row action').toEqual([]);
 });
