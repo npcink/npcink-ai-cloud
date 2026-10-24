@@ -86,7 +86,11 @@ function SecondFactorContent() {
                 : t('portal.auth.second_factor_restart_desc', undefined, 'Return to sign in and request a new verification step.')}
             </p>
             {statusUnknown ? (
-              <button type="button" className="btn btn-secondary mt-4 w-full justify-center" onClick={() => void refresh()}>
+              <button type="button" className="btn btn-secondary mt-4 w-full justify-center" onClick={() => {
+                // The session hook records the refreshed challenge/error state.
+                // A retry can recover a challenge while the session request rejects.
+                void refresh().catch(() => undefined);
+              }}>
                 {t('common.retry', undefined, 'Try again')}
               </button>
             ) : null}
