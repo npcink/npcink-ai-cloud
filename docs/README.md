@@ -260,6 +260,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud personal data copy v1](portal-personal-data-copy-v1.md) — bounded own-profile/support/notification JSON download with dedicated email reauthentication; excludes commercial and WordPress data
+- [主 checkout 九篇历史文档对账与开发经验 — 2026-10-25](history/engineering/2026/primary-checkout-intent-reconciliation-2026-10-25.md) — 旧意图的现行承接、纠偏与未完成边界，不是发布授权
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
 - [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
