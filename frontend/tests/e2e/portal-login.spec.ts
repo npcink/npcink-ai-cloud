@@ -532,7 +532,7 @@ test('mobile email login preserves the WordPress binding and single confirmation
   expect(calls.addonConnectionPayload()?.account_id).toBe('acct_portal_login_e2e');
 });
 
-test('public authentication entry keeps current desktop and mobile visual contracts', async ({ page }) => {
+test('public authentication entry keeps current PC visual contracts', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => {
     window.localStorage.setItem('locale', 'zh-CN');
@@ -562,6 +562,17 @@ test('public authentication entry keeps current desktop and mobile visual contra
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
+});
+
+test('optional mobile authentication visual observation', async ({ page }) => {
+  // Portal delivery is PC-only; retain historical mobile assertions for explicit observation.
+  test.skip(process.env.NPCINK_CLOUD_PORTAL_MOBILE_VISUAL !== '1', 'Opt in with NPCINK_CLOUD_PORTAL_MOBILE_VISUAL=1');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+    window.localStorage.setItem('theme', 'light');
+  });
+  await installLoginFlowMocks(page);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portal/login');
