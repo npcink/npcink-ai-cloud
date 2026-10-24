@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
 from app.api.main import create_app
+from app.api.routes import internal as internal_routes
 from app.core.config import Settings
 from app.core.db import dispose_engine, init_schema
 from app.core.services import CloudServices
@@ -607,3 +611,166 @@ def test_internal_portal_email_failure_does_not_expose_smtp_exception(
     assert "/srv/private/smtp.py" not in response.text
 
     dispose_engine(database_url)
+
+
+@pytest.fixture
+def internal_body_client(
+    tmp_path: Path,
+) -> Iterator[tuple[TestClient, FakePortalEmailSender]]:
+    # Reuse this module's SQLite setup and fake sender without provisioning
+    # accounts, subscriptions, public settings or any provider catalog.
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    sender = FakePortalEmailSender()
+    settings = Settings(
+        _env_file=None,
+        project_name="Npcink AI Cloud Test",
+        environment="test",
+        database_url=database_url,
+        redis_url="redis://localhost:6379/0",
+        internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+    )
+    try:
+        with TestClient(
+            create_app(CloudServices(settings=settings, portal_email_sender=sender))
+        ) as client:
+            yield client, sender
+    finally:
+        dispose_engine(database_url)
+
+
+def _body_contract_headers(auth_mode: str) -> dict[str, str]:
+    headers = merge_json_headers(
+        build_internal_headers(
+            internal_token=TEST_INTERNAL_AUTH_TOKEN,
+            idempotency_key="fastapi-body-contract",
+        )
+    )
+    if auth_mode == "missing_token":
+        headers.pop("X-Npcink-Internal-Token")
+    elif auth_mode == "invalid_token":
+        headers["X-Npcink-Internal-Token"] = "invalid-body-contract-token"
+    else:
+        assert auth_mode == "authorized"
+    return headers
+
+
+@pytest.mark.parametrize("body", [None, "null", "{}"], ids=["omitted", "raw-null", "empty"])
+@pytest.mark.parametrize("auth_mode", ["authorized", "missing_token", "invalid_token"])
+def test_required_internal_body_rejects_invalid_input_before_authentication(
+    internal_body_client: tuple[TestClient, FakePortalEmailSender],
+    monkeypatch: MonkeyPatch,
+    body: str | None,
+    auth_mode: str,
+) -> None:
+    client, sender = internal_body_client
+    authorize = AsyncMock(wraps=internal_routes.authorize_internal_request)
+    monkeypatch.setattr(internal_routes, "authorize_internal_request", authorize)
+    # None is our test-case marker for not supplying content, never json=None.
+    headers = _body_contract_headers(auth_mode)
+    if body is None:
+        response = client.post("/internal/portal/email/test", headers=headers)
+    else:
+        response = client.post("/internal/portal/email/test", content=body, headers=headers)
+
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert errors
+    assert all(error["loc"][0] == "body" for error in errors)
+    if body == "{}":
+        assert any(error["loc"] == ["body", "recipient_email"] for error in errors)
+    # Do not freeze the 0.150 missing/null Pydantic error type: 0.151 deliberately
+    # distinguishes explicit null from omission. Both must fail before delivery.
+    assert authorize.await_count == 0
+    assert sender.test_messages == []
+
+
+@pytest.mark.parametrize("auth_mode", ["missing_token", "invalid_token"])
+def test_required_internal_valid_body_still_requires_authentication(
+    internal_body_client: tuple[TestClient, FakePortalEmailSender],
+    monkeypatch: MonkeyPatch,
+    auth_mode: str,
+) -> None:
+    client, sender = internal_body_client
+    authorize = AsyncMock(wraps=internal_routes.authorize_internal_request)
+    monkeypatch.setattr(internal_routes, "authorize_internal_request", authorize)
+    response = client.post(
+        "/internal/portal/email/test",
+        content='{"recipient_email":"admin@example.com"}',
+        headers=_body_contract_headers(auth_mode),
+    )
+
+    assert response.status_code == (401 if auth_mode == "missing_token" else 403)
+    expected_error = (
+        "auth.internal_token_required"
+        if auth_mode == "missing_token"
+        else "auth.internal_token_invalid"
+    )
+    assert response.json()["error_code"] == expected_error
+    assert authorize.await_count == 1
+    assert authorize.await_args.kwargs == {"require_idempotency": True}
+    assert sender.test_messages == []
+
+
+@pytest.mark.parametrize(
+    ("body", "auth_mode"),
+    [
+        (None, "authorized"),
+        (None, "missing_token"),
+        (None, "invalid_token"),
+        ("null", "authorized"),
+        ("null", "missing_token"),
+        ("null", "invalid_token"),
+        ("{}", "authorized"),
+        ("{}", "missing_token"),
+        ("{}", "invalid_token"),
+        ('{"providers":["openai"]}', "invalid_token"),
+    ],
+)
+def test_optional_internal_body_preserves_defaults_and_authentication(
+    internal_body_client: tuple[TestClient, FakePortalEmailSender],
+    monkeypatch: MonkeyPatch,
+    body: str | None,
+    auth_mode: str,
+) -> None:
+    client, _sender = internal_body_client
+    authorize = AsyncMock(wraps=internal_routes.authorize_internal_request)
+    monkeypatch.setattr(internal_routes, "authorize_internal_request", authorize)
+    calls: list[list[str] | None] = []
+
+    # Follow this file's existing CatalogService method-patching pattern. Stop
+    # before any real refresh/provider work; provider adapter resolution is also
+    # disabled so ambient service settings cannot select a live adapter.
+    def refresh_catalog(
+        self: CatalogService,
+        provider_ids: list[str] | None = None,
+    ) -> dict[str, object]:
+        calls.append(provider_ids)
+        return {"revision": "body-contract-test", "total": 0}
+
+    monkeypatch.setattr(CatalogService, "refresh_catalog", refresh_catalog)
+    monkeypatch.setattr(internal_routes, "resolve_live_provider_adapters", lambda *_a, **_k: {})
+    headers = _body_contract_headers(auth_mode)
+    if body is None:
+        response = client.post("/internal/catalog/refresh", headers=headers)
+    else:
+        response = client.post("/internal/catalog/refresh", content=body, headers=headers)
+
+    assert authorize.await_count == 1
+    assert authorize.await_args.kwargs == {"require_idempotency": True}
+    if auth_mode == "authorized":
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+        assert response.json()["data"] == {"revision": "body-contract-test", "total": 0}
+        # None, explicit null and ProviderSelection(providers=[]) all reach the
+        # existing handler's providers-or-None behavior, not a new compatibility shim.
+        assert calls == [None]
+    else:
+        assert response.status_code == (401 if auth_mode == "missing_token" else 403)
+        expected_error = (
+            "auth.internal_token_required"
+            if auth_mode == "missing_token"
+            else "auth.internal_token_invalid"
+        )
+        assert response.json()["error_code"] == expected_error
+        assert calls == []

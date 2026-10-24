@@ -1,7 +1,9 @@
 # FastAPI telemetry compatibility review — 2026-10-25
 
-Status: historical preparation and local-verification evidence. This record
-does not establish PR checks, merge, M4 acceptance, or production deployment.
+Status: dated preparation, verification, and follow-up evidence. The original
+0.150.0 batch reached merged/M4 accepted state below; the separate 0.158.2
+follow-up has only the evidence explicitly recorded for that batch. Neither
+state establishes production deployment.
 
 ## Upgrade risk and bounded correction
 
@@ -68,3 +70,57 @@ production behavior or authorizes a production deployment.
 5. Keep independent review, local, candidate, CI, merged, accepted, and
    production evidence separate. The earlier frontend dependency history is
    recorded in [its own retrospective](frontend-security-dependency-reconciliation-2026-10-25.md).
+
+## Original batch acceptance
+
+PR #1257 merged the 0.150.0 correction as
+`5b6d9c25edb20513182d1c0ec35a17bf3ade0e0d`. Its six required checks passed;
+independent review found no required correction or unresolved review thread.
+The M4 candidate passed 98 focused tests without skips. Clean-master promotion
+then recorded accepted state for PR #1257, with 24 postmerge tracing and
+entitlement tests and bounded HTTP checks passing. No production operation,
+live OAuth exchange, external exporter, or paid provider observation occurred.
+
+## Separate 0.158.2 consumer follow-up
+
+After #1257 merged, Dependabot advanced PR #1104 to 0.158.2 before updating its
+title. A title still naming 0.150.0 was therefore insufficient evidence to
+close it as a duplicate. The follow-up lock is regenerated from the accepted
+Ruff 0.17.1 master, using uv 0.12.10. Only FastAPI changes; revision 3, Ruff,
+and the other package records remain intact.
+
+Upstream 0.151 separates an omitted JSON body from explicit `null`, and 0.155
+removes arbitrary keyword extras from request-parameter factories. The two
+FastAPI constructors, native telemetry implementation, and supported
+`validate_default` option remain compatible. This is static source evidence,
+not a substitute for running the application consumers.
+
+The existing catalog-route suite adds 21 cases using real required and
+optional internal routes, their current models, and real internal-token
+authorization. Email delivery and catalog refresh use existing test fakes;
+temporary SQLite databases isolate replay evidence. Cases distinguish omitted
+content, raw JSON `null`, an empty object, and a valid body. Existing success
+and replay tests supply already-covered cells. No new HTTP model or application
+compatibility shim is introduced.
+
+Tests preserve required-body rejection before handler authorization and the
+optional handler's established defaults. Missing runtime internal tokens return
+401; incorrect tokens return 403. The first unexecuted candidate incorrectly
+expected 401 for both. An isolated run exposed five failed new assertions,
+alongside 508 passing cases and one deliberate M4-only skip. Comparing the
+existing authorization implementation corrected the tests; the product
+authorization behavior was not changed to satisfy the mistaken expectations.
+
+On the authoring candidate, locked dev-extra synchronization, full Ruff, and
+mypy over 340 application files pass. Sixteen consumer suites pass 513 cases;
+one concurrent-login case deliberately skips because disposable M4 PostgreSQL
+is unavailable in the source lane. The upstream TestClient/httpx warning stays
+visible. Locked default and zilliz dependency audits found no known
+vulnerabilities. The first audit attempt timed out while uvx fetched the
+already cached pip-audit tool; using the cached pinned tool restored the
+same canonical audit without disabling its online advisory lookup. Local
+verification and documentation reachability checks also pass.
+
+Framework runtime acceptance, independent final review, protected CI,
+merge, and clean-master M4 acceptance remain separate follow-up gates. These
+results do not establish universal compatibility for every JSON-body route.
