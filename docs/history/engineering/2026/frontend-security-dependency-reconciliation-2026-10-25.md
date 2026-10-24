@@ -49,12 +49,59 @@ type-check, and all 422 unit tests. A separate coverage-enabled run of those
 tests also passed, exercising the newly aligned coverage plugin. These local
 results do not by themselves prove PR checks, merge, or M4 acceptance.
 
-A fresh registry audit of this candidate still reports Zod 4.6.5 affected by
+The Vite/Vitest replacement subsequently merged through
+[PR #1255](https://github.com/npcink/npcink-ai-cloud/pull/1255) as
+`77baa7f8ced0a2844b7faae06485d053fd423d18`, after six required checks and
+independent review passed. M4 recorded accepted, clean master at that revision;
+the compiled provider-error consumer passed before and after promotion. The
+advisory OpenCodeReview job failed with HTTP403 and was not retried; this is not
+a successful advisory review or a repair of the service's configuration.
+Both older Vite proposals are closed. Dependabot rewrote their heads during
+closeout, so the final heads were re-read and their current version intent
+checked against the replacement. Original and final histories were bundled
+and verified in an empty bare repository before remote-branch retirement was
+considered; both remote branches were already absent, so neither was deleted
+by the closeout operator.
+
+Before the separate follow-up below, registry audit reported Zod 4.6.5 affected by
 GHSA-mrhx-c7xc-m3w5, patched in 4.6.6. That is a separate runtime-validation
 dependency follow-up; this test-tool patch does not claim a clean audit.
 FastAPI, Ruff, Action-wrapper, autoprefixer, tailwind-merge, and historical
 asset retirement remain separately tracked. OpenCodeReview HTTP403 is not
 resolved merely by updating its Action wrapper.
+
+## Separate Zod security follow-up
+
+The later Zod candidate advances the manifest and resolved graph from 4.6.5 to
+4.6.7, the current patched version found during preparation. The upstream
+4.6.6 security fix rejects oversized bounded arrays/maps/sets before parsing
+their elements; it does not impose a universal resource cap on unbounded
+collections. The 4.6.7 release lists a version commit. The project's direct
+consumer is the server environment schema in `frontend/src/lib/env.ts`, using
+object/string/URL/default/optional schemas rather than the affected collection
+path. The upstream advisory therefore does not establish an exploitable
+public application endpoint here.
+
+Fresh frozen installation, lock consistency, type-check, full lint, and all
+422 unit tests passed for this follow-up. Registry audit reports no known
+vulnerabilities in that candidate graph. These are candidate-local results;
+its review, PR/merge, M4 acceptance, and GitHub default-branch alert refresh
+must be established separately.
+
+The upstream 4.6.6 release describes a reverted Git-credential incident and
+states that the malicious commits were not published to npm. The reviewed
+4.6.6 tarball hashes matched registry metadata and relevant source files matched
+the official release; its pre-rewrite provenance commit shared the release's
+Git tree. These checks did not include Sigstore signature or transparency-log
+verification and do not prove all historical npm releases safe. A fresh
+version's package integrity and source identity require their own review;
+do not turn either the incident headline or an earlier version's preflight
+into a claim about the later package. The separate 4.6.7 preflight matched its
+tarball to registry integrity and compared all 840 regular package files with
+4.6.6: only package/version metadata changed, while security source and
+generated implementation remained identical. Its provenance statement named
+the official release commit; the statement was parsed, without cryptographic
+signature or transparency-log verification.
 
 ## Reusable operating rules
 
