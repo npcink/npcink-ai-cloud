@@ -390,9 +390,10 @@ def complete(
             # Only failure accounting changed. Identity/scope/proof validation
             # above cannot accidentally commit pending business mutations.
             session.commit()
+            attempts_remaining = challenge.attempt_limit - challenge.attempt_count
             raise invalid(
-                challenge_status="retryable",
-                attempts_remaining=challenge.attempt_limit - challenge.attempt_count,
+                challenge_status=("retryable" if attempts_remaining > 0 else "attempt_limit"),
+                attempts_remaining=attempts_remaining,
             )
         if counter is not None:
             factor.last_accepted_counter = counter

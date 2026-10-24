@@ -166,8 +166,9 @@ second_factor_required` and uses `challenge_status` for `pending`, `expired`,
 `consumed`, or `attempts_exhausted`; missing or invalid cookies return HTTP 401
 with `auth.portal_factor_invalid` and `challenge_status: missing`. Completion
 keeps HTTP 401 with the same error code: a wrong code that can still be retried
-returns `challenge_status: retryable` and `attempts_remaining`, while expired,
-consumed, exhausted, or invalid bindings return terminal status. Clients retain
+returns `challenge_status: retryable` and `attempts_remaining`; the final wrong
+code returns `challenge_status: attempt_limit` with `attempts_remaining: 0`.
+Expired, consumed, exhausted, or invalid bindings return terminal status. Clients retain
 the form only for `retryable`; terminal or missing states clear local challenge
 state. The challenge cookie is never used as an Authorization Bearer token, and
 the status endpoint never issues a full session.

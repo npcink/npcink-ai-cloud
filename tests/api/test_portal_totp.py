@@ -462,13 +462,13 @@ def test_challenge_status_reports_consumed_after_success(setup):
     _, codes, _ = enable(setup)
     primary(setup)
     credential = client.cookies.get(CHALLENGE_COOKIE)
-    assert (
-        client.post(
-            "/portal/v1/totp/challenge/complete",
-            json={"method": "recovery_code", "code": codes[0]},
-        ).status_code
-        == 200
+    response = client.post(
+        "/portal/v1/totp/challenge/complete",
+        json={"method": "recovery_code", "code": codes[0]},
     )
+    assert response.status_code == 200
+    assert 'portal_totp_challenge="";' in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
     client.cookies.set(CHALLENGE_COOKIE, credential, path="/")
     status = client.get("/portal/v1/totp/challenge/status")
     assert status.status_code == 200
@@ -483,6 +483,28 @@ def test_wrong_factor_is_retryable_with_attempts_remaining(setup):
     assert response.status_code == 401
     assert response.json()["data"]["challenge_status"] == "retryable"
     assert response.json()["data"]["attempts_remaining"] == 4
+
+
+def test_wrong_factor_at_attempt_limit_is_terminal(setup):
+    _, client, _ = setup
+    enable(setup)
+    primary(setup)
+    for _ in range(4):
+        response = client.post("/portal/v1/totp/challenge/complete", json={"code": "000000"})
+        assert response.status_code == 401
+        assert response.json()["data"]["challenge_status"] == "retryable"
+    response = client.post("/portal/v1/totp/challenge/complete", json={"code": "000000"})
+    assert response.status_code == 401
+    assert response.json()["data"] == {
+        "challenge_status": "attempt_limit",
+        "attempts_remaining": 0,
+    }
+    status = client.get("/portal/v1/totp/challenge/status")
+    assert status.status_code == 200
+    assert status.json()["data"]["challenge_status"] == "attempts_exhausted"
+    response = client.post("/portal/v1/totp/challenge/complete", json={"code": "000000"})
+    assert response.status_code == 401
+    assert response.json()["data"] == {"challenge_status": "terminal"}
 
 
 @pytest.mark.parametrize("kind", ["email", "qq"])
