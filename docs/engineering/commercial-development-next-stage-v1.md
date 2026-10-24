@@ -90,8 +90,12 @@ remain paused.
 The development freeze is a development policy, not a claim that sales are
 runtime-disabled or DB Offers are all draft. The bounded exception must not
 pre-seed ACTIVE Offers into production or implicitly enable production sales.
-Current payment return handling lives at `/portal/billing`; do not copy the
-older `/portal/account?payment_return=success` examples as the current contract.
+Current Alipay return handling redirects to
+`/portal/account?payment_return=alipay#payment-orders` (#1224). Legacy billing
+returns are forwarded to the account order section. The return parameter is a
+navigation hint, not payment truth; the notice refreshes server-owned order
+status. Do not copy older `payment_return=success|failed` examples as settlement
+evidence.
 Use current code for payment settings and credit-pack overrides rather than
 older env/static-catalog assumptions. Admin IA code or a healthy M4 candidate
 does not prove accepted deployment. Treat previous plans as inputs to verify.
