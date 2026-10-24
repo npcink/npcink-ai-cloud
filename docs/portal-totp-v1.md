@@ -1,10 +1,14 @@
 # Portal TOTP storage v1
 
-Status: T1 storage is merged via #1245. T2 backend is a local candidate awaiting
-independent whole-backend review, real PostgreSQL evidence and the complete
-frontend/backend joint candidate. Setup/confirm are deliberately NOT mounted in
-the application; no public activation is available. No production authorization.
-The T1 storage contract below remains the schema baseline.
+Status: T1 storage is merged via #1245. T2 is integrated and merged via #1247
+(`0a0cdbad1ec629f64e1b7bf7a50ba2b3b8138d3c`) and has reached M4 `accepted` after
+real PostgreSQL, compiled BFF, strict PC replay and independent review. The
+accepted M4 source is clean at `master`; migration `20261024_0091` is the live
+head and the TOTP test rows/schemas were cleaned to zero. Setup/confirm remain
+NOT mounted in the application, no public activation is available, and no
+production authorization has been granted. The T1 storage contract below
+remains the schema baseline. See [the seven-session closeout](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md)
+for the evidence split and retained receipts.
 
 ## Ownership and activation boundary
 
@@ -126,7 +130,7 @@ coordinated plan; disabling UI is not equivalent to disabling second-factor
 requirements. Local, independent review, CI, M4 candidate/accepted and production
 are separate evidence states.
 
-## T2 backend candidate: activation boundary and wire contract
+## T2 integrated boundary and wire contract
 
 The ordinary app composes login challenge completion, disable/reset and status.
 `setup_router` in `app/api/routes/portal_totp.py` is deliberately not included by
@@ -258,10 +262,15 @@ state together. A completed commit remains consumed if response delivery fails.
 Tests distinguish those outcomes with final DB readback and locally scoped
 fault patches restored before teardown.
 
-### Candidate evidence gates
+### Historical T2 evidence gates and future activation gate
 
-Local SQLite API/domain/RFC tests and sequential scenario replay are not real
-PostgreSQL acceptance. The guarded existing PG module retains all75 T1 cases
+For the merged T2 batch, the gates below were executed and recorded: real
+PostgreSQL `101/101` plus original TOTP API `32/32`, strict PC replay `16/16`
+with no page errors, compiled BFF private-response checks, and independent A01/
+C1-s review. M4 accepted is recorded separately from production. These results
+are historical evidence for #1247; any future activation change must run a new
+candidate through the same gates. Local SQLite API/domain/RFC tests and
+sequential scenario replay are not real PostgreSQL acceptance. The guarded existing PG module retains all75 T1 cases
 and appends T2 counter/challenge/recovery single-consume, enable-vs-primary,
 completion-vs-disable/reset/global revoke/Admin disable/email change/closure, and
 SID-bound management-vs-single/others races. Actual independent connections,
@@ -269,5 +278,7 @@ observed lock waits and final row/authentication assertions must run on B02's
 controlled PostgreSQL lane with zero skips/errors and schema cleanup. The old
 0058→0068 dedicated two-database recovery gate stays separate. No runner allowlist,
 shared environment or historical migration was changed by this backend batch.
-Whole-backend A01 review, complete C1 consumer review, joint browser proof, real
-PG, required CI, M4 candidate, merged and accepted remain distinct later gates.
+Whole-backend A01 review, complete C1 consumer review, joint browser proof,
+real PG, required CI, M4 candidate, merged and accepted were completed for
+#1247 and remain distinct evidence states. Production and public activation are
+still separate future gates.

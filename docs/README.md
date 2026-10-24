@@ -152,6 +152,8 @@ deleting the old decision history.
 - [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
 - [Internal AI Advisor](internal-ai-advisor-v1.md) — advisory read layer over Cloud service evidence; allowed and forbidden internal AI usage
 
+- [七会话 Phase 1 收口与协作经验 — 2026-10-24](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md) — 七个会话的职责、证据分层、T2/M4 收口和可复用协作经验；不替代生产授权或 Phase 2 计划。
+
 ## Engineering and Delivery Standards
 
 - [Background Lightweight Mode](background-lightweight-mode-v1.md) — hourly optional diagnostics, manual quality analysis and unchanged cleanup/usage/callback responsibilities; runtime validation and release remain separate.
