@@ -22,6 +22,7 @@ from app.core.models import (
     AccountUserMembership,
     PortalAuthChallenge,
     PortalRecoveryCode,
+    PortalSession,
     PortalTotpFactor,
     Principal,
 )
@@ -47,7 +48,19 @@ def invalid() -> CommercialServiceError:
 
 
 def lock_primary_factor(session: Session, principal_id: str) -> PortalTotpFactor | None:
-    return PortalTotpRepository(session).lock_factor(principal_id=principal_id)
+    factor = PortalTotpRepository(session).lock_factor(principal_id=principal_id)
+    if factor is None and session.scalar(
+        select(PortalSession.session_id)
+        .where(
+            PortalSession.principal_id == principal_id,
+            PortalSession.factor_version.is_not(None),
+        )
+        .limit(1)
+    ):
+        raise CommercialServiceError(
+            503, "auth.portal_factor_unavailable", "Factor state unavailable"
+        )
+    return factor
 
 
 def _budget(session: Session, principal_id: str, now: datetime) -> None:

@@ -246,3 +246,17 @@ def test_clock_is_refreshed_after_waiting_challenge_lock(setup, monkeypatch):
     with get_session(url) as s:
         assert s.get(PortalRecoveryCode, codes[0].split(".")[0]).consumed_at is None
         assert s.get(PortalAuthChallenge, credential.split(".")[0]).consumed_at is None
+
+
+def test_missing_factor_cannot_be_reinitialized_by_management_uow(setup):
+    url, client, _ = setup
+    api.enable(setup)
+    caller = identity(client)
+    with get_session(url) as s:
+        s.delete(s.get(PortalTotpFactor, "registry_p"))
+        s.commit()
+    with pytest.raises(CommercialServiceError) as error:
+        totp.start_management(api.settings_of(client), caller, "setup")
+    assert error.value.status_code == 503
+    with get_session(url) as s:
+        assert s.get(PortalTotpFactor, "registry_p") is None
