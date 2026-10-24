@@ -426,6 +426,65 @@ def test_missing_factor_tombstone_does_not_allow_email_only_fallback(setup):
     assert result.json()["error_code"] == "auth.portal_factor_unavailable"
 
 
+def test_challenge_status_bootstrap_uses_only_cookie_and_clears_invalid_semantics(setup):
+    url, client, _ = setup
+    enable(setup)
+    response = primary(setup)
+    assert response.json()["data"]["status"] == "second_factor_required"
+    status = client.get("/portal/v1/totp/challenge/status")
+    assert status.status_code == 200
+    assert status.json()["data"]["status"] == "second_factor_required"
+    assert status.json()["data"]["challenge_status"] == "pending"
+    assert "credential" not in status.text and "secret" not in status.text
+    assert status.headers["cache-control"] == "private, no-store"
+
+    credential = client.cookies.get(CHALLENGE_COOKIE)
+    with get_session(url) as session:
+        row = session.get(PortalAuthChallenge, credential.split(".")[0])
+        row.created_at = datetime.now(UTC) - timedelta(minutes=10)
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    expired = client.get("/portal/v1/totp/challenge/status")
+    assert expired.status_code == 200
+    assert expired.json()["data"]["status"] == "second_factor_required"
+    assert expired.json()["data"]["challenge_status"] == "expired"
+    failed = client.post("/portal/v1/totp/challenge/complete", json={"code": "000000"})
+    assert failed.status_code == 401
+    assert failed.json()["data"] == {"challenge_status": "terminal"}
+    client.cookies.clear()
+    missing = client.get("/portal/v1/totp/challenge/status")
+    assert missing.status_code == 401
+    assert missing.json()["data"] == {"challenge_status": "missing"}
+
+
+def test_challenge_status_reports_consumed_after_success(setup):
+    _, client, _ = setup
+    _, codes, _ = enable(setup)
+    primary(setup)
+    credential = client.cookies.get(CHALLENGE_COOKIE)
+    assert (
+        client.post(
+            "/portal/v1/totp/challenge/complete",
+            json={"method": "recovery_code", "code": codes[0]},
+        ).status_code
+        == 200
+    )
+    client.cookies.set(CHALLENGE_COOKIE, credential, path="/")
+    status = client.get("/portal/v1/totp/challenge/status")
+    assert status.status_code == 200
+    assert status.json()["data"]["challenge_status"] == "consumed"
+
+
+def test_wrong_factor_is_retryable_with_attempts_remaining(setup):
+    _, client, _ = setup
+    enable(setup)
+    primary(setup)
+    response = client.post("/portal/v1/totp/challenge/complete", json={"code": "000000"})
+    assert response.status_code == 401
+    assert response.json()["data"]["challenge_status"] == "retryable"
+    assert response.json()["data"]["attempts_remaining"] == 4
+
+
 @pytest.mark.parametrize("kind", ["email", "qq"])
 def test_enabled_primary_commit_failure_preserves_primary_proof_and_no_challenge(
     setup, monkeypatch, kind

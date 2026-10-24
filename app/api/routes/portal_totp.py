@@ -33,7 +33,7 @@ from app.api.portal_session import (
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.portal_sessions.service import IssuedPortalSession
 from app.domain.portal_totp.contracts import RestrictedChallenge
-from app.domain.portal_totp.service import complete, start_management
+from app.domain.portal_totp.service import challenge_status, complete, start_management
 
 PREFIX = "/portal/v1/totp"
 CHALLENGE_COOKIE = "portal_totp_challenge"
@@ -150,11 +150,18 @@ def _guard(request: Request) -> None:
 def _error(
     request: Request, error: CommercialServiceError | PortalBearerTokenError
 ) -> JSONResponse:
+    data = None
+    if error.error_code == "auth.portal_factor_invalid":
+        if isinstance(error, CommercialServiceError) and error.data:
+            data = error.data
+        else:
+            data = {"challenge_status": "terminal"}
     return portal_json_error(
         request,
         status_code=401 if error.error_code == "auth.portal_session_revoked" else error.status_code,
         error_code=error.error_code,
         message="Authentication failed",
+        data=data,
     )
 
 
@@ -228,6 +235,19 @@ async def _complete(request: Request, payload: ProofPayload, purpose: str) -> Re
 @router.post("/challenge/complete")
 async def complete_login(request: Request, payload: ProofPayload) -> Response:
     return await _complete(request, payload, "login")
+
+
+@router.get("/challenge/status")
+async def get_challenge_status(request: Request) -> Response:
+    try:
+        data = await run_in_threadpool(
+            challenge_status,
+            get_cloud_services(request).settings,
+            request.cookies.get(CHALLENGE_COOKIE, ""),
+        )
+        return JSONResponse(build_envelope(status="ok", data=data), headers=PRIVATE_HEADERS)
+    except (CommercialServiceError, PortalBearerTokenError) as error:
+        return _error(request, error)
 
 
 @router.post("/disable/start")

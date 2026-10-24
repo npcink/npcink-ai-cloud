@@ -43,8 +43,15 @@ def utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def invalid() -> CommercialServiceError:
-    return CommercialServiceError(401, "auth.portal_factor_invalid", "Authentication proof invalid")
+def invalid(
+    *, challenge_status: str = "terminal", attempts_remaining: int | None = None
+) -> CommercialServiceError:
+    data: dict[str, object] = {"challenge_status": challenge_status}
+    if attempts_remaining is not None:
+        data["attempts_remaining"] = max(0, attempts_remaining)
+    return CommercialServiceError(
+        401, "auth.portal_factor_invalid", "Authentication proof invalid", data=data
+    )
 
 
 def lock_primary_factor(session: Session, principal_id: str) -> PortalTotpFactor | None:
@@ -140,6 +147,32 @@ def _parts(credential: str) -> tuple[str, int]:
     if not 60 <= ttl <= 90 * 86400:
         raise invalid()
     return parts[0], ttl
+
+
+def challenge_status(settings: Settings, credential: str) -> dict[str, object]:
+    """Return non-secret state for the HttpOnly challenge cookie."""
+    if not credential:
+        raise invalid(challenge_status="missing")
+    challenge_id, _ttl = _parts(credential)
+    now = datetime.now(UTC).replace(microsecond=0)
+    with get_session(settings.database_url) as session:
+        row = session.get(PortalAuthChallenge, challenge_id)
+        if row is None or not verify_secret_hash(credential, row.credential_hash):
+            raise invalid(challenge_status="missing")
+        if row.consumed_at is not None:
+            state = "consumed"
+        elif utc(row.expires_at) <= now:
+            state = "expired"
+        elif row.attempt_count >= row.attempt_limit:
+            state = "attempts_exhausted"
+        else:
+            state = "pending"
+        return {
+            "status": "second_factor_required",
+            "challenge_status": state,
+            "expires_at": utc(row.expires_at).isoformat(),
+            "methods": ["totp", "recovery_code"],
+        }
 
 
 def _recovery_parts(code: str) -> tuple[str, str]:
@@ -357,7 +390,10 @@ def complete(
             # Only failure accounting changed. Identity/scope/proof validation
             # above cannot accidentally commit pending business mutations.
             session.commit()
-            raise invalid()
+            raise invalid(
+                challenge_status="retryable",
+                attempts_remaining=challenge.attempt_limit - challenge.attempt_count,
+            )
         if counter is not None:
             factor.last_accepted_counter = counter
         if recovery is not None:

@@ -151,6 +151,7 @@ client redirect. QQ OAuth proof and challenge commit together.
 | Endpoint | Request / result |
 | --- | --- |
 | `GET /portal/v1/totp/status` | Current full session required; returns `enabled` and current-generation `recovery_codes_remaining`, never seed/hash/proof. |
+| `GET /portal/v1/totp/challenge/status` | Uses only the HttpOnly challenge cookie; returns `status: pending|expired|consumed|attempts_exhausted` and `expires_at`. It never accepts the credential in a URL/body and never issues a full session. |
 | `POST /portal/v1/totp/challenge/complete` | Restricted cookie plus `{code, method: "totp" | "recovery_code"}` (defaulttotp); success returns normal session data, `status: "authenticated"`, sets full-session cookie and clears challenge. |
 | `POST /portal/v1/totp/disable/start` | Current full session with trusted recent primary; creates purpose/SID-bound challenge cookie. |
 | `POST /portal/v1/totp/disable/confirm` | Current full session + challenge cookie + code/method; disables factor and returns replacement full session. |
@@ -158,6 +159,18 @@ client redirect. QQ OAuth proof and challenge commit together.
 | `POST /portal/v1/totp/recovery-reset/confirm` | Same proof inputs; replaces generation, returns replacement full session and eight recovery_codes exactly once. |
 | `POST /portal/v1/totp/setup/start` — UNMOUNTED | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
 | `POST /portal/v1/totp/setup/confirm` — UNMOUNTED | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
+
+The challenge status bootstrap is cookie-only and carries no credential in its
+URL, request body, or response. Its projection keeps `status:
+second_factor_required` and uses `challenge_status` for `pending`, `expired`,
+`consumed`, or `attempts_exhausted`; missing or invalid cookies return HTTP 401
+with `auth.portal_factor_invalid` and `challenge_status: missing`. Completion
+keeps HTTP 401 with the same error code: a wrong code that can still be retried
+returns `challenge_status: retryable` and `attempts_remaining`, while expired,
+consumed, exhausted, or invalid bindings return terminal status. Clients retain
+the form only for `retryable`; terminal or missing states clear local challenge
+state. The challenge cookie is never used as an Authorization Bearer token, and
+the status endpoint never issues a full session.
 
 Sensitive routes require same origin, private no-store, no-cache and Cookie/
 Authorization Vary, including framework validation/error exits. They never claim
