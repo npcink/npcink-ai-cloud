@@ -35,7 +35,8 @@ async function forwardPortalBackendPath(
     unreachableMessage: string;
   }
 ): Promise<NextResponse> {
-  const isSessions = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/');
+  const isPrivateRoute = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/')
+    || backendPath === '/portal/v1/totp' || backendPath.startsWith('/portal/v1/totp/');
   const method = (options.method || request.method).toUpperCase();
   const accept = request.headers.get('accept');
   const contentType = request.headers.get('content-type');
@@ -117,23 +118,23 @@ async function forwardPortalBackendPath(
   }
 
   try {
-    if (isSessions && method === 'HEAD') {
+    if (isPrivateRoute && method === 'HEAD') {
       const headResponse = new NextResponse(null, { status: response.status });
       appendForwardHeaders(response, headResponse);
       return withPortalSessionsPrivateHeaders(headResponse, response.headers);
     }
-    if (isSessions && !(response.headers.get('content-type') || '').includes('application/json')) {
+    if (isPrivateRoute && !(response.headers.get('content-type') || '').includes('application/json')) {
       throw new Error('Invalid session response');
     }
     const forwardedResponse = await forwardBackendJson(response);
-    if (isSessions) withPortalSessionsPrivateHeaders(forwardedResponse, response.headers);
+    if (isPrivateRoute) withPortalSessionsPrivateHeaders(forwardedResponse, response.headers);
     if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
       logActivityReadFailure(response.status, 'backend_response');
     }
     return withRequestReference(forwardedResponse);
   } catch (error) {
-    if (isSessions) {
-      const unavailable = buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Session management unavailable');
+    if (isPrivateRoute) {
+      const unavailable = buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Portal authentication unavailable');
       appendForwardHeaders(response, unavailable);
       return withPortalSessionsPrivateHeaders(unavailable, response.headers);
     }
@@ -165,13 +166,14 @@ export async function proxyPortalBackendPath(
   backendPath: string,
   options: { method?: string; unreachableCode: string; unreachableMessage: string }
 ): Promise<NextResponse> {
-  const isSessions = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/');
+  const isPrivateRoute = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/')
+    || backendPath === '/portal/v1/totp' || backendPath.startsWith('/portal/v1/totp/');
   try {
     const response = await forwardPortalBackendPath(request, backendPath, options);
-    return isSessions ? withPortalSessionsPrivateHeaders(response) : response;
+    return isPrivateRoute ? withPortalSessionsPrivateHeaders(response) : response;
   } catch (error) {
-    if (!isSessions) throw error;
-    return withPortalSessionsPrivateHeaders(buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Session management unavailable'));
+    if (!isPrivateRoute) throw error;
+    return withPortalSessionsPrivateHeaders(buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Portal authentication unavailable'));
   }
 }
 

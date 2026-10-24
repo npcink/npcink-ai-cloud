@@ -249,6 +249,7 @@ export async function proxy(request: NextRequest) {
   const response = await routeProxy(request);
   const path = request.nextUrl.pathname;
   return path === '/api/portal/sessions' || path.startsWith('/api/portal/sessions/')
+    || path === '/api/portal/totp' || path.startsWith('/api/portal/totp/')
     ? withPortalSessionsPrivateHeaders(response) : response;
 }
 
