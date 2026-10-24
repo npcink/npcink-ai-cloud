@@ -143,6 +143,8 @@ def test_gitleaks_fixture_ignores_are_exact_reviewed_fingerprints() -> None:
         "tests/domain/test_payment_gateways.py:private-key:173",
         "45dc5ef1e91b00c819ba74f32aec98dc5bcdad1f:"
         "tests/core/test_logging_redaction.py:jwt:56",
+        "3fd4913a90948fba4e6d518172c036adeed59a40:"
+        "tests/core/test_portal_totp_codec.py:generic-api-key:33",
     ]
 
 

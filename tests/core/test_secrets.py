@@ -381,3 +381,41 @@ def test_production_rejects_shared_security_domain_secrets() -> None:
             browser_origin_allowlist="https://cloud.example.com",
             trusted_host_allowlist="cloud.example.com",
         )
+
+
+def test_portal_totp_seed_uses_runtime_root_and_isolated_purpose():
+    from app.core.secrets import decrypt_portal_totp_seed, encrypt_portal_totp_seed
+
+    settings = _settings()
+    seed = b"synthetic-totp-seed"
+    encrypted = encrypt_portal_totp_seed(seed, settings=settings)
+    assert encrypted.startswith("rde.v1.runtime-key-2026-07.")
+    assert decrypt_portal_totp_seed(encrypted, settings=settings) == seed
+    assert decrypt_portal_totp_seed(encrypted, settings=_settings(session_suffix="changed")) == seed
+    for wrong in (
+        _settings(runtime_secret=OTHER_RUNTIME_ROOT),
+        _settings(runtime_key_id="other-key"),
+    ):
+        with pytest.raises(RuntimeError, match="unavailable"):
+            decrypt_portal_totp_seed(encrypted, settings=wrong)
+    with pytest.raises(RuntimeError):
+        decrypt_runtime_data_plaintext(
+            encrypted, purpose="portal_idempotency_response", settings=settings
+        )
+    wrong_purpose = encrypt_runtime_data_plaintext(
+        seed, purpose="portal_idempotency_response", settings=settings
+    )
+    for invalid in (
+        None,
+        "",
+        " ",
+        encrypted[:40] + ("A" if encrypted[40] != "A" else "B") + encrypted[41:],
+        wrong_purpose,
+    ):
+        with pytest.raises(RuntimeError, match="unavailable"):
+            decrypt_portal_totp_seed(invalid, settings=settings)
+    with pytest.raises(RuntimeError, match="missing"):
+        encrypt_portal_totp_seed(b"", settings=settings)
+    empty = encrypt_runtime_data_plaintext(b"", purpose="portal_totp_seed", settings=settings)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        decrypt_portal_totp_seed(empty, settings=settings)

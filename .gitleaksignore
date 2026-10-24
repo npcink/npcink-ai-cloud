@@ -3,3 +3,7 @@
 
 # Synthetic JWT used to prove log redaction; exact reviewed finding only.
 45dc5ef1e91b00c819ba74f32aec98dc5bcdad1f:tests/core/test_logging_redaction.py:jwt:56
+
+# Public RFC 6238 SHA-1 test seed (ASCII 12345678901234567890), Base32 assertion.
+# Exact reviewed historical finding only; not an issued credential.
+3fd4913a90948fba4e6d518172c036adeed59a40:tests/core/test_portal_totp_codec.py:generic-api-key:33

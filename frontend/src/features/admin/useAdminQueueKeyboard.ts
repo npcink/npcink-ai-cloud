@@ -69,14 +69,21 @@ export function useAdminQueueKeyboard({
   onFocus,
   onOpen,
   onClose,
-}: AdminQueueKeyboardOptions): boolean {
-  const [keyboardFocus, setKeyboardFocus] = useState(false);
+}: AdminQueueKeyboardOptions): { keyboardFocus: boolean; inspect: (id: string) => void } {
+  const [selectionIntent, setSelectionIntent] = useState<
+    { kind: 'keyboard' } | { kind: 'inspect'; id: string } | null
+  >(null);
 
   useEffect(() => {
-    const releaseKeyboardFocus = () => setKeyboardFocus(false);
-    document.addEventListener('pointerdown', releaseKeyboardFocus, true);
-    return () => document.removeEventListener('pointerdown', releaseKeyboardFocus, true);
-  }, []);
+    if (selectionIntent?.kind === 'inspect' && focusedId === selectionIntent.id) {
+      setSelectionIntent(null);
+    }
+  }, [focusedId, selectionIntent]);
+
+  const inspect = (id: string) => {
+    setSelectionIntent({ kind: 'inspect', id });
+    onFocus(id);
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -94,7 +101,7 @@ export function useAdminQueueKeyboard({
           : Math.max(0, currentIndex - 1);
         const nextId = itemIds[nextIndex];
         if (nextId && nextId !== focusedId) {
-          setKeyboardFocus(true);
+          setSelectionIntent({ kind: 'keyboard' });
           onFocus(nextId);
         }
         return;
@@ -111,7 +118,6 @@ export function useAdminQueueKeyboard({
 
       if (event.key === 'Escape') {
         if (hasOpenQueueDrawer()) return;
-        setKeyboardFocus(false);
         event.preventDefault();
         onClose();
       }
@@ -121,5 +127,11 @@ export function useAdminQueueKeyboard({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [enabled, focusedId, itemIds, onClose, onFocus, onOpen]);
 
-  return keyboardFocus;
+  return {
+    // A router-backed consumer may still expose the previous focused record
+    // while Inspect is pending. Never open that record in place of the target.
+    keyboardFocus: selectionIntent?.kind === 'keyboard' ||
+      (selectionIntent?.kind === 'inspect' && focusedId !== selectionIntent.id),
+    inspect,
+  };
 }

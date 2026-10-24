@@ -6,7 +6,7 @@ import type {
   SupportRequestSort,
 } from './types';
 
-export const SUPPORT_REQUEST_PAGE_SIZE = 20;
+export const SUPPORT_REQUEST_PAGE_SIZE = 10;
 export const SUPPORT_REQUEST_STATUS_FILTERS = [
   '',
   'open',

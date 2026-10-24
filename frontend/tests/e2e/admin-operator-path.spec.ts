@@ -93,7 +93,7 @@ test('admin coverage page keeps service queue primary and package catalog separa
 
   await page.goto('/admin/coverage');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$|^服務狀態$/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^(?:Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列)$/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Inspect subscription|查看订阅|檢查訂閱/i }).first()).toBeVisible();
@@ -139,7 +139,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
 
   await page.goto('/admin/coverage');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$|^服務狀態$/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^(?:Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列)$/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');

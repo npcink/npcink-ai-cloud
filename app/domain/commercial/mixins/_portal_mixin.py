@@ -10,6 +10,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
@@ -54,6 +55,7 @@ from app.core.models import (
 from app.core.security import build_secret_hash, derive_stable_secret_digest, verify_secret_hash
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
+    CommercialConflictError,
     CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
@@ -71,6 +73,15 @@ from app.domain.commercial.membership_policy import (
     assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+from app.domain.portal_sessions.service import (
+    AuthenticatedSession,
+    OAuthLoginProof,
+    PortalSessionIssuer,
+    lock_login_scope,
+    sign_session,
+    validate_registered_session,
+)
+from app.domain.portal_totp.service import lock_primary_factor
 
 PORTAL_LOGIN_CODE_PURPOSE_LOGIN = "portal_login"
 PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE = "portal_email_change"
@@ -946,6 +957,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         provider: str,
         state: str,
         nonce: str = "",
+        consume: bool = True,
     ) -> dict[str, object]:
         normalized_provider = _normalize_identity_provider(provider)
         normalized_state = str(state or "").strip()
@@ -992,8 +1004,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.portal_oauth_state_expired",
                     "portal OAuth state has expired",
                 )
-            row.status = PORTAL_OAUTH_STATE_STATUS_CONSUMED
-            row.consumed_at = now
+            if consume:
+                row.status = PORTAL_OAUTH_STATE_STATUS_CONSUMED
+                row.consumed_at = now
             payload: dict[str, object] = {
                 "provider": row.provider,
                 "return_to": row.return_to or "/portal",
@@ -1042,6 +1055,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         external_subject: str,
         unionid: str = "",
         metadata_json: dict[str, object] | None = None,
+        authenticated: AuthenticatedSession | None = None,
+        oauth_proof: OAuthLoginProof | None = None,
     ) -> dict[str, object]:
         normalized_provider = _normalize_identity_provider(provider)
         subject_hash = _hash_external_identity(normalized_provider, external_subject)
@@ -1051,7 +1066,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
+            identity = lock_login_scope(session, principal_id)
             if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
@@ -1092,6 +1107,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 },
                 last_login_at=now,
             )
+            if authenticated is not None:
+                validate_registered_session(session, authenticated, for_update=True)
+            if oauth_proof is not None:
+                oauth_proof.consume(session)
             session.commit()
             return _serialize_identity_provider_binding(binding, principal_id=principal_id)
 
@@ -1100,11 +1119,14 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         *,
         principal_id: str,
         provider: str,
+        authenticated: AuthenticatedSession | None = None,
     ) -> dict[str, object]:
         normalized_provider = _normalize_identity_provider(provider)
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
+            identity = lock_login_scope(session, principal_id)
+            if authenticated is not None:
+                validate_registered_session(session, authenticated, for_update=True)
             if identity is None:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
@@ -1139,6 +1161,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         provider: str,
         external_subject: str,
         unionid: str = "",
+        session_issuer: PortalSessionIssuer | None = None,
     ) -> dict[str, object]:
         normalized_provider = _normalize_identity_provider(provider)
         subject_hash = _hash_external_identity(normalized_provider, external_subject)
@@ -1169,7 +1192,13 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.identity_provider_binding_revoked",
                     "this identity provider binding is not active",
                 )
-            identity = repository.get_principal_identity(binding.principal_id)
+            identity = lock_login_scope(session, binding.principal_id)
+            lock_primary_factor(session, binding.principal_id)
+            session.refresh(binding, with_for_update=True)
+            if binding.status != IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE:
+                raise CommercialPermissionError(
+                    "service.identity_provider_binding_revoked", "binding revoked"
+                )
             if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
@@ -1190,8 +1219,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             )
             binding.last_login_at = now
             identity.last_login_at = now
+            issued = session_issuer.issue(session, identity) if session_issuer else None
             session.commit()
             return {
+                "_portal_session": issued,
                 "status": "authenticated",
                 "provider": normalized_provider,
                 "principal_id": identity.principal_id,
@@ -1213,6 +1244,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         display_name: str = "",
         avatar_url: str = "",
         audit_context: ServiceAuditContext | None = None,
+        session_issuer: PortalSessionIssuer | None = None,
     ) -> dict[str, object]:
         normalized_provider = _normalize_identity_provider(provider)
         subject_hash = _hash_external_identity(normalized_provider, external_subject)
@@ -1335,6 +1367,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "principal_id": identity.principal_id,
                 },
             )
+            payload["_portal_session"] = (
+                session_issuer.issue(session, identity) if session_issuer else None
+            )
             session.commit()
         return payload
 
@@ -1385,6 +1420,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         code: str,
         max_attempts: int,
         login_at: datetime | None = None,
+        session_issuer: PortalSessionIssuer | None = None,
     ) -> dict[str, object]:
         try:
             normalized_email = _normalize_principal_email(email)
@@ -1409,6 +1445,14 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         bounded_attempts = max(1, int(max_attempts or 0))
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
+            discovered = repository.get_principal_identity_by_email(email=normalized_email)
+            if discovered is not None:
+                lock_login_scope(session, discovered.principal_id)
+                lock_primary_factor(session, discovered.principal_id)
+            if discovered is None or (discovered.email or "").lower() != normalized_email:
+                raise CommercialPermissionError(
+                    "service.portal_login_code_invalid", "portal login code is invalid"
+                )
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
@@ -1423,6 +1467,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "portal login code is invalid",
                 )
             active_code = active_codes[0]
+            if active_code.principal_id != discovered.principal_id:
+                raise CommercialPermissionError(
+                    "service.portal_login_code_invalid", "portal login code is invalid"
+                )
             if not verify_secret_hash(normalized_code, str(active_code.code_hash or "")):
                 active_code.attempt_count = int(active_code.attempt_count or 0) + 1
                 if active_code.attempt_count >= bounded_attempts:
@@ -1443,7 +1491,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 principal_id=principal_id,
                 membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
             )
-            if identity is None or not memberships:
+            if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE or not memberships:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
                     f"principal '{principal_id}' is not active for any customer account",
@@ -1453,8 +1501,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 principal_id=principal_id,
             )
             identity.last_login_at = now
+            issued = session_issuer.issue(session, identity) if session_issuer else None
             session.commit()
         return {
+            "_portal_session": issued,
             "email": normalized_email,
             "principal_id": principal_id,
             "session_version": int(getattr(identity, "session_version", 1) or 1),
@@ -1538,6 +1588,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         code: str,
         max_attempts: int,
         audit_context: ServiceAuditContext | None = None,
+        authenticated: AuthenticatedSession | None = None,
+        session_issuer: PortalSessionIssuer | None = None,
     ) -> dict[str, object]:
         normalized_principal_id = str(principal_id or "").strip()
         normalized_new_email = _normalize_principal_email(new_email)
@@ -1552,9 +1604,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         bounded_attempts = max(1, int(max_attempts or 0))
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(
-                principal_id=normalized_principal_id,
-            )
+            identity = lock_login_scope(session, normalized_principal_id)
+            if authenticated is not None:
+                current_row = validate_registered_session(session, authenticated, for_update=True)
             if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
@@ -1639,16 +1691,28 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 scope_id=normalized_principal_id,
                 payload_json=payload,
             )
+            if authenticated is not None and session_issuer is not None:
+                current_row.session_version = identity.session_version
+                session.flush()
+                payload["_portal_session"] = sign_session(
+                    session_issuer.settings,
+                    identity,
+                    authenticated.session_id,
+                    authenticated.expires_at,
+                    site_id=session_issuer.site_id,
+                )
             session.commit()
         return payload
 
-    def revoke_portal_sessions(self, *, principal_id: str) -> dict[str, object]:
+    def revoke_portal_sessions(
+        self, *, principal_id: str, authenticated: AuthenticatedSession | None = None
+    ) -> dict[str, object]:
         normalized_principal_id = str(principal_id or "").strip()
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(
-                principal_id=normalized_principal_id,
-            )
+            identity = lock_login_scope(session, normalized_principal_id)
+            if authenticated is not None:
+                validate_registered_session(session, authenticated, for_update=True)
             if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
                 raise CommercialPermissionError(
                     "service.principal_access_required",
@@ -1746,6 +1810,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         max_attempts: int,
         audit_context: ServiceAuditContext | None = None,
         verified_at: datetime | None = None,
+        session_issuer: PortalSessionIssuer | None = None,
     ) -> dict[str, object]:
         normalized_email = _normalize_principal_email(email)
         normalized_code = str(code or "").strip()
@@ -1758,6 +1823,17 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         bounded_attempts = max(1, int(max_attempts or 0))
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
+            discovered = repository.get_principal_identity_by_email(email=normalized_email)
+            if discovered is not None:
+                lock_login_scope(session, discovered.principal_id)
+                lock_primary_factor(session, discovered.principal_id)
+            current = repository.get_principal_identity_by_email(email=normalized_email)
+            if (current.principal_id if current else None) != (
+                discovered.principal_id if discovered else None
+            ):
+                raise CommercialConflictError(
+                    "service.portal_login_scope_changed", "portal identity changed; retry"
+                )
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
@@ -1778,6 +1854,38 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.portal_registration_code_invalid",
                     "portal registration code is invalid",
                 )
+            principal_id = str(active_code.principal_id or "").strip()
+            identity = repository.get_principal_identity_by_email(email=normalized_email)
+            if (identity.principal_id if identity else None) != (
+                discovered.principal_id if discovered else None
+            ):
+                raise CommercialConflictError(
+                    "service.portal_login_scope_changed", "portal identity changed; retry"
+                )
+            # A proof is bound to its original identity, not just its email.
+            # Never acquire a different identity/account lock after the proof lock.
+            if (
+                not principal_id
+                or (identity is not None and identity.principal_id != principal_id)
+                or (
+                    identity is None
+                    and repository.get_principal_identity_by_ref(principal_id=principal_id)
+                    is not None
+                )
+            ):
+                raise CommercialPermissionError(
+                    "service.portal_registration_code_invalid",
+                    "portal registration code is invalid",
+                )
+            if identity is not None and _principal_registration_access_is_blocked(
+                repository,
+                principal_id=principal_id,
+                principal_status=str(identity.status or ""),
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal registration is unavailable for this principal",
+                )
             if not verify_secret_hash(normalized_code, str(active_code.code_hash or "")):
                 active_code.attempt_count = int(active_code.attempt_count or 0) + 1
                 if active_code.attempt_count >= bounded_attempts:
@@ -1790,20 +1898,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 )
             active_code.status = PORTAL_LOGIN_CODE_STATUS_CONSUMED
             active_code.consumed_at = now
-            principal_id = str(active_code.principal_id or "").strip()
-            identity = repository.get_principal_identity_by_email(email=normalized_email)
             if identity is not None:
-                principal_id = str(identity.principal_id or "").strip()
-                if _principal_registration_access_is_blocked(
-                    repository,
-                    principal_id=principal_id,
-                    principal_status=str(identity.status or ""),
-                ):
-                    session.commit()
-                    raise CommercialPermissionError(
-                        "service.principal_access_required",
-                        "portal registration is unavailable for this principal",
-                    )
                 memberships = repository.list_accounts_for_principal(
                     principal_id=principal_id,
                     membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
@@ -1815,8 +1910,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                         audit_context=audit_context,
                     )
                     identity.last_login_at = now
+                    issued = session_issuer.issue(session, identity) if session_issuer else None
                     session.commit()
                     return {
+                        "_portal_session": issued,
                         "status": "existing_user",
                         "email": normalized_email,
                         "principal_id": principal_id,
@@ -1827,11 +1924,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     }
 
             account_id = str(registration_metadata.get("account_id") or "").strip()
-            if not principal_id:
-                principal_id = _new_principal_id()
             if not account_id:
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
-            account = repository.upsert_account(
+            account = Account(
                 account_id=account_id,
                 name=normalized_email,
                 status=ACCOUNT_STATUS_ACTIVE,
@@ -1841,16 +1936,28 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "created_via": "portal_register",
                 },
             )
-            identity = repository.upsert_principal_identity(
-                principal_id=principal_id,
-                email=normalized_email,
-                status=PRINCIPAL_STATUS_ACTIVE,
-                metadata_json={
-                    "source": "portal_self_registration",
-                    "identity_type": IDENTITY_TYPE_USER,
-                },
-                last_login_at=now,
-            )
+            session.add(account)
+            if identity is None:
+                identity = Principal(
+                    principal_id=principal_id,
+                    email=normalized_email,
+                    status=PRINCIPAL_STATUS_ACTIVE,
+                    metadata_json={
+                        "source": "portal_self_registration",
+                        "identity_type": IDENTITY_TYPE_USER,
+                    },
+                    last_login_at=now,
+                )
+                session.add(identity)
+            # Missing rows cannot be locked. Unique INSERT constraints close the
+            # race after discovery; an upsert would overwrite a concurrent owner.
+            try:
+                session.flush()
+            except IntegrityError as error:
+                raise CommercialConflictError(
+                    "service.portal_login_scope_changed", "portal identity changed; retry"
+                ) from error
+            identity.last_login_at = now
             repository.upsert_account_user_membership(
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
@@ -1905,6 +2012,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "email": normalized_email,
                     "registration_code_id": str(active_code.code_id or ""),
                 },
+            )
+            payload["_portal_session"] = (
+                session_issuer.issue(session, identity) if session_issuer else None
             )
             session.commit()
         return payload
@@ -2418,6 +2528,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         code: str,
         max_attempts: int,
         audit_context: ServiceAuditContext | None = None,
+        authenticated: AuthenticatedSession | None = None,
     ) -> dict[str, object]:
         """Disable an exclusively owned login and close its sole service account.
 
@@ -2440,6 +2551,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     principal_id,
                 )
             )
+            if authenticated is not None:
+                validate_registered_session(session, authenticated, for_update=True)
             codes = repository.list_portal_login_codes(
                 email=str(identity.email or "").strip().lower(),
                 principal_id=principal_id,

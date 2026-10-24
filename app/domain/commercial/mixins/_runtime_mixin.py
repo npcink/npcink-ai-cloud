@@ -55,6 +55,10 @@ from app.domain.commercial.mixins._billing_mixin import (
     DEFAULT_RUNTIME_CONCURRENCY,
     DEFAULT_RUNTIME_ENTITLEMENTS,
 )
+from app.domain.commercial.notifications import (
+    build_commercial_notification_id,
+    notify_unique_account_owner,
+)
 from app.domain.runtime.errors import (
     RuntimeConcurrencyExceededError,
     RuntimeEntitlementDeniedError,
@@ -605,6 +609,26 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                         "limit": round(float(limit), 6),
                     },
                 )
+                if (
+                    meter_key == "ai_credits"
+                    and period_start_at is not None
+                    and period_end_at is not None
+                ):
+                    notify_unique_account_owner(
+                        session=session,
+                        account_id=subscription.account_id,
+                        notification_id=build_commercial_notification_id(
+                            "pnotif_ai_credits_denied",
+                            subscription.account_id,
+                            subscription.subscription_id,
+                            period_start_at.isoformat(),
+                            period_end_at.isoformat(),
+                        ),
+                        event_type="runtime.ai_credits_denied",
+                        title="AI 积分不足",
+                        body="本订阅周期的 AI 积分额度不足，本次执行未开始。",
+                        link_href="/portal/usage",
+                    )
                 session.commit()
                 raise error
             policy_actions.append(budget_action)

@@ -32,6 +32,8 @@ async function fixture(page: Page, baseURL: string | undefined, mode: Mode = 'su
       if (submitted) readbacks++;
       if (submitted && mode === 'lost-unavailable') { await reply(route, {}, 503, 'service.unavailable'); return; }
       await reply(route, active ? { email: 'member@example.test', sites: [], selected_context: null, auth_mode: 'jwt', session: { state: 'active', transport: 'cookie' } } : {}, active ? 200 : 401, active ? '' : 'auth.portal_session_revoked');
+    } else if (url.pathname === '/api/portal/totp/challenge/status' && method === 'GET') {
+      await reply(route, { challenge_status: 'missing' }, 401, 'auth.portal_factor_invalid');
     } else if (path === '/session/revoke' && method === 'POST') {
       submitted++;
       if (gated) await new Promise<void>((resolve) => { release = resolve; });

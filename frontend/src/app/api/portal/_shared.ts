@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import {
+  appendForwardHeaders,
   buildBackendUrl,
   buildErrorResponse,
   buildForwardedRequestHeaders,
@@ -25,7 +26,7 @@ function buildPortalBackendPath(pathSegments: string[]): string {
   return normalized ? `/portal/v1/${normalized}` : '/portal/v1';
 }
 
-export async function proxyPortalBackendPath(
+async function forwardPortalBackendPath(
   request: NextRequest,
   backendPath: string,
   options: {
@@ -34,6 +35,8 @@ export async function proxyPortalBackendPath(
     unreachableMessage: string;
   }
 ): Promise<NextResponse> {
+  const isPrivateRoute = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/')
+    || backendPath === '/portal/v1/totp' || backendPath.startsWith('/portal/v1/totp/');
   const method = (options.method || request.method).toUpperCase();
   const accept = request.headers.get('accept');
   const contentType = request.headers.get('content-type');
@@ -115,12 +118,26 @@ export async function proxyPortalBackendPath(
   }
 
   try {
+    if (isPrivateRoute && method === 'HEAD') {
+      const headResponse = new NextResponse(null, { status: response.status });
+      appendForwardHeaders(response, headResponse);
+      return withPortalSessionsPrivateHeaders(headResponse, response.headers);
+    }
+    if (isPrivateRoute && !(response.headers.get('content-type') || '').includes('application/json')) {
+      throw new Error('Invalid session response');
+    }
     const forwardedResponse = await forwardBackendJson(response);
+    if (isPrivateRoute) withPortalSessionsPrivateHeaders(forwardedResponse, response.headers);
     if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
       logActivityReadFailure(response.status, 'backend_response');
     }
     return withRequestReference(forwardedResponse);
   } catch (error) {
+    if (isPrivateRoute) {
+      const unavailable = buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Portal authentication unavailable');
+      appendForwardHeaders(response, unavailable);
+      return withPortalSessionsPrivateHeaders(unavailable, response.headers);
+    }
     if (!isActivityRead) throw error;
     logActivityReadFailure(502, 'unreadable_response');
     return withRequestReference(buildErrorResponse(
@@ -128,6 +145,35 @@ export async function proxyPortalBackendPath(
       'proxy.portal_backend_invalid_response',
       'Portal backend response could not be read'
     ));
+  }
+}
+
+export function withPortalSessionsPrivateHeaders(response: NextResponse, upstream?: Headers): NextResponse {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Pragma', 'no-cache');
+  const vary = new Map<string, string>();
+  for (const value of [response.headers.get('vary'), upstream?.get('vary'), 'Cookie, Authorization']) {
+    for (const name of (value || '').split(',')) {
+      if (name.trim()) vary.set(name.trim().toLowerCase(), name.trim());
+    }
+  }
+  response.headers.set('Vary', [...vary.values()].join(', '));
+  return response;
+}
+
+export async function proxyPortalBackendPath(
+  request: NextRequest,
+  backendPath: string,
+  options: { method?: string; unreachableCode: string; unreachableMessage: string }
+): Promise<NextResponse> {
+  const isPrivateRoute = backendPath === '/portal/v1/sessions' || backendPath.startsWith('/portal/v1/sessions/')
+    || backendPath === '/portal/v1/totp' || backendPath.startsWith('/portal/v1/totp/');
+  try {
+    const response = await forwardPortalBackendPath(request, backendPath, options);
+    return isPrivateRoute ? withPortalSessionsPrivateHeaders(response) : response;
+  } catch (error) {
+    if (!isPrivateRoute) throw error;
+    return withPortalSessionsPrivateHeaders(buildErrorResponse(502, 'proxy.portal_backend_invalid_response', 'Portal authentication unavailable'));
   }
 }
 

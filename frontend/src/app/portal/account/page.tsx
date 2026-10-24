@@ -11,6 +11,8 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
+import { PortalDataExport } from '@/components/portal/PortalDataExport';
+import { PortalSessions } from '@/components/portal/PortalSessions';
 import { PortalRevokeSessions } from '@/components/portal/PortalRevokeSessions';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { Modal } from '@/components/ui/Modal';
@@ -478,7 +480,9 @@ function AccountPageContent() {
             </div>
           </PortalCard>
           )}
+        <PortalSessions />
         <PortalRevokeSessions />
+        <PortalDataExport />
       </PortalSection>
 
       <div className="space-y-3" data-portal-account="payment-orders-section">

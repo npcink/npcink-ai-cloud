@@ -84,6 +84,7 @@ from tests.conftest import (
 )
 
 _ACCESS_BY_EMAIL: dict[str, dict[str, object]] = {}
+_TEST_DATABASE_URL: str | None = None
 PORTAL_INTERNAL_IDENTITY_FIELDS = {
     "account_id",
     "principal_id",
@@ -206,6 +207,7 @@ def build_portal_headers(**kwargs: Any) -> dict[str, str]:
         session_version,
     )
     return _build_portal_headers(
+        database_url=_TEST_DATABASE_URL,
         principal_id=resolved_principal_id,
         session_version=resolved_session_version,
         **kwargs,
@@ -220,6 +222,7 @@ def build_portal_bearer_headers(**kwargs: Any) -> dict[str, str]:
         session_version,
     )
     return _build_portal_bearer_headers(
+        database_url=_TEST_DATABASE_URL,
         principal_id=resolved_principal_id,
         session_version=resolved_session_version,
         **kwargs,
@@ -237,6 +240,8 @@ def _build_client(
     portal_email_sender: PortalEmailSender | None = None,
     providers: dict[str, Any] | None = None,
 ) -> tuple[str, TestClient]:
+    global _TEST_DATABASE_URL
+    _TEST_DATABASE_URL = _sqlite_url(tmp_path)
     _ACCESS_BY_EMAIL.clear()
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -687,12 +692,15 @@ def _set_portal_cookie_session(
     settings = client.app.state.services.settings
     client.cookies.set(
         COOKIE_PORTAL_SESSION_TOKEN,
-        build_portal_session_token(
-            settings,
+        _build_portal_bearer_headers(
+            database_url=settings.database_url,
+            issuer=settings.portal_jwt_issuer,
+            audience=settings.portal_jwt_audience,
+            secret=settings.portal_jwt_secret,
             principal_id=principal_id,
             site_id=site_id,
             session_version=session_version,
-        ),
+        )["Authorization"][7:],
     )
 
 
@@ -4455,6 +4463,7 @@ def test_portal_remember_me_expiry_survives_site_selection(tmp_path: Path) -> No
     )
     assert after_claims["site_id"] == "site_portal_remember_site"
     assert after_claims["exp"] == before_claims["exp"]
+    assert after_claims["sid"] == before_claims["sid"]
     assert after_claims["exp"] - after_claims["iat"] > 6 * 24 * 60 * 60
 
 
@@ -4493,6 +4502,7 @@ def test_portal_bearer_expiry_drives_site_selection_cookie_rotation(tmp_path: Pa
         COOKIE_PORTAL_SESSION_TOKEN,
         build_portal_session_token(
             settings,
+            session_id="codec-unrelated",
             principal_id="principal:unrelated@example.com",
             session_version=1,
             expires_at=datetime.now(UTC) + timedelta(hours=1),
@@ -4574,12 +4584,12 @@ def test_portal_email_change_rejects_near_expiry_before_mutation(tmp_path: Path)
     request_data = request_response.json()["data"]
     client.cookies.set(
         COOKIE_PORTAL_SESSION_TOKEN,
-        build_portal_session_token(
-            client.app.state.services.settings,
+        _build_portal_bearer_headers(
+            database_url=database_url,
             principal_id=str(verified_login["principal_id"]),
             session_version=int(verified_login["session_version"]),
             expires_at=datetime.now(UTC) + timedelta(seconds=30),
-        ),
+        )["Authorization"][7:],
     )
 
     verify_response = client.post(
@@ -7672,7 +7682,7 @@ def test_portal_session_route_supports_jwt_with_session_cookies(tmp_path: Path) 
     assert len(data["sites"]) == 1
     assert data["selected_context"] is None
     assert data["session"]["transport"] == "header"
-    assert data["session"]["revocable"] is False
+    assert data["session"]["revocable"] is True
     assert data["session"]["expires_at"] != ""
 
     dispose_engine(database_url)
