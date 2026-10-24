@@ -154,6 +154,7 @@ deleting the old decision history.
 
 - [七会话 Phase 1 收口与协作经验 — 2026-10-24](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md) — 七个会话的职责、证据分层、T2/M4 收口和可复用协作经验；不替代生产授权或 Phase 2 计划。
 - [Frontend security dependency reconciliation — 2026-10-25](history/engineering/2026/frontend-security-dependency-reconciliation-2026-10-25.md) — Next.js acceptance, Vite override and Vitest peer alignment, remaining audit debt, and dependency closeout lessons.
+- [FastAPI telemetry compatibility review — 2026-10-25](history/engineering/2026/fastapi-telemetry-compatibility-review-2026-10-25.md) — native telemetry ownership, callback redaction, query-default compatibility, and exporter-backed regression evidence.
 
 ## Engineering and Delivery Standards
 

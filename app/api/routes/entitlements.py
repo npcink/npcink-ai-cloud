@@ -293,7 +293,8 @@ def _build_entitlement_payload(
 async def get_current_entitlement(
     request: Request,
     object_type: str = Query(default="site"),
-    object_id: str = Query(default="", min_length=1),
+    # Preserve the pre-0.148 omitted-value validation contract.
+    object_id: str = Query(default="", min_length=1, validate_default=True),
 ) -> Any:
     auth = await authorize_public_request(
         request,
