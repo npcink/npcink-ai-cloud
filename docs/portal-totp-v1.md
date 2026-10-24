@@ -1,10 +1,10 @@
 # Portal TOTP storage v1
 
-Status: T1 dormant source candidate, pending independent review and real PostgreSQL
-acceptance. This is storage and maintenance support only. No factor is enabled
-for a real principal; no setup, challenge, recovery, issuer or frontend entrypoint
-is connected. TOTP is not available to users from this change. Production remains
-separately authorized. See [Portal sessions](portal-session-registry-v1.md).
+Status: T1 storage is merged via #1245. T2 backend is a local candidate awaiting
+independent whole-backend review, real PostgreSQL evidence and the complete
+frontend/backend joint candidate. Setup/confirm are deliberately NOT mounted in
+the application; no public activation is available. No production authorization.
+The T1 storage contract below remains the schema baseline.
 
 ## Ownership and activation boundary
 
@@ -125,3 +125,149 @@ restore a JWT-only verifier. Once enabled, T2 recovery/rollback requires a separ
 coordinated plan; disabling UI is not equivalent to disabling second-factor
 requirements. Local, independent review, CI, M4 candidate/accepted and production
 are separate evidence states.
+
+## T2 backend candidate: activation boundary and wire contract
+
+The ordinary app composes login challenge completion, disable/reset and status.
+`setup_router` in `app/api/routes/portal_totp.py` is deliberately not included by
+`app/api/main.py`; only isolated tests compose it. The integrator must assemble
+and review the complete frontend/backend candidate and explicitly mount setup
+only after every client consumes the restricted outcome. This is a source
+composition boundary, not an authentication bypass flag. Enabled-principal gates
+always run, even when setup entrypoints are absent. Do not ship this backend as
+an independently usable activation feature.
+
+All email login/remember-me, existing registration, QQ JSON/HTML and the shared
+session issuer return a restricted outcome for enabled principals. HTTP200 on a
+primary proof is not authenticated: `data` contains only
+`{status: "second_factor_required", expires_at}`; there is no account/site
+projection or new complete registry row. An old session cookie is cleared.
+The credential is only in `portal_totp_challenge`, HttpOnly, SameSite=Lax,
+Secure on HTTPS, path `/`, max-age300. It is not a Portal JWT, ordinary Bearer,
+account/site credential or a URL parameter. QQ HTML redirects only to
+`/portal/challenge`; completion navigation can use `/portal`, not an arbitrary
+client redirect. QQ OAuth proof and challenge commit together.
+
+| Endpoint | Request / result |
+| --- | --- |
+| `GET /portal/v1/totp/status` | Current full session required; returns `enabled` and current-generation `recovery_codes_remaining`, never seed/hash/proof. |
+| `GET /portal/v1/totp/challenge/status` | Uses only the HttpOnly challenge cookie; returns `status: pending|expired|consumed|attempts_exhausted` and `expires_at`. It never accepts the credential in a URL/body and never issues a full session. |
+| `POST /portal/v1/totp/challenge/complete` | Restricted cookie plus `{code, method: "totp" | "recovery_code"}` (defaulttotp); success returns normal session data, `status: "authenticated"`, sets full-session cookie and clears challenge. |
+| `POST /portal/v1/totp/disable/start` | Current full session with trusted recent primary; creates purpose/SID-bound challenge cookie. |
+| `POST /portal/v1/totp/disable/confirm` | Current full session + challenge cookie + code/method; disables factor and returns replacement full session. |
+| `POST /portal/v1/totp/recovery-reset/start` | Same recent-primary gate, purpose recovery_reset. |
+| `POST /portal/v1/totp/recovery-reset/confirm` | Same proof inputs; replaces generation, returns replacement full session and eight recovery_codes exactly once. |
+| `POST /portal/v1/totp/setup/start` — UNMOUNTED | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
+| `POST /portal/v1/totp/setup/confirm` — UNMOUNTED | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
+
+The challenge status bootstrap is cookie-only and carries no credential in its
+URL, request body, or response. Its projection keeps `status:
+second_factor_required` and uses `challenge_status` for `pending`, `expired`,
+`consumed`, or `attempts_exhausted`; missing or invalid cookies return HTTP 401
+with `auth.portal_factor_invalid` and `challenge_status: missing`. Completion
+keeps HTTP 401 with the same error code: a wrong code that can still be retried
+returns `challenge_status: retryable` and `attempts_remaining`; the final wrong
+code returns `challenge_status: attempt_limit` with `attempts_remaining: 0`.
+Expired, consumed, exhausted, or invalid bindings return terminal status. Clients retain
+the form only for `retryable`; terminal or missing states clear local challenge
+state. The challenge cookie is never used as an Authorization Bearer token, and
+the status endpoint never issues a full session.
+
+Sensitive routes require same origin, private no-store, no-cache and Cookie/
+Authorization Vary, including framework validation/error exits. They never claim
+an idempotency receipt, even if the client supplies Idempotency-Key. There is no
+secret replay endpoint. A successful lifecycle response lost after commit must
+be recovered by fresh login and another protected recovery reset, not by
+replaying a response containing codes/seed. Missing runtime encryption roots,
+corrupt seed, database or signing errors fail closed with unavailable response;
+no plaintext/root is returned.
+
+### Recent primary and trusted session proof
+
+New non-factor sessions store primary_authenticated_at at actual verified
+primary login; old rows remain legacy, not silently upgraded. Management requires
+a current full session whose stored primary time is no more than300seconds old
+and not in the future. Legacy/stale returns401
+`auth.portal_primary_reauthentication_required`: the client must ask the user to
+log in again. Fresh email, registration or QQ login qualifies equally. For an
+enabled principal that login itself requires the current second factor; each
+management confirmation still requires a separate current factor/recovery proof.
+There is no global reusable `recently_verified` boolean and JWT iat never stands
+in for primary authentication. Cookie/Bearer, export, closure, Admin invalidation,
+rotation and registry commands all retain the shared verifier. Enabled subjects
+require a matching factor_version plus complete stored second-factor proof;
+unsigned/arbitrary mfa_ok claims cannot substitute. If a factor tombstone is
+missing but MFA-session history exists, primary issuance fails503 rather than
+falling back to email-only. Active MFA rows also fail validation if their factor
+is missing. Disabled tombstones are retained.
+
+### RFC profile, transactions and failure budgets
+
+The codec fixes RFC6238 SHA1, six decimal digits, 30seconds, ±1counter. It uses
+stdlib HMAC with published RFC vectors; no new dependency or encryption format.
+All uses (pending confirmation, login, disable, reset) share the locked factor
+watermark and accept only a matched counter strictly greater than it. Future-step
+acceptance advances that same watermark. A recovery credential is bounded random
+ID plus192-bit secret, independently salted PBKDF2 hash, exact owned-row lookup,
+current factor version/generation and single consumption. Eight codes are emitted
+only once; old generations remain non-valid history. Reset preserves seed and
+counter, increments recovery generation; enable/disable increment factor version.
+Every lifecycle command increments principal session_version and issues only the
+operation browser's new SID, preserving its original absolute expiry. New version invalidates all old complete sessions
+and challenges actually bound to that version.
+
+Challenge IDs are random; the complete opaque credential (ID,256-bit secret and
+original server-selected session TTL) is hashed in storage. Tampering any part
+fails hash validation. Remember-me lifetime is the original bounded issuer TTL;
+completion accepts no TTL or auth-success flag. No schema addition is required:
+head remains0091 and T1 historical migrations are unchanged.
+
+Challenge purpose, expiry, attempts, primary freshness, principal session version,
+factor version and recovery generation are checked under principal/factor locks.
+Management additionally binds original SID and exact original absolute expiry;
+its caller is revalidated under the SID lock. New login challenges have no SID:
+single/others revocation does not erase unrelated fresh login challenges.
+Global revoke, email change, closure, Admin disable and lifecycle version changes
+invalidate challenges by their actual versions/status. Account/membership scope
+is checked again before completion. Setup challenge ID equals its pending ID;
+a replacement pending cannot be confirmed using an old challenge.
+
+Wrong TOTP/recovery increments that challenge's attempt_count and commits failure
+accounting before returning401. Five failures exhaust one challenge. Sum of
+attempts on all of the principal's challenges in the last900seconds is limited
+to15 under the same principal lock; replacing a challenge does not clear it.
+Credential/scope/expiry rejection occurs before business mutation; invalid scope
+must never use an attempt commit to persist business writes. Public primary
+verification has a separate persisted principal/email-discovery and trusted
+transport-peer window, independent of code resend or debug delivery; factor
+routes also persist peer and management-principal request windows. Arbitrary
+forwarded client identifiers are not trusted. Unknown challenge credentials are
+not allowed to spend a victim's stored challenge budget.
+
+Accounts → principals → memberships → factor → sorted SIDs → exact recovery row
+→ challenge → primary proofs is the shared order. Email/registration/QQ callers
+acquire factor before primary proof; issuer only reads that factor later and
+never acquires a late factor lock after proof. Principal serialization protects
+absent-factor insert and aggregate budgets. No locking is added to historical
+T1 migration sources or B3a public projections. Re-signing/site/email rotation
+retains the original row proof and absolute expiry.
+
+Signing occurs before commit. Signing/commit failure rolls back challenge,
+watermark, recovery consumption, factor/generation/version and registry/business
+state together. A completed commit remains consumed if response delivery fails.
+Tests distinguish those outcomes with final DB readback and locally scoped
+fault patches restored before teardown.
+
+### Candidate evidence gates
+
+Local SQLite API/domain/RFC tests and sequential scenario replay are not real
+PostgreSQL acceptance. The guarded existing PG module retains all75 T1 cases
+and appends T2 counter/challenge/recovery single-consume, enable-vs-primary,
+completion-vs-disable/reset/global revoke/Admin disable/email change/closure, and
+SID-bound management-vs-single/others races. Actual independent connections,
+observed lock waits and final row/authentication assertions must run on B02's
+controlled PostgreSQL lane with zero skips/errors and schema cleanup. The old
+0058→0068 dedicated two-database recovery gate stays separate. No runner allowlist,
+shared environment or historical migration was changed by this backend batch.
+Whole-backend A01 review, complete C1 consumer review, joint browser proof, real
+PG, required CI, M4 candidate, merged and accepted remain distinct later gates.

@@ -18,6 +18,7 @@ from app.core.models import (
     AccountUserMembership,
     PortalOAuthState,
     PortalSession,
+    PortalTotpFactor,
     Principal,
 )
 from app.core.portal_session_tokens import build_portal_session_token
@@ -33,6 +34,7 @@ from app.domain.portal_sessions.contracts import (
     PortalSessionProjection,
     PortalSessionRevocation,
 )
+from app.domain.portal_totp.contracts import RestrictedChallenge
 
 
 def utc(value: datetime) -> datetime:
@@ -155,7 +157,6 @@ def validate_registered_session(
     *,
     for_update: bool = False,
 ) -> PortalSession:
-    now = datetime.now(UTC)
     statement = (
         select(PortalSession)
         .where(
@@ -167,6 +168,7 @@ def validate_registered_session(
     if for_update:
         statement = statement.with_for_update()
     row = session.scalar(statement)
+    now = datetime.now(UTC)
     principal = session.get(Principal, identity.principal_id)
     if (
         principal is None
@@ -181,6 +183,20 @@ def validate_registered_session(
         raise CommercialPermissionError(
             "auth.portal_session_revoked", "portal session is no longer valid"
         )
+    factor = session.get(PortalTotpFactor, identity.principal_id)
+    if factor is None and row.factor_version is not None:
+        raise CommercialPermissionError("auth.portal_session_revoked", "factor state unavailable")
+    if (
+        factor is not None
+        and factor.state == "enabled"
+        and (
+            row.factor_version != factor.factor_version
+            or row.primary_authenticated_at is None
+            or row.second_factor_verified_at is None
+            or row.second_factor_method not in ("totp", "recovery_code")
+        )
+    ):
+        raise CommercialPermissionError("auth.portal_session_revoked", "second factor required")
     return row
 
 
@@ -192,25 +208,97 @@ class PortalSessionIssuer:
     oauth_proof: OAuthLoginProof | None = None
     site_id: str = ""
 
-    def issue(self, session: Session, principal: Principal) -> IssuedPortalSession:
+    def issue(
+        self, session: Session, principal: Principal
+    ) -> IssuedPortalSession | RestrictedChallenge:
         if principal.status != "active":
             raise CommercialPermissionError(
                 "auth.portal_session_revoked", "principal is not active"
             )
         now = datetime.now(UTC).replace(microsecond=0)
-        expiry = now + timedelta(seconds=max(60, self.ttl_seconds))
-        sid = secrets.token_urlsafe(32)
-        PortalSessionRepository(session).create(
-            session_id=sid,
-            principal_id=principal.principal_id,
-            session_version=principal.session_version,
-            created_at=now,
-            expires_at=expiry,
-            auth_method=self.auth_method,
-        )
+        # Existing-primary callers already hold principal and factor before
+        # their email/OAuth proof. Read only here: never acquire a late factor lock.
+        factor = session.get(PortalTotpFactor, principal.principal_id)
+        if factor is None and session.scalar(
+            select(PortalSession.session_id)
+            .where(
+                PortalSession.principal_id == principal.principal_id,
+                PortalSession.factor_version.is_not(None),
+            )
+            .limit(1)
+        ):
+            # A previously configured principal retains a factor tombstone even
+            # after disable. Missing storage must not become an email-only login.
+            from app.domain.commercial.errors import CommercialServiceError
+
+            raise CommercialServiceError(
+                503, "auth.portal_factor_unavailable", "Factor state unavailable"
+            )
         if self.oauth_proof is not None:
             self.oauth_proof.consume(session)
-        return sign_session(self.settings, principal, sid, expiry, now=now)
+        if factor is not None and factor.state == "enabled":
+            from app.domain.portal_totp.service import create_challenge
+
+            return create_challenge(
+                session,
+                principal,
+                factor,
+                purpose="login",
+                primary_method=self.auth_method,
+                primary_at=now,
+                ttl_seconds=self.ttl_seconds,
+                now=now,
+            )
+        return issue_verified_session(
+            session,
+            self.settings,
+            principal,
+            ttl_seconds=self.ttl_seconds,
+            auth_method=self.auth_method,
+            primary_at=now,
+        )
+
+
+def issue_verified_session(
+    session: Session,
+    settings: Settings,
+    principal: Principal,
+    *,
+    ttl_seconds: int,
+    auth_method: PortalSessionAuthMethod,
+    primary_at: datetime,
+    expires_at: datetime | None = None,
+    factor: PortalTotpFactor | None = None,
+    second_at: datetime | None = None,
+    second_method: str | None = None,
+) -> IssuedPortalSession:
+    """Internal completion UoW only; public issuers cannot pass an mfa_ok flag."""
+    now = datetime.now(UTC).replace(microsecond=0)
+    expiry = (
+        utc(expires_at) if expires_at is not None else now + timedelta(seconds=max(60, ttl_seconds))
+    )
+    sid = secrets.token_urlsafe(32)
+    row = PortalSessionRepository(session).create(
+        session_id=sid,
+        principal_id=principal.principal_id,
+        session_version=principal.session_version,
+        created_at=now,
+        expires_at=expiry,
+        auth_method=auth_method,
+    )
+    row.primary_authenticated_at = primary_at
+    if factor is not None:
+        if (
+            factor.state != "enabled"
+            or second_at is None
+            or second_method not in ("totp", "recovery_code")
+        ):
+            raise CommercialPermissionError("auth.portal_session_revoked", "invalid factor proof")
+        row.factor_version = factor.factor_version
+        row.second_factor_verified_at = second_at
+        row.second_factor_method = second_method
+    session.flush()
+    return sign_session(settings, principal, sid, expiry, now=now)
 
 
 def sign_session(

@@ -1722,3 +1722,481 @@ def test_totp_postgres_partial_session_evidence_rejected(totp_database, evidence
         session.rollback()
     with get_session(totp_database) as session:
         assert session.get(PortalSession, "session_registry").factor_version is None
+
+# T2 real factor concurrency. Existing guarded schema/runner, no new database target.
+def _t2_material(url):
+    from datetime import timedelta
+
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import encrypt_portal_totp_seed
+    from app.domain.portal_sessions.service import issue_verified_session, lock_login_scope
+    from app.domain.portal_totp.service import create_challenge
+    from tests.contract.test_runtime_data_encryption_migration import CURRENT_ROOT
+
+    settings = _registry_settings(url).model_copy(
+        update={
+            "runtime_data_encryption_secret": CURRENT_ROOT,
+            "runtime_data_encryption_key_id": "t2-pg-fixture",
+        }
+    )
+    now = datetime.now(UTC).replace(microsecond=0)
+    seed = b"12345678901234567890"
+    with get_session(url) as session:
+        principal = lock_login_scope(session, "prn_close")
+        factor = PortalTotpFactor(
+            principal_id="prn_close",
+            factor_version=1,
+            state="enabled",
+            recovery_generation=1,
+            active_seed_ciphertext=encrypt_portal_totp_seed(seed, settings=settings),
+            enabled_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(factor)
+        session.flush()
+        issued = issue_verified_session(
+            session,
+            settings,
+            principal,
+            ttl_seconds=3600,
+            auth_method="email_code",
+            primary_at=now - timedelta(seconds=1),
+            factor=factor,
+            second_at=now,
+            second_method="totp",
+        )
+        credentials = [
+            create_challenge(
+                session,
+                principal,
+                factor,
+                purpose="login",
+                primary_method="email_code",
+                primary_at=now,
+                ttl_seconds=3600,
+                now=now,
+            ).credential
+            for _ in range(2)
+        ]
+        session.commit()
+    from app.domain.portal_sessions.service import AuthenticatedSession
+
+    caller = AuthenticatedSession(
+        issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+    )
+    return settings, seed, credentials, caller
+
+
+def _t2_finish(settings, credential, code, *, purpose="login", method="totp", identity=None):
+    from app.domain.commercial.errors import CommercialServiceError
+    from app.domain.portal_totp.service import complete
+
+    try:
+        return complete(
+            settings, credential, code, purpose=purpose, method=method, identity=identity
+        )
+    except CommercialServiceError as error:
+        return 401 if error.error_code == "auth.portal_session_revoked" else error.status_code
+
+
+@pytest.mark.parametrize("same_resource", ["counter", "challenge", "recovery"])
+def test_totp_postgres_concurrent_single_consume(closure_database, monkeypatch, same_resource):
+    from app.core.models import (
+        PortalAuthChallenge,
+        PortalRecoveryCode,
+        PortalSession,
+        PortalTotpFactor,
+    )
+    from app.core.security import build_secret_hash
+    from app.domain.portal_totp.codec import hotp
+
+    url = closure_database
+    settings, seed, credentials, caller = _t2_material(url)
+    code = hotp(seed, int(datetime.now(UTC).timestamp()) // 30 + 1)
+    method = "totp"
+    if same_resource == "challenge":
+        credentials[1] = credentials[0]
+    if same_resource == "recovery":
+        method, code = "recovery_code", "pg-code.pg-synthetic-secret"
+        with get_session(url) as session:
+            session.add(
+                PortalRecoveryCode(
+                    code_id="pg-code",
+                    principal_id="prn_close",
+                    factor_version=1,
+                    generation=1,
+                    code_hash=build_secret_hash("pg-synthetic-secret"),
+                    created_at=datetime.now(UTC).replace(microsecond=0),
+                )
+            )
+            session.commit()
+    with get_session(url) as session:
+        before = session.scalar(select(func.count()).select_from(PortalSession))
+    first, second = _run_registry_ordered_pair(
+        url,
+        monkeypatch,
+        lambda: _t2_finish(settings, credentials[0], code, method=method),
+        lambda: _t2_finish(settings, credentials[1], code, method=method),
+    )
+    assert isinstance(first, dict) and second == 401
+    issued = first["_portal_session"]
+    with get_session(url) as session:
+        assert session.scalar(select(func.count()).select_from(PortalSession)) == before + 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(PortalAuthChallenge)
+                .where(PortalAuthChallenge.consumed_at.is_not(None))
+            )
+            == 1
+        )
+        factor = session.get(PortalTotpFactor, "prn_close")
+        if method == "totp":
+            assert factor.last_accepted_counter is not None
+        else:
+            assert session.get(PortalRecoveryCode, "pg-code").consumed_at is not None
+        if same_resource != "challenge":
+            assert session.get(PortalAuthChallenge, credentials[1].split(".")[0]).attempt_count == 1
+    from app.domain.portal_sessions.service import AuthenticatedSession
+
+    _b3a_assert_auth(
+        url,
+        AuthenticatedSession(
+            issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+        ),
+        True,
+    )
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["global_revoke", "admin_disable", "closure", "email_change", "disable", "recovery_reset"],
+)
+@pytest.mark.parametrize("completion_first", [True, False])
+def test_totp_postgres_completion_lifecycle_commit_orders(
+    closure_database, monkeypatch, operation, completion_first
+):
+    from app.core.models import PortalAuthChallenge, PortalTotpFactor
+    from app.domain.portal_totp.codec import hotp
+    from app.domain.portal_totp.service import start_management
+
+    url = closure_database
+    settings, seed, credentials, caller = _t2_material(url)
+    service = CommercialService(url)
+    code = hotp(seed, int(datetime.now(UTC).timestamp()) // 30 + 1)
+    management = None
+    email_proof = closure_proof = None
+    if operation in ("disable", "recovery_reset"):
+        management = start_management(settings, caller, operation)
+    elif operation == "email_change":
+        email_proof = service.issue_portal_email_change_code(
+            principal_id="prn_close", new_email="totp-new@example.test", ttl_seconds=600
+        )
+    elif operation == "closure":
+        closure_proof = _issue(url)
+
+    def finish():
+        return _t2_finish(settings, credentials[0], code)
+
+    def invalidate():
+        if operation == "global_revoke":
+            return service.revoke_portal_sessions(principal_id="prn_close")
+        if operation == "admin_disable":
+            return service.disable_admin_portal_user(
+                principal_id="prn_close", reason="T2 PG fixture"
+            )
+        if operation == "closure":
+            return _confirm(url, closure_proof)
+        if operation == "email_change":
+            return service.verify_portal_email_change_code(
+                principal_id="prn_close",
+                new_email="totp-new@example.test",
+                code=email_proof["code"],
+                max_attempts=5,
+            )
+        return _t2_finish(
+            settings, management["_challenge"].credential, code, purpose=operation, identity=caller
+        )
+
+    first, second = _run_registry_ordered_pair(
+        url,
+        monkeypatch,
+        finish if completion_first else invalidate,
+        invalidate if completion_first else finish,
+    )
+    completed = first if completion_first else second
+    if completion_first:
+        assert isinstance(completed, dict)
+        # The identical OTP cannot be reused across lifecycle purposes.
+        if operation in ("disable", "recovery_reset"):
+            assert second == 401
+    else:
+        assert completed == 401
+    with get_session(url) as session:
+        challenge = session.get(PortalAuthChallenge, credentials[0].split(".")[0])
+        assert (challenge.consumed_at is not None) == completion_first
+        factor = session.get(PortalTotpFactor, "prn_close")
+        if not completion_first and operation == "disable":
+            assert factor.state == "disabled"
+        elif not completion_first and operation == "recovery_reset":
+            assert factor.recovery_generation == 2
+    if isinstance(completed, dict):
+        issued = completed["_portal_session"]
+        from app.domain.portal_sessions.service import AuthenticatedSession
+
+        _b3a_assert_auth(
+            url,
+            AuthenticatedSession(
+                issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+            ),
+            operation in ("disable", "recovery_reset"),
+        )
+
+
+@pytest.mark.parametrize("enable_first", [True, False])
+def test_totp_postgres_enable_vs_primary_issuance(closure_database, monkeypatch, enable_first):
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import decrypt_portal_totp_seed
+    from app.domain.portal_sessions.service import PortalSessionIssuer
+    from app.domain.portal_totp.codec import hotp
+    from app.domain.portal_totp.contracts import RestrictedChallenge
+    from app.domain.portal_totp.service import complete, start_management
+    from tests.contract.test_runtime_data_encryption_migration import CURRENT_ROOT
+
+    url = closure_database
+    settings = _registry_settings(url).model_copy(
+        update={
+            "runtime_data_encryption_secret": CURRENT_ROOT,
+            "runtime_data_encryption_key_id": "t2-enable-fixture",
+        }
+    )
+    caller = _b3a_issue(url)
+    started = start_management(settings, caller, "setup")
+    with get_session(url) as session:
+        seed = decrypt_portal_totp_seed(
+            session.get(PortalTotpFactor, "prn_close").pending_seed_ciphertext, settings=settings
+        )
+    service = CommercialService(url)
+    primary = service.issue_portal_login_code(email="close@example.test", ttl_seconds=600)
+
+    def activate():
+        return complete(
+            settings,
+            started["_challenge"].credential,
+            hotp(seed, int(datetime.now(UTC).timestamp()) // 30 + 1),
+            purpose="setup",
+            identity=caller,
+            setup_id=started["setup_id"],
+        )
+
+    def issue():
+        return service.verify_portal_login_code(
+            email="close@example.test",
+            code=primary["code"],
+            max_attempts=5,
+            session_issuer=PortalSessionIssuer(settings, 3600, "email_code"),
+        )["_portal_session"]
+
+    first, second = _run_registry_ordered_pair(
+        url, monkeypatch, activate if enable_first else issue, issue if enable_first else activate
+    )
+    issued = second if enable_first else first
+    if enable_first:
+        assert isinstance(issued, RestrictedChallenge)
+    else:
+        from app.domain.portal_sessions.service import AuthenticatedSession
+
+        _b3a_assert_auth(
+            url,
+            AuthenticatedSession(
+                issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+            ),
+            False,
+        )
+    with get_session(url) as session:
+        assert session.get(PortalTotpFactor, "prn_close").state == "enabled"
+        assert session.get(Principal, "prn_close").session_version == 2
+
+
+@pytest.mark.parametrize("revoke_first", [True, False])
+@pytest.mark.parametrize("others", [True, False])
+def test_totp_postgres_management_binding_vs_single_others(
+    closure_database, monkeypatch, revoke_first, others
+):
+    from app.core.models import PortalTotpFactor
+    from app.domain.commercial.errors import CommercialServiceError
+    from app.domain.portal_sessions.service import (
+        AuthenticatedSession,
+        issue_verified_session,
+        lock_login_scope,
+        revoke_principal_sessions,
+    )
+    from app.domain.portal_totp.codec import hotp
+    from app.domain.portal_totp.service import start_management
+
+    url = closure_database
+    settings, seed, credentials, caller = _t2_material(url)
+    management = start_management(settings, caller, "disable")
+    with get_session(url) as session:
+        principal = lock_login_scope(session, "prn_close")
+        factor = session.get(PortalTotpFactor, "prn_close")
+        now = datetime.now(UTC).replace(microsecond=0)
+        issued = issue_verified_session(
+            session,
+            settings,
+            principal,
+            ttl_seconds=3600,
+            auth_method="email_code",
+            primary_at=now,
+            factor=factor,
+            second_at=now,
+            second_method="totp",
+        )
+        session.commit()
+    revoker = AuthenticatedSession(
+        issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
+    )
+    code = hotp(seed, int(datetime.now(UTC).timestamp()) // 30 + 1)
+
+    def revoke():
+        try:
+            return revoke_principal_sessions(
+                url, revoker, target_session_id=None if others else caller.session_id
+            )
+        except CommercialServiceError as error:
+            return error.status_code
+
+    def manage():
+        return _t2_finish(
+            settings, management["_challenge"].credential, code, purpose="disable", identity=caller
+        )
+
+    first, second = _run_registry_ordered_pair(
+        url, monkeypatch, revoke if revoke_first else manage, manage if revoke_first else revoke
+    )
+    assert second == (403 if not revoke_first else 401)
+    # Single/others do not bump principal version; fresh pending login has no SID.
+    login = _t2_finish(settings, credentials[0], code)
+    assert isinstance(login, dict) if revoke_first else login == 401
+    with get_session(url) as session:
+        assert session.get(Principal, "prn_close").session_version == (1 if revoke_first else 2)
+
+
+@pytest.mark.parametrize("method", ["totp", "recovery_code"])
+@pytest.mark.parametrize("failure", ["sign", "commit"])
+def test_totp_postgres_sign_commit_fault_atomic_readback(
+    closure_database, monkeypatch, method, failure
+):
+    from sqlalchemy.orm import Session
+
+    from app.core.models import (
+        PortalAuthChallenge,
+        PortalRecoveryCode,
+        PortalSession,
+        PortalTotpFactor,
+    )
+    from app.core.security import build_secret_hash
+    from app.domain.portal_totp.codec import hotp
+    from app.domain.portal_totp.service import complete
+
+    url = closure_database
+    settings, seed, credentials, caller = _t2_material(url)
+    code = hotp(seed, int(datetime.now(UTC).timestamp()) // 30 + 1)
+    if method == "recovery_code":
+        code = "pg-rollback.pg-rollback-secret"
+        with get_session(url) as session:
+            session.add(
+                PortalRecoveryCode(
+                    code_id="pg-rollback",
+                    principal_id="prn_close",
+                    factor_version=1,
+                    generation=1,
+                    code_hash=build_secret_hash("pg-rollback-secret"),
+                    created_at=datetime.now(UTC).replace(microsecond=0),
+                )
+            )
+            session.commit()
+    with get_session(url) as session:
+        before = session.scalar(select(func.count()).select_from(PortalSession))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic PG T2 transaction failure")
+
+    with monkeypatch.context() as patch:
+        if failure == "sign":
+            patch.setattr("app.domain.portal_sessions.service.build_portal_session_token", fail)
+        else:
+            patch.setattr(Session, "commit", fail)
+        with pytest.raises(RuntimeError):
+            complete(settings, credentials[0], code, purpose="login", method=method)
+    # Fault patch is restored before readback, retry and guarded schema teardown.
+    with get_session(url) as session:
+        assert session.get(PortalAuthChallenge, credentials[0].split(".")[0]).consumed_at is None
+        assert session.get(PortalTotpFactor, "prn_close").last_accepted_counter is None
+        assert session.scalar(select(func.count()).select_from(PortalSession)) == before
+        if method == "recovery_code":
+            assert session.get(PortalRecoveryCode, "pg-rollback").consumed_at is None
+    assert isinstance(
+        complete(settings, credentials[0], code, purpose="login", method=method), dict
+    )
+
+
+def test_totp_postgres_attempt_commits_and_replacement_budget(closure_database):
+    from app.core.models import PortalAuthChallenge
+    from app.domain.commercial.errors import CommercialServiceError
+    from app.domain.portal_sessions.service import lock_login_scope
+    from app.domain.portal_totp.service import complete, create_challenge, lock_primary_factor
+
+    url = closure_database
+    settings, seed, credentials, caller = _t2_material(url)
+    for batch in range(3):
+        if batch == 2:
+            with get_session(url) as session:
+                principal = lock_login_scope(session, "prn_close")
+                factor = lock_primary_factor(session, "prn_close")
+                now = datetime.now(UTC).replace(microsecond=0)
+                credential = create_challenge(
+                    session,
+                    principal,
+                    factor,
+                    purpose="login",
+                    primary_method="email_code",
+                    primary_at=now,
+                    ttl_seconds=3600,
+                    now=now,
+                ).credential
+                session.commit()
+        else:
+            credential = credentials[batch]
+        for attempt in range(5):
+            with pytest.raises(CommercialServiceError) as error:
+                complete(
+                    settings,
+                    credential,
+                    "unknown.bad-recovery",
+                    purpose="login",
+                    method="recovery_code",
+                )
+            assert error.value.status_code == 401
+            with get_session(url) as session:
+                row = session.get(PortalAuthChallenge, credential.split(".")[0])
+                assert row.attempt_count == attempt + 1 and row.consumed_at is None
+    with get_session(url) as session:
+        principal = lock_login_scope(session, "prn_close")
+        factor = lock_primary_factor(session, "prn_close")
+        now = datetime.now(UTC).replace(microsecond=0)
+        with pytest.raises(CommercialServiceError) as error:
+            create_challenge(
+                session,
+                principal,
+                factor,
+                purpose="login",
+                primary_method="email_code",
+                primary_at=now,
+                ttl_seconds=3600,
+                now=now,
+            )
+        assert error.value.status_code == 429
+        session.rollback()
+        assert session.scalar(select(func.sum(PortalAuthChallenge.attempt_count))) == 15

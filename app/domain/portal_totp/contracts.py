@@ -32,3 +32,12 @@ class MfaSessionEvidence:
 
 
 SessionAuthenticationEvidence = LegacySessionEvidence | PrimarySessionEvidence | MfaSessionEvidence
+
+
+@dataclass(frozen=True, repr=False)
+class RestrictedChallenge:
+    credential: str
+    expires_at: datetime
+
+    def projection(self) -> dict[str, object]:
+        return {"status": "second_factor_required", "expires_at": self.expires_at.isoformat()}

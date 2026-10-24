@@ -81,6 +81,7 @@ from app.domain.portal_sessions.service import (
     sign_session,
     validate_registered_session,
 )
+from app.domain.portal_totp.service import lock_primary_factor
 
 PORTAL_LOGIN_CODE_PURPOSE_LOGIN = "portal_login"
 PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE = "portal_email_change"
@@ -1192,6 +1193,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "this identity provider binding is not active",
                 )
             identity = lock_login_scope(session, binding.principal_id)
+            lock_primary_factor(session, binding.principal_id)
             session.refresh(binding, with_for_update=True)
             if binding.status != IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE:
                 raise CommercialPermissionError(
@@ -1446,6 +1448,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             discovered = repository.get_principal_identity_by_email(email=normalized_email)
             if discovered is not None:
                 lock_login_scope(session, discovered.principal_id)
+                lock_primary_factor(session, discovered.principal_id)
             if discovered is None or (discovered.email or "").lower() != normalized_email:
                 raise CommercialPermissionError(
                     "service.portal_login_code_invalid", "portal login code is invalid"
@@ -1823,6 +1826,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             discovered = repository.get_principal_identity_by_email(email=normalized_email)
             if discovered is not None:
                 lock_login_scope(session, discovered.principal_id)
+                lock_primary_factor(session, discovered.principal_id)
             current = repository.get_principal_identity_by_email(email=normalized_email)
             if (current.principal_id if current else None) != (
                 discovered.principal_id if discovered else None

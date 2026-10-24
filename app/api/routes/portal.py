@@ -27,6 +27,7 @@ from app.api.auth import (
     enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
     enforce_portal_oauth_state_request_rate_limit,
+    enforce_portal_primary_verify_rate_limit,
     enforce_portal_subscription_order_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
@@ -50,6 +51,7 @@ from app.api.portal_session import (
     serialize_portal_session,
     set_portal_session_cookies,
 )
+from app.api.routes.portal_totp import restricted_response
 from app.api.routes.service import (
     _build_audit_context,
     _get_commercial_service,
@@ -95,6 +97,7 @@ from app.domain.portal_sessions.service import (
     OAuthLoginProof,
     PortalSessionIssuer,
 )
+from app.domain.portal_totp.contracts import RestrictedChallenge
 from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
     resolve_site_relink_policy,
@@ -1876,6 +1879,7 @@ async def finish_qq_login_callback(
     if config_error is not None:
         return config_error
     try:
+        enforce_portal_primary_verify_rate_limit(request)
         consumed_state = await run_in_threadpool(
             _get_commercial_service(request).consume_portal_oauth_state,
             provider="qq",
@@ -1965,6 +1969,13 @@ async def finish_qq_login_callback(
                 avatar_url=str(profile.get("avatar_url") or ""),
                 audit_context=_build_audit_context(request),
             )
+        primary_outcome = login.get("_portal_session")
+        if isinstance(primary_outcome, RestrictedChallenge):
+            challenge_response = restricted_response(
+                request, primary_outcome, html=_portal_prefers_html(request)
+            )
+            _clear_portal_qq_oauth_nonce_cookie(challenge_response)
+            return challenge_response
         issued = _issued_session(login)
         principal_id = str(login.get("principal_id") or "")
         data = serialize_portal_session(
@@ -1974,6 +1985,9 @@ async def finish_qq_login_callback(
             strict_site=False,
             session_metadata=issued.metadata(),
         )
+    except PortalBearerTokenError as error:
+        return portal_json_error(request, status_code=error.status_code,
+                                 error_code=error.error_code, message=error.message)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     except httpx.HTTPError as error:
@@ -2827,6 +2841,7 @@ async def verify_portal_login_code(
         remember_me=bool(payload.remember_me),
     )
     try:
+        enforce_portal_primary_verify_rate_limit(request, email=email)
         verified = await run_in_threadpool(
             _get_commercial_service(request).verify_portal_login_code,
             session_issuer=PortalSessionIssuer(
@@ -2840,6 +2855,9 @@ async def verify_portal_login_code(
             ),
         )
         principal_id = str(verified.get("principal_id") or "")
+        primary_outcome = verified.get("_portal_session")
+        if isinstance(primary_outcome, RestrictedChallenge):
+            return restricted_response(request, primary_outcome)
         issued = _issued_session(verified)
         data = serialize_portal_session(
             request,
@@ -2848,6 +2866,9 @@ async def verify_portal_login_code(
             strict_site=False,
             session_metadata=issued.metadata(),
         )
+    except PortalBearerTokenError as error:
+        return portal_json_error(request, status_code=error.status_code,
+                                 error_code=error.error_code, message=error.message)
     except CommercialServiceError as error:
         if error.error_code == "service.portal_login_code_invalid":
             return portal_json_error(
@@ -3344,6 +3365,7 @@ async def verify_portal_registration_code(
             message="portal registration code and email are required",
         )
     try:
+        enforce_portal_primary_verify_rate_limit(request, email=email)
         registration = await run_in_threadpool(
             _get_commercial_service(request).verify_portal_registration_code,
             session_issuer=PortalSessionIssuer(
@@ -3359,6 +3381,9 @@ async def verify_portal_registration_code(
             ),
             audit_context=_build_portal_audit_context(request, "portal_registration"),
         )
+        primary_outcome = registration.get("_portal_session")
+        if isinstance(primary_outcome, RestrictedChallenge):
+            return restricted_response(request, primary_outcome)
         issued = _issued_session(registration)
         principal_id = str(registration.get("principal_id") or "")
         site_id = str(registration.get("site_id") or "")
@@ -3370,6 +3395,9 @@ async def verify_portal_registration_code(
             session_metadata=issued.metadata(),
         )
         data = session_data
+    except PortalBearerTokenError as error:
+        return portal_json_error(request, status_code=error.status_code,
+                                 error_code=error.error_code, message=error.message)
     except CommercialServiceError as error:
         if error.error_code == "service.portal_registration_code_invalid":
             return portal_json_error(

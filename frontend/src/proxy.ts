@@ -216,7 +216,13 @@ async function routeProxy(request: NextRequest) {
   }
 
   // Skip auth check for public portal entry pages.
-  if (pathname === '/portal/login' || pathname === '/portal/register' || pathname === '/portal/dev-entry') {
+  if (
+    pathname === '/portal/login'
+    || pathname === '/portal/register'
+    || pathname === '/portal/dev-entry'
+    || pathname === '/portal/challenge'
+    || pathname === '/portal/second-factor'
+  ) {
     return response;
   }
 
@@ -243,6 +249,7 @@ export async function proxy(request: NextRequest) {
   const response = await routeProxy(request);
   const path = request.nextUrl.pathname;
   return path === '/api/portal/sessions' || path.startsWith('/api/portal/sessions/')
+    || path === '/api/portal/totp' || path.startsWith('/api/portal/totp/')
     ? withPortalSessionsPrivateHeaders(response) : response;
 }
 
