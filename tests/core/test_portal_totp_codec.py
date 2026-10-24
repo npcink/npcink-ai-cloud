@@ -30,6 +30,6 @@ def test_window_is_exactly_one_step_and_strict_ascii():
     for bad in ("", "12345", "1234567", "１２３４５６", " 123456", "12e345"):
         assert matched_counter(seed, bad, 3000) is None
     key, uri = provisioning(seed, "a+b@example.test")
-    assert key == "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    assert key == "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"  # gitleaks:allow -- public RFC 6238 test vector
     assert "algorithm=SHA1" in uri and "digits=6" in uri and "period=30" in uri
     assert "a%2Bb%40example.test" in uri
