@@ -1,361 +1,330 @@
 # Deferred Engineering Triggers v1
 
-Status: active planning record. This document records the 2026-09-18 review of
-three previously proposed architecture directions plus two same-day findings (a
-measured request-log identity deviation and a cross-repo profile literal to
-retire), one 2026-09-19 operational finding from the M4 preview deployment
-flow, one 2026-09-20 release-state finding (a paused production promotion
-whose resume trigger was not recorded), and one 2026-10-21 runtime finding (an
-inline run that stayed in `running` with no provider evidence, whose root cause
-was never proved), their current implementation state and
-pre-declared trigger for each. Item 7 also records the operator decision that the production pause continues
-indefinitely until a new resume decision. It is not runtime authority and it
-does not authorize early work: every item here is deferred **by trigger
-condition, not by date**, and no implementation trigger has fired.
+Status: active trigger-gated planning record, reconciled on 2026-10-25 against
+Cloud c4831b5041dde32630d0d2f886322d8da97c6532. Original review dates were
+2026-09-18 (items 1–5), 2026-09-19 (item 6), 2026-09-20 (item 7), and
+2026-10-21 (item 8). Those dated observations remain historical evidence.
 
-## Date
+This reconciliation corrects implementation and authority assumptions; it does
+not authorize implementation, product expansion, configuration, paid Provider
+calls, or production operations. A condition that is unproven or not reached
+remains open. It is no longer accurate to say that no trigger has fired:
+structured-output consumers exist (item 2), and the old indefinite production
+pause has been superseded (item 7). Neither fact grants a new implementation
+or deployment authorization.
 
-2026-09-18 (items 1-5); item 6 recorded 2026-09-19; item 7 and the
-pause decision recorded 2026-09-20; item 8 recorded 2026-10-21.
+## Evidence boundary
 
-## Purpose
+Cloud source is fixed to the commit above. Addon observations below are a
+bounded static sample at 46b11d807292e2b898b3161110a5c6fa495bb755, not proof
+of the installed plugin, WordPress.org package, enabled scene count or current
+request-log contents. Local, CI, M4 candidate, merged, M4 accepted, production
+and human evidence remain distinct. No live DB, container logs, deployment
+markers or production state were read for this reconciliation.
 
-Three architecture suggestions were re-audited against current code so that a
-future session neither re-proposes them prematurely nor forgets them. The
-review method was read-only code inspection; every claim below carries its
-evidence path. Items 4 and 5 record findings from that inspection, item 6
-records an operational finding from the M4 preview deployment flow, and item 7
-records a release-state finding and the operator's indefinite-pause decision,
-and item 8 records a runtime finding whose cause was never proved and whose
-user-visible symptom is already mitigated,
-all using the same evidence and trigger format. The
-companion deferral for contract-version compatibility is
-ADR-053 (`decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md`),
-which applies the same trigger-based pattern to a different seam.
+The companion contract-version deferral remains
+[ADR-053](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md).
+Current engineering cleanup is tracked in
+[the follow-up queue](engineering-follow-up-queue-v1.md); neither record is
+runtime authority.
 
 ## Reviewed Item 1: Addon Facade → Scenario Contract Registry
 
-**Current state.** The Addon now exposes roughly ten `npcink_cloud_addon_execute_*`
-facades (`npcink-cloud-addon/includes/bootstrap.php:213-512`), each a thin
-(~20-line) delegate. All of them funnel into exactly one private signed
-transport (`class-cloud-runtime-client.php:1201`, headers via
-`build_signed_headers` at `:2075`), so the security goal — fail-closed,
-scenario-bound public functions, never a generic client — is intact.
+**State and successor.** The sampled Addon bootstrap has twelve execute
+facades, nine named for Toolbox scenes. The old single 4300+ line client and
+validator locations are obsolete: Addon #220 moved per-scenario guards into
+Npcink_Cloud_Runtime_Request_Guards; #221/#222 split diagnostics/media helpers.
+This is mechanical separation, not a schema-driven Toolbox registry.
+WordPress registered-task projection already supplies a partial contract seam.
 
-**Real duplication is not the facades.** It is the eight per-scenario
-`normalize_*_request` validators (each ~100-150 lines, all inside one
-4300+ line client file, `class-cloud-runtime-client.php:2365-3580`). A partial
-contract layer already exists for the WordPress AI text scenes:
-`Npcink_Cloud_AI_Task_Contract::project_registered_ability()` plus
-`npcink_cloud_addon_execute_registered_ai_task_runtime()`
-(`bootstrap.php:231-290`). Toolbox scenes (image, audio, web_search,
-image_source, site_ops, media_governance) are still method-per-scenario.
+Scenario facades still validate before signed transport. The private request
+kernel does not mean every generic client method vanished: execute_runtime
+remains public/deprecated and is used after bounded Toolbox payload validation.
+Do not broaden that surface when considering a registry.
 
-**Trigger to act.** When the toolbox scene count reaches ≈15 (currently ~6
-toolbox + 2 wp-ai scenes). At that point convert the per-scenario validators
-into a schema-driven contract registry with one generic validator. Doing it
-earlier refactors working code for no functional gain; the Addon is in
-wordpress.org release mode and should not carry unrelated refactors.
+**Trigger and remaining gate.** Retain the original approximate threshold of
+fifteen Toolbox business scenes. Nine named Toolbox facades in this static
+sample do not establish that threshold, and fifteen validators/helpers or many
+WordPress registered tasks are not fifteen Toolbox scenes. Paused code does
+not count as authorization to re-enable a scene.
+
+**Minimum next action.** At the next real Toolbox scene addition, count actual
+scene contracts and maintenance duplication. If that approximate threshold is evidenced, decide the smallest Addon-only
+registry scope and its paired release evidence. Keep scenario-bound, fail-closed
+validation and one signed transport; do not start an unrelated release or
+declare the deferred registry delivered merely because guards were extracted.
 
 ## Reviewed Item 2: Model Capability Surface (ModelCapabilities)
 
-**Current state.** This suggestion is mostly already implemented, in a more
-rigorous form than originally proposed: `app/domain/model_capabilities/`
-defines the capability tuple (`text`, `vision`, `embedding`,
-`image_generation`, `audio_generation`, `video_generation` —
-`contracts.py:9`), per-route evidence states (`verified` / `unsupported` /
-`verification_failed` / `unverified`), `RouteFingerprint` cache identity, and
-probes. `RoutingService.resolve()` gates `vision`, `image_generation`, and
-`audio_generation` execution kinds on current `verified` evidence
-(`app/domain/routing/service.py:107-110`); `context_window` and prices ride on
-each candidate (`routing/service.py:84-86`), and context overflow is handled
-at execution time (`app/adapters/providers/compatibility.py`,
-`ContextBudgetAssessment`).
+**Implemented.** [Capability contracts](../app/domain/model_capabilities/contracts.py)
+still define text, vision, embedding, image_generation, audio_generation and
+video_generation, route fingerprints and four evidence states.
+[Routing](../app/domain/routing/service.py) uses current verified probe evidence
+for vision/image/audio. Model context/prices and execution-time context budget
+checks already exist; they are not the missing work.
 
-**Remaining gap.** `structured_output`, `tool_call`, and `streaming` are not
-in the capability tuple. Structured-output failures currently surface as
-provider errors instead of being excluded at routing time.
+**Consumer premise has changed.** structured_output, tool_call and streaming
+are still absent from that tuple/probe gate. However,
+[WordPress runtime](../app/domain/wordpress_ai_connector/runtime.py) already
+builds title JSON-schema requests and other schema/JSON-constrained requests,
+then validates/normalizes their output. Ability-owned output_schema is required
+by the [connector contract](../app/domain/wordpress_ai_connector/contracts.py).
+Existing JSON-schema enforcement (#294/#320 and later #1037 work) means
+“no consumer reads structured output” cannot justify blanket deferral.
 
-**Trigger to act.** The first scenario that actually requires one of those
-abilities. The change is then small: extend `MODEL_CAPABILITIES`, add a probe,
-and gate the new execution kind the same way vision/image/audio are gated
-today. Adding the entries earlier buys nothing because no consumer reads them.
+Provider option support and model-reference booleans are not verified route
+capability evidence. Nor does schema-shaped output alone prove that a consumer
+requires Provider-native strict-schema guarantees rather than the existing
+normalization and output checks. No new tool/stream product consumer or enabled
+site surface is established by the adapter's support for those fields.
+
+**Trigger and next decision.** The original trigger is the first real scenario
+requiring the ability. Structured-output consumption now requires that focused
+review: specify the guarantee for a real task/schema, decide whether existing
+validation meets it, and only then scope capability, probe/fingerprint and
+consumer-aware routing evidence changes if needed. This may be an orthogonal
+requirement on an existing text/vision route, not a new execution kind.
+Retain tool/stream deferrals unless a real supported consumer requires them.
+
+A future authorized change must distinguish supported, unsupported, stale and
+failed evidence and preserve output-contract/fallback behavior. This document
+does not authorize new capabilities, speculative probes or paid calls.
 
 ## Reviewed Item 3: Quality-Driven Model Routing (Flywheel → Routing)
 
-**Current state.** Deliberately not implemented. Routing is fully
-configuration-driven (profile → binding → candidate instances); no quality
-signal influences candidate selection. The evidence side is accumulating:
-editor-assist quality attribution is already bucketed by model and routing
-profile (PR #951, squash `2f1889d9`), and agent feedback exposes per-model
-adoption rates (`app/domain/agent_feedback/service.py:440`).
+**Implementation remains deferred.** Routing still selects from configured
+profiles/bindings/candidates with health, allowlist and capability evidence;
+quality adoption rates do not drive candidate selection. Existing model,
+profile and router attribution is read-only evidence, not an adaptive router.
 
-**Trigger to act.** The sample-stage detector reporting `observation`
-continuously (≥50 quality sessions in a 7-day window), as defined by the
-"Sample-stage gate" in `editor-assist-quality-flywheel-v1.md`. The evaluation
-runs automatically every 24h in
-`app/workers/ops_cadence.py::_run_editor_assist_quality_detection`; do not
-build a second monitoring mechanism. As of 2026-09-18 the detector still
-reports `insufficient` (26 real quality sessions on M4; fixtures excluded —
-fixture sessions are ~47% of M4 quality data and must be filtered out when
-reading quality numbers).
+**Scheduling assumption superseded.** #1125 replaced the old daily cadence
+with manual-only quality analysis. The
+[worker](../app/workers/ops_cadence.py) keeps the seven-day analysis available
+with no automatic interval; the
+[background lightweight contract](background-lightweight-mode-v1.md) and
+[quality flywheel](editor-assist-quality-flywheel-v1.md) are the current owners.
+Do not restore daily evaluation or build another monitor from this old item.
+
+**Data trigger remains unverified.** The original condition was sustained
+observation-level natural samples (at least fifty quality sessions in a
+seven-day window). The September “26 sessions / 47% fixtures” figures are not
+current measurements. A historical successful title or one native adoption
+event is not the quality-session denominator.
+[The quality query](../app/domain/observability/editor_assist_quality.py)
+does not explicitly exclude fixtures at event selection; source/site provenance
+must establish the natural denominator. No fresh sample gate was evaluated here.
+
+The current flywheel observation gate governs further instrumentation; a
+high-confidence sustained issue only recommends evaluation. Neither a stage
+label nor reaching 200 sessions automatically authorizes routing writes. The
+old word “continuously” also supplies no independent duration definition.
+
+**Minimum next action.** Reuse valid natural-use receipts or, on operator
+request in an authorized runtime, the existing manual read-only analysis.
+Establish window, source/fixture exclusion and sustained evidence before a
+product/routing decision. Do not manufacture sessions, restore a scheduler or
+infer a routing mandate from an instrumentation threshold.
 
 ## Reviewed Item 4: WordPress AI Request Log Provider and Model Identity
 
-**Current state.** The WordPress AI request log records Cloud-side identifiers in
-its `provider` and `model` columns. Measured on the local site `magick-ai` in
-`wp_wpai_request_logs` (five rows written 2026-09-08/09):
+**Mechanism still present in the sampled source.** Addon
+class-cloud-wordpress-ai-connector.php::maybe_log_wordpress_ai_request_evidence
+still searches upstream provider/model response fields before its own
+CONNECTOR_ID/fallback_model_id. The
+[Cloud response](../app/api/routes/runtime.py) still returns Cloud provider_id
+and model_id. Addon #305's usage TOKEN mapping did not normalize this identity.
 
-| provider | model | rows | operation |
-| --- | --- | --- | --- |
-| `openai` | `gpt-5.5` | 4 | `npcink-cloud/connector-runtime:title_generation` |
-| `openai` | `grok-imagine-image-quality` | 1 | `npcink-cloud/generate-image:image_generation` |
+The original five request-log rows, their OpenAI/Grok identifiers, null previews,
+context size and developer-mode selector observations are September snapshots,
+not present log, privacy or UI evidence. This reconciliation read no current
+WordPress database or installed plugin switches.
 
-Those requests were served by Npcink Cloud, so `provider = openai` holds only from
-Cloud's internal vantage point, and `grok-imagine-image-quality` is a Cloud routing
-profile id (`app/domain/hosted_model_defaults.py:14`), not a model id. A site owner
-reading the row concludes the site called OpenAI, which is not what happened.
+**Trigger remains open, not proved.** A real operator/site-owner report that
+the log is misleading, or an explicit product decision to expose the served
+model, still triggers a site-visible contract review. Code demonstrating the
+mechanism is not a new complaint or a model-disclosure authorization.
 
-Cause chain. The runtime execute success envelope carries `provider_id` and
-`model_id` inside its `data` object (`app/api/routes/runtime.py:778-779`), so the
-Addon's `data.provider_id` and `data.model_id` lookups match, and the Addon log
-event copies the first matching response field before its own identifiers can
-apply: `npcink-cloud-addon/includes/class-cloud-wordpress-ai-connector.php:428-463`,
-with the intended fallbacks at `:1048` (text), `:1583` (vision), and `:1816`
-(image).
-
-Exposure. This is not a content or credential disclosure. In every measured row
-`request_preview` and `response_preview` are null and `error_message` is empty, and
-`context` is at most 352 bytes carrying only contract, connector, task,
-`cloud_run_id`, and `suggestion_only` flags. The audience is small as well: the
-WordPress AI plugin hides its per-feature provider/model selector behind a
-developer-mode toggle that defaults to off
-(`ai/build/routes/ai-home/content.js:24580`, rendered only under
-`checked && isDeveloperMode` at `:24682`, `:25354`, and `:25401`), so a site owner
-is not asked to choose a model either way.
-
-**Trigger to act.** Either an operator or site owner reports the request log as
-misleading, or Cloud decides to expose the served model to sites as a
-professional-user feature. If it fires, settle the site-visible contract first:
-normalizing the Addon log event to its own identifiers is the smaller change and
-stays inside the present boundary, while returning the served model is larger
-because it turns Cloud routing detail into a shipped site-facing surface.
+**Minimum next action.** When that trigger is evidenced, settle the identity
+projection first. Normalizing the log to the Addon's own identifiers while
+retaining Cloud run correlation is the smaller boundary-preserving option;
+shipping served-model identity is a separate product/data-surface decision.
+Validate response variants, errors and metadata-only behavior rather than
+inferring harmlessness from an old developer-mode toggle.
 
 ## Reviewed Item 5: Addon Stops Naming A Hosted Image Profile
 
-**Current state.** The Addon's toolbox image surface hardcodes
-`'profile_id' => 'wp-ai.image-generation'`
-(`npcink-cloud-addon/includes/class-cloud-runtime-client.php:2972`), and its
-behavior test asserts that literal
-(`npcink-cloud-addon/tests/behavior-wordpress-ai-connector-runtime.php:798`).
-Cloud now derives the same profile for that envelope from the Cloud image
-ability plus the `image_generation` task
-(`app/api/routes/runtime.py::_is_wordpress_ai_image_generation_payload`, applied
-in `_resolve_profile_id` without consulting the request's own value), so the
-Addon literal is redundant rather than authoritative. Routing is identical
-before and after: both shipped envelopes already ran on `wp-ai.image-generation`.
+**Cloud prerequisite remains implemented.** #957 makes
+[profile resolution](../app/api/routes/runtime.py) derive the hosted image
+profile from the Cloud ability and image_generation task, independently of the
+request's profile_id. The
+[Toolbox-image derivation test](../tests/api/test_wordpress_ai_connector_runtime.py)
+retains the deliberate unrelated-profile case. Test source is not a fresh test
+pass.
 
-**Why it is not done now.** The remaining work is Addon-only and individually
-safe, but it is a second repository with its own release lane and carries no
-functional gain by itself; packaging it into a Cloud change would produce a
-cross-repo commit that no single gate verifies end to end. The one-sided Addon
-edit is also only safe *because* the Cloud derivation already landed, so the
-precondition is a Cloud test rather than a convention:
-`test_toolbox_image_generation_derives_the_hosted_profile_in_cloud` in
-`tests/api/test_wordpress_ai_connector_runtime.py`.
+**Addon remains incomplete.** The sampled request guards still send
+wp-ai.image-generation and the behavior test still asserts it. #220 touched
+and moved that image-envelope validator in October, so a source-maintenance
+opportunity occurred; this does not prove a particular released package or
+installed-site trigger. No new Cloud rename blocked by the literal was proved.
 
-**Also unresolved.** `RuntimeService._is_wordpress_ai_connector_managed_request`
-(`app/domain/runtime/service.py:5689-5699`) still matches only the narrower
-connector-channel shape. The toolbox envelope therefore resolves to the
-`wp-ai.image-generation` profile without receiving that profile's managed
-runtime policy (timeout, retry, fallback bounds). Widening that predicate
-changes execution bounds rather than routing, so it is a separate decision and
-was deliberately not folded into the profile-resolution change.
+**Retained trigger and minimum action.** During the next already-planned Addon
+release that touches the Toolbox image envelope, or if the literal blocks an
+actual Cloud rename, verify the Cloud prerequisite and omit the field plus its
+literal assertion. Prove omission/unrelated values do not change hosted
+routing. Do not open a dedicated release solely for this redundant field, and
+do not claim it removed from a refactor that only moved it.
 
-**Trigger to act.** The next Addon release that already touches the toolbox
-image envelope, or the first time this literal blocks a Cloud-side rename of
-`wp-ai.image-generation`. In that release, drop the field and its test
-assertion; do not open a dedicated Addon release for it.
+**Separate policy gap.** The
+[managed runtime predicate](../app/domain/runtime/service.py) still requires
+the narrower connector-channel/source/connector identity for image requests.
+Toolbox's equal routing profile does not itself grant the same timeout/retry/
+fallback policy. Widening that predicate remains a separate execution-bound
+decision, not part of literal removal.
 
-## Reviewed Item 6: M4 Preview Sync Marks Frontend Source As Deployed Without Rebuilding
+## Reviewed Item 6: M4 Preview Source Sync and Frontend Marker Evidence
 
-**Current state.** `scripts/m4-preview.sh` sync mode performs the atomic
-source commit into `NPCINK_CLOUD_M4_REMOTE_DIR` and also writes the
-`deployed-frontend-source.sha256` and `deployed-frontend-revision.txt`
-markers (`scripts/m4-preview.sh:3031-3032`) without rebuilding the frontend
-image or recreating the frontend container. The next deploy computes
-`frontend_source_changed` from those markers
-(`scripts/m4-preview.sh:1881-1891`) and therefore reports
-`frontend_source_changed=0` / `frontend_recreate=0` even though the synced
-working-tree content never went through a build. Verified on 2026-09-19: a
-dirty-candidate `sync` followed by `deploy` left the running preview on the
-previous build while the markers claimed the new source; deleting the two
-markers on the M4 and rerunning `deploy` restored the intended
-`frontend_recreate=1` path. Recovery is safe because the frontend container
-compiles at start (`scripts/m4-preview-start.sh production` runs
-`next build` from the mounted source), so recreating the container is
-sufficient; no image rebuild is required for source-only frontend changes.
+**Old diagnosis is not current source truth.** The original September
+incident described sync writing deployed frontend markers without compiling the
+synced source. At the fixed baseline,
+[the orchestration script](../scripts/m4-preview.sh) selects frontend recreation
+for source/config/volume changes or a missing frontend in every non-prepare
+mode, including sync. The sync branch conditionally force-recreates frontend,
+and the default
+[startup path](../frontend/scripts/m4-preview-start.sh) compiles mounted source
+in production mode before serving. Markers are written after health/container
+checks.
 
-**Why it is not fixed now.** The repair belongs to the deployment
-orchestration script, which is a shared-runtime seam with its own
-verification loop (marker semantics, sync/deploy/promote interplay, and an
-M4 execution check). Bundling it into the frontend panel change would have
-coupled a product seam to an operations seam without a dedicated gate.
+The selection/recreate branches trace to #623, earlier than the old incident;
+#928 added compiled preview startup, also earlier. Do not invent a later “fix”
+PR or treat marker writes alone as proof the no-rebuild defect persists.
+The [static contract](../tests/contract/test_m4_preview_development_contract.py)
+guards selection, sync recreation and marker ordering but is not an M4 replay.
 
-**Trigger to act.** The next `m4:preview:sync` → `deploy` sequence, or the
-first stale-frontend diagnosis on M4: make sync mode either skip the
-frontend deployed-source markers or record a distinct `synced` state that
-deploy treats as changed, then verify with a dirty-candidate sync → deploy
-cycle that `frontend_source_changed=1` and the served build contains the
-synced change.
+**Field chain remains unverified.** No actual script SHA, runtime mode,
+container/served build or potentially polluted marker was read here. The old
+incident may concern a different deployed script/state; source does not resolve
+that history or prove today's markers trustworthy.
 
-## Reviewed Item 7: Production Promotion Is Paused Indefinitely Until Operator Resumes
+**Retained trigger and minimum gate.** At the next authorized sync/deploy
+window or stale-frontend diagnosis, first reuse any matching behavior receipt;
+otherwise bind the executing script, source fingerprint, frontend mode and
+served build. With new frontend source, sync should select change/recreation
+and serve that compiled change; a following unchanged deploy may correctly
+reuse it and report no source change. Do not mechanically demand change=1 in
+both phases. If a controlled matching-source replay still fails, scope the
+smallest operations fix. Do not delete markers or redeploy merely from this
+planning record. The original dirty-candidate/served-content acceptance is not
+closed by source inspection.
 
-**Current state.** The operator has decided that the production promotion pause
-continues indefinitely. `origin/production` last moved on 2026-08-23
-(`b9d6f02d`); at this review it was 645 commits and 417 changed files behind
-`origin/master`. Those counts are dated evidence for this review, not a future
-current-state claim. The pause remains intentional and is bounded by the
-existing resume sequence:
-`history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md`
-section 7 requires rebuilding the Portal capacity/context slice onto the then
-current `master` before any promotion preparation and sets the full resume
-sequence.
+## Reviewed Item 7: Production Promotion Pause — Superseded by Gated Resumption
 
-`production` remains a live release target: `.github/workflows/deploy-production.yml`
-dispatches on it, `ci.yml` and `codeql.yml` list it under `branches:`, and
-`cloud-production-release-policy-v1.md` keeps it as the promotion destination.
-The release policy now records the indefinite pause in its Branch Model, so a
-later session must treat resumption as a new operator decision rather than infer
-it from branch divergence or the age of this item.
+**Original pause has a successor.** #1075 records the operator's 2026-10-06
+decision to resume production-candidate validation and fresh promotion
+preparation in the
+[current release policy](cloud-production-release-policy-v1.md) and
+[readiness record](production-release-readiness-plan-2026-10-06.md).
+That is the original resume trigger occurring, not an indefinitely untriggered
+pause. Actual Deploy stayed separately exact-SHA authorized.
 
-**Why it is not resolved now.** Resuming promotion is a governed release action
-with its own gates. The operator has chosen to defer that work without a date,
-so no Portal rebuild, production branch update, promotion PR, deployment, or
-release authorization is part of this record.
+Later tracked receipts record
+[the frozen October deployment](history/production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)
+and [a subsequent deployment/title acceptance](history/production/2026/deepseek-title-production-acceptance-2026-10-19.md).
+These are dated evidence, not this reconciliation's live production check.
+The old August revision and 645-commit/417-file divergence are not current facts.
 
-**Trigger to act.** The operator explicitly decides to resume production
-promotion. At that point, refresh `origin/master`, verify the actual production
-revision and current divergence, rebuild the Portal capacity/context slice onto
-current `master`, and execute the complete section 7 resume sequence. Until
-that decision is made, `production` is expected to keep diverging; divergence is
-not by itself evidence that the pause was forgotten or that a release should
-start.
+**Remaining release gates.** The
+[old resume sequence](history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
+must be read through the current policy: the Portal restoration already reached
+master through #865 and later Free verification, so do not automatically rebuild
+that slice again. Retired CVE exceptions do not revive; exact current images
+need applicable fresh security evidence.
+
+For a new release, current production/source identity, cumulative scope, CI,
+bundle/migration/rollback evidence and final exact-SHA operator authorization
+remain separate requirements. Historical preparation or deployment approvals
+cannot authorize a later dispatch. Formal smoke, user adoption and all six
+Phase 1 Done criteria remain separate from a successful deploy or title run.
+
+**Minimum next action.** Retain this supersession and the applicable release
+gates. Without a new release objective, no promotion/ref refresh, server
+inspection or deployment is required merely to close the old pause wording.
 
 ## Reviewed Item 8: Inline Run Orphan Root Cause (Unproven; Symptom Already Mitigated)
 
-**Current state.** An inline `npcink-toolbox/ai-content-support` run on site
-`site_magick-ai-local` (`run_00d38b9e39594a29b7e3d63beb333d1d`, provider
-`openai/gpt-5.5`, policy `timeout_ms=45000`, `max_retries=0`,
-`allow_fallback=false`) stayed in `running` from 09:04 to 09:45 UTC on
-2026-10-20 — 41 minutes — until an operator ran `mark_stale_running_failed`.
-Nine requests during that window were rejected with
-`commercial.concurrency_exceeded`, because the site's plan allows
-`max_active_runs=1`. The run produced **zero** `provider_call_records` rows: no
-success, no error, and the 45 s provider timeout never fired. Those are dated
-M4 dev-database readings taken during this review, not a future current-state
-claim.
+**Historical finding.** One October 20 inline run remained running for
+41 minutes with no Provider-call evidence and nine concurrency rejections.
+Unknown exception and process loss both fit; incident logs were unavailable
+after container recreation. The old run/site/model/policy readings are not a
+new incident, a current model switch or proof of either root cause.
 
-Two explanations fit that evidence and could not be separated:
+**Delivered mitigations, not root-cause proof.** #1171's 180-second inline
+admission lease prevents one old running row retaining the site's slot.
+#1177 adds bounded pre-recreate drain; it can time out and continue recreation,
+so it does not eliminate process loss. #1208's worker fallback rechecks status,
+inline pattern and per-run age under row lock, then auto-fails after a grace
+never shorter than thirty minutes and extended for timeout/retry budget.
 
-1. an exception other than `ProviderExecutionError` escaping
-   `app/domain/runtime/provider_execution.py` — the OpenAI adapter raises
-   `ValueError` from `response.json()` on the non-image path — past
-   `RuntimeService.execute`, which has no `try/finally`, and past the route
-   handler, which catches only `RoutingError` / `RuntimeErrorBase`;
-2. process loss: the dev api runs
-   `uvicorn app.api.main:app ... --reload --reload-dir app --timeout-graceful-shutdown 5`
-   in `docker-compose.dev.yml`, so any source write or restart kills an
-   in-flight inline request after `RunRecord.status` is already committed as
-   `running`.
+The [transaction contract](runtime-provider-transaction-boundary-v1.md) keeps
+unknown-dispatch immediate state running and forbids automatic replay or
+fabricated Provider usage/results. Delayed auto-fail is a distinct failed
+terminal transition and normal callback, not proof the Provider timed out.
+The [unknown-dispatch test](../tests/domain/test_runtime_provider_transactions.py)
+and [dev reload contract](../tests/contract/test_dev_frontend_dependency_guard.py)
+still preserve those deliberate behaviors.
 
-The api container was recreated at 09:54 the same day and its logs from the
-incident window were discarded, so neither explanation could be confirmed.
+**Retain the original OR triggers.**
 
-**Why it is not resolved now.** The user-visible failure — one orphan locking
-the whole site out — is already fixed. PR #1171 (merged as `1cec47c1`) makes
-`count_active_runs` stop counting `running` rows older than
-`RUNTIME_INLINE_RUN_LEASE_SECONDS` (180 s) and was deployed to M4 on
-2026-10-21. Then, on 2026-10-23, the operator accepted a separate bounded
-liveness fallback: the runtime queue worker auto-fails an inline run stuck
-beyond a per-run grace (never shorter than 30 minutes, extended by the run's
-configured timeout/retry budget) as `runtime.stale_running_auto_failed`, with a
-row-lock status/pattern/age recheck and no fabricated Provider usage. A
-permanent orphan therefore no longer waits for an operator, and the operator
-`mark_stale_running_failed` path still covers runs inside the grace window.
+- At least two same-site inline orphans in a seven-day window after the lease
+  is live: running with no Provider evidence beyond the 180-second lease.
+- Operator stale-running repair needed more than once in a week despite the
+  lease preventing lockout.
+- A run with evidence that its Provider timeout actually failed to fire.
 
-The root cause remains unproven, and the change that *would* remove the
-process-loss cause is still rejected by an existing contract:
+No fresh DB/log/incident receipts establish any of these here. Auto-fail counts
+alone are not the same-site/no-Provider-evidence orphan denominator, and
+mitigation does not cancel the root-cause obligation.
 
-- `tests/domain/test_runtime_provider_transactions.py::test_unknown_dispatch_failure_preserves_evidence_and_never_automatically_replays`
-  still asserts an unknown dispatch failure leaves the run in `running` at the
-  time of failure; that immediate behaviour is unchanged. Auto-fail is a
-  time-based worker fallback, not an immediate transition in the failure path;
-- `tests/contract/test_dev_frontend_dependency_guard.py` asserts `--reload-dir app`
-  is present, so removing dev `--reload` deletes the behaviour that test guards.
-
-A root-cause fix therefore still means changing an accepted standard rather
-than writing code, and one unproven sample does not justify that.
-
-**Trigger to act.** Any of:
-
-- two or more orphaned inline runs on one site within a 7-day window after the
-  lease is live, where "orphaned" means a `running` row with no provider
-  evidence that outlives the 180 s lease;
-- an orphan that still needs operator `mark_stale_running_failed` more than once
-  a week, i.e. the lease prevents the lockout but the site keeps producing
-  orphans;
-- any run where the provider timeout demonstrably fails to fire, since that is
-  the mechanism both hypotheses bypass.
-
-Before investigating, make the evidence survive: retain api container logs
-across deploys (today `m4:preview.sh sync`/`deploy` force-recreate the api
-container, which discards them) and record the escaping exception type at the
-route boundary. Without those, the next sample will be as unprovable as this
-one.
+**Minimum evidence before investigation.** Bind actual run/site/time, deployed
+version, lease/grace, Provider evidence, operator actions and process/timeout
+timeline; ensure API logs survive recreation and capture the escaping exception
+type at the boundary. External log retention was not audited, so missing source
+instrumentation is not proof no host retains logs. Only then investigate a
+proved trigger through a focused authorized change. Do not disable reload,
+rewrite uncertain-failure semantics, replay runs or generate calls to force a
+sample from this record.
 
 ## Current Highest Priority
 
-The only data-gated precondition in the whole set is real usage volume. The
-lowest-cost path is to run genuine daily editorial work through the existing
-local chain (Local site `magick-ai` → Cloud at `127.0.0.1:18010`) instead of
-manufacturing sessions. Inflating numbers with fixture-like sessions is
-explicitly counterproductive: fixture contamination is already a known
-problem in M4 quality readings.
+Reuse genuine natural editor work and valid receipts; do not manufacture usage
+to unlock deferred architecture. Sample-stage evidence, complaints, source
+maintenance opportunities and release decisions are different triggers.
+The existing manual quality analysis is available when requested; no new
+monitor, automatic evaluation schedule or model traffic is authorized here.
 
 ## Engineering Lessons
 
-1. **Defer by trigger condition, not by date or by enthusiasm.** Same pattern
-   as ADR-053: write the condition down, let it fire on evidence.
-2. **Prefer verified evidence over declared claims.** For local and
-   multi-provider ecosystems, "OpenAI-compatible" self-description is not a
-   capability fact; probes plus evidence states gate routing reliably.
-3. **Keep one narrow signed transport; grow surface with thin facades.**
-   Registry-ify when the schema-validation duplication (not the facade
-   boilerplate) becomes the dominant cost.
-4. **Data-gated features need automatic evaluation, not human memory.** The
-   ops cadence detector is the carrier; a deferred item without an automatic
-   evaluator gets forgotten or fires late.
-5. **Speculative abstraction has negative value before its consumer exists.**
-   Every item above already has a designated landing site in code, so the
-   future change is small — that is the payoff of deferring now.
-6. **Normalize upstream identifiers at the boundary; never copy them through.**
-   A surface that republishes whatever an upstream response happens to contain
-   will present the upstream's internal naming as if it were its own. Item 4 is
-   the case: the Addon had already declared the identity it meant to log
-   (`fallback_model_id`) and still leaked Cloud's `provider_id`/`model_id`,
-   because the fallback applies only when the upstream field is absent. Prefer an
-   explicit allowlist projection over a permissive key search.
+1. Defer by evidenced condition, not age, enthusiasm or a zero-backlog label.
+2. Current verified route evidence is stronger than a Provider's capability
+   declaration or a reference boolean.
+3. Registry decisions follow business-scene/validation duplication, not facade
+   counts, helper counts or a refactor that merely moved code.
+4. Use the current evaluation owner and schedule. #1125's manual-only quality
+   contract supersedes the old daily-evaluator assumption.
+5. Recheck consumer premises: structured-output requests already exist, but
+   native guarantees and a new routing gate still require a focused decision.
+6. Normalize site-visible identity at its boundary; copying Cloud response
+   identifiers before an Addon fallback does not create an Addon identity.
+7. Separate source defense, controlled behavior receipts and current field
+   evidence. A marker, lease or historical deployment cannot prove all three.
 
-## Non-Goals
+## Non-Goals and Maintenance
 
-- No code change is authorized or planned by this document.
-- No conflict with the Refactor Master Plan rules 9-10 (`NO_COMPATIBILITY_LAYER`,
-  `ONE_ACTIVE_CONTRACT_VERSION`): none of the items introduces a
-  compatibility layer or a second contract version.
+No code, new product/commercial scope, paused-feature activation, migration,
+configuration, M4 operation or production release is authorized by this record.
+It introduces no compatibility layer or second contract version.
 
-## Rollback
-
-Delete this file and its `docs/README.md` index line. If a trigger has already
-fired for an item, mark that section `Superseded` by the implementing PR
-instead of deleting the history.
+Keep history when a trigger or implementation has a successor: identify the
+implementing/authorizing record and retain any unmet gate. An unproved trigger
+or delayed item is not a completed or cancelled task. Future revisions use the
+current contracts and exact evidence; reverting this documentation candidate
+changes no runtime state.
