@@ -124,3 +124,41 @@ verification and documentation reachability checks also pass.
 Framework runtime acceptance, independent final review, protected CI,
 merge, and clean-master M4 acceptance remain separate follow-up gates. These
 results do not establish universal compatibility for every JSON-body route.
+
+The 0.158.2 batch subsequently merged through PR #1258 as
+`bb07d309b3af082a127300c9530fd178f1a11d5e`, after independent review and all
+six required checks passed. The M4 candidate passed 261 cases with one
+disposable-PostgreSQL skip. A separate execution of that concurrent-login test
+against a disposable M4 PostgreSQL schema passed without skips. Clean-master
+promotion recorded accepted state for #1258, followed by 58 passing focused
+tests and bounded HTTP checks. The advisory OpenCodeReview run selected no
+files and made no model call; its green skipped result does not establish
+recovery of the older HTTP403 failure. Production was not changed.
+
+## Separate 0.159.0 scalar-query follow-up
+
+Dependabot then advanced #1104 again, this time to 0.159.0 and lock revision 5.
+Regenerating from the latest master, after frontend PR #1259, with pinned uv
+0.12.10 changes only FastAPI's version and two artifact records. Revision 3,
+the dependency edges and every other package remain unchanged; no bot lock is
+copied over the integrated dependency graph.
+
+The upstream feature concerns optional query/header/cookie parameter models.
+The application has no identified direct optional model consumer there, but
+does have nullable scalar datetimes, Literal filters, dependency-produced
+filters and public query aliases. Eight new tests exercise the actual
+subscription route and generated application OpenAPI: omitted and valid UTC
+or offset datetimes, empty/invalid dates, invalid enum filters, nullable schema,
+pagination constraints and the existing `range` alias. They use isolated
+SQLite and existing test credentials; no commercial write or paused feature
+execution is introduced. The existing route consumers cover successful enum
+filters, authentication, JSON-body/replay behavior, setup and upload cleanup.
+
+Locked dev synchronization and all 16 selected consumer suites pass 445 cases,
+with one deliberate disposable-M4-PostgreSQL skip. Full Ruff and mypy over
+340 application files pass. Canonical locked default and zilliz dependency
+audits report no known vulnerabilities, using the same cached pinned tool
+bootstrap and online advisory lookup. These are new 0.159.0 local results;
+the earlier 0.158.2 runtime and PostgreSQL evidence does not prove this release.
+Independent review, protected CI, M4 candidate execution, merge and clean-master
+acceptance remain separate gates for this follow-up.
