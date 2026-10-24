@@ -66,6 +66,7 @@ from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import resolve_principal_allowed_actions
+from app.domain.commercial.mixins import _portal_mixin
 from app.domain.commercial.mixins._portal_mixin import _hash_external_identity
 from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
@@ -5378,15 +5379,22 @@ def test_portal_session_revoke_invalidates_another_active_session(tmp_path: Path
     dispose_engine(database_url)
 
 
-def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "generated_codes", [(123456, 654321), (123456, 123456)], ids=["distinct-otp", "repeated-otp"]
+)
+def test_expired_pending_registration_code_does_not_block_reissue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generated_codes: tuple[int, int]
+) -> None:
     database_url, client = _build_client(tmp_path)
     email = "expired-pending@example.com"
+    codes_to_issue = iter(generated_codes)
+    monkeypatch.setattr(_portal_mixin.secrets, "randbelow", lambda _upper: next(codes_to_issue))
     first = _request_portal_registration_code(
         client,
         email=email,
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    assert first["code"]
+    assert first["code"] == f"{generated_codes[0]:06d}"
     with get_session(database_url) as session:
         pending = session.scalar(
             select(PortalLoginCode).where(
@@ -5395,6 +5403,7 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
             )
         )
         assert pending is not None
+        first_code_id = pending.code_id
         pending.expires_at = datetime.now(UTC) - timedelta(minutes=1)
         session.commit()
 
@@ -5404,7 +5413,8 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
         headers={"x-npcink-debug-portal-link": "1"},
     )
 
-    assert second["code"] != first["code"]
+    # Fresh issuance is a new record; independent random OTPs may have the same value.
+    assert second["code"] == f"{generated_codes[1]:06d}"
     with get_session(database_url) as session:
         codes = list(
             session.scalars(
@@ -5413,8 +5423,11 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
                 .order_by(PortalLoginCode.created_at.asc(), PortalLoginCode.code_id.asc())
             )
         )
-    assert [code.status for code in codes].count("pending") == 1
-    assert [code.status for code in codes].count("expired") == 1
+    assert len(codes) == 2
+    assert next(code for code in codes if code.code_id == first_code_id).status == "expired"
+    fresh_codes = [code for code in codes if code.code_id != first_code_id]
+    assert len(fresh_codes) == 1
+    assert fresh_codes[0].status == "pending"
     dispose_engine(database_url)
 
 

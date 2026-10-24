@@ -154,7 +154,7 @@ SQLite and existing test credentials; no commercial write or paused feature
 execution is introduced. The existing route consumers cover successful enum
 filters, authentication, JSON-body/replay behavior, setup and upload cleanup.
 
-Locked dev synchronization and all 16 selected consumer suites pass 445 cases,
+Locked dev synchronization and all 16 selected consumer suites pass 446 cases,
 with one deliberate disposable-M4-PostgreSQL skip. Full Ruff and mypy over
 340 application files pass. Canonical locked default and zilliz dependency
 audits report no known vulnerabilities, using the same cached pinned tool
@@ -162,3 +162,16 @@ bootstrap and online advisory lookup. These are new 0.159.0 local results;
 the earlier 0.158.2 runtime and PostgreSQL evidence does not prove this release.
 Independent review, protected CI, M4 candidate execution, merge and clean-master
 acceptance remain separate gates for this follow-up.
+
+The first 0.159.0 M4 run passed 286 cases, skipped the disposable-PostgreSQL
+case and failed an existing registration reissuance assertion: two independent
+six-digit random OTPs happened to have the same value. The product promises a
+new issuance record, not a globally unique random value. Test-only forced
+repeated draws deterministically reproduce that assertion failure on both
+0.159.0 and an isolated, locked 0.158.2 baseline. The corrected test exercises
+distinct and repeated draws, requires two distinct persisted record identities,
+and checks that the old record is expired and the fresh record remains pending.
+Both corrected cases also pass on the old framework. No product RNG, code
+uniqueness rule, authentication or issuance behavior is changed. Initial M4
+failure and before/after proof are retained; corrected-head runtime acceptance
+is still required.
