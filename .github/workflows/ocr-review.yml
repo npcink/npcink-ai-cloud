@@ -140,7 +140,7 @@ jobs:
         id: ocr_review
         if: steps.pr-context.outputs.eligible == 'true'
         timeout-minutes: 15
-        # Action wrapper v1.12.11 (tag object ee83f151, commit a758d9cb).
+        # Action wrapper v1.13.2 (commit 55450a95).
         # The wrapper's `ocr_version` input deliberately installs CLI 1.12.13;
         # the pinned action metadata supports CLI v1.9.6+ and was checked at
         # this commit, so the wrapper and CLI pins are independent by design.
