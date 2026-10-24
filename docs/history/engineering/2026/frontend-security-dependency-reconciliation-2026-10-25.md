@@ -126,3 +126,36 @@ The primary contracts remain the
 [dependency update policy](../../../pr-and-dependency-update-policy.md),
 [M4 standard](../../../m4-preview-ai-development-standard-v1.md), and
 [earlier override remediation lessons](../../dependency-high-alerts-closeout-2026-09-21.md).
+
+## Separate routine UI consumer follow-up
+
+After the security changes, the next isolated batch advances tailwind-merge
+3.5.0 to 3.7.0 and autoprefixer 10.4.20 to 10.6.1. Tailwind CSS 3.4.17,
+PostCSS 8.5.25, workspace overrides and application source remain unchanged.
+The lock changes only the frontend importer and those packages' corresponding
+transitive records; this is not a general dependency refresh.
+
+Eight added regressions render actual Backoffice/Portal components through
+their public props. They exercise customer-directory spacing, compact and
+important spacing, base versus desktop panel padding, empty-state vertical
+versus horizontal padding, selected/disabled filter pills and light/dark
+status capsules. They neither mock class merging nor reproduce its algorithm,
+and they do not treat class presence as proof of computed CSS or layout.
+
+Frozen installation, type-check, full lint and all 50 unit files / 430 tests
+pass on the upgraded source. Registry audit reports no known vulnerabilities
+in that candidate graph. An isolated baseline and upgraded copy each pass the
+same four focused consumer files / 17 tests, including the eight added cases.
+The upgraded copy initially lacked an offline tarball; a normal integrity-
+checked frozen install populated the cache, then its offline frozen install
+and focused verification passed. No dependency override or integrity check
+was bypassed.
+
+Compiling the actual global CSS with the real Tailwind -> autoprefixer chain
+produces byte-identical output for the two versions: the ordered semantic AST,
+36 effective browser targets, all 39 prefixed declarations and warning count
+(zero) are unchanged. This proves that compilation comparison only. Next.js
+image build, compiled browser consumers, UI self-review, independent review,
+protected CI, merge and clean-master M4 acceptance remain separate gates for
+this batch. No screenshot baseline, product feature or production operation
+is changed by the local candidate evidence.
