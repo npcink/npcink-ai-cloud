@@ -14,6 +14,7 @@ This document is the engineering companion to:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
+- [Admin Quiet Queue Contract Index](admin-ui-spec.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md);
 - [Development Validation Operating Model v1](development-validation-operating-model-v1.md).
