@@ -9,6 +9,14 @@ import { ApiClient, type ApiEnvelope, type ApiMethod } from './api-client';
 import { getPortalApiBaseUrl } from './env';
 import { ApiError } from './errors';
 import { generateIdempotencyKey } from './idempotency';
+import {
+  buildPortalSecondFactorSubmission,
+  PORTAL_SECOND_FACTOR_STATUS_PATH,
+  PORTAL_SECOND_FACTOR_VERIFY_PATH,
+  type PortalAuthResult,
+  type PortalSecondFactorRequired,
+  type PortalSecondFactorSubmission,
+} from './portal-auth-wire';
 
 // ============================================
 // 类型定义
@@ -105,6 +113,9 @@ export interface PortalSession {
     revocable: boolean;
   };
 }
+
+export type PortalAuthenticationResult = PortalAuthResult<PortalSession>;
+export type { PortalSecondFactorRequired, PortalSecondFactorSubmission } from './portal-auth-wire';
 
 export interface PortalSelectedContext {
   site: Site;
@@ -1915,7 +1926,7 @@ export class PortalClient {
    * 验证邮箱验证码
    * POST /portal/v1/auth/code/verify
    */
-  async verifyLoginCode(payload: PortalLoginCodeVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
+  async verifyLoginCode(payload: PortalLoginCodeVerifyRequest): Promise<PortalEnvelope<PortalAuthenticationResult>> {
     return this.request('POST', '/auth/code/verify', payload);
   }
 
@@ -2006,8 +2017,32 @@ export class PortalClient {
    * 验证注册验证码并创建账号及 Free 权益；站点与凭据由可信 WordPress Addon 连接建立
    * POST /portal/v1/register/verify
    */
-  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
+  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalAuthenticationResult>> {
     return this.request('POST', '/register/verify', payload);
+  }
+
+  /**
+   * Complete a restricted login challenge. The challenge credential is sent
+   * by the browser's HttpOnly cookie; it is never accepted as a body field.
+   * The endpoint/field mapping is intentionally isolated until B03 freezes it.
+   */
+  async verifySecondFactor(
+    payload: PortalSecondFactorSubmission
+  ): Promise<PortalEnvelope<PortalAuthenticationResult>> {
+    return this.request(
+      'POST',
+      PORTAL_SECOND_FACTOR_VERIFY_PATH,
+      buildPortalSecondFactorSubmission(payload),
+    );
+  }
+
+  /**
+   * Recover the active challenge projection from the HttpOnly cookie after a
+   * full document navigation. The status endpoint never returns a credential.
+   * GET /portal/v1/totp/challenge/status
+   */
+  async getSecondFactorStatus(): Promise<PortalEnvelope<unknown>> {
+    return this.request('GET', PORTAL_SECOND_FACTOR_STATUS_PATH, undefined);
   }
 
   /**

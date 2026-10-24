@@ -92,4 +92,18 @@ export {
   type PortalIdentityProviderStatus,
   type PortalIdentityProvidersResponse,
   type PortalQqStartResponse,
+  type PortalAuthenticationResult,
+  type PortalSecondFactorRequired,
+  type PortalSecondFactorSubmission,
 } from './portal-client';
+
+export {
+  PORTAL_SECOND_FACTOR_STATUS_PATH,
+  PORTAL_SECOND_FACTOR_VERIFY_PATH,
+  buildPortalSecondFactorSubmission,
+  isPortalSecondFactorRequired,
+  parsePortalSecondFactorFailure,
+  parsePortalSecondFactorFromError,
+  parsePortalSecondFactorRequired,
+  parsePortalSecondFactorStatus,
+} from './portal-auth-wire';
