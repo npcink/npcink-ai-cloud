@@ -39,20 +39,29 @@ export class RequestBoundary {
     this.abilityRequests = 0;
     this.saveRequests = 0;
     this.blocked = 0;
+    this.optionalAssetsBlocked = 0;
     this.violations = 0;
     this.saveContent = null;
     this.saveTitle = null;
   }
-  allow(url, method, body = null, headers = {}) {
+  allow(url, method, body = null, headers = {}, resourceType = '') {
     const reject = (critical = false) => {
       this.blocked += 1;
       if (critical) this.violations += 1;
       return false;
     };
     const u = new URL(url);
-    if (u.origin !== this.target.site_url || u.protocol !== 'https:' || u.username || u.password) return reject(true);
+    if (u.protocol !== 'https:' || u.username || u.password) return reject(true);
     if (u.searchParams.has('_method') || u.searchParams.getAll('rest_route').length > 1
       || Object.keys(headers).some((key) => key.toLowerCase() === 'x-http-method-override')) return reject(true);
+    if (u.origin !== this.target.site_url) {
+      // WordPress admin avatars are optional. Keep blocking them, but distinguish
+      // that expected isolation from an attempted write or executable dependency.
+      const avatar = method === 'GET' && resourceType === 'image'
+        && u.origin === 'https://secure.gravatar.com' && /^\/avatar\/(?:[a-f0-9]{32}|[a-f0-9]{64})$/i.test(u.pathname);
+      if (avatar) this.optionalAssetsBlocked += 1;
+      return reject(!avatar);
+    }
     const path = restPath(url);
     const ability = /\/wp-abilities\/v1\/abilities\/.*\/run$/.test(path);
     if (ability) {
@@ -192,43 +201,60 @@ const stored = (s) => ({ title: s.title, content: s.content, status: s.status, m
 
 export async function editorFlow(context, target, mode, { transport, screenshotDir, timeoutMs = 90000 } = {}) {
   const boundary = new RequestBoundary(target, mode);
+  const started = Date.now();
   const evidence = { mode, complete: false, production_accepted: false, post_id: target.post_id,
     site_origin: target.site_url, evidence_kind: transport ? 'browser_dom_stub' : 'remote_wordpress_ui',
     stage: 'open_editor',
-    ability_requests: 0, draft_save_requests: 0, billing_status: 'not_verified' };
+    ability_requests: 0, draft_save_requests: 0, billing_status: 'not_verified', timings_ms: {} };
   await context.route('**/*', async (route) => {
     const request = route.request();
     let body;
     try { body = request.postDataJSON(); } catch { body = null; }
-    if (!boundary.allow(request.url(), request.method(), body, request.headers())) return route.abort('blockedbyclient');
+    if (!boundary.allow(request.url(), request.method(), body, request.headers(), request.resourceType())) return route.abort('blockedbyclient');
     return transport ? transport(route) : route.continue();
   });
   await context.routeWebSocket('**/*', (socket) => socket.close());
   const page = await context.newPage();
+  page.on('response', (response) => {
+    if (evidence.stage === 'open_editor' && response.request().isNavigationRequest()
+      && response.frame() === page.mainFrame()) {
+      evidence.document_status = response.status();
+      evidence.timings_ms.document_response = Date.now() - started;
+    }
+  });
   page.setDefaultTimeout(Math.min(timeoutMs, 15000));
   const control = (locators) => visible(locators, Math.min(timeoutMs, 10000));
   try {
-    await page.goto(`${target.site_url}/wp-admin/post.php?post=${target.post_id}&action=edit`);
+    await page.goto(`${target.site_url}/wp-admin/post.php?post=${target.post_id}&action=edit`,
+      { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    evidence.timings_ms.dom_ready = Date.now() - started;
     assert(new URL(page.url()).origin === target.site_url, 'Unexpected editor redirect');
-    await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getCurrentPostId());
+    evidence.stage = 'wait_editor_store';
+    await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getCurrentPostId(), null,
+      { timeout: timeoutMs });
+    evidence.timings_ms.editor_store_ready = Date.now() - started;
     await page.evaluate((key) => window.wp.data.dispatch('core/editor').lockPostAutosaving(key), LOCK);
     const before = await snapshot(page, target);
     evidence.stage = 'validate_draft';
     validateDraft(before, target);
     evidence.before_sha256 = hash(stored(before));
     await page.evaluate((id) => window.wp.data.dispatch('core/block-editor').selectBlock(id), before.targetId);
-    evidence.stage = 'rephrase';
+    evidence.stage = 'select_paragraph';
     const frame = page.frameLocator('iframe[name="editor-canvas"], iframe.wp-block-editor-iframe__iframe').first();
-    await (await control([page.locator(`[data-block="${before.targetId}"]`),
-      frame.locator(`[data-block="${before.targetId}"]`)])).click();
+    await (await visible([page.locator(`[data-block="${before.targetId}"]`),
+      frame.locator(`[data-block="${before.targetId}"]`)], timeoutMs)).click();
+    evidence.timings_ms.paragraph_ready = Date.now() - started;
+    evidence.stage = 'open_ai_menu';
     await (await control([page.locator('button:has(.ai-content-resizing-toolbar__icon)'),
       frame.locator('button:has(.ai-content-resizing-toolbar__icon)')])).click();
     const labels = await page.evaluate(() => ({ rephrase: window.wp.i18n.__('Rephrase', 'ai'),
       accept: window.wp.i18n.__('Accept', 'ai') }));
+    evidence.stage = 'check_rephrase';
     const rephrase = await control([page.getByRole('menuitem', { name: labels.rephrase, exact: true }),
       frame.getByRole('menuitem', { name: labels.rephrase, exact: true })]);
     assert(!(await rephrase.isDisabled()), 'Rephrase control is disabled');
     if (mode === 'preflight') {
+      evidence.stage = 'check_request_boundary';
       assert(boundary.abilityRequests === 0 && boundary.saveRequests === 0 && boundary.violations === 0,
         'Unexpected request attempt during read-only preflight');
       evidence.complete = true;
@@ -290,8 +316,9 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
       && saved.content === boundary.saveContent, 'Saved draft does not match adoption');
     assert.deepEqual(saved.persistedBlocks, adopted.editorBlocks, 'Persisted blocks differ from adoption');
     evidence.stage = 'reload';
-    await page.reload();
-    await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getCurrentPostId());
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.waitForFunction(() => window.wp?.data?.select('core/editor')?.getCurrentPostId(), null,
+      { timeout: timeoutMs });
     const reopened = await snapshot(page, target);
     assert.deepEqual(stored(reopened), stored(saved), 'Reload lost the saved content');
     assert(!reopened.dirty && reopened.status === 'draft', 'Reload state is not a clean draft');
@@ -304,12 +331,22 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
     evidence.real_provider_workflow = transport ? 'not_run' : 'one_wordpress_request_billing_unverified';
     return evidence;
   } catch (error) {
+    if (error.name === 'TimeoutError') {
+      evidence.failure_code = evidence.stage === 'open_editor'
+        ? `navigation_timeout_${evidence.document_status ? 'after' : 'before'}_response` : 'operation_timeout';
+    } else if (error.code === 'ERR_ASSERTION') {
+      evidence.failure_code = 'assertion_failed';
+    } else {
+      evidence.failure_code = error.message === 'required_editor_control_unavailable'
+        ? error.message : 'editor_operation_failed';
+    }
     error.acceptanceEvidence = evidence;
     throw error;
   } finally {
     evidence.ability_requests = boundary.abilityRequests;
     evidence.draft_save_requests = boundary.saveRequests;
     evidence.blocked_requests = boundary.blocked;
+    evidence.optional_assets_blocked = boundary.optionalAssetsBlocked;
     evidence.boundary_violations = boundary.violations;
     // Closing the isolated context releases the editor; no unlock/autosave/network cleanup write.
     await page.close().catch(() => {});
@@ -352,7 +389,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (mode === 'login') {
       const policy = new RequestBoundary(target, mode);
       await context.route('**/*', (route) => policy.allow(route.request().url(), route.request().method(),
-        null, route.request().headers())
+        null, route.request().headers(), route.request().resourceType())
         ? route.continue() : route.abort('blockedbyclient'));
       await context.routeWebSocket('**/*', (socket) => socket.close());
       const page = await context.newPage();
@@ -377,6 +414,7 @@ export async function main(argv = process.argv.slice(2)) {
       source,
       failure: 'editor_acceptance_failed_no_retry',
     }, null, 2));
+    if (output) console.error(`Editor stopped at ${error.acceptanceEvidence?.stage || 'setup'}; receipt: ${join(output, 'receipt.json')}`);
     throw new Error('Editor acceptance failed; inspect the private receipt. No automatic retry.');
   } finally { await context?.close().catch(() => {}); await browser.close(); }
 }

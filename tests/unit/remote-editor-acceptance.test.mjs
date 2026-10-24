@@ -58,6 +58,19 @@ test('read-only navigation blocks administrative GET mutations and URL credentia
   assert.equal(p.allow(target.site_url + '/?rest_route=/wp/v2/posts/42&rest_route=/other', 'GET'), false);
 });
 
+test('optional WordPress avatar remains blocked without failing an otherwise safe preflight', () => {
+  const p = new RequestBoundary(target, 'preflight');
+  const avatar = 'https://secure.gravatar.com/avatar/' + 'a'.repeat(64) + '?s=26&d=mm&r=g';
+  assert.equal(p.allow(avatar, 'GET', null, {}, 'image'), false);
+  assert.equal(p.blocked, 1); assert.equal(p.violations, 0);
+  for (const [url, method, type] of [[avatar, 'POST', 'image'], [avatar, 'GET', 'script'],
+    [avatar + '&_method=POST', 'GET', 'image'], ['https://untrusted.example/avatar.png', 'GET', 'image']]) {
+    const q = new RequestBoundary(target, 'preflight');
+    assert.equal(q.allow(url, method, null, {}, type), false);
+    assert.equal(q.violations, 1);
+  }
+});
+
 test('save cannot publish, change title, save another post, autosave or save twice', () => {
   const p = new RequestBoundary(target, 'execute');
   p.phase = 'saving'; p.saveContent = 'reviewed'; p.saveTitle = 'unchanged';
@@ -146,58 +159,94 @@ test('missing execution authorizations fail before browser loading or session re
 // Opt-in local DOM fixture; every admitted request is fulfilled in-process.
 // No WordPress, Cloud, Provider, SSH, M4 or production connection is made.
 if (process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT) {
-  test('browser substitute proves the loop and stops on wrong drafts, missing controls, save failure or retry', async () => {
+  test('browser substitute proves the loop and stops on wrong drafts, missing controls, save failure or retry', async (t) => {
     const { chromium, env } = await loadBrowser(process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT);
     const browser = await chromium.launch({ env });
     try {
-      for (const scenario of ['preflight', 'execute', 'wrong-draft', 'no-ai-control', 'save-failure', 'repeat']) {
-        let abilities = 0, writes = 0;
-        const blocks = [
-          { name: 'core/paragraph', attributes: { content: 'Sentinel before' }, innerBlocks: [] },
-          { name: 'core/paragraph', attributes: { content: 'NPCINK_ACCEPTANCE_TARGET original paragraph.' }, innerBlocks: [] },
-          { name: 'core/paragraph', attributes: { content: 'Sentinel after' }, innerBlocks: [] },
-        ];
-        let post = { id: 42, slug: scenario === 'wrong-draft' ? 'ordinary' : target.expected_slug,
-          status: 'draft', title: { raw: 'Fixture' }, content: { raw: JSON.stringify(blocks) }, modified_gmt: 'fixture-before' };
-        const context = await browser.newContext({ serviceWorkers: 'block' });
-        const transport = async (route) => {
-          const path = restPath(route.request().url());
-          if (path === '/wp-admin/post.php') {
-            let html = readFileSync(new URL('../fixtures/business-editor.html', import.meta.url), 'utf8');
-            if (scenario === 'no-ai-control') html = html.replace('class="ai-content-resizing-toolbar__icon"', 'class="fixture-absent"');
-            return route.fulfill({ contentType: 'text/html', body: html });
-          }
-          if (path === '/wp-abilities/v1/abilities/ai/content-resizing/run') {
-            abilities += 1; return route.fulfill({ json: { output: 'One clear rewritten paragraph.', retry: scenario === 'repeat' } });
-          }
-          assert.equal(path, '/wp/v2/posts/42', 'Unexpected fixture request');
-          if (route.request().method() === 'POST') {
-            writes += 1; const body = route.request().postDataJSON();
-            if (scenario === 'save-failure') return route.fulfill({ status: 503, json: { code: 'fixture_failure' } });
-            post = { ...post, content: { raw: body.content }, modified_gmt: 'fixture-after' };
-          }
-          return route.fulfill({ json: post });
-        };
-        try {
-          if (scenario === 'wrong-draft') {
-            await assert.rejects(editorFlow(context, target, 'execute', { transport }), /dedicated draft/);
-          } else if (scenario === 'no-ai-control') {
-            await assert.rejects(editorFlow(context, target, 'preflight', { transport, timeoutMs: 1200 }), /unavailable/);
-          } else if (['save-failure', 'repeat'].includes(scenario)) {
-            await assert.rejects(editorFlow(context, target, 'execute', { transport, timeoutMs: 1200 }));
-          } else {
-            const result = await editorFlow(context, target, scenario, { transport });
-            assert.equal(result.complete, true); assert.equal(result.production_accepted, false);
-            assert.equal(result.evidence_kind, 'browser_dom_stub');
-            assert.equal(result.real_provider_workflow, 'not_run');
-            assert.equal(result.ability_requests, abilities); assert.equal(result.draft_save_requests, writes);
-          }
-          assert.equal(abilities, ['execute', 'save-failure', 'repeat'].includes(scenario) ? 1 : 0);
-          assert.equal(writes, ['execute', 'save-failure'].includes(scenario) ? 1 : 0);
-          assert.equal(post.status, 'draft');
-          assert.equal(JSON.parse(post.content.raw)[0].attributes.content, 'Sentinel before');
-          assert.equal(JSON.parse(post.content.raw)[2].attributes.content, 'Sentinel after');
-        } finally { await context.close(); }
+      for (const scenario of ['preflight', 'preflight-avatar', 'preflight-slow-resource',
+        'preflight-document-timeout', 'preflight-parser-timeout',
+        'execute', 'wrong-draft', 'no-ai-control', 'save-failure', 'repeat']) {
+        await t.test(scenario, async () => {
+          let abilities = 0, writes = 0;
+          let releaseResource;
+          const blocks = [
+            { name: 'core/paragraph', attributes: { content: 'Sentinel before' }, innerBlocks: [] },
+            { name: 'core/paragraph', attributes: { content: 'NPCINK_ACCEPTANCE_TARGET original paragraph.' }, innerBlocks: [] },
+            { name: 'core/paragraph', attributes: { content: 'Sentinel after' }, innerBlocks: [] },
+          ];
+          let post = { id: 42, slug: scenario === 'wrong-draft' ? 'ordinary' : target.expected_slug,
+            status: 'draft', title: { raw: 'Fixture' }, content: { raw: JSON.stringify(blocks) }, modified_gmt: 'fixture-before' };
+          const context = await browser.newContext({ serviceWorkers: 'block' });
+          const transport = async (route) => {
+            const path = restPath(route.request().url());
+            if (path === '/wp-admin/post.php') {
+              if (scenario === 'preflight-document-timeout') await new Promise((done) => { releaseResource = done; });
+              let html = readFileSync(new URL('../fixtures/business-editor.html', import.meta.url), 'utf8');
+              if (scenario === 'no-ai-control') html = html.replace('class="ai-content-resizing-toolbar__icon"', 'class="fixture-absent"');
+              if (scenario === 'preflight-avatar') html += '<img src="https://secure.gravatar.com/avatar/' + 'a'.repeat(64) + '">';
+              if (scenario === 'preflight-slow-resource') html += '<img src="/slow-avatar.png">';
+              if (scenario === 'preflight-parser-timeout') html = html.replace('<body>', '<script src="/held-parser.js"></script><body>');
+              return route.fulfill({ contentType: 'text/html', body: html }).catch(() => {});
+            }
+            if (['/slow-avatar.png', '/held-parser.js'].includes(path)) {
+              await new Promise((done) => { releaseResource = done; });
+              return route.fulfill({ status: 204 }).catch(() => {});
+            }
+            if (path === '/wp-abilities/v1/abilities/ai/content-resizing/run') {
+              abilities += 1; return route.fulfill({ json: { output: 'One clear rewritten paragraph.', retry: scenario === 'repeat' } });
+            }
+            assert.equal(path, '/wp/v2/posts/42', 'Unexpected fixture request');
+            if (route.request().method() === 'POST') {
+              writes += 1; const body = route.request().postDataJSON();
+              if (scenario === 'save-failure') return route.fulfill({ status: 503, json: { code: 'fixture_failure' } });
+              post = { ...post, content: { raw: body.content }, modified_gmt: 'fixture-after' };
+            }
+            return route.fulfill({ json: post });
+          };
+          try {
+            if (scenario === 'wrong-draft') {
+              await assert.rejects(editorFlow(context, target, 'execute', { transport }), /dedicated draft/);
+            } else if (['preflight-document-timeout', 'preflight-parser-timeout'].includes(scenario)) {
+              await assert.rejects(editorFlow(context, target, 'preflight', { transport, timeoutMs: 350 }), (error) => {
+                assert.equal(error.acceptanceEvidence.stage, 'open_editor');
+                assert.equal(error.acceptanceEvidence.failure_code,
+                  scenario === 'preflight-document-timeout' ? 'navigation_timeout_before_response' : 'navigation_timeout_after_response');
+                assert.equal(error.acceptanceEvidence.document_status, scenario === 'preflight-document-timeout' ? undefined : 200);
+                assert(!JSON.stringify(error.acceptanceEvidence).includes('Call log'));
+                return true;
+              });
+            } else if (scenario === 'no-ai-control') {
+              await assert.rejects(editorFlow(context, target, 'preflight', { transport, timeoutMs: 1200 }), (error) => {
+                assert.equal(error.acceptanceEvidence.stage, 'open_ai_menu');
+                assert.equal(error.acceptanceEvidence.failure_code, 'required_editor_control_unavailable');
+                return /unavailable/.test(error.message);
+              });
+            } else if (['save-failure', 'repeat'].includes(scenario)) {
+              await assert.rejects(editorFlow(context, target, 'execute', { transport, timeoutMs: 1200 }));
+            } else {
+              const result = await editorFlow(context, target,
+                scenario.startsWith('preflight') ? 'preflight' : scenario,
+                { transport, ...(scenario === 'preflight-slow-resource' ? { timeoutMs: 1500 } : {}) });
+              assert.equal(result.complete, true); assert.equal(result.production_accepted, false);
+              assert.equal(result.evidence_kind, 'browser_dom_stub');
+              assert.equal(result.real_provider_workflow, 'not_run');
+              assert.equal(result.ability_requests, abilities); assert.equal(result.draft_save_requests, writes);
+              if (scenario === 'preflight-avatar') {
+                assert.equal(result.optional_assets_blocked, 1); assert.equal(result.boundary_violations, 0);
+              }
+              if (scenario === 'preflight-slow-resource') {
+                assert.equal(typeof releaseResource, 'function', 'The resource really is still in flight');
+                assert.equal(result.document_status, 200);
+                assert(result.timings_ms.paragraph_ready >= result.timings_ms.editor_store_ready);
+              }
+            }
+            assert.equal(abilities, ['execute', 'save-failure', 'repeat'].includes(scenario) ? 1 : 0);
+            assert.equal(writes, ['execute', 'save-failure'].includes(scenario) ? 1 : 0);
+            assert.equal(post.status, 'draft');
+            assert.equal(JSON.parse(post.content.raw)[0].attributes.content, 'Sentinel before');
+            assert.equal(JSON.parse(post.content.raw)[2].attributes.content, 'Sentinel after');
+          } finally { releaseResource?.(); await context.close(); }
+        });
       }
     } finally { await browser.close(); }
   });
