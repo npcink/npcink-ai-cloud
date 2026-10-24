@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendForwardHeaders, buildBackendUrl, buildForwardedRequestHeaders } from '@/app/api/admin/_shared';
 import { getDevPortalEmail, getPublicBaseUrl, isMiniDevHost, isMiniDevRequestHost } from '@/lib/env';
+import { parsePortalSecondFactorRequired } from '@/lib/portal-auth-wire';
 
 type LoginCodeResponse = {
   data?: {
     code?: string;
   };
+  error_code?: string;
+};
+
+type VerifyResponse = {
+  data?: unknown;
   error_code?: string;
 };
 
@@ -204,11 +210,17 @@ export async function GET(request: NextRequest) {
     return buildDeniedRedirect(request, 'auth.dev_portal_verify_unreachable');
   }
 
+  const verifyPayload = (await verifyResponse.json().catch(() => ({}))) as VerifyResponse;
   if (!verifyResponse.ok) {
     return buildDeniedRedirect(request, 'auth.dev_portal_verify_failed');
   }
 
-  const redirectUrl = new URL(resolveRedirectPath(request), resolveExternalOrigin(request));
+  const challenge = parsePortalSecondFactorRequired(verifyPayload.data);
+  const requestedRedirect = resolveRedirectPath(request);
+  const redirectPath = challenge
+    ? `/portal/challenge?redirect=${encodeURIComponent(requestedRedirect)}`
+    : requestedRedirect;
+  const redirectUrl = new URL(redirectPath, resolveExternalOrigin(request));
   const nextResponse = NextResponse.redirect(redirectUrl, 303);
   appendForwardHeaders(verifyResponse, nextResponse);
   nextResponse.headers.set('location', redirectUrl.toString());

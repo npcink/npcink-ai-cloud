@@ -36,6 +36,7 @@ function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger'
   return 'neutral';
 }
 
+const SUPPORT_DRAFT_MAX_COUNT = 10;
 const SUPPORT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 const SUPPORT_ATTACHMENT_CONTENT_TYPES = new Set([
   'application/json',
@@ -129,6 +130,7 @@ export default function PortalSupportRequestDetailPage() {
   const [messages, setMessages] = useState<PortalSupportRequestMessage[]>([]);
   /** Composer chips — local File drafts until Send (optional attachment_id for orphans). */
   const [composerDrafts, setComposerDrafts] = useState<ComposerDraft[]>([]);
+  const [draftLimitExceeded, setDraftLimitExceeded] = useState(false);
   /** Request attachments shown under chat bubbles by message_id. */
   const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
   const [feedback, setFeedback] = useState<PortalSupportRequestFeedback | null>(null);
@@ -206,6 +208,7 @@ export default function PortalSupportRequestDetailPage() {
     setSupportRequest(null);
     setMessages([]);
     setComposerDrafts([]);
+    setDraftLimitExceeded(false);
     setAttachments([]);
     setFeedback(null);
     setReply('');
@@ -321,6 +324,7 @@ export default function PortalSupportRequestDetailPage() {
         return [...kept, ...linkedAttachments];
       });
       setComposerDrafts([]);
+      setDraftLimitExceeded(false);
       setReply('');
       setNotice(t('portal.support_message_created', {}, 'Reply submitted.'));
     } catch (err) {
@@ -340,11 +344,17 @@ export default function PortalSupportRequestDetailPage() {
   };
 
   const handleAttachmentFilesSelected = (fileList: FileList | null) => {
-    if (!fileList?.length) return;
+    if (!fileList?.length || isSubmitting) return;
     const files = Array.from(fileList);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setError('');
     setNotice('');
+    setDraftLimitExceeded(false);
+    // Reserve pending removals: a confirmed DELETE failure restores its chip.
+    const availableSlots = Math.max(
+      0,
+      SUPPORT_DRAFT_MAX_COUNT - composerDraftsRef.current.length - removingDraftIdsRef.current.size
+    );
     const accepted: ComposerDraft[] = [];
     for (const file of files) {
       const contentType = inferSupportAttachmentContentType(file);
@@ -364,6 +374,10 @@ export default function PortalSupportRequestDetailPage() {
         ));
         continue;
       }
+      if (accepted.length >= availableSlots) {
+        setDraftLimitExceeded(true);
+        continue;
+      }
       accepted.push({
         localId: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
         file,
@@ -373,7 +387,9 @@ export default function PortalSupportRequestDetailPage() {
       });
     }
     if (!accepted.length) return;
-    setComposerDrafts((current) => [...current, ...accepted]);
+    const nextDrafts = [...composerDraftsRef.current, ...accepted];
+    composerDraftsRef.current = nextDrafts;
+    setComposerDrafts(nextDrafts);
   };
 
   const handleComposerDraftRemove = async (draft: ComposerDraft) => {
@@ -382,6 +398,7 @@ export default function PortalSupportRequestDetailPage() {
     const contextRequestVersion = contextRequestVersionRef.current;
     if (removingDraftIdsRef.current.has(draft.localId)) return;
     removingDraftIdsRef.current.add(draft.localId);
+    setDraftLimitExceeded(false);
     // Quiet local remove first — drafts never uploaded never touch the server.
     setComposerDrafts((current) => current.filter((item) => item.localId !== draft.localId));
     setError('');
@@ -878,14 +895,24 @@ export default function PortalSupportRequestDetailPage() {
               </span>
             ))}
             <span
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-400"
-              title={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
-              aria-label={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+              className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap text-xs text-slate-400"
+              title={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each; up to 10 attachments per draft. The ticket total limit also applies.')}
+              aria-label={t('portal.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each; up to 10 attachments per draft. The ticket total limit also applies.')}
               data-portal-support="attachment-hint"
             >
-              ⓘ
+              <span>{composerDrafts.length} / {SUPPORT_DRAFT_MAX_COUNT}</span>
+              <span aria-hidden="true">ⓘ</span>
             </span>
           </div>
+        ) : null}
+        {draftLimitExceeded ? (
+          <p role="status" className="mb-2 text-xs leading-5 text-slate-500 dark:text-slate-400" data-portal-support="draft-limit-notice">
+            {t(
+              'portal.support_attachment_draft_limit',
+              {},
+              'Up to 10 attachments per draft. Extra files were not added. The ticket total limit also applies.'
+            )}
+          </p>
         ) : null}
         <div
           className="rounded-2xl border border-slate-200/90 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-950/90"
@@ -904,7 +931,7 @@ export default function PortalSupportRequestDetailPage() {
               title={t(
                 'portal.support_attachment_limit',
                 {},
-                'PDF, image, text, CSV, or JSON. Max 5 MB each.'
+                'PDF, image, text, CSV, or JSON. Max 5 MB each; up to 10 attachments per draft. The ticket total limit also applies.'
               )}
               disabled={isSubmitting}
               onClick={() => fileInputRef.current?.click()}

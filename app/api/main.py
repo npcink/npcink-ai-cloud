@@ -18,6 +18,7 @@ from app.api.routes.agent_feedback import router as agent_feedback_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.catalog import router as catalog_router
 from app.api.routes.customer_journey import router as customer_journey_router
+from app.api.routes.economics_admin import router as economics_admin_router
 from app.api.routes.entitlements import router as entitlements_router
 from app.api.routes.health import router as health_router
 from app.api.routes.internal import router as internal_router
@@ -25,6 +26,12 @@ from app.api.routes.media_derivatives import router as media_derivatives_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.open import router as open_router
 from app.api.routes.portal import router as portal_router
+from app.api.routes.portal_data_export import DataExportCacheMiddleware
+from app.api.routes.portal_data_export import router as portal_data_export_router
+from app.api.routes.portal_sessions import PortalSessionsCacheMiddleware
+from app.api.routes.portal_sessions import router as portal_sessions_router
+from app.api.routes.portal_totp import TotpCacheMiddleware
+from app.api.routes.portal_totp import router as portal_totp_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
 from app.api.routes.service import router as service_router
@@ -195,7 +202,11 @@ def create_app(
     app.include_router(internal_router)
     app.include_router(open_router)
     app.include_router(portal_router)
+    app.include_router(portal_data_export_router)
+    app.include_router(portal_sessions_router)
+    app.include_router(portal_totp_router)
     app.include_router(service_router)
+    app.include_router(economics_admin_router, prefix="/internal/service")
     app.include_router(observability_router)
     app.include_router(customer_journey_router)
     app.include_router(runtime_router)
@@ -204,6 +215,10 @@ def create_app(
     app.include_router(runs_router)
     app.include_router(stats_router)
     app.include_router(auth_router)
+    # Keep private download headers on early forwarded-header/auth failures too.
+    app.add_middleware(DataExportCacheMiddleware)
+    app.add_middleware(PortalSessionsCacheMiddleware)
+    app.add_middleware(TotpCacheMiddleware)
 
     return app
 
@@ -217,6 +232,7 @@ def _create_setup_app(setup_service: SetupService) -> FastAPI:
         openapi_url=None,
     )
     setup_app.state.setup_service = setup_service
+
     def safe_normalize_host(value: object) -> str:
         try:
             return Settings._normalize_host(value)

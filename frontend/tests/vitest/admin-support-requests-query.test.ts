@@ -50,7 +50,7 @@ describe('Support request directory model', () => {
     );
 
     expect(Object.fromEntries(query)).toEqual({
-      limit: '20',
+      limit: '10',
       sort: 'risk',
       offset: '20',
       status: 'open',

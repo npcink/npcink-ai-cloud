@@ -33,6 +33,7 @@ export const commercialWorkspaceTabs: readonly AdminNavigationItem[] = [
   { href: '/admin/subscriptions', labelKey: 'admin.workspace_tab_subscriptions', fallback: 'Subscriptions' },
   { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages' },
   { href: '/admin/credit-packs', labelKey: 'admin.workspace_tab_credit_packs', fallback: 'Credit packs' },
+  { href: '/admin/economics', labelKey: 'admin.workspace_tab_economics', fallback: 'Unit economics' },
 ];
 
 export const externalCapabilityTabs: readonly AdminNavigationItem[] = [

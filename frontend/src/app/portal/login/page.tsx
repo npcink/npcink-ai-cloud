@@ -12,6 +12,7 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { useSession } from '@/hooks/useSession';
 import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown';
 import { cn } from '@/lib/utils';
+import { isPortalSecondFactorRequired } from '@/lib/portal-auth-wire';
 
 interface FormState {
   email: string;
@@ -157,7 +158,11 @@ function LoginFormContent() {
     setForm((prev) => ({ ...prev, status: 'verifying', message: '' }));
 
     try {
-      await verifyLoginCode(normalizedEmail, normalizedCode, { rememberMe: form.rememberMe });
+      const result = await verifyLoginCode(normalizedEmail, normalizedCode, { rememberMe: form.rememberMe });
+      if (isPortalSecondFactorRequired(result)) {
+        router.push(`/portal/second-factor?redirect=${encodeURIComponent(redirectTo)}`);
+        return;
+      }
       window.location.replace(redirectTo);
     } catch (error) {
       setForm((prev) => ({

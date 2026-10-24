@@ -114,6 +114,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
+    pattern: /^economics\/(?:usage-by-family|revenue)$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
+  {
+    methods: ['GET'],
     pattern: /^plans\/[^/]+$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',

@@ -8,8 +8,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.adapters.repositories.commercial_access_repository import (
     CommercialAccessRepository,
+)
+from app.adapters.repositories.commercial_notification_repository import (
+    CommercialNotificationRepository,
 )
 from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
@@ -75,6 +80,14 @@ SUPPORT_REQUEST_ATTACHMENT_CONTENT_TYPES = {
 }
 SUPPORT_REQUEST_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 SUPPORT_REQUEST_ATTACHMENT_MAX_COUNT = 10
+
+
+def _is_customer_attachment_draft(attachment: SupportRequestAttachment) -> bool:
+    # Operator request-level attachments predate message linking and remain readable.
+    return (
+        attachment.uploader_kind == SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+        and not str(attachment.message_id or "").strip()
+    )
 
 
 def _normalize_support_status(value: str, *, allow_empty: bool = False) -> str:
@@ -469,6 +482,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "attachments": [
                     self._serialize_support_request_attachment(attachment)
                     for attachment in attachments
+                    if not _is_customer_attachment_draft(attachment)
                 ],
                 "feedback": self._serialize_support_request_feedback(feedback)
                 if feedback is not None
@@ -633,6 +647,26 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "admin_reply"},
                 activity_at=now,
             )
+            if (
+                normalized_visibility == SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                and request.account_id
+            ):
+                try:
+                    CommercialNotificationRepository(session).create_notification(
+                        notification_id=f"pnotif_support_{message.message_id}",
+                        account_id=request.account_id,
+                        principal_id=request.principal_id,
+                        event_type="support_request_replied",
+                        title=request.title,
+                        body=normalized_body[:800],
+                        link_href=f"/portal/support/{request.request_id}",
+                    )
+                except SQLAlchemyError as error:
+                    # The outer session rolls back the reply and audit as well.
+                    raise CommercialValidationError(
+                        "service.support_reply_notification_failed",
+                        "Support reply could not be saved; retry the operation.",
+                    ) from error
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
@@ -940,7 +974,12 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
             )
-            if request is None or attachment is None or attachment.request_id != request.request_id:
+            if (
+                request is None
+                or attachment is None
+                or attachment.request_id != request.request_id
+                or _is_customer_attachment_draft(attachment)
+            ):
                 raise CommercialNotFoundError(
                     "service.support_request_attachment_not_found",
                     "support request attachment was not found",

@@ -7,24 +7,21 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalAuthContext,
     PortalBearerTokenError,
     authorize_portal_request,
-    build_portal_session_token,
     decode_portal_bearer_claims,
     decode_portal_session_cookie_claims,
     get_cloud_services,
-    normalize_portal_site_id,
     resolve_portal_remember_me_session_ttl_seconds,
     resolve_portal_session_ttl_seconds,
     validate_portal_principal_session,
 )
 from app.api.envelope import build_envelope
 from app.core.db import get_session
-from app.core.models import PRINCIPAL_STATUS_ACTIVE, SITE_STATUS_ARCHIVED
+from app.core.models import SITE_STATUS_ARCHIVED
 from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
@@ -34,6 +31,13 @@ from app.domain.portal_idempotency import (
     PortalIdempotencyReplay,
     build_portal_request_fingerprint,
     claim_portal_mutation,
+)
+from app.domain.portal_sessions.service import (
+    AuthenticatedSession,
+    IssuedPortalSession,
+    lock_login_scope,
+    sign_session,
+    validate_registered_session,
 )
 
 COOKIE_PORTAL_SESSION_TOKEN = "npcink_portal_session_token"
@@ -141,6 +145,8 @@ def current_portal_browser_session(
             settings,
             principal_id=principal_id,
             session_version=claims["session_version"],
+            session_id=claims["sid"],
+            expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
         )
         token_expires_at = (
             datetime.fromtimestamp(claims["exp"], tz=UTC).isoformat().replace("+00:00", "Z")
@@ -152,6 +158,8 @@ def current_portal_browser_session(
             "principal_id": principal_id,
             "site_id": claims.get("site_id", ""),
             "auth_mode": "jwt",
+            "session_id": claims["sid"],
+            "session_version": str(claims["session_version"]),
             "issued_at": token_issued_at,
             "expires_at": token_expires_at,
         }
@@ -378,133 +386,60 @@ def project_portal_subscription(subscription: dict[str, object]) -> dict[str, ob
     }
 
 
-def build_new_portal_session_metadata(
-    request: Request,
-    *,
-    ttl_seconds: int | None = None,
-    expires_at: datetime | None = None,
-) -> dict[str, object]:
-    settings = get_cloud_services(request).settings
-    now = datetime.now(UTC)
-    if ttl_seconds is not None and expires_at is not None:
-        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
-    resolved_expires_at = expires_at or (
-        now
-        + timedelta(
-            seconds=(
-                max(60, int(ttl_seconds or 0))
-                if ttl_seconds is not None
-                else resolve_portal_session_ttl_seconds(settings)
-            )
-        )
-    )
-    if resolved_expires_at.tzinfo is None:
-        raise ValueError("expires_at must be timezone-aware")
-    resolved_expires_at = resolved_expires_at.astimezone(UTC)
-    if resolved_expires_at <= now:
-        raise PortalBearerTokenError(
-            401,
-            "auth.portal_session_expired",
-            "portal session has expired",
-        )
-    return {
-        "principal_id": "",
-        "issued_at": now.isoformat().replace("+00:00", "Z"),
-        "expires_at": resolved_expires_at.isoformat().replace("+00:00", "Z"),
-        "transport": "cookie",
-        "revocable": True,
-    }
-
-
 def set_portal_session_cookies(
     request: Request,
     response: Response,
     *,
-    principal_id: str,
-    site_id: str = "",
-    session_version: int | None = None,
-    ttl_seconds: int | None = None,
-    expires_at: datetime | None = None,
+    issued: IssuedPortalSession,
 ) -> None:
-    settings = get_cloud_services(request).settings
-    now = datetime.now(UTC)
-    if ttl_seconds is not None and expires_at is not None:
-        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
-    resolved_expires_at = expires_at or (
-        now
-        + timedelta(
-            seconds=(
-                max(60, int(ttl_seconds or 0))
-                if ttl_seconds is not None
-                else resolve_portal_session_ttl_seconds(settings)
-            )
-        )
-    )
-    if resolved_expires_at.tzinfo is None:
-        raise ValueError("expires_at must be timezone-aware")
-    resolved_expires_at = resolved_expires_at.astimezone(UTC)
-    resolved_ttl_seconds = int(
-        resolved_expires_at.timestamp() - now.timestamp()
-    )
-    if resolved_ttl_seconds < 1:
-        raise PortalBearerTokenError(
-            401,
-            "auth.portal_session_expired",
-            "portal session has expired",
-        )
-    secure = portal_cookie_secure(request)
-    if (
-        not isinstance(principal_id, str)
-        or not principal_id.strip()
-        or principal_id != principal_id.strip()
-    ):
-        raise PortalBearerTokenError(
-            403,
-            "auth.portal_session_invalid",
-            "invalid portal session principal",
-        )
-    if site_id != "" and (
-        not isinstance(site_id, str) or normalize_portal_site_id(site_id) != site_id
-    ):
-        raise PortalBearerTokenError(
-            403,
-            "auth.portal_session_invalid",
-            "invalid portal session site",
-        )
-    if session_version is not None and (
-        isinstance(session_version, bool)
-        or not isinstance(session_version, int)
-        or session_version < 1
-    ):
-        raise PortalBearerTokenError(
-            403,
-            "auth.portal_session_invalid",
-            "invalid portal session version",
-        )
-    current_session_version = _resolve_portal_principal_session_version(
-        request,
-        principal_id=principal_id,
-    )
-    if session_version is not None and session_version != current_session_version:
-        raise PortalBearerTokenError(
-            401,
-            "auth.portal_session_revoked",
-            "portal session is no longer valid",
-        )
+    """Attach only the signed material returned by a committed transaction."""
+    remaining = int(issued.expires_at.timestamp() - datetime.now(UTC).timestamp())
+    if remaining < 1:
+        raise PortalBearerTokenError(401, "auth.portal_session_expired", "session expired")
     response.set_cookie(
         COOKIE_PORTAL_SESSION_TOKEN,
-        build_portal_session_token(
-            settings,
-            principal_id=principal_id,
-            site_id=site_id,
-            session_version=current_session_version,
-            expires_at=resolved_expires_at,
-        ),
+        issued.token,
         httponly=True,
-        secure=secure,
+        secure=portal_cookie_secure(request),
         samesite="lax",
-        max_age=resolved_ttl_seconds,
+        max_age=remaining,
     )
+
+
+def authenticated_session(auth: PortalAuthContext) -> AuthenticatedSession:
+    if auth.expires_at is None or not auth.session_id:
+        raise PortalBearerTokenError(401, "auth.portal_session_revoked", "please log in again")
+    return AuthenticatedSession(
+        auth.principal_id, auth.session_id, auth.session_version, auth.expires_at
+    )
+
+
+def rotate_portal_session(
+    request: Request, auth: PortalAuthContext, site_id: str
+) -> IssuedPortalSession:
+    identity = authenticated_session(auth)
+    with get_session(get_cloud_services(request).settings.database_url) as session:
+        principal = lock_login_scope(session, auth.principal_id)
+        validate_registered_session(session, identity, for_update=True)
+        from app.adapters.repositories.commercial_repository import CommercialRepository
+
+        if site_id not in {
+            site.site_id
+            for site, _principal, _member in CommercialRepository(session).list_sites_for_principal(
+                principal_id=auth.principal_id
+            )
+        }:
+            raise PortalBearerTokenError(403, "portal.site_access_required", "site unavailable")
+        assert principal is not None
+        issued = sign_session(
+            get_cloud_services(request).settings,
+            principal,
+            identity.session_id,
+            identity.expires_at,
+            site_id=site_id,
+        )
+        session.commit()
+        return issued
 
 
 def resolve_portal_login_session_ttl_seconds(request: Request, *, remember_me: bool) -> int:
@@ -515,31 +450,6 @@ def resolve_portal_login_session_ttl_seconds(request: Request, *, remember_me: b
             resolve_portal_remember_me_session_ttl_seconds(settings),
         )
     return resolve_portal_session_ttl_seconds(settings)
-
-
-def _resolve_portal_principal_session_version(
-    request: Request,
-    *,
-    principal_id: str,
-) -> int:
-    settings = get_cloud_services(request).settings
-    with get_session(settings.database_url) as session:
-        repository = CommercialIdentityRepository(session)
-        identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
-        session_version = getattr(identity, "session_version", None)
-        if (
-            identity is None
-            or identity.status != PRINCIPAL_STATUS_ACTIVE
-            or isinstance(session_version, bool)
-            or not isinstance(session_version, int)
-            or session_version < 1
-        ):
-            raise PortalBearerTokenError(
-                401,
-                "auth.portal_session_revoked",
-                "portal session is no longer valid",
-            )
-        return session_version
 
 
 def clear_portal_session_cookies(response: JSONResponse | RedirectResponse) -> None:
@@ -592,14 +502,14 @@ def _resolve_portal_session_metadata(request: Request, *, principal_id: str) -> 
                 "issued_at": issued_at,
                 "expires_at": expires_at,
                 "transport": "header",
-                "revocable": False,
+                "revocable": True,
             }
         return {
             "principal_id": principal_id,
             "issued_at": "",
             "expires_at": "",
             "transport": "header",
-            "revocable": False,
+            "revocable": True,
         }
 
     session = current_portal_browser_session(request)
@@ -649,6 +559,9 @@ async def resolve_portal_request_context(
         auth = PortalAuthContext(
             principal_id=session["principal_id"],
             site_id=str(session.get("site_id") or ""),
+            session_id=session["session_id"],
+            session_version=int(session["session_version"]),
+            expires_at=datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00")),
         )
     else:
         auth = await authorize_portal_request(
@@ -700,3 +613,12 @@ async def resolve_portal_request_context(
         raise RuntimeError("unexpected Portal idempotency outcome")
     request.state.portal_idempotency_claim = outcome
     return auth
+
+
+def revoke_current_portal_session(request: Request, auth: PortalAuthContext) -> None:
+    identity = authenticated_session(auth)
+    with get_session(get_cloud_services(request).settings.database_url) as session:
+        lock_login_scope(session, auth.principal_id)
+        row = validate_registered_session(session, identity, for_update=True)
+        row.revoked_at, row.revoke_reason = datetime.now(UTC), "logout"
+        session.commit()

@@ -72,6 +72,34 @@ class PortalEmailSender(ABC):
     ) -> None:
         raise NotImplementedError
 
+    @property
+    def supports_data_export(self) -> bool:
+        return False
+
+    def send_data_export_code(
+        self,
+        *,
+        recipient_email: str,
+        principal_id: str,
+        code: str,
+        expires_in_seconds: int,
+        project_name: str,
+        locale: str = "zh-CN",
+    ) -> None:
+        raise PortalEmailDeliveryError("Personal data copy email is not supported")
+
+    def send_account_deletion_code(
+        self,
+        *,
+        recipient_email: str,
+        principal_id: str,
+        code: str,
+        expires_in_seconds: int,
+        project_name: str,
+        locale: str = "zh-CN",
+    ) -> None:
+        raise PortalEmailDeliveryError("Account closure email delivery is not supported")
+
     def send_support_request_update(
         self,
         *,

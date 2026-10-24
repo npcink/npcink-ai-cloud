@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -45,6 +46,7 @@ SITE_API_KEY_STATUS_EXPIRED = "expired"
 
 ACCOUNT_STATUS_ACTIVE = "active"
 ACCOUNT_STATUS_SUSPENDED = "suspended"
+ACCOUNT_STATUS_CLOSED = "closed"
 
 PORTAL_LOGIN_CODE_STATUS_PENDING = "pending"
 PORTAL_LOGIN_CODE_STATUS_CONSUMED = "consumed"
@@ -485,6 +487,185 @@ class Principal(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class PortalSession(Base):
+    """Dormant login registry; B1 does not change Portal authentication."""
+
+    __tablename__ = "portal_sessions"
+    __table_args__ = (
+        CheckConstraint("length(session_id) BETWEEN 1 AND 64", name="ck_portal_sessions_id"),
+        CheckConstraint("session_version > 0", name="ck_portal_sessions_version"),
+        CheckConstraint("absolute_expires_at > created_at", name="ck_portal_sessions_expiry"),
+        CheckConstraint(
+            "auth_method IN ('email_code', 'registration', 'qq')",
+            name="ck_portal_sessions_auth_method",
+        ),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoke_reason IS NULL) OR "
+            "(revoked_at IS NOT NULL AND revoke_reason IS NOT NULL "
+            "AND length(revoke_reason) BETWEEN 1 AND 64 AND revoked_at >= created_at)",
+            name="ck_portal_sessions_revocation",
+        ),
+        CheckConstraint(
+            "client_hint IS NULL OR length(client_hint) BETWEEN 1 AND 120",
+            name="ck_portal_sessions_client_hint",
+        ),
+        CheckConstraint(
+            "(factor_version IS NULL AND second_factor_verified_at IS NULL "
+            "AND second_factor_method IS NULL) OR "
+            "(factor_version IS NOT NULL AND factor_version > 0 "
+            "AND primary_authenticated_at IS NOT NULL "
+            "AND second_factor_verified_at IS NOT NULL "
+            "AND second_factor_verified_at >= primary_authenticated_at "
+            "AND second_factor_method IS NOT NULL "
+            "AND second_factor_method IN ('totp', 'recovery_code'))",
+            name="ck_portal_sessions_factor_evidence",
+        ),
+        Index("ix_portal_sessions_principal_created", "principal_id", "created_at", "session_id"),
+        Index("ix_portal_sessions_expiry", "absolute_expires_at"),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(
+        ForeignKey("principals.principal_id", name="fk_portal_sessions_principal")
+    )
+    session_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoke_reason: Mapped[str | None] = mapped_column(String(64))
+    auth_method: Mapped[str] = mapped_column(String(32))
+    client_hint: Mapped[str | None] = mapped_column(String(120))
+
+    factor_version: Mapped[int | None] = mapped_column(Integer)
+    primary_authenticated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    second_factor_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    second_factor_method: Mapped[str | None] = mapped_column(String(32))
+
+
+class PortalTotpFactor(Base):
+    """Dormant factor storage; no runtime enable or authentication consumer."""
+
+    __tablename__ = "portal_totp_factors"
+    __table_args__ = (
+        CheckConstraint("factor_version > 0", name="ck_portal_totp_factor_version"),
+        CheckConstraint("recovery_generation >= 0", name="ck_portal_totp_generation"),
+        CheckConstraint(
+            "last_accepted_counter IS NULL OR last_accepted_counter >= 0",
+            name="ck_portal_totp_counter",
+        ),
+        CheckConstraint(
+            "(state = 'disabled' AND active_seed_ciphertext IS NULL AND enabled_at IS NULL "
+            "AND last_accepted_counter IS NULL) OR "
+            "(state = 'enabled' AND active_seed_ciphertext IS NOT NULL "
+            "AND length(active_seed_ciphertext) > 0 AND enabled_at IS NOT NULL "
+            "AND recovery_generation > 0)",
+            name="ck_portal_totp_active",
+        ),
+        CheckConstraint(
+            "(pending_setup_id IS NULL AND pending_seed_ciphertext IS NULL "
+            "AND pending_created_at IS NULL AND pending_expires_at IS NULL) OR "
+            "(pending_setup_id IS NOT NULL AND length(pending_setup_id) BETWEEN 1 AND 64 "
+            "AND pending_seed_ciphertext IS NOT NULL AND length(pending_seed_ciphertext) > 0 "
+            "AND pending_created_at IS NOT NULL AND pending_expires_at IS NOT NULL "
+            "AND pending_expires_at > pending_created_at)",
+            name="ck_portal_totp_pending",
+        ),
+        CheckConstraint("updated_at >= created_at", name="ck_portal_totp_timestamps"),
+        Index("ix_portal_totp_pending_expiry", "pending_expires_at"),
+    )
+
+    principal_id: Mapped[str] = mapped_column(
+        ForeignKey("principals.principal_id"), primary_key=True
+    )
+    factor_version: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16))
+    active_seed_ciphertext: Mapped[str | None] = mapped_column(Text)
+    enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_accepted_counter: Mapped[int | None] = mapped_column(BigInteger)
+    recovery_generation: Mapped[int] = mapped_column(Integer)
+    pending_setup_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    pending_seed_ciphertext: Mapped[str | None] = mapped_column(Text)
+    pending_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PortalRecoveryCode(Base):
+    __tablename__ = "portal_recovery_codes"
+    __table_args__ = (
+        CheckConstraint("length(code_id) BETWEEN 1 AND 64", name="ck_portal_recovery_id"),
+        CheckConstraint("factor_version > 0 AND generation > 0", name="ck_portal_recovery_version"),
+        CheckConstraint("length(code_hash) > 0", name="ck_portal_recovery_hash"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at", name="ck_portal_recovery_consumed"
+        ),
+        Index("ix_portal_recovery_generation", "principal_id", "factor_version", "generation"),
+    )
+
+    code_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.principal_id"))
+    factor_version: Mapped[int] = mapped_column(Integer)
+    generation: Mapped[int] = mapped_column(Integer)
+    code_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PortalAuthChallenge(Base):
+    __tablename__ = "portal_auth_challenges"
+    __table_args__ = (
+        CheckConstraint("length(challenge_id) BETWEEN 1 AND 64", name="ck_portal_challenge_id"),
+        CheckConstraint("length(credential_hash) > 0", name="ck_portal_challenge_hash"),
+        CheckConstraint(
+            "purpose IN ('login', 'setup', 'disable', 'recovery_reset')",
+            name="ck_portal_challenge_purpose",
+        ),
+        CheckConstraint(
+            "primary_method IN ('email_code', 'registration', 'qq')",
+            name="ck_portal_challenge_primary_method",
+        ),
+        CheckConstraint(
+            "bound_session_version > 0 AND bound_factor_version >= 0 "
+            "AND bound_recovery_generation >= 0",
+            name="ck_portal_challenge_versions",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND attempt_limit > 0 AND attempt_count <= attempt_limit",
+            name="ck_portal_challenge_attempts",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_portal_challenge_expiry"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at", name="ck_portal_challenge_consumed"
+        ),
+        CheckConstraint(
+            "(purpose = 'login' AND bound_session_id IS NULL AND bound_session_expires_at IS NULL) "
+            "OR (purpose <> 'login' AND bound_session_id IS NOT NULL "
+            "AND length(bound_session_id) BETWEEN 1 AND 64 "
+            "AND bound_session_expires_at IS NOT NULL)",
+            name="ck_portal_challenge_session_binding",
+        ),
+        Index("ix_portal_challenge_principal_expiry", "principal_id", "expires_at"),
+    )
+
+    challenge_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.principal_id"))
+    credential_hash: Mapped[str] = mapped_column(Text)
+    purpose: Mapped[str] = mapped_column(String(32))
+    primary_method: Mapped[str] = mapped_column(String(32))
+    primary_authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    bound_session_version: Mapped[int] = mapped_column(Integer)
+    bound_factor_version: Mapped[int] = mapped_column(Integer)
+    bound_recovery_generation: Mapped[int] = mapped_column(Integer)
+    bound_session_id: Mapped[str | None] = mapped_column(String(64))
+    bound_session_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer)
+    attempt_limit: Mapped[int] = mapped_column(Integer)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PrincipalSiteBinding(Base):
@@ -2330,3 +2511,43 @@ class MediaDerivativeJobMetric(Base):
         index=True,
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class PortalNotification(Base):
+    """Portal 站内通知（收件箱 MVP）。
+
+    仅支持工单公开回复，与回复及审计同事务写入。SMTP 在提交后尽力发送。
+    """
+
+    __tablename__ = "portal_notifications"
+    __table_args__ = (
+        Index(
+            "ix_portal_notifications_account_created",
+            "account_id",
+            text("created_at DESC"),
+        ),
+        Index(
+            "ix_portal_notifications_account_unread",
+            "account_id",
+            "is_read",
+            text("created_at DESC"),
+        ),
+    )
+
+    notification_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.account_id"),
+    )
+    principal_id: Mapped[str | None] = mapped_column(
+        ForeignKey("principals.principal_id"),
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str | None] = mapped_column(Text)
+    link_href: Mapped[str | None] = mapped_column(String(1024))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

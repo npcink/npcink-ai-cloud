@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -101,7 +102,7 @@ type CoverageWorkQueue = {
 
 const coverageClient = createApiClient({ idempotencyPrefix: 'admin_coverage' });
 
-const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 const QUEUE_VIEWS = new Set<QueueView>(['needs_action', 'all', 'error', 'warning', 'ok', 'inactive']);
 const QUEUE_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
 
@@ -265,6 +266,7 @@ function AdminCoverageContent() {
     if (
       !force &&
       coverageRequestActiveRef.current &&
+      !coverageAbortControllerRef.current?.signal.aborted &&
       coverageRequestKeyRef.current === coverageRequestKey
     ) {
       return;
@@ -329,6 +331,8 @@ function AdminCoverageContent() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchParamsKey);
+    // Local changes already own their state, including the search debounce.
+    if (params.toString() === queueParamsRef.current.toString()) return;
     queueParamsRef.current = params;
     setView(normalizeQueueView(params.get('status')));
     setSearchQuery(params.get('q') || '');
@@ -341,12 +345,17 @@ function AdminCoverageContent() {
   }, [pathname, searchParamsKey]);
 
   const activeQueue = queue;
-  const isQueueTransition = Boolean(
-    queue && (
-      queueRequestKey !== coverageRequestKey ||
-      searchQuery.trim() !== debouncedSearchQuery.trim()
-    )
+  const isDebouncingSearch = searchQuery.trim() !== debouncedSearchQuery.trim();
+  const isQueueTransition = isDebouncingSearch || Boolean(
+    queue && !error && queueRequestKey !== coverageRequestKey
   );
+  const loadedQuery = new URLSearchParams(queueRequestKey);
+  const requestedQuery = new URLSearchParams(coverageRequestKey);
+  loadedQuery.delete('offset');
+  requestedQuery.delete('offset');
+  const isRetainingDifferentQuery = Boolean(queue && (
+    loadedQuery.toString() !== requestedQuery.toString() || isDebouncingSearch
+  ));
   const visibleItems = useMemo(() => activeQueue?.items || [], [activeQueue]);
   const visibleSummary = {
     total: Number(activeQueue?.summary?.total || 0),
@@ -359,8 +368,8 @@ function AdminCoverageContent() {
     reason_counts: activeQueue?.summary?.reason_counts || {},
   };
   const pagination = {
-    offset: Number(activeQueue?.pagination?.offset ?? offset),
-    limit: Number(activeQueue?.pagination?.limit ?? limit),
+    offset: Number(activeQueue?.pagination?.offset ?? normalizeQueueOffset(new URLSearchParams(queueRequestKey).get('offset'))),
+    limit: Number(activeQueue?.pagination?.limit ?? normalizeQueueLimit(new URLSearchParams(queueRequestKey).get('limit'))),
     total: Number(activeQueue?.pagination?.total ?? activeQueue?.total ?? visibleItems.length),
     hasMore: Boolean(activeQueue?.pagination?.has_more),
   };
@@ -406,9 +415,21 @@ function AdminCoverageContent() {
       t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
     : '';
 
+  const rangeStart = visibleItems.length ? pagination.offset + 1 : 0;
+  const rangeEnd = visibleItems.length ? Math.min(pagination.offset + visibleItems.length, pagination.total) : 0;
+  const changePage = (nextOffset: number) => {
+    if (isRefreshing || isRetainingDifferentQuery) return;
+    setOffset(nextOffset);
+    updateQueueUrl({ offset: String(nextOffset) });
+    if (nextOffset === offset) void loadCoverage(true);
+  };
+
   useEffect(() => {
     if (
       activeQueue &&
+      queueRequestKey === coverageRequestKey &&
+      !isDebouncingSearch &&
+      !isRefreshing &&
       offset > 0 &&
       pagination.total <= offset &&
       visibleItems.length === 0
@@ -417,7 +438,7 @@ function AdminCoverageContent() {
       setOffset(previousOffset);
       updateQueueUrl({ offset: String(previousOffset) });
     }
-  }, [activeQueue, limit, offset, pagination.total, updateQueueUrl, visibleItems.length]);
+  }, [activeQueue, coverageRequestKey, isDebouncingSearch, isRefreshing, limit, offset, pagination.total, queueRequestKey, updateQueueUrl, visibleItems.length]);
 
   if (error && !activeQueue) {
     return (
@@ -449,7 +470,7 @@ function AdminCoverageContent() {
     { value: 'inactive', label: translateStatusLabel('inactive', t), count: visibleSummary.inactive },
     {
       value: 'all',
-      label: t('common.all', {}, 'All'),
+      label: t('admin.coverage.filter_all_statuses'),
       count: visibleSummary.total,
     },
   ];
@@ -504,27 +525,41 @@ function AdminCoverageContent() {
         aria-busy={isQueueTransition || isRefreshing}
       >
           <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="group" aria-label={t('admin.coverage.status_filter_label')} className="flex flex-wrap items-center gap-2">
+                {filters.map((filter) => (
+                  <BackofficeFilterPill
+                    key={filter.value}
+                    active={view === filter.value}
+                    aria-pressed={view === filter.value}
+                    onClick={() => {
+                      setView(filter.value);
+                      setOffset(0);
+                      updateQueueUrl({
+                        status: filter.value,
+                        q: searchQuery.trim() || null,
+                        reason: reasonFilter || null,
+                        sort,
+                        offset: null,
+                      });
+                    }}
+                  >
+                    {filter.label} · {formatInteger(filter.count)}
+                  </BackofficeFilterPill>
+                ))}
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
-                {t(
-                  'admin.coverage.pagination_range',
-                  {
-                    start: formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0),
-                    end: formatInteger(pagination.offset + visibleItems.length),
-                    total: formatInteger(pagination.total),
-                  },
-                  `${formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
-                )} · {isQueueTransition
-                  ? t('common.loading', {}, 'Loading...')
-                  : `${t('common.updated_at', {}, 'Updated')} ${activeQueue.generated_at
-                  ? formatDate(activeQueue.generated_at)
-                  : t('common.unknown', {}, 'Unknown')}`}
+                {t('admin.coverage.pagination_range', {
+                  start: formatInteger(rangeStart),
+                  end: formatInteger(rangeEnd),
+                  total: formatInteger(pagination.total),
+                })}{isQueueTransition || isRefreshing ? ` · ${t('common.loading', {}, 'Loading...')}` : ''}
               </p>
             </div>
 
             <div
               data-ui="coverage-filter-toolbar"
-              className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(12.5rem,1.35fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.68fr)_auto]"
+              className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(12.5rem,1.8fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_auto]"
             >
               <label className="min-w-0">
                 <span className="sr-only">
@@ -547,33 +582,6 @@ function AdminCoverageContent() {
                     });
                   }}
                 />
-              </label>
-              <label className="min-w-0">
-                <span className="sr-only">
-                  {t('admin.coverage.status_filter_label', {}, 'Service status')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={view}
-                  onChange={(event) => {
-                    const nextValue = normalizeQueueView(event.target.value);
-                    setView(nextValue);
-                    setOffset(0);
-                    updateQueueUrl({
-                      status: nextValue,
-                      q: searchQuery.trim() || null,
-                      reason: reasonFilter || null,
-                      sort,
-                      offset: null,
-                    });
-                  }}
-                >
-                  {filters.map((filter) => (
-                    <option key={filter.value} value={filter.value}>
-                      {filter.label} · {formatInteger(filter.count)}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label className="min-w-0">
                 <span className="sr-only">
@@ -853,8 +861,7 @@ function AdminCoverageContent() {
             />
           )}
 
-          {pagination.total > 0 ? (
-            <div
+          <div
               data-ui="coverage-pagination"
               className="flex flex-col gap-3 border-t border-slate-200/80 px-4 py-3 text-sm dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
             >
@@ -862,41 +869,32 @@ function AdminCoverageContent() {
                 {t(
                   'admin.coverage.pagination_range',
                   {
-                    start: formatInteger(pagination.offset + 1),
-                    end: formatInteger(pagination.offset + visibleItems.length),
+                    start: formatInteger(rangeStart),
+                    end: formatInteger(rangeEnd),
                     total: formatInteger(pagination.total),
                   },
-                  `${formatInteger(pagination.offset + 1)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
+                  `${formatInteger(rangeStart)}–${formatInteger(rangeEnd)} of ${formatInteger(pagination.total)} customers`
                 )}
               </p>
-              <div className="flex gap-2">
+              {pagination.total > pagination.limit || pagination.offset > 0 ? <div className="flex gap-2">
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  disabled={isRefreshing || pagination.offset <= 0}
-                  onClick={() => {
-                    const previousOffset = Math.max(0, pagination.offset - pagination.limit);
-                    setOffset(previousOffset);
-                    updateQueueUrl({ offset: String(previousOffset) });
-                  }}
+                  disabled={isRefreshing || isRetainingDifferentQuery || pagination.offset <= 0}
+                  onClick={() => changePage(Math.max(0, pagination.offset - pagination.limit))}
                 >
                   {t('common.previous', {}, 'Previous')}
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  disabled={isRefreshing || !pagination.hasMore}
-                  onClick={() => {
-                    const nextOffset = pagination.offset + pagination.limit;
-                    setOffset(nextOffset);
-                    updateQueueUrl({ offset: String(nextOffset) });
-                  }}
+                  disabled={isRefreshing || isRetainingDifferentQuery || !pagination.hasMore}
+                  onClick={() => changePage(pagination.offset + pagination.limit)}
                 >
                   {t('common.next', {}, 'Next')}
                 </button>
-              </div>
+              </div> : null}
             </div>
-          ) : null}
       </BackofficeSectionPanel>
 
       <AdminInspectorDrawer

@@ -3,6 +3,7 @@
 import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -114,7 +115,7 @@ type QueueSort = 'priority' | 'expiry' | 'customer';
 type RiskLevel = 'critical' | 'warning' | 'monitor' | 'stable';
 type RiskFilter = 'needs_action' | 'all' | RiskLevel;
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const ALLOWED_STATUSES = new Set(['', 'past_due', 'expired', 'trialing', 'active', 'suspended', 'canceled']);
 const ALLOWED_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
 const ALLOWED_RISK_LEVELS = new Set<RiskLevel>(['critical', 'warning', 'monitor', 'stable']);
@@ -243,6 +244,7 @@ function SubscriptionsContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [draftFilters, setDraftFilters] = useState({
     customer: appliedCustomer || appliedAccountId,
     plan_id: appliedPlanId,
@@ -309,6 +311,7 @@ function SubscriptionsContent() {
         setTotal(nextTotal);
         setSummary(nextSummary);
         setLoadedAt(new Date());
+        setLoadedRequestKey(requestKey);
         hasLoadedRef.current = true;
         setHasLoaded(true);
       }
@@ -376,13 +379,29 @@ function SubscriptionsContent() {
       },
     });
 
-  const keyboardFocus = useAdminQueueKeyboard({
+  const { keyboardFocus, inspect } = useAdminQueueKeyboard({
     itemIds: queuedSubscriptions.map((subscription) => subscription.subscription_id),
     focusedId: focusedSubscriptionId,
     onFocus: (subscriptionId) => updateQueueUrl({ focus: subscriptionId }),
     onOpen: (subscriptionId) => router.push(subscriptionDetailHref(subscriptionId)),
     onClose: () => updateQueueUrl({ focus: null }),
   });
+
+  // Retained rows, summary and total belong to the last successful request.
+  const loadedOffset = normalizeOffset(new URLSearchParams(loadedRequestKey).get('offset'));
+  const loadedQuery = new URLSearchParams(loadedRequestKey);
+  const requestedQuery = new URLSearchParams(requestKey);
+  loadedQuery.delete('offset');
+  requestedQuery.delete('offset');
+  const isRetainingDifferentQuery = hasLoaded && loadedQuery.toString() !== requestedQuery.toString();
+  const isOutOfRangePage = hasLoaded && total > 0 && loadedOffset >= total && !queuedSubscriptions.length;
+  const changePage = (nextOffset: number) => {
+    if (isRetainingDifferentQuery) return;
+    if (nextOffset === offset) {
+      updateQueueUrl({ focus: null });
+      void loadSubscriptions(true);
+    } else updateQueueUrl({ offset: String(nextOffset), focus: null });
+  };
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -544,51 +563,42 @@ function SubscriptionsContent() {
               </div>
             </div>
 
+            <div data-ui="subscription-enumerated-filters" className="space-y-2">
+              <div role="group" aria-label={t('admin.subscriptions.risk_filter_label')} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.risk_filter_label')}</span>
+                {riskFilters.map((risk) => (
+                  <BackofficeFilterPill
+                    key={risk}
+                    active={appliedRisk === risk}
+                    aria-pressed={appliedRisk === risk}
+                    onClick={() => updateQueueUrl({ risk, offset: null, focus: null })}
+                  >
+                    {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
+                  </BackofficeFilterPill>
+                ))}
+              </div>
+              <div role="group" aria-label={t('admin.subscriptions.status_filter_label')} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.status_filter_label')}</span>
+                {statusFilters.map((status) => (
+                  <BackofficeFilterPill
+                    key={status || 'all'}
+                    active={appliedStatus === status}
+                    aria-pressed={appliedStatus === status}
+                    onClick={() => updateQueueUrl({ status: status || null, offset: null, focus: null })}
+                  >
+                    {status ? t(`status.${status}`, undefined, status) : t('admin.subscriptions.all_statuses')}
+                  </BackofficeFilterPill>
+                ))}
+                {appliedStatus && !statusFilters.includes(appliedStatus) ? (
+                  <BackofficeStatusBadge status={appliedStatus} label={t(`status.${appliedStatus}`, undefined, appliedStatus)} />
+                ) : null}
+              </div>
+            </div>
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}
-              className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(7.5rem,0.72fr)_minmax(7.5rem,0.72fr)_minmax(8rem,0.95fr)_minmax(7.5rem,0.82fr)_minmax(8.5rem,0.88fr)_minmax(8rem,0.78fr)_auto]"
+              className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.9fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_auto]"
             >
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.risk_filter_label', {}, 'Follow-up state')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedRisk}
-                  onChange={(event) => updateQueueUrl({
-                    risk: normalizeRiskFilter(event.target.value),
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {riskFilters.map((risk) => (
-                    <option key={risk} value={risk}>
-                      {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.status_filter_label', {}, 'Subscription status')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedStatus}
-                  onChange={(event) => updateQueueUrl({
-                    status: normalizeStatus(event.target.value) || null,
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {statusFilters.map((status) => (
-                    <option key={status || 'all'} value={status}>
-                      {status ? t(`status.${status}`, undefined, status) : t('common.all', {}, 'All')}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="text-sm text-slate-700 dark:text-slate-200">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
                   {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
@@ -631,7 +641,7 @@ function SubscriptionsContent() {
                 <select
                   className="input w-full"
                   value={sort}
-                  onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), focus: null })}
+                  onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), offset: null, focus: null })}
                 >
                   <option value="priority">{t('admin.subscriptions.sort_priority', {}, 'Highest risk')}</option>
                   <option value="expiry">{t('admin.subscriptions.sort_expiry', {}, 'Ending soon')}</option>
@@ -639,7 +649,7 @@ function SubscriptionsContent() {
                 </select>
               </label>
               <div className="flex items-end gap-2 md:col-span-2 xl:col-span-1">
-                <button type="submit" className="btn btn-primary flex-1 2xl:flex-none">
+                <button type="submit" className="btn btn-primary whitespace-nowrap">
                   {t('admin.subscriptions.apply_filters', {}, 'Apply')}
                 </button>
                 <span
@@ -715,6 +725,7 @@ function SubscriptionsContent() {
                         <BackofficeStatusBadge
                           status={subscription.status}
                           label={t(`status.${subscription.status}`, undefined, subscription.status)}
+                          className="normal-case tracking-normal whitespace-nowrap"
                         />
                       </div>
                       <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{packageLabel}</p>
@@ -756,7 +767,7 @@ function SubscriptionsContent() {
                         className="btn btn-secondary btn-sm"
                         aria-pressed={isSelected}
                         aria-controls="subscription-inspector"
-                        onClick={() => updateQueueUrl({ focus: subscription.subscription_id })}
+                        onClick={() => inspect(subscription.subscription_id)}
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>
@@ -771,10 +782,10 @@ function SubscriptionsContent() {
           ) : (
             <BackofficeEmptyState
               className="m-5 md:m-6"
-              title={appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
+              title={total > 0 ? t('empty.no_data_title') : appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
                 ? t('admin.subscriptions.no_follow_up_title', {}, 'No subscriptions need follow-up')
                 : t('admin.subscriptions.no_match_title', {}, 'No subscriptions match these filters')}
-              description={t(
+              description={total > 0 ? t('empty.no_data_desc') : t(
                 appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
                   ? 'admin.subscriptions.no_follow_up_desc'
                   : 'admin.subscriptions.no_match_desc',
@@ -783,7 +794,19 @@ function SubscriptionsContent() {
                   ? 'Critical, warning, and monitoring queues are currently empty. Choose All to inspect normal subscriptions.'
                   : 'Clear or adjust the current status, customer, package, and expiry filters. No subscription record has been changed.'
               )}
-              action={hasFilters ? (
+              action={isOutOfRangePage ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing || isRetainingDifferentQuery}
+                  onClick={() => changePage(Math.min(
+                    Math.max(0, loadedOffset - PAGE_SIZE),
+                    Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE
+                  ))}
+                >
+                  {t('common.previous')}
+                </button>
+              ) : hasFilters ? (
                 <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
                   {t('common.clear_filters', {}, 'Clear filters')}
                 </button>
@@ -791,13 +814,23 @@ function SubscriptionsContent() {
             />
           )}
 
-          <ListPagination
-            offset={offset}
-            limit={PAGE_SIZE}
-            total={total}
-            isLoading={isRefreshing}
-            onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })}
-          />
+          {queuedSubscriptions.length && (total > PAGE_SIZE || loadedOffset > 0) ? (
+            <ListPagination
+              offset={loadedOffset}
+              limit={PAGE_SIZE}
+              total={total}
+              isLoading={isRefreshing || isRetainingDifferentQuery}
+              onOffsetChange={changePage}
+            />
+          ) : hasLoaded ? (
+            <p data-ui="subscription-queue-range" className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              {t('common.pagination_summary', {
+                start: queuedSubscriptions.length ? String(loadedOffset + 1) : '0',
+                end: queuedSubscriptions.length ? String(Math.min(loadedOffset + queuedSubscriptions.length, total)) : '0',
+                total: String(total),
+              })}
+            </p>
+          ) : null}
         </BackofficeSectionPanel>
 
         <AdminInspectorDrawer

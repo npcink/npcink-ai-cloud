@@ -13,6 +13,7 @@ import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown
 import { portalClient } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { cn } from '@/lib/utils';
+import { isPortalSecondFactorRequired } from '@/lib/portal-auth-wire';
 
 interface RegisterFormState {
   email: string;
@@ -26,7 +27,7 @@ function RegisterFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLocale();
-  const { isAuthenticated, isLoading, refresh } = useSession();
+  const { isAuthenticated, isLoading, refresh, verifyRegistrationResult } = useSession();
   const verificationCooldown = useVerificationCodeCooldown();
   const requestedPlan = searchParams.get('plan') === 'plus'
     ? 'plus'
@@ -138,7 +139,12 @@ function RegisterFormContent() {
     }
     setForm((prev) => ({ ...prev, status: 'verifying', message: '' }));
     try {
-      await portalClient.verifyRegistration({ email, code });
+      const response = await portalClient.verifyRegistration({ email, code });
+      const result = await verifyRegistrationResult(response.data);
+      if (isPortalSecondFactorRequired(result)) {
+        router.push(`/portal/second-factor?redirect=${encodeURIComponent(postRegistrationTarget)}`);
+        return;
+      }
       await refresh();
       window.location.replace(postRegistrationTarget);
     } catch (error) {

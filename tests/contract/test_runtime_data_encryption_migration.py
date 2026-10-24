@@ -40,12 +40,7 @@ LEGACY_ROOT = "legacy-admin-session-root-secret-at-least-32b"
 OLD_RDE_KEY_ID = "runtime-key-2026-06"
 CURRENT_ROOT = base64.urlsafe_b64encode(b"r" * 32).decode("ascii")
 LEGACY_FERNET_KEYS_BY_PURPOSE = {
-    SITE_API_KEY_PURPOSE: (
-        "41136455a95d4be5"
-        "2ce1ff60b5932820"
-        "a2e246ad8165864c"
-        "fd2ce663c5276bc1"
-    ),
+    SITE_API_KEY_PURPOSE: ("41136455a95d4be52ce1ff60b5932820a2e246ad8165864cfd2ce663c5276bc1"),
     RUNTIME_CALLBACK_PURPOSE: "e0c1db7ee10fe2bc64e43d24cf33997d53d625528463300e97c24eee7b287e9b",
     ADDON_PAYLOAD_PURPOSE: "ff8272734bf9162fda3dbab73916ad19f2c4dbd04aaf1256b6ef1671a7eb1e69",
     PORTAL_IDEMPOTENCY_PURPOSE: "ecf7e3828c7c796ffb05850ebce77a452e5a626221726c53b7afacd9fbaa0169",
@@ -245,8 +240,13 @@ def test_inventory_dry_run_apply_verify_and_repeat_apply(
 
     inventory = inventory_runtime_data_ciphertexts(migration_database, settings=settings)
     assert (inventory.total, inventory.legacy, inventory.current) == (5, 5, 0)
-    assert set(inventory.counts_by_kind) == set(original)
-    assert all(counts["total"] == 1 for counts in inventory.counts_by_kind.values())
+    assert set(inventory.counts_by_kind) == set(original) | {
+        "portal_totp_active_seed",
+        "portal_totp_pending_seed",
+    }
+    assert all(inventory.counts_by_kind[kind]["total"] == 1 for kind in original)
+    assert inventory.counts_by_kind["portal_totp_active_seed"]["total"] == 0
+    assert inventory.counts_by_kind["portal_totp_pending_seed"]["total"] == 0
 
     dry_run = dry_run_runtime_data_reencryption(
         migration_database,
@@ -264,7 +264,7 @@ def test_inventory_dry_run_apply_verify_and_repeat_apply(
         maintenance_confirmed=True,
     )
     assert (applied.legacy, applied.current, applied.migrated) == (0, 5, 5)
-    assert all(counts["migrated"] == 1 for counts in applied.counts_by_kind.values())
+    assert all(applied.counts_by_kind[kind]["migrated"] == 1 for kind in original)
     migrated = _read_all_five_ciphertexts(migration_database)
     assert all(
         ciphertext.startswith("rde.v1.runtime-key-2026-07.") for ciphertext in migrated.values()
@@ -565,3 +565,286 @@ def test_migrated_ciphertexts_remain_purpose_bound(migration_database: str) -> N
             purpose=SITE_API_KEY_PURPOSE,
             settings=settings,
         )
+
+
+def _seed_totp_slots(url):
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import encrypt_portal_totp_seed
+
+    settings = _settings(url)
+    old = settings.model_copy(
+        update={
+            "runtime_data_encryption_key_id": "old-totp",
+            "runtime_data_encryption_secret": base64.urlsafe_b64encode(b"o" * 32).decode(),
+        }
+    )
+    now = datetime.now(UTC)
+    with get_session(url) as session:
+        session.add(Principal(principal_id="totp", email="totp@example.test"))
+        session.flush()
+        session.add(
+            PortalTotpFactor(
+                principal_id="totp",
+                factor_version=4,
+                state="enabled",
+                active_seed_ciphertext=encrypt_portal_totp_seed(b"synthetic-active", settings=old),
+                enabled_at=now - timedelta(days=2),
+                last_accepted_counter=42,
+                recovery_generation=3,
+                pending_setup_id="setup",
+                pending_seed_ciphertext=encrypt_portal_totp_seed(
+                    b"synthetic-pending", settings=settings
+                ),
+                pending_created_at=now - timedelta(hours=2),
+                pending_expires_at=now - timedelta(hours=1),
+                created_at=now - timedelta(days=2),
+                updated_at=now,
+            )
+        )
+        session.commit()
+    return old
+
+
+def _totp_snapshot(url):
+    from sqlalchemy import select
+
+    from app.core.models import PortalTotpFactor
+
+    with get_session(url) as session:
+        return tuple(session.execute(select(PortalTotpFactor.__table__)).one())
+
+
+def test_totp_active_and_expired_pending_inventory_rotation_and_rollback(
+    migration_database, monkeypatch
+):
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import decrypt_portal_totp_seed
+
+    url = migration_database
+    old = _seed_totp_slots(url)
+    settings = _settings(url)
+    before = _totp_snapshot(url)
+    mapping = (LegacyRuntimeDataKey("old-totp", old.runtime_data_encryption_secret),)
+    inventory = inventory_runtime_data_ciphertexts(
+        url, settings=settings, allowed_legacy_envelope_key_ids=frozenset({"old-totp"})
+    )
+    assert (inventory.total, inventory.current, inventory.legacy) == (2, 1, 1)
+    assert inventory.counts_by_kind["portal_totp_pending_seed"]["total"] == 1
+    assert inventory.counts_by_kind["portal_totp_active_seed"]["legacy"] == 1
+    dry = dry_run_runtime_data_reencryption(
+        url, settings=settings, legacy_root_secrets=(), legacy_envelope_keys=mapping
+    )
+    assert dry.would_migrate == 1 and _totp_snapshot(url) == before
+    real_set = reencryption_module._set_ciphertext
+    with monkeypatch.context() as injected:
+
+        def fail_after_write(record, ciphertext):
+            real_set(record, ciphertext)
+            from sqlalchemy.orm import object_session
+
+            object_session(record.owner).flush()
+            raise RuntimeError("synthetic write failure")
+
+        injected.setattr(reencryption_module, "_set_ciphertext", fail_after_write)
+        with pytest.raises(RuntimeDataReencryptionError, match="re-encryption failed"):
+            apply_runtime_data_reencryption(
+                url,
+                settings=settings,
+                legacy_root_secrets=(),
+                legacy_envelope_keys=mapping,
+                maintenance_confirmed=True,
+            )
+    assert _totp_snapshot(url) == before
+    applied = apply_runtime_data_reencryption(
+        url,
+        settings=settings,
+        legacy_root_secrets=(),
+        legacy_envelope_keys=mapping,
+        maintenance_confirmed=True,
+    )
+    assert (applied.total, applied.current, applied.migrated) == (2, 2, 1)
+    assert verify_runtime_data_ciphertexts(url, settings=settings).current == 2
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        assert (
+            decrypt_portal_totp_seed(row.active_seed_ciphertext, settings=settings)
+            == b"synthetic-active"
+        )
+        assert (
+            decrypt_portal_totp_seed(row.pending_seed_ciphertext, settings=settings)
+            == b"synthetic-pending"
+        )
+        assert (row.factor_version, row.last_accepted_counter, row.recovery_generation) == (
+            4,
+            42,
+            3,
+        )
+    after = _totp_snapshot(url)
+    assert [value for index, value in enumerate(before) if index != 3] == [
+        value for index, value in enumerate(after) if index != 3
+    ]
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "new_missing_table",
+        "partial_old",
+        "missing_column",
+        "unknown_revision",
+        "multiple_revisions",
+        "unversioned_missing",
+    ],
+)
+def test_totp_inventory_rejects_damaged_or_ambiguous_schema(migration_database, damage):
+    from sqlalchemy import text
+
+    url = migration_database
+    with get_session(url) as session:
+        if damage != "unversioned_missing":
+            session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(64))"))
+            revision = (
+                "20261024_0090"
+                if damage == "partial_old"
+                else ("unknown" if damage == "unknown_revision" else "20261024_0091")
+            )
+            session.execute(
+                text("INSERT INTO alembic_version VALUES (:revision)"), {"revision": revision}
+            )
+            if damage == "multiple_revisions":
+                session.execute(text("INSERT INTO alembic_version VALUES ('20261024_0090')"))
+        if damage == "missing_column":
+            # Dropping an unconstrained contract column avoids SQLite DDL/check coupling.
+            session.execute(
+                text("ALTER TABLE portal_auth_challenges DROP COLUMN primary_authenticated_at")
+            )
+        elif damage not in ("unknown_revision", "multiple_revisions"):
+            session.execute(text("DROP TABLE portal_recovery_codes"))
+        session.commit()
+    with pytest.raises(RuntimeDataReencryptionError):
+        inventory_runtime_data_ciphertexts(url, settings=_settings(url))
+
+
+def test_totp_inventory_known_0068_missing_tables_is_legal(migration_database):
+    from sqlalchemy import text
+
+    url = migration_database
+    with get_session(url) as session:
+        # Emulate only the additive T1/0090 absence; real0068 proof is the independent PG suite.
+        for table in (
+            "portal_auth_challenges",
+            "portal_recovery_codes",
+            "portal_totp_factors",
+            "portal_sessions",
+        ):
+            session.execute(text(f"DROP TABLE {table}"))
+        session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(64))"))
+        session.execute(text("INSERT INTO alembic_version VALUES ('20260717_0068')"))
+        session.commit()
+    report = inventory_runtime_data_ciphertexts(url, settings=_settings(url))
+    assert report.total == 0
+    assert report.counts_by_kind["portal_totp_active_seed"]["total"] == 0
+    assert report.counts_by_kind["portal_totp_pending_seed"]["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "invalid", ["wrong_purpose", "empty_plaintext", "unknown_key", "unversioned"]
+)
+def test_totp_seed_maintenance_rejects_invalid_ciphertext(migration_database, invalid):
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import encrypt_runtime_data_plaintext
+
+    url = migration_database
+    _seed_totp_slots(url)
+    settings = _settings(url)
+    if invalid == "wrong_purpose":
+        ciphertext = encrypt_runtime_data_plaintext(
+            b"synthetic", purpose="portal_idempotency_response", settings=settings
+        )
+    elif invalid == "empty_plaintext":
+        ciphertext = encrypt_runtime_data_plaintext(
+            b"", purpose="portal_totp_seed", settings=settings
+        )
+    elif invalid == "unknown_key":
+        ciphertext = encrypt_runtime_data_plaintext(
+            b"synthetic",
+            purpose="portal_totp_seed",
+            settings=settings.model_copy(update={"runtime_data_encryption_key_id": "unknown"}),
+        )
+    else:
+        ciphertext = "synthetic-unversioned-fernet"
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        row.active_seed_ciphertext = ciphertext
+        session.commit()
+    with pytest.raises(RuntimeDataReencryptionError):
+        verify_runtime_data_ciphertexts(url, settings=settings)
+
+
+def test_totp_schema_gate_rejects_all_missing_at_new_revision(migration_database):
+    from sqlalchemy import text
+
+    url = migration_database
+    with get_session(url) as session:
+        for table in (
+            "portal_auth_challenges",
+            "portal_recovery_codes",
+            "portal_totp_factors",
+            "portal_sessions",
+        ):
+            session.execute(text(f"DROP TABLE {table}"))
+        session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(64))"))
+        session.execute(text("INSERT INTO alembic_version VALUES ('20261024_0091')"))
+        session.commit()
+    with pytest.raises(RuntimeDataReencryptionError, match="missing"):
+        inventory_runtime_data_ciphertexts(url, settings=_settings(url))
+
+
+def test_totp_inventory_rejects_empty_existing_revision_marker(migration_database):
+    from sqlalchemy import text
+
+    with get_session(migration_database) as session:
+        session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(64))"))
+        session.commit()
+    with pytest.raises(RuntimeDataReencryptionError, match="schema revision"):
+        inventory_runtime_data_ciphertexts(
+            migration_database, settings=_settings(migration_database)
+        )
+
+
+def test_totp_both_seed_slots_rotate_and_keep_pending_metadata(migration_database):
+    from app.core.models import PortalTotpFactor
+    from app.core.secrets import decrypt_portal_totp_seed, encrypt_portal_totp_seed
+
+    url = migration_database
+    old = _seed_totp_slots(url)
+    settings = _settings(url)
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        row.pending_seed_ciphertext = encrypt_portal_totp_seed(b"synthetic-pending", settings=old)
+        metadata = row.pending_setup_id, row.pending_created_at, row.pending_expires_at
+        session.commit()
+    mapping = (LegacyRuntimeDataKey("old-totp", old.runtime_data_encryption_secret),)
+    report = apply_runtime_data_reencryption(
+        url,
+        settings=settings,
+        legacy_root_secrets=(),
+        legacy_envelope_keys=mapping,
+        maintenance_confirmed=True,
+    )
+    assert report.migrated == 2 and report.current == 2
+    assert report.counts_by_kind["portal_totp_pending_seed"]["migrated"] == 1
+    with get_session(url) as session:
+        row = session.get(PortalTotpFactor, "totp")
+        assert (
+            decrypt_portal_totp_seed(row.active_seed_ciphertext, settings=settings)
+            == b"synthetic-active"
+        )
+        assert (
+            decrypt_portal_totp_seed(row.pending_seed_ciphertext, settings=settings)
+            == b"synthetic-pending"
+        )
+        assert row.pending_setup_id == metadata[0]
+        # SQLite timezone representation differs after readback; compare canonical instants.
+        assert row.pending_created_at.replace(tzinfo=UTC) == metadata[1].replace(tzinfo=UTC)
+        assert row.pending_expires_at.replace(tzinfo=UTC) == metadata[2].replace(tzinfo=UTC)

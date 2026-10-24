@@ -3387,9 +3387,31 @@ import sys
 
 import pytest
 
+portal_pg_targets = (
+    "tests/integration/test_portal_postgres_acceptance.py",
+    "tests/integration/test_portal_self_service_postgres.py",
+    "tests/integration/test_admin_economics_postgres.py",
+)
+explicit_portal_pg = any(
+    argument.split("::", 1)[0] == target
+    or argument.split("::", 1)[0].endswith("/" + target)
+    for argument in sys.argv[1:]
+    if not argument.startswith("-")
+    for target in portal_pg_targets
+)
+portal_pg_url = os.environ.get("NPCINK_CLOUD_DATABASE_URL", "")
+portal_environment = os.environ.get("NPCINK_CLOUD_ENVIRONMENT", "")
 for key in tuple(os.environ):
     if key.startswith("NPCINK_CLOUD_"):
         os.environ.pop(key, None)
+os.environ.pop("NPCINK_TEST_PORTAL_POSTGRES_URL", None)
+os.environ.pop("NPCINK_TEST_PORTAL_ENVIRONMENT", None)
+if explicit_portal_pg:
+    if not portal_pg_url or not portal_environment:
+        print("Explicit Portal PostgreSQL targets require a database URL and runtime environment", file=sys.stderr)
+        raise SystemExit(64)
+    os.environ["NPCINK_TEST_PORTAL_POSTGRES_URL"] = portal_pg_url
+    os.environ["NPCINK_TEST_PORTAL_ENVIRONMENT"] = portal_environment
 
 raise SystemExit(pytest.main(sys.argv[1:]))
 '

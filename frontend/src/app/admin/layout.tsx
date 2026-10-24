@@ -235,7 +235,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           labelKey: 'admin.nav_commercial_records',
           fallback: 'Commercial records',
           collapsedLabel: 'CR',
-          activePrefixes: ['/admin/coverage', '/admin/plans', '/admin/credit-packs'],
+          activePrefixes: ['/admin/coverage', '/admin/plans', '/admin/credit-packs', '/admin/economics'],
         },
       ],
     },
@@ -341,6 +341,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           { href: '/admin/coverage', labelKey: 'admin.workspace_tab_service_status', fallback: 'Service status', collapsedLabel: 'SO' },
           { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages', collapsedLabel: 'PC' },
           { href: '/admin/credit-packs', labelKey: 'admin.workspace_tab_credit_packs', fallback: 'Credit packs', collapsedLabel: 'CP' },
+          { href: '/admin/economics', labelKey: 'admin.workspace_tab_economics', fallback: 'Unit economics', collapsedLabel: 'UE' },
         ]),
         ...withGroup('admin.nav_group_diagnostics', 'Diagnostics', [
           { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },

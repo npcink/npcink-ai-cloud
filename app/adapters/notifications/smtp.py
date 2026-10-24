@@ -214,6 +214,157 @@ class SmtpPortalEmailSender(PortalEmailSender):
                 f"failed to deliver portal email change code to '{recipient_email}': {error}"
             ) from error
 
+    @property
+    def supports_data_export(self) -> bool:
+        return True
+
+    def send_data_export_code(
+        self,
+        *,
+        recipient_email: str,
+        principal_id: str,
+        code: str,
+        expires_in_seconds: int,
+        project_name: str,
+        locale: str = "zh-CN",
+    ) -> None:
+        english = self._normalize_locale(locale) == "en"
+        title = (
+            "Download your Cloud personal data copy" if english else "下载你的 Cloud 本人数据副本"
+        )
+        intro = (
+            "This code confirms control of your current email for this download only. "
+            "The copy includes your profile, membership, public support conversations, "
+            "sent attachment metadata and personal notifications. It excludes attachment files "
+            "and account billing or usage. It is not a complete legal data portability report."
+            if english
+            else "此验证码仅确认你本次下载时对当前邮箱的控制权。副本包含本人资料、成员关系、"
+            "公开工单对话、已发送附件信息和个人通知；不含附件文件、账号账务或用量，"
+            "也不是完整的法律数据可携带性报告。"
+        )
+        note = (
+            "Expires in 5 minutes. If you did not request this copy, ignore this email. "
+            "Do not share this code."
+            if english
+            else "5 分钟内有效。如非本人申请，请忽略邮件，勿分享验证码。"
+        )
+        message = EmailMessage()
+        message["Subject"] = f"{self._display_project_name(project_name)} — {title}"
+        message["From"] = self._format_from_header()
+        message["To"] = recipient_email
+        if self.reply_to:
+            message["Reply-To"] = self.reply_to
+        self._set_message_body(
+            message,
+            text_body=f"{title}\n{intro}\n{code}\n{note}",
+            html_body=self._build_html_email(
+                project_name=project_name,
+                eyebrow=title,
+                title=title,
+                intro=intro,
+                code=code,
+                details=[],
+                note=note,
+            ),
+        )
+        try:
+            self._ensure_delivery_headers(message)
+            self._deliver(message)
+        except Exception:
+            raise PortalEmailDeliveryError("Failed to deliver personal data copy email") from None
+
+    def send_account_deletion_code(
+        self,
+        *,
+        recipient_email: str,
+        principal_id: str,
+        code: str,
+        expires_in_seconds: int,
+        project_name: str,
+        locale: str = "zh-CN",
+    ) -> None:
+        normalized_locale = self._normalize_locale(locale)
+        display_name = self._display_project_name(project_name)
+        expires_minutes = self._expires_minutes(expires_in_seconds)
+        if normalized_locale == "en":
+            subject = "account closure verification code"
+            title = "Confirm closure of your Cloud account"
+            impact = (
+                "Use this code only to confirm closing your Cloud login identity and its "
+                "exclusively owned service account. Confirmation disables sign-in, invalidates "
+                "existing sessions and revokes site API keys. Billing, audit and content records "
+                "are retained under the retention policy; this does not erase all your data. "
+                "Contact support if you need to restore access."
+            )
+            note = (
+                "If you did not request account closure, ignore this email "
+                "and do not share the code."
+            )
+            details = [
+                ("Account email", recipient_email),
+                ("Expires in", f"{expires_minutes} minutes"),
+            ]
+            code_label = "Verification code"
+        elif normalized_locale == "zh-TW":
+            subject = "關閉帳號驗證碼"
+            title = "確認關閉你的 Cloud 帳號"
+            impact = (
+                "此驗證碼僅用於確認關閉你的 Cloud 登入身分及其獨占服務帳號。"
+                "確認後將停用登入、使既有工作階段失效並撤銷站點 API 金鑰。"
+                "帳單、稽核及內容記錄按保留政策留存，不會刪除全部資料。恢復存取需聯絡支援。"
+            )
+            note = "如果你沒有申請關閉帳號，請忽略此郵件，不要分享驗證碼。"
+            details = [("帳號電子郵件", recipient_email), ("有效時間", f"{expires_minutes} 分鐘")]
+            code_label = "驗證碼"
+        else:
+            subject = "关闭账号验证码"
+            title = "确认关闭你的 Cloud 账号"
+            impact = (
+                "此验证码仅用于确认关闭你的 Cloud 登录身份及其独占服务账号。"
+                "确认后将停用登录、使现有会话失效并撤销站点 API 密钥。"
+                "账单、审计及内容记录按保留政策留存，不会删除全部数据。恢复访问需联系支持。"
+            )
+            note = "如果你没有申请关闭账号，请忽略此邮件，不要分享验证码。"
+            details = [("账号邮箱", recipient_email), ("有效时间", f"{expires_minutes} 分钟")]
+            code_label = "验证码"
+        message = EmailMessage()
+        message["Subject"] = f"{display_name} {subject}"
+        message["From"] = self._format_from_header()
+        message["To"] = recipient_email
+        if self.reply_to:
+            message["Reply-To"] = self.reply_to
+        self._set_message_body(
+            message,
+            text_body="\n".join(
+                [
+                    f"{display_name} — {title}",
+                    "",
+                    impact,
+                    "",
+                    f"{code_label}: {code}",
+                    "",
+                    *[f"{label}: {value}" for label, value in details],
+                    "",
+                    note,
+                ]
+            ),
+            html_body=self._build_html_email(
+                project_name=display_name,
+                eyebrow=subject,
+                title=title,
+                intro=impact,
+                code=code,
+                details=details,
+                note=note,
+            ),
+        )
+        try:
+            self._ensure_delivery_headers(message)
+            self._deliver(message)
+        except Exception:
+            # Suppress transport details that could include the code or message contents.
+            raise PortalEmailDeliveryError("Failed to deliver account closure email") from None
+
     def send_email_changed_notice(
         self,
         *,

@@ -52,6 +52,10 @@ from app.domain.commercial.membership_policy import (
     assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+from app.domain.commercial.notifications import (
+    build_commercial_notification_id,
+    notify_unique_account_owner,
+)
 from app.domain.commercial.plan_catalog import (
     DEFAULT_FREE_PLAN_KIND,
     DEFAULT_FREE_SUBSCRIPTION_SOURCE,
@@ -536,6 +540,25 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             scope_id=account_id,
             payload_json=payload,
         )
+        for subscription in expired_trials:
+            period_end_at = subscription.current_period_end_at
+            if period_end_at is None:
+                continue
+            normalized_period_end_at = self._normalize_datetime(period_end_at)
+            notify_unique_account_owner(
+                session=repository.session,
+                account_id=account_id,
+                notification_id=build_commercial_notification_id(
+                    "pnotif_trial_expired",
+                    account_id,
+                    subscription.subscription_id,
+                    normalized_period_end_at.isoformat(),
+                ),
+                event_type="subscription.trial_expired",
+                title="试用已结束",
+                body="您的 Plus/Pro 试用已结束，账户已恢复到当前可用权益。",
+                link_href="/portal/billing",
+            )
         return payload
 
     def _upsert_account_subscription_in_session(

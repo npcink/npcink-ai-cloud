@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useSession } from '@/hooks/useSession';
@@ -11,16 +11,25 @@ import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
 const PUBLIC_PORTAL_PATHS = new Set([
   '/portal/login',
   '/portal/register',
+  '/portal/second-factor',
+  '/portal/challenge',
   '/portal/dev-entry',
 ]);
 
 export function PortalSessionBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { t } = useLocale();
-  const { session, isAuthenticated, isLoading, sessionInvalid, error, logout, refresh } = useSession();
+  const { session, isAuthenticated, isLoading, sessionInvalid, secondFactor, error, logout, refresh } = useSession();
+  const router = useRouter();
   const redirectStartedRef = useRef(false);
   const isPublicPath = PUBLIC_PORTAL_PATHS.has(pathname);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
+
+  useEffect(() => {
+    if (isPublicPath || isLoading || isAuthenticated || !secondFactor || pathname === '/portal/second-factor') return;
+    const returnTo = `${pathname}${window.location.search}`;
+    router.replace(`/portal/second-factor?redirect=${encodeURIComponent(returnTo)}`);
+  }, [isAuthenticated, isLoading, isPublicPath, pathname, router, secondFactor]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedSiteId) return;

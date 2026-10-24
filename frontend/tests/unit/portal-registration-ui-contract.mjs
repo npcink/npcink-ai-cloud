@@ -116,7 +116,7 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /const \{ isAuthenticated, isLoading, refresh \} = useSession\(\);[\s\S]*const postRegistrationTarget = requestedPlan[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\(postRegistrationTarget\)/,
+  /const \{ isAuthenticated, isLoading, refresh, verifyRegistrationResult \} = useSession\(\);[\s\S]*const postRegistrationTarget = requestedPlan[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\(postRegistrationTarget\)/,
   'authenticated users must leave registration for the default workspace or preserved package intent'
 );
 assert.match(
@@ -126,8 +126,8 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /await portalClient\.verifyRegistration\([\s\S]*await refresh\(\)[\s\S]*window\.location\.replace\(postRegistrationTarget\)/,
-  'portal registration must refresh the cookie-backed session and preserve package intent during full-page navigation'
+  /await portalClient\.verifyRegistration\([\s\S]*const result = await verifyRegistrationResult\(response\.data\);[\s\S]*if \(isPortalSecondFactorRequired\(result\)\) \{[\s\S]*router\.push\([\s\S]*return;[\s\S]*\}[\s\S]*await refresh\(\)[\s\S]*window\.location\.replace\(postRegistrationTarget\)/,
+  'portal registration must route restricted challenges before refreshing the full-session cookie and preserve package intent for full sessions'
 );
 assert.match(
   registerSource,

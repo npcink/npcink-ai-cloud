@@ -11,6 +11,7 @@ This document composes with:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
+- [Admin Quiet Queue Contract Index](admin-ui-spec.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
 - [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).

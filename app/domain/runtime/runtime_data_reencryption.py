@@ -5,22 +5,29 @@ import hashlib
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
+from alembic.script import ScriptDirectory
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, load_only
 
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
+    PortalAuthChallenge,
     PortalMutationIdempotencyReceipt,
     PortalOAuthState,
+    PortalRecoveryCode,
+    PortalTotpFactor,
     RunRecord,
     Site,
     SiteApiKey,
 )
 from app.core.secrets import (
+    PORTAL_TOTP_SEED_PURPOSE,
+    decrypt_portal_totp_seed,
     decrypt_runtime_data_plaintext,
     encrypt_runtime_data_plaintext,
     runtime_data_envelope_key_id,
@@ -39,6 +46,8 @@ RUNTIME_DATA_KINDS = (
     "addon_connection_payload",
     "portal_idempotency_response",
     "runtime_execution_input",
+    "portal_totp_active_seed",
+    "portal_totp_pending_seed",
 )
 
 
@@ -51,7 +60,7 @@ class RuntimeDataCiphertextRecord:
     kind: str
     identifier: str
     purpose: str
-    ciphertext: str
+    ciphertext: str = field(repr=False)
     owner: object = field(repr=False, compare=False)
 
     @property
@@ -210,6 +219,7 @@ def _reencrypt_runtime_data(
                 for record in legacy:
                     plaintext = _decrypt_legacy(
                         record,
+                        settings=settings,
                         legacy_root_secrets=normalized_legacy_roots,
                         legacy_envelope_key_map=legacy_envelope_key_map,
                     )
@@ -273,9 +283,7 @@ def _collect_records(
         .order_by(RunRecord.run_id)
     )
     site_query = (
-        select(Site)
-        .options(load_only(Site.site_id, Site.metadata_json))
-        .order_by(Site.site_id)
+        select(Site).options(load_only(Site.site_id, Site.metadata_json)).order_by(Site.site_id)
     )
     oauth_query = select(PortalOAuthState).order_by(PortalOAuthState.state_id)
     if lock:
@@ -356,7 +364,95 @@ def _collect_records(
                 )
             )
 
+    if _totp_schema_available(session):
+        factor_query = (
+            select(PortalTotpFactor)
+            .options(
+                load_only(
+                    PortalTotpFactor.principal_id,
+                    PortalTotpFactor.active_seed_ciphertext,
+                    PortalTotpFactor.pending_seed_ciphertext,
+                )
+            )
+            .order_by(PortalTotpFactor.principal_id)
+        )
+        if lock:
+            factor_query = factor_query.with_for_update()
+        for factor in session.scalars(factor_query):
+            for kind, seed_ciphertext in (
+                ("portal_totp_active_seed", factor.active_seed_ciphertext),
+                ("portal_totp_pending_seed", factor.pending_seed_ciphertext),
+            ):
+                if seed_ciphertext is not None:
+                    if not seed_ciphertext or not seed_ciphertext.startswith("rde."):
+                        raise RuntimeDataReencryptionError("invalid Portal TOTP seed envelope")
+                    records.append(
+                        RuntimeDataCiphertextRecord(
+                            kind=kind,
+                            identifier=factor.principal_id,
+                            purpose=PORTAL_TOTP_SEED_PURPOSE,
+                            ciphertext=seed_ciphertext,
+                            owner=factor,
+                        )
+                    )
+
     return tuple(sorted(records, key=lambda record: record.row_identifier))
+
+
+TOTP_STORAGE_REVISION = "20261024_0091"
+
+
+def _totp_schema_available(session: Session) -> bool:
+    """Only known, genuinely pre-T1 schemas may omit all dormant storage."""
+    inspector = inspect(session.connection())
+    tables = set(inspector.get_table_names())
+    models = (PortalTotpFactor, PortalRecoveryCode, PortalAuthChallenge)
+    totp_tables = {model.__tablename__ for model in models}
+    evidence_columns = {
+        "factor_version",
+        "primary_authenticated_at",
+        "second_factor_verified_at",
+        "second_factor_method",
+    }
+    session_columns = (
+        {column["name"] for column in inspector.get_columns("portal_sessions")}
+        if "portal_sessions" in tables
+        else set()
+    )
+    complete = totp_tables <= tables and evidence_columns <= session_columns
+    if complete:
+        complete = all(
+            set(model.__table__.columns.keys())
+            <= {column["name"] for column in inspector.get_columns(model.__tablename__)}
+            for model in models
+        )
+    revisions = (
+        list(session.scalars(text("SELECT version_num FROM alembic_version")))
+        if "alembic_version" in tables
+        else []
+    )
+    scripts = ScriptDirectory(str(Path(__file__).resolve().parents[3] / "migrations"))
+    known = {revision.revision for revision in scripts.walk_revisions()}
+    if "alembic_version" in tables and (len(revisions) != 1 or revisions[0] not in known):
+        raise RuntimeDataReencryptionError("unknown runtime data schema revision")
+    if complete:
+        if revisions:
+            ancestors = {r.revision for r in scripts.iterate_revisions(revisions[0], "base")}
+            if TOTP_STORAGE_REVISION not in ancestors:
+                raise RuntimeDataReencryptionError("TOTP storage disagrees with schema revision")
+        return True
+    # A partial new schema is damage, even if the revision marker is old.
+    if totp_tables & tables or evidence_columns & session_columns or len(revisions) != 1:
+        raise RuntimeDataReencryptionError("incomplete Portal TOTP storage schema")
+    pre_totp = {r.revision for r in scripts.iterate_revisions(TOTP_STORAGE_REVISION, "base")}
+    at_least_0068 = {r.revision for r in scripts.iterate_revisions(revisions[0], "base")}
+    if (
+        revisions[0] not in pre_totp
+        or revisions[0] == TOTP_STORAGE_REVISION
+        or "20260717_0068" not in at_least_0068
+    ):
+        raise RuntimeDataReencryptionError("missing Portal TOTP storage schema")
+    return False
 
 
 def _classify_records(
@@ -392,6 +488,8 @@ def _decrypt_current(
     settings: Settings,
 ) -> bytes:
     try:
+        if record.purpose == PORTAL_TOTP_SEED_PURPOSE:
+            return decrypt_portal_totp_seed(record.ciphertext, settings=settings)
         return decrypt_runtime_data_plaintext(
             record.ciphertext,
             purpose=record.purpose,
@@ -406,6 +504,7 @@ def _decrypt_current(
 def _decrypt_legacy(
     record: RuntimeDataCiphertextRecord,
     *,
+    settings: Settings,
     legacy_root_secrets: tuple[str, ...],
     legacy_envelope_key_map: dict[str, str],
 ) -> bytes:
@@ -416,6 +515,21 @@ def _decrypt_legacy(
             raise RuntimeDataReencryptionError(
                 f"unsupported runtime data envelope for {record.row_identifier}"
             )
+        if record.purpose == PORTAL_TOTP_SEED_PURPOSE:
+            # TOTP was introduced after HKDF envelopes; never apply the pre-HKDF
+            # recovery derivation or accept an unversioned Fernet seed.
+            old_settings = settings.model_copy(
+                update={
+                    "runtime_data_encryption_key_id": envelope_key_id,
+                    "runtime_data_encryption_secret": legacy_root_secret,
+                }
+            )
+            try:
+                return decrypt_portal_totp_seed(record.ciphertext, settings=old_settings)
+            except RuntimeError as error:
+                raise RuntimeDataReencryptionError(
+                    f"legacy ciphertext could not be decrypted for {record.row_identifier}"
+                ) from error
         _family, _version, _key_id, fernet_token = record.ciphertext.split(".", 3)
         try:
             return _build_legacy_fernet(
@@ -511,6 +625,13 @@ def _set_ciphertext(record: RuntimeDataCiphertextRecord, ciphertext: str) -> Non
     if record.kind == "runtime_execution_input":
         assert isinstance(record.owner, RunRecord)
         record.owner.execution_input_ciphertext = ciphertext
+        return
+    if record.kind in ("portal_totp_active_seed", "portal_totp_pending_seed"):
+        assert isinstance(record.owner, PortalTotpFactor)
+        if record.kind == "portal_totp_active_seed":
+            record.owner.active_seed_ciphertext = ciphertext
+        else:
+            record.owner.pending_seed_ciphertext = ciphertext
         return
     raise RuntimeDataReencryptionError(f"unsupported ciphertext record {record.row_identifier}")
 
