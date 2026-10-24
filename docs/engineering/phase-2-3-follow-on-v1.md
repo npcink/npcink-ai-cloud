@@ -23,9 +23,8 @@ full-suite green.
 against `master` `244cab8f` (clean detached worktree, `pnpm run build` plus the
 `playwright.config.ts` webServer) produced **261 passed / 3 failed / 2 skipped**
 in 5.3m. The older “~50 failing” figure was **not** reproduced and must not be
-quoted as present truth. `master` `6f651189` is the only commit on top of that
-baseline and touches no frontend or e2e file, so the numbers still describe the
-current tip.
+quoted as present truth. These counts describe that historical tree, not the
+current tip; later Portal changes require a fresh, scoped verification.
 
 - The CI-gated selection (“Critical frontend paths”: `admin-operator-path`,
   `admin-navigation`, `admin-acceptance-matrix`, `admin-ai-advisor-pc-v2`, the
@@ -35,7 +34,7 @@ current tip.
   requires `NPCINK_CLOUD_FRONTEND_BASE_URL`, and `setup-first-install` requires
   the dedicated `NPCINK_CLOUD_SETUP_STATE_OVERRIDE=pending` lane.
 
-Residual failures, each re-run to confirm it reproduces deterministically:
+Historical residual failures, each re-run on that baseline:
 
 - `frontend/tests/e2e/admin-account-site-runtime.spec.ts` expected the backend
   prose `runtime evidence unavailable`, but the UI renders the localized
@@ -53,11 +52,29 @@ Residual failures, each re-run to confirm it reproduces deterministically:
   darwin-only baseline, and the spec is outside the CI e2e selection, so no
   `-linux` baseline exists.
 
+**PC auth baseline (2026-10-24 Asia/Shanghai):** on `master` `2aa5ce28`,
+focused verification passed the two corrected assertions above and all six
+English/Chinese support-list gateway recovery cases; this was not a full-suite
+run. The operator accepted the current 1440×900 registration image after
+reviewing its 35 680 px difference from the old darwin baseline. The focused
+update replaces only `portal-register-current-darwin.png` and separates the
+auth visual checks into:
+
+- `public authentication entry keeps current PC visual contracts`: the
+  existing 1440×900 login and registration assertions, with the same 2% limit.
+- `optional mobile authentication visual observation`: historical 390×844
+  assertions and images retained, skipped unless
+  `NPCINK_CLOUD_PORTAL_MOBILE_VISUAL=1`. This explicit observation is outside
+  the PC-only delivery gate in [Portal UI Spec](../portal-ui-spec.md).
+
+Select the PC test with `--grep 'public authentication entry keeps current PC
+visual contracts'` and `--update-snapshots=none`. No login/mobile images,
+1280-pixel or Linux baselines, CI selection, or product source change is
+included. The darwin-only auth spec remains outside the fixed CI e2e selection;
+missing Linux images are not permission to generate them automatically.
+
 Still open under this slice:
 
-- **Login / register portal screenshot baseline** — deferred. Local drift was
-  about ~3% pixels on register; needs an intentional snapshot update plus
-  human visual acceptance. Do not regenerate casually inside an assertion PR.
 - **Residual failures** — re-scan Playwright against **current master** before
   quoting a new failure count. Do not invent or carry forward the older
   “~50 failing” figure as present truth.
