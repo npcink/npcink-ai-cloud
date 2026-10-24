@@ -55,7 +55,7 @@
     "next": "^16.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -63,7 +63,7 @@
     "@types/react": "^19.2.14",
     "@playwright/test": "^1.59.1",
     "@vitest/coverage-v8": "4.1.12",
-    "autoprefixer": "10.4.20",
+    "autoprefixer": "10.6.1",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.18",
