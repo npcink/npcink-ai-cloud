@@ -10,18 +10,46 @@ Companion: root [`AGENTS.md`](../../AGENTS.md),
 [`phase-1-scope.md`](phase-1-scope.md),
 [`wordpress-ai-loop-verification-checklist-2026-09-22.md`](../wordpress-ai-loop-verification-checklist-2026-09-22.md).
 
-## 0. Snapshot (read-only evidence as of drafting)
+## 0. Historical snapshot (2026-10-19 evidence; correction 2026-10-24)
 
 | Fact | Evidence |
 | --- | --- |
 | Public live | `GET https://cloud.npc.ink/health/live` → 200; `source_revision=b8cc6049da7d` |
 | Git `origin/production` tip | `16747c40` (SEO specialist pause #1141/#1143) — **newer than live** |
 | #1155 family (Advisor / inspection / audio / advanced media) | On `master`; **not** on `origin/production` / not in live |
-| True generate this wave | **Not verified**; 2026-10-17 runs recorded `provider.upstream_unavailable` |
+| True title generation | 2026-10-19 DeepSeek main-path success; operator confirmed adoption / draft save / reload; see evidence below |
+| Native adoption feedback | Historical Cloud event `2005` matched the successful title run; `accepted` is not quality / journey completion |
 | Formal release smoke | **not_passed** / deferred ([formal-release-smoke-entry-v1.md](../formal-release-smoke-entry-v1.md)) |
 | Trial posture | First 3 users / 4 weeks may start on trial §0 without full formal smoke; do **not** rename that as formal Done |
 
-Refresh live SHA before any Deploy or smoke; do not permanently copy the table.
+These are dated observations, not a fresh environment check. Refresh live SHA
+before any Deploy or smoke; do not permanently copy the table.
+
+### Reusable success and its limits
+
+The [production title acceptance](../history/production/2026/deepseek-title-production-acceptance-2026-10-19.md)
+records run `run_394719da22e846dc9baa6f30433f9a63` at
+2026-10-19 00:24 CST on Cloud
+`b8cc6049da7d1c33cbfffc9f8e5521f332a1adb5`, connector `0.4.1`.
+It succeeded with nonempty output, `suggestion_only=true`, actual Provider
+DeepSeek and no fallback/retry. Adoption, draft save and persisted reload were
+**operator-confirmed**, not independently browser-revalidated by the agent.
+The official WordPress AI plugin version was not independently verified.
+
+The [trial preflight follow-up](../history/trials/2026/trial-preflight-and-trace-minimum-plan-2026-10-19.md)
+records native `agent.feedback` event `2005` at 00:47 CST for the same run:
+`editor_assist` / `wordpress_ai_editor` / `accepted`, `metadata_only`, with a
+dedupe key. This proves one native adoption event; it does not prove quality
+feedback, journey coverage or a complete event denominator.
+
+Reuse these receipts instead of repeating the passed title scenario. They do
+not prove **at least 10 natural uses**, current-version failure recovery or
+repeat-click/cancel/retry idempotency, all-run usage/error/provider coverage,
+or all six Done criteria. Current site activation, connection, budget and
+installed-version compatibility still need their own evidence. Full formal
+smoke remains **not_passed / deferred**; it is separate from both this success
+and the first-three-user trial posture. No paid traffic may be manufactured
+to fill evidence counts.
 
 ## 1. Authority map (who clicks what)
 
@@ -55,7 +83,7 @@ Use these as normative command owners:
 | Live-site stage1 orchestrator | `scripts/live-site-stage1.py` → `app/ops/live_site_stage1.py` (+ readiness/acceptance/execute-packet siblings) |
 | Addon public onboarding | Addon repo `docs/public-cloud-onboarding-checklist.md` |
 | Addon ↔ Cloud paired release | Addon repo `docs/042-paired-release-readiness-2026-10-17.md` |
-| Runtime config / failed generate note | [`docs/runtime-configuration-acceptance-2026-10-17.md`](../runtime-configuration-acceptance-2026-10-17.md) |
+| Runtime config / historical 10-17 failed generate note | [`docs/runtime-configuration-acceptance-2026-10-17.md`](../runtime-configuration-acceptance-2026-10-17.md) |
 
 ## 3. Acceptance sheet (copy into a receipt)
 
@@ -142,19 +170,19 @@ Normative clicks: [portal-production-validation-runbook §4](../portal-productio
 | Feedback event id | Or “not delivered / N/A” |
 | Formal smoke | passed / not_passed / deferred |
 
-## 4. Immediate blockers (what is stuck now)
+## 4. Remaining gaps and conditional gates
 
-1. **Human Deploy decision** — whether to leave live on `b8cc6049` or Deploy a newer `production` tip (and whether to wait for #1155-class promote). AI cannot press Deploy.
-2. **Secrets + OTP** — formal smoke and signed connector smoke need filled `.tmp/release-smoke.env` / protected GitHub secrets and a fresh Portal login code.
-3. **Provider truth** — last documented production text attempts were `provider.upstream_unavailable`; need one authorized minimal generate under budget, not more docs.
+1. **Deployment only if chosen** — reusing the historical success does not itself require Deploy. If a newer live revision is needed, prepare its exact scope/SHA and obtain separate production authorization; the historical snapshot is not a release recommendation.
+2. **Formal smoke remains separate** — secrets / fresh OTP and the formal smoke prerequisites must be ready before an authorized attempt. The trial preflight follow-up records an external OTLP exporter blocker; do not repeat that unchanged failed preflight or request OTP prematurely. Deferred formal smoke is not a first-three-user trial prerequisite.
+3. **Remaining loop evidence** — the 10-19 success supersedes 10-17 failures as the latest title evidence cited here. Reuse it; collect missing natural-use, failure-recovery, idempotency and quality evidence during actual use. Do not infer current Provider/budget readiness or fallback health from one historical main-path success.
 4. **Addon distribution** — 收口日实测 Addon 插件头/常量 **0.4.4**（规划讨论期曾确认 0.4.3 合入）；试用站须装约定 zip，不假设商店分发 == git master。详见 [planning-discussion-session-closeout-2026-10-23.md](../history/engineering/2026/planning-discussion-session-closeout-2026-10-23.md)。
 
 ## 5. Suggested order for “跑通” without over-claiming
 
-1. Human: confirm budget + which Cloud SHA is in scope (keep live vs Deploy).
+1. Maintainer: reuse the title/adoption/native-feedback receipts above; identify a real remaining gap and record the current site/version/Cloud identity. Human: confirm budget and scope before any new real generation.
 2. If Deploy: B2→B4→B6 only with explicit approval sentence.
 3. Human: D2–D3 on one trial site.
-4. Human: E1–E4 once; maintainer: E5–E6.
+4. For the next genuine editing need, human: E1–E4; maintainer: E5–E6. Reuse existing matching run/event receipts; distinguish native adoption from quality/journey and do not regenerate merely to repeat a passed case.
 5. Optionally C* when OTP/secrets ready; keep formal smoke status honest for trial §0.
 
 Do not mark [six Done criteria](../wordpress-ai-loop-verification-checklist-2026-09-22.md) complete from a single smoke.
