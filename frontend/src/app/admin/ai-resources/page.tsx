@@ -2539,7 +2539,7 @@ function AiResourcesContent() {
           providerTestMessage={providerTestMessage}
           referenceLinksForConnection={connectionExternalLinkItems}
           onConfigure={editProviderConnection}
-          onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
+          onTest={(connectionId) => void runProviderConnectionTest(connectionId).catch(() => undefined)}
           onApproveImageHost={(connection) => void approveDetectedImageHost(connection)}
           onDelete={(connection) => void deleteProviderConnection(connection)}
           onRequestDelete={(connection) => void requestProviderConnectionDelete(connection)}
