@@ -2258,13 +2258,25 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await expect(page.locator('[data-portal-support="header-actions"]')).toBeVisible();
   await expect(page.getByText(/^Account scope$|^账户范围$/i)).toHaveCount(0);
   await expect(page.getByText(/^Filter by status$|^按状态筛选$/i)).toHaveCount(0);
-  await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(1);
-  await page.locator('[data-portal-support="status-rules"] summary').click();
-  await expect(page.getByText(/Open tickets are waiting|待处理工单/i)).toBeVisible();
-  await expect(page.getByText(/Close evaluation|关闭评价|關閉評價/i).first()).toBeVisible();
+  await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(0);
+  const guide = page.locator('[data-portal-support="ticket-guide"][data-portal-info-hint="trigger"]');
+  await expect(guide).toBeVisible();
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await guide.focus();
+  const guidePanel = page.getByRole('tooltip');
+  await expect(guidePanel).toContainText(/Open waits for triage|待处理等待分拣/i);
+  await expect(guidePanel).toContainText(/resolved accepts close evaluation|已解决可提交关闭评价/i);
+  await expect(guidePanel).toContainText(/closed issues can be reopened by reply|已关闭可通过回复重新打开/i);
+  await page.keyboard.press('Escape');
+  await expect(guidePanel).toHaveCount(0);
   await expect(ticketsTable.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
   await expect(ticketsTable.getByRole('cell', { name: /^Another site$|^其他站点$/i })).toBeVisible();
-  await expect(ticketsTable.getByRole('link', { name: /View detail|查看详情|查看詳情/i })).toHaveCount(1);
+  const openTicket = ticketsTable.getByRole('row').filter({ hasText: 'Payment order status looks wrong' });
+  const resolvedTicket = ticketsTable.getByRole('row').filter({ hasText: 'A different site needs review' });
+  await expect(openTicket.getByText(/^Open$|^待处理$/i)).toBeVisible();
+  await expect(resolvedTicket.getByText(/^Resolved$|^已解决$/i)).toBeVisible();
+  await expect(openTicket.getByRole('link', { name: /View detail|查看详情|查看詳情/i })).toHaveAttribute('href', '/portal/support/ticket_portal_e2e_open');
+  await expect(resolvedTicket.getByRole('link', { name: /View detail|查看详情|查看詳情/i })).toHaveAttribute('href', '/portal/support/ticket_portal_e2e_other_site');
   const submitTicket = page.getByRole('button', { name: /Submit ticket|提交工单|提交工單/i });
   await expect(submitTicket).toHaveAttribute('data-portal-support', 'submit-ticket');
   await submitTicket.click();
@@ -2684,12 +2696,20 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
 
     await page.goto('/portal/billing');
     await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
-    await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-    await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
-    await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
-    await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
+    await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade$/);
+    const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
+    await expect(packageDialog).toBeVisible();
+    await expect(packageDialog.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
     await page.keyboard.press('Escape');
+    await expect(packageDialog).toHaveCount(0);
+
+    await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
+    await expect(page).toHaveURL(/\/portal\/account$/);
+    await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /^Manage package$|^管理套餐$/i })).toHaveCount(0);
+    await expectNoPageOverflow();
   }
 });
 
@@ -2748,14 +2768,21 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
 
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
-  await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade$/);
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
-  await expect(packageDialog.getByRole('link', { name: /^Tickets$|^工单$|Help & support|帮助与客服/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /^Tickets$|^工单$|Help & support|帮助与客服/i })).toHaveCount(0);
   await expect(packageDialog).toBeInViewport();
   await page.keyboard.press('Escape');
+  await expect(packageDialog).toHaveCount(0);
+
+  await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+  await page.locator('#portal-mobile-nav a[href="/portal/account"]').click();
+  await expect(page).toHaveURL(/\/portal\/account$/);
+  await expect(page.getByRole('region', { name: /Payment orders|支付订单/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /^Manage package$|^管理套餐$/i })).toHaveCount(0);
 
   await page.goto('/portal/support');
   await expect(

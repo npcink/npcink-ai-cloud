@@ -37,6 +37,8 @@ async function fixture(page: Page, baseURL: string | undefined, count = 21, loca
     state.calls.push({ method, path, key: req.headers()['idempotency-key'] });
     if (path === '/session' && method === 'GET') {
       await reply(route, state.active ? { email: 'member@example.test', sites: [], selected_context: null, auth_mode: 'jwt', session: { state: 'active', transport: 'cookie' } } : {}, state.active ? 200 : 401, state.active ? '' : 'auth.portal_session_revoked');
+    } else if (url.pathname === '/api/portal/totp/challenge/status' && method === 'GET') {
+      await reply(route, { challenge_status: 'missing' }, 401, 'auth.portal_factor_invalid');
     } else if (path === '/sessions' && method === 'GET') {
       const offset = Number(url.searchParams.get('offset')); const limit = Number(url.searchParams.get('limit'));
       state.readOffsets.push(offset); state.readHook?.(offset);
