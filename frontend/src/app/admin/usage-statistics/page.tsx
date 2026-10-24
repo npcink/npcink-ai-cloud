@@ -108,7 +108,7 @@ export default function UsageStatisticsPage() {
       <PluginHistory key={`${hours}:${siteFilter}:${recordScope}:${refresh}`} hours={hours} site={siteFilter} recordScope={recordScope} /></> : null}
     <section data-ui="usage-more-reference" hidden={analysisView !== 'chart'}>
       <section aria-label={c('趋势', 'Trends')}><BackofficeSectionPanel className="space-y-2">
-        {loading ? <p role="status">{c('加载中', 'Loading')}</p> : errors.includes('runtime') ? <p>{c('运行统计暂不可用', 'Runtime statistics unavailable')}</p> : <DimensionTrend comparison={dimension === 'functions' ? stats?.comparison?.functions : stats?.comparison?.sites} dimension={dimension} name={id => dimension === 'functions' ? `${functionNames[id] || id}` : id} />}
+        {loading ? <p role="status">{c('加载中', 'Loading')}</p> : errors.includes('runtime') ? <p>{c('运行统计暂不可用', 'Runtime statistics unavailable')}</p> : <DimensionTrend active={analysisView === 'chart'} comparison={dimension === 'functions' ? stats?.comparison?.functions : stats?.comparison?.sites} dimension={dimension} name={id => dimension === 'functions' ? `${functionNames[id] || id}` : id} />}
       </BackofficeSectionPanel></section>
     </section>
     <div className={analysisView === 'table' && !pluginMode ? undefined : 'hidden'}><AdminDataTableFrame title={c('使用明细', 'Usage breakdown')} resultLabel={`${displayRows.length} ${c('组', 'groups')}`} dataUi="usage-breakdown" headerVisibility="sr-only">

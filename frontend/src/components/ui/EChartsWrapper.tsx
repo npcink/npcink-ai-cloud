@@ -57,6 +57,8 @@ export interface AnalyticsLineChartProps {
   secondarySeriesName?: string;
   primaryColor?: string;
   secondaryColor?: string;
+  legendSelected?: Record<string, boolean>;
+  onLegendSelectChanged?: (selected: Record<string, boolean>) => void;
   comparisonSeries?: Array<{
     name: string;
     values: number[];
@@ -78,9 +80,15 @@ export function AnalyticsLineChart({
   primaryColor = '#3b82f6',
   secondaryColor = '#10b981',
   comparisonSeries,
+  legendSelected,
+  onLegendSelectChanged,
 }: AnalyticsLineChartProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  const onEvents = useMemo(() => onLegendSelectChanged ? {
+    legendselectchanged: (event: { selected: Record<string, boolean> }) => onLegendSelectChanged(event.selected),
+  } : undefined, [onLegendSelectChanged]);
 
   const option = useMemo(() => {
     const textColor = isDark ? '#e5e7eb' : '#374151';
@@ -128,7 +136,7 @@ export function AnalyticsLineChart({
         name: yAxisLabel,
         nameTextStyle: { color: textColor, fontSize: 11 },
       },
-      legend: comparisonSeries ? { type: 'scroll', top: 0, textStyle: { color: textColor } } : undefined,
+      legend: comparisonSeries ? { type: 'scroll', top: 0, textStyle: { color: textColor }, selected: legendSelected } : undefined,
       series: comparisonSeries ? comparisonSeries.map(series => {
         const style = series.emphasis === undefined && series.color === undefined
           ? {}
@@ -200,12 +208,13 @@ export function AnalyticsLineChart({
           : []),
       ],
     };
-  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor, comparisonSeries]);
+  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor, comparisonSeries, legendSelected]);
 
   return (
     <ReactEChartsCore
       echarts={echarts}
       option={option}
+      onEvents={onEvents}
       style={{ height }}
       className={cn('w-full', className)}
       notMerge
