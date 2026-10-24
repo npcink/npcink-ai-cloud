@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
 from dataclasses import dataclass
@@ -175,7 +176,6 @@ def _build_auth_error_response(
             revision="m5",
         ),
     )
-
 
 
 def _resolve_portal_link_signing_secret(settings: Settings) -> str:
@@ -961,4 +961,34 @@ def _authorize_portal_bearer_jwt_request(
         session_id=claims["sid"],
         session_version=claims["session_version"],
         expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
+    )
+
+
+def enforce_portal_primary_verify_rate_limit(request: Request, *, email: str = "") -> None:
+    """Persistent budget independent of code issuance and debug-code delivery."""
+    from sqlalchemy import select
+
+    from app.core.models import Principal
+
+    scopes = [("portal_primary_ip", request.client.host if request.client else "unknown", 90)]
+    normalized = email.strip().lower()
+    if normalized:
+        with get_session(get_cloud_services(request).settings.database_url) as session:
+            principal_id = session.scalar(
+                select(Principal.principal_id).where(Principal.email == normalized)
+            )
+        # Only DB-discovered identity is a principal scope; arbitrary input never
+        # chooses another principal. Unknown addresses share a canonical digest.
+        scopes.append(
+            (
+                "portal_primary_identity",
+                principal_id or hashlib.sha256(normalized.encode()).hexdigest(),
+                30,
+            )
+        )
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=tuple(scopes),
+        error_code="auth.portal_primary_rate_limited",
+        window_seconds=900,
     )
