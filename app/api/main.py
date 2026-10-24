@@ -65,6 +65,14 @@ def create_app(
     configure_tracing(settings)
 
     app = FastAPI(
+        # Custom HTTP tracing owns propagation and redaction.
+        telemetry={
+            "tracing": False,
+            "metrics": False,
+            "logs": False,
+            "operation_spans": False,
+            "auto_configure": False,
+        },
         title=settings.project_name,
         version=__version__,
         docs_url="/docs" if settings.environment != "production" else None,
@@ -225,6 +233,14 @@ def create_app(
 
 def _create_setup_app(setup_service: SetupService) -> FastAPI:
     setup_app = FastAPI(
+        # Custom HTTP tracing owns propagation and redaction.
+        telemetry={
+            "tracing": False,
+            "metrics": False,
+            "logs": False,
+            "operation_spans": False,
+            "auto_configure": False,
+        },
         title="Npcink AI Cloud Setup",
         version=__version__,
         docs_url=None,
