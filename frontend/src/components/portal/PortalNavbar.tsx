@@ -76,7 +76,7 @@ export function PortalNavbar() {
 
   const isLoginPage = pathname === '/portal/login';
 
-  const logoutLabel = t('portal.logout', {}, 'Logout');
+  const logoutLabel = t('portal.nav_logout', {}, 'Logout');
   const logoutControl = isAuthenticated ? (
     <button
       type="button"
@@ -254,7 +254,7 @@ export function PortalNavbar() {
                 }}
                 className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
               >
-                {t('portal.logout', {}, 'Logout')}
+                {t('portal.nav_logout', {}, 'Logout')}
               </button>
             ) : !isLoginPage ? (
               <Link

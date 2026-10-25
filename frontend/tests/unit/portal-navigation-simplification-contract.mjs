@@ -86,9 +86,12 @@ assert.match(i18nSource, /'portal\.nav_account': '账号'/, 'Chinese nav copy mu
 
 assert.match(
   navbarSource,
-  /const logoutLabel = t\('portal\.logout'/,
-  'portal navbar Logout copy must come from portal.logout'
+  /const logoutLabel = t\('portal\.nav_logout'/,
+  'portal navbar Logout copy must come from portal.nav_logout'
 );
+assert.match(i18nSource, /'portal\.nav_logout': 'Logout'/, 'English portal nav logout stays translated');
+assert.match(i18nSource, /'portal\.nav_logout': '退出'/, 'Chinese portal nav logout must use the compact label');
+assert.match(i18nSource, /'portal\.logout': '退出登录'/, 'shared logout copy used by Admin must retain its original label');
 assert.match(
   navbarSource,
   /<button[^>]*?\n?[\s\S]{0,200}data-portal-nav="logout"[\s\S]{0,600}?>\s*\{logoutLabel\}\s*<\/button>/,
