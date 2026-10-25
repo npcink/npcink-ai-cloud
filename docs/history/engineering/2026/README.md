@@ -50,6 +50,7 @@ specific history collection. Migrated from the `docs/` root on
 - [multi session development observation synthesis and next stage plan 2026 08 15](multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md)
 - [pc launch readiness 2026 07 10](pc-launch-readiness-2026-07-10.md)
 - [Portal 自助开通与文本/图片知识库交付证据 2026 10 26](portal-self-service-and-knowledge-delivery-2026-10-26.md)
+- [primary source reconciliation 2026 10 26](primary-source-reconciliation-2026-10-26.md)
 - [pi provider runtime compatibility evidence 2026 07 25](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [pre user customer journey observability closeout and development retrospective 2026 08 17](pre-user-customer-journey-observability-closeout-and-development-retrospective-2026-08-17.md)
 - [project remediation and development retrospective 2026 07 25](project-remediation-and-development-retrospective-2026-07-25.md)
