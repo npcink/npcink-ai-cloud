@@ -6794,7 +6794,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.view_usage': '查看用量',
     'portal.view_billing': '查看账单',
     'portal.view_audit': '查看安全记录',
-    'portal.logout': '退出登录',
+    'portal.logout': '退出',
     'portal.no_sites': '没有已连接站点',
     'portal.no_sites_desc': '请先从 WordPress 插件发起连接。绑定完成后，这里会展示服务信息。',
     'portal.no_site_selected': '未选择站点',
