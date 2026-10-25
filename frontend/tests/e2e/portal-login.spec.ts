@@ -638,3 +638,44 @@ for (const [variant, addonAccounts] of [
     }
   });
 }
+
+for (const locale of ['zh-CN', 'en'] as const) {
+  test(`[F02-13 F02-20] ${locale} header cooldown is bounded, body-first and never resends automatically`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
+    await installLoginFlowMocks(page);
+    let requests = 0;
+    const timings = ['4', '1', '0', 'invalid', '86401'];
+    await page.route('**/api/portal/auth/code/request', async (route) => {
+      expect(route.request().method()).toBe('POST');
+      const index = requests++;
+      expect(index).toBeLessThan(timings.length);
+      await fulfillError(route, 429, 'portal.login_code_rate_limited', index === 1 ? { retry_after_seconds: 7 } : {}, { 'Retry-After': timings[index] });
+    });
+    await page.goto('/portal/login');
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+    const send = page.getByRole('button', { name: /Send verification code|发送验证码/i });
+    await send.click();
+    const cooling = page.getByRole('button', { name: /Send in 4s|4 秒后发送/i });
+    await expect(cooling).toBeDisabled();
+    await expect(page.getByText(/Try again in 4 seconds|请在 4 秒后重试/i)).toBeVisible();
+    await cooling.evaluate((element) => { (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click(); });
+    expect(requests).toBe(1);
+    await page.screenshot({ path: testInfo.outputPath('header-countdown.png'), fullPage: true });
+    await page.clock.fastForward(5000); await expect(send).toBeEnabled(); expect(requests).toBe(1);
+    await send.click();
+    await expect(page.getByRole('button', { name: /Send in 7s|7 秒后发送/i })).toBeDisabled();
+    await expect(page.getByText(/Try again in 7 seconds|请在 7 秒后重试/i)).toBeVisible();
+    expect(requests).toBe(2);
+    await page.clock.fastForward(8000); await expect(send).toBeEnabled(); expect(requests).toBe(2);
+    for (let index = 2; index < timings.length; index += 1) {
+      await send.click();
+      await expect(page.getByText(locale === 'en' ? 'Too many requests. Try again later.' : '请求过于频繁，请稍后再试。', { exact: true })).toBeVisible();
+      await expect(send).toBeEnabled(); expect(requests).toBe(index + 1);
+      await page.clock.fastForward(90000); expect(requests).toBe(index + 1);
+    }
+    await testInfo.attach('explicit-code-requests', { body: JSON.stringify({ requests, timings }), contentType: 'application/json' });
+  });
+}

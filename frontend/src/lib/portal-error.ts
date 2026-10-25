@@ -1,5 +1,6 @@
 import { ApiError, resolveUiErrorMessage } from './errors';
 import { formatDate } from './utils';
+import { readPortalRateLimitRetryAfterSeconds } from './retry-after';
 import { classifyPortalWriteFailure, PortalWriteNotDispatchedError } from './portal-write-outcome';
 
 type PortalTranslator = (
@@ -14,14 +15,6 @@ function readErrorDetail(details: unknown, key: string): string {
   }
   const value = (details as Record<string, unknown>)[key];
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function readPositiveErrorNumber(details: unknown, key: string): number {
-  if (!details || typeof details !== 'object' || Array.isArray(details)) {
-    return 0;
-  }
-  const value = Number((details as Record<string, unknown>)[key]);
-  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 0;
 }
 
 export function formatPortalErrorReference(error: unknown): string {
@@ -63,10 +56,7 @@ export function formatPortalErrorMessage(
       case 'portal.oauth_state_rate_limited':
       case 'portal.subscription_order_rate_limited':
       case 'portal.email_change_rate_limited': {
-        const retryAfterSeconds = readPositiveErrorNumber(
-          error.details,
-          'retry_after_seconds'
-        );
+        const retryAfterSeconds = readPortalRateLimitRetryAfterSeconds(error);
         if (retryAfterSeconds > 0) {
           return t(
             'error.portal_rate_limited_retry',
@@ -75,9 +65,9 @@ export function formatPortalErrorMessage(
           );
         }
         return t(
-          'error.portal_rate_limited',
-          { minutes: '15' },
-          'Too many portal requests were sent in a short window. Wait a few minutes and try again.'
+          'error.portal_rate_limited_unknown_wait',
+          undefined,
+          'Too many requests. Try again later.'
         );
       }
       case 'service.commercial_temporarily_paused':

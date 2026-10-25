@@ -1,4 +1,5 @@
 import { ApiError } from './errors';
+import { parseRetryAfterSeconds } from './retry-after';
 import {
   generateIdempotencyKey,
   isValidIdempotencyKey,
@@ -244,6 +245,7 @@ export class ApiClient {
       });
     }
 
+    const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'), Date.now());
     const contentType = response.headers.get('content-type') || '';
     const responseReference = response.headers.get('x-request-id') || '';
     let rawText: string;
@@ -254,6 +256,7 @@ export class ApiClient {
       throw new ApiError({
         statusCode: 0,
         responseStatusCode: response.status,
+        retryAfterSeconds,
         errorCode: timedOut ? 'client.request_timeout' : 'client.network_error',
         message: timedOut ? 'Request timed out while reading the response' : 'Response body could not be read',
         traceId: responseReference,
@@ -265,6 +268,7 @@ export class ApiClient {
     if (!contentType.toLowerCase().includes('json')) {
       throw new ApiError({
         statusCode: response.status,
+        retryAfterSeconds,
         errorCode: 'client.non_json_response',
         traceId: responseReference,
         requestId: responseReference,
@@ -280,6 +284,7 @@ export class ApiClient {
     } catch (cause) {
       throw new ApiError({
         statusCode: response.status,
+        retryAfterSeconds,
         errorCode: 'client.invalid_json_response',
         traceId: responseReference,
         requestId: responseReference,
@@ -294,6 +299,7 @@ export class ApiClient {
       const evidence = extractEnvelopeEvidence(rawBody);
       throw new ApiError({
         statusCode: response.status,
+        retryAfterSeconds,
         errorCode: 'client.invalid_envelope',
         message: evidence.message || 'API response does not match the Cloud envelope contract',
         details: {
@@ -310,6 +316,7 @@ export class ApiClient {
     if (!response.ok || rawBody.status === 'error') {
       throw new ApiError({
         statusCode: response.status,
+        retryAfterSeconds,
         errorCode: rawBody.error_code || `http.${response.status}`,
         message: rawBody.message || `API request failed with HTTP ${response.status}`,
         details: rawBody.data,

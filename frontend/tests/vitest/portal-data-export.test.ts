@@ -84,3 +84,13 @@ it.each(['code', 'confirm'] as const)('%s rejects unsupported methods locally an
   }
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it.each(['code', 'confirm'] as const)('[F02-19] %s dedicated protocol does not adopt upstream header timing', async (operation) => {
+  const body = { status: 'error', error_code: 'portal.login_code_rate_limited', data: {} };
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json(body, { status: 429, headers: { 'Retry-After': '4' } })); vi.stubGlobal('fetch', fetchMock);
+  const handler = operation === 'code' ? codeRoute.POST : confirmRoute.POST;
+  const response = await handler(new NextRequest(`http://localhost/api/portal/account/data-export/${operation}`, { method: 'POST', body: '{}' }));
+  expect(response.status).toBe(429); expect(response.headers.get('retry-after')).toBe('4'); expect(response.headers.get('cache-control')).toBe('private, no-store');
+  const error = await (operation === 'code' ? portalClient.requestDataExportCode('en') : portalClient.downloadPersonalData('challenge', '123456')).catch((e) => e);
+  expect(error.retryAfterSeconds).toBeUndefined(); expect(fetchMock).toHaveBeenCalledTimes(2);
+});

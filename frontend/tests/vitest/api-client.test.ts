@@ -414,3 +414,19 @@ describe('ApiClient', () => {
     });
   });
 });
+
+it.each(['envelope', 'html', 'json', 'shape', 'body'])('[F02-14] retains timing evidence across %s failures without scheduling a retry', async (kind) => {
+  const payload = { ...successEnvelope({ retry_after_seconds: 7 }), status: 'error', error_code: 'portal.login_code_rate_limited' };
+  const response = kind === 'envelope' ? jsonResponse(payload, { status: 429 }) : new Response(kind === 'shape' ? '{}' : 'PRIVATE', { status: 503, headers: { 'content-type': kind === 'html' ? 'text/html' : 'application/json' } });
+  response.headers.set('Retry-After', '4');
+  if (kind === 'body') vi.spyOn(response, 'text').mockRejectedValue(new Error('PRIVATE'));
+  const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+  const error = await new ApiClient().request('/api/portal/login/code', { method: 'POST', body: {} }).catch((e) => e);
+  expect(error).toBeInstanceOf(ApiError); expect(error.retryAfterSeconds).toBe(4);
+  expect(error.statusCode).toBe(kind === 'body' ? 0 : kind === 'envelope' ? 429 : 503);
+  expect(error.errorCode).toBe({ envelope: 'portal.login_code_rate_limited', html: 'client.non_json_response', json: 'client.invalid_json_response', shape: 'client.invalid_envelope', body: 'client.network_error' }[kind]);
+  if (kind === 'envelope') { expect(error.details).toEqual(payload.data); expect(error.rawBody).toEqual(payload); }
+  if (kind === 'html' || kind === 'json') { expect(error.details).toBe('PRIVATE'); expect(error.rawBody).toBe('PRIVATE'); }
+  if (kind === 'body') { expect(error.rawBody).toBeUndefined(); expect(error.details).toBeUndefined(); }
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

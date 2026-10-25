@@ -182,3 +182,15 @@ describe('write outcome evidence and localized recovery', () => {
     }
   });
 });
+
+it.each(['en', 'zh-CN'] as const)('[F02-12] renders reliable or unknown wait safely in %s', (locale) => {
+  const t = (key: string, params?: Record<string, string>) => localize(locale, key, params);
+  for (const errorCode of ['portal.login_code_rate_limited', 'portal.oauth_state_rate_limited', 'portal.subscription_order_rate_limited', 'portal.email_change_rate_limited']) {
+    for (const [details, retryAfterSeconds, seconds] of [[{ retry_after_seconds: 7 }, 1, '7'], [undefined, 4, '4']] as const) {
+      const error = new ApiError({ statusCode: 429, errorCode, message: 'PRIVATE', details, retryAfterSeconds });
+      expect(formatPortalErrorMessage(error, t, 'fallback')).toBe(t('error.portal_rate_limited_retry', { seconds }));
+    }
+    const error = new ApiError({ statusCode: 429, errorCode, message: 'PRIVATE', retryAfterSeconds: 86401 });
+    expect(formatPortalErrorMessage(error, t, 'fallback')).toBe(locale === 'en' ? 'Too many requests. Try again later.' : '请求过于频繁，请稍后再试。');
+  }
+});

@@ -91,3 +91,14 @@ describe('own sessions BFF boundary', () => {
     expect((await proxyPortalBackendPath(request(), '/portal/v1/sessions-other', options)).headers.has('pragma')).toBe(false);
   });
 });
+
+it.each(['HEAD', 'GET'])('[F02-16] keeps %s timing alongside private cache, Vary and both clearing cookies', async (method) => {
+  const headers = new Headers({ 'content-type': 'application/json', vary: 'Accept-Language', 'Retry-After': '4' });
+  headers.append('set-cookie', 'npcink_portal_session_token=; Max-Age=0'); headers.append('set-cookie', 'npcink_portal_site=; Max-Age=0');
+  const body = { ...envelope, status: 'error' }; const status = method === 'HEAD' ? 503 : 429;
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(method === 'HEAD' ? null : JSON.stringify(body), { status, headers })));
+  const response = await proxyPortalBackendPath(request('sessions', method), '/portal/v1/sessions', options);
+  expect(response.status).toBe(status); privateResponse(response); expect(response.headers.get('retry-after')).toBe('4');
+  expect(response.headers.getSetCookie()).toHaveLength(2); expect(response.headers.get('vary')).toContain('Accept-Language');
+  if (method === 'HEAD') expect(await response.text()).toBe(''); else expect(await response.json()).toEqual(body);
+});
