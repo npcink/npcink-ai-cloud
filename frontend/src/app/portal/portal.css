@@ -12,8 +12,21 @@
   --portal-btn-height-sm: 2.25rem;
   --portal-btn-radius: 9999px;
   --portal-control-radius: 0.75rem;
-  --portal-section-radius: 1.125rem; /* 18px */
+  --portal-section-radius: 18px; /* Preserve the section primitive's fixed radius. */
   --portal-card-radius: 0.75rem;
+  --portal-panel-radius: 1.6rem;
+  --portal-page-gap: 1.5rem;
+  --portal-header-gap: 1rem;
+  --portal-header-padding-bottom: 1rem;
+  --portal-section-padding: 1rem;
+  --portal-section-padding-wide: 1.25rem;
+  --portal-card-padding-inline: 1rem;
+  --portal-card-padding-block: 0.875rem;
+  --portal-panel-padding-inline: 1.25rem;
+  --portal-panel-padding-inline-wide: 1.75rem;
+  --portal-panel-padding-block: 1.5rem;
+  --portal-panel-padding-block-wide: 1.75rem;
+  --portal-row-padding-block: 0.75rem;
   --portal-title-size: 1.75rem;
   --portal-body-size: 0.875rem; /* 14px */
   --portal-body-size-lg: 1rem; /* 16px */
@@ -151,8 +164,8 @@
 
   .portal-shell .portal-list-row > th,
   .portal-shell .portal-list-row > td {
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
+    padding-top: var(--portal-row-padding-block);
+    padding-bottom: var(--portal-row-padding-block);
     vertical-align: middle;
   }
 
