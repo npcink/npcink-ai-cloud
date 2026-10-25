@@ -10,17 +10,16 @@ import {
   BackofficeEmptyState,
   BackofficePageHeader,
   BackofficePageStack,
-  BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
-import { resolveAuditPaginationRecovery } from './pagination';
+import { resolveAuditLoadedRange, resolveAuditPaginationRecovery } from './pagination';
 import { useAdminAuditWorkspace } from './queries';
 import type { AdminAuditEvent } from './types';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 const FILTER_KEYS = [
   'event_id',
   'idempotency_key',
@@ -97,6 +96,9 @@ export function AdminAuditWorkspace() {
   const items = Array.isArray(query.data?.items) ? query.data.items : [];
   const pagination = query.data?.pagination ?? {};
   const total = Number(pagination.total ?? query.data?.total ?? 0);
+  const loadedRange = resolveAuditLoadedRange(query.data);
+  const hasCurrentData = query.data?.requestKey === requestKey && !query.isPlaceholderData;
+  const navigationPending = query.isFetching || !hasCurrentData;
   const focusedEventId = positiveInteger(searchParams.get('focus'));
   const selectedEventId = focusedEventId === dismissedFocus ? 0 : focusedEventId;
   const selectedEvent = items.find((item) => Number(item.event_id || 0) === selectedEventId);
@@ -110,8 +112,8 @@ export function AdminAuditWorkspace() {
   const queryDurationMs = Number.isFinite(queryDurationValue) && queryDurationValue >= 0
     ? queryDurationValue
     : null;
-  const recoveryOffset = query.data?.requestKey === requestKey && !query.isPlaceholderData
-    ? resolveAuditPaginationRecovery(query.data.pagination, offset)
+  const recoveryOffset = hasCurrentData
+    ? resolveAuditPaginationRecovery(pagination, offset)
     : null;
 
   function updateUrl(updates: Record<string, string | null>) {
@@ -141,10 +143,17 @@ export function AdminAuditWorkspace() {
     }
     const exactEventId = params.get('event_id');
     if (exactEventId) params.set('focus', exactEventId);
-    router.push(`${pathname}${params.size ? `?${params.toString()}` : ''}`);
+    const nextHref = `${pathname}${params.size ? `?${params.toString()}` : ''}`;
+    const currentParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(params);
+    currentParams.sort();
+    nextParams.sort();
+    if (nextParams.toString() === currentParams.toString()) void query.refetch();
+    else router.push(nextHref);
   }
 
   function pageTo(nextOffset: number) {
+    if (navigationPending) return;
     updateUrl({ offset: nextOffset > 0 ? String(nextOffset) : null, focus: null });
   }
 
@@ -207,8 +216,75 @@ export function AdminAuditWorkspace() {
         )}
       />
 
-      <BackofficeSectionPanel>
-        <form key={requestKey} data-ui="admin-audit-filter-workbench" onSubmit={applyFilters}>
+      {errorMessage ? (
+        <BackofficeDiagnosticNotice
+          message={errorMessage}
+          staleDescription={query.data
+            ? t('admin.audit_workspace.stale_notice', {}, 'The last loaded audit page remains visible.')
+            : undefined}
+          retryLabel={t('common.retry', {}, 'Retry')}
+          onRetry={() => void query.refetch()}
+        />
+      ) : null}
+
+      {query.data ? (
+        <div
+          className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
+          data-ui="admin-audit-query-evidence"
+        >
+          <span>
+            {t('admin.audit_workspace.generated_at', {}, 'Evidence generated')}: {' '}
+            {formatDate(generatedAt) || notAvailable}
+          </span>
+          <span>
+            {t(
+              'admin.audit_workspace.returned_count',
+              { count: formatNumber(returnedCount) },
+              '{{count}} records returned'
+            )}
+          </span>
+          <span>
+            {t('admin.audit_workspace.query_duration', {}, 'Query duration')}: {' '}
+            {queryDurationMs === null ? notAvailable : `${queryDurationMs.toFixed(1)} ms`}
+          </span>
+        </div>
+      ) : null}
+
+      <AdminDataTableFrame
+        dataUi="admin-audit-directory"
+        density="compact"
+        title={t('admin.audit_workspace.directory_title', {}, 'Audit records')}
+        resultLabel={t(
+          'admin.audit_workspace.directory_result',
+          { count: formatNumber(total) },
+          '{{count}} matching records'
+        )}
+        bodyClassName=""
+        footer={(
+          <div data-ui="admin-audit-pagination" className="flex items-center justify-between border-t border-slate-200 px-3 py-2 dark:border-slate-800">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {t(
+                'admin.audit_workspace.page_range',
+                {
+                  start: String(loadedRange.start),
+                  end: String(loadedRange.end),
+                  total: String(total),
+                },
+                '{{start}}–{{end}} of {{total}}'
+              )}
+            </span>
+            <div className="flex gap-2">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={navigationPending || loadedRange.offset === 0} onClick={() => pageTo(Math.max(0, loadedRange.offset - PAGE_SIZE))}>
+                {t('common.previous', {}, 'Previous')}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={navigationPending || !pagination.has_more} onClick={() => pageTo(Number(pagination.next_offset ?? loadedRange.offset + PAGE_SIZE))}>
+                {t('common.next_page', {}, 'Next page')}
+              </button>
+            </div>
+          </div>
+        )}
+      >
+        <form key={requestKey} data-ui="admin-audit-filter-workbench" className="border-b border-slate-200 p-3 dark:border-slate-800" onSubmit={applyFilters}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               {t('admin.audit_workspace.event_id', {}, 'Event ID')}
@@ -281,11 +357,11 @@ export function AdminAuditWorkspace() {
               </label>
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.created_from', {}, 'From time')}
-                <input name="created_from" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_from'))} className="input mt-1 w-full" />
+                <input name="created_from" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_from'))} className="input mt-1 w-full [color-scheme:light] dark:[color-scheme:dark]" />
               </label>
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.created_to', {}, 'To time')}
-                <input name="created_to" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_to'))} className="input mt-1 w-full" />
+                <input name="created_to" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_to'))} className="input mt-1 w-full [color-scheme:light] dark:[color-scheme:dark]" />
               </label>
             </div>
           </details>
@@ -299,76 +375,15 @@ export function AdminAuditWorkspace() {
             </Link>
           </div>
         </form>
-      </BackofficeSectionPanel>
 
-      {errorMessage ? (
-        <BackofficeDiagnosticNotice
-          message={errorMessage}
-          staleDescription={query.data
-            ? t('admin.audit_workspace.stale_notice', {}, 'The last loaded audit page remains visible.')
-            : undefined}
-          retryLabel={t('common.retry', {}, 'Retry')}
-          onRetry={() => void query.refetch()}
-        />
-      ) : null}
-
-      {query.data ? (
         <div
-          className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
-          data-ui="admin-audit-query-evidence"
+          data-ui="admin-audit-table-scroll"
+          role="region"
+          aria-label={t('admin.audit_workspace.directory_title', {}, 'Audit records')}
+          aria-busy={query.isFetching}
+          tabIndex={0}
+          className="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         >
-          <span>
-            {t('admin.audit_workspace.generated_at', {}, 'Evidence generated')}: {' '}
-            {formatDate(generatedAt) || notAvailable}
-          </span>
-          <span>
-            {t(
-              'admin.audit_workspace.returned_count',
-              { count: formatNumber(returnedCount) },
-              '{{count}} records returned'
-            )}
-          </span>
-          <span>
-            {t('admin.audit_workspace.query_duration', {}, 'Query duration')}: {' '}
-            {queryDurationMs === null ? notAvailable : `${queryDurationMs.toFixed(1)} ms`}
-          </span>
-        </div>
-      ) : null}
-
-      <AdminDataTableFrame
-        dataUi="admin-audit-directory"
-        density="compact"
-        title={t('admin.audit_workspace.directory_title', {}, 'Audit records')}
-        resultLabel={t(
-          'admin.audit_workspace.directory_result',
-          { count: formatNumber(total) },
-          '{{count}} matching records'
-        )}
-        bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
-        footer={total > PAGE_SIZE ? (
-          <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2 dark:border-slate-800">
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {t(
-                'admin.audit_workspace.page_range',
-                {
-                  start: String(total ? offset + 1 : 0),
-                  end: String(Math.min(offset + items.length, total)),
-                  total: String(total),
-                },
-                '{{start}}–{{end}} of {{total}}'
-              )}
-            </span>
-            <div className="flex gap-2">
-              <button type="button" className="btn btn-secondary btn-sm" disabled={offset === 0} onClick={() => pageTo(Math.max(0, offset - PAGE_SIZE))}>
-                {t('common.previous', {}, 'Previous')}
-              </button>
-              <button type="button" className="btn btn-secondary btn-sm" disabled={!pagination.has_more} onClick={() => pageTo(Number(pagination.next_offset ?? offset + PAGE_SIZE))}>
-                {t('common.next', {}, 'Next')}
-              </button>
-            </div>
-          </div>
-        ) : undefined}
-      >
         {query.isLoading && !query.data ? (
           <p className="px-4 py-8 text-sm text-slate-500 dark:text-slate-400" role="status">
             {t('admin.audit_workspace.loading', {}, 'Loading audit evidence...')}
@@ -413,20 +428,22 @@ export function AdminAuditWorkspace() {
               })}
             </tbody>
           </table>
-        ) : recoveryOffset !== null ? (
+        ) : query.error ? null : recoveryOffset !== null ? (
           <BackofficeEmptyState
             className="m-5 md:m-6"
             title={t('admin.audit_workspace.page_unavailable_title', {}, 'Audit page no longer available')}
-            description={t(
+            description={offset % PAGE_SIZE === 0 && recoveryOffset % PAGE_SIZE === 0 ? t(
               'admin.audit_workspace.page_unavailable_description',
               {
                 requested: formatNumber(offset / PAGE_SIZE + 1),
                 available: formatNumber(recoveryOffset / PAGE_SIZE + 1),
               },
               'Requested page {{requested}} is beyond the current result set. Open page {{available}} to continue.'
-            )}
+            ) : t('admin.audit_workspace.page_unavailable_offset_description', {}, 'This position is beyond the current results. Open the last available result to continue.')}
             action={(
-              <form action={pathname} method="get">
+              <form action={pathname} method="get" onSubmit={(event) => {
+                if (navigationPending) event.preventDefault();
+              }}>
                 {FILTER_KEYS.map((key) => {
                   const value = searchParams.get(key)?.trim();
                   return value ? <input key={key} type="hidden" name={key} value={value} /> : null;
@@ -438,6 +455,7 @@ export function AdminAuditWorkspace() {
                   type="submit"
                   className="btn btn-secondary"
                   data-ui="admin-audit-pagination-recovery"
+                  disabled={navigationPending}
                 >
                   {t('admin.audit_workspace.show_available_page', {}, 'Show last available page')}
                 </button>
@@ -451,6 +469,7 @@ export function AdminAuditWorkspace() {
             description={t('admin.audit_workspace.empty_description', {}, 'Change or clear the filters. No operation is available from this read-only surface.')}
           />
         )}
+        </div>
       </AdminDataTableFrame>
 
       <AdminInspectorDrawer

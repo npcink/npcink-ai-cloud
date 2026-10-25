@@ -25,8 +25,9 @@ Status: current contract index; no new UI mandate.
 | [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 客户目录筛选及返回上下文按本路由契约；不承接服务风险队列职责 |
 | [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 响应式任务 list；独立命名的风险/生命周期等筛选、drawer 与 URL focus |
 | [Coverage](../frontend/tests/unit/admin-coverage-workspace-contract.mjs) | 默认 10；保留 URL `limit` 的 `1..500` | 保留状态 pills、250ms 搜索 debounce 与服务端排序/分页 |
+| [Audit](../frontend/tests/unit/admin-audit-workspace-contract.mjs) | 固定 10；不读取 URL `limit` | 只读 diagnostic 证据；11 个 URL 筛选与语义表同一工作区，显式 Apply；范围来自成功响应，深页恢复遵循服务端 `last_offset` |
 
-三个固定页大小的队列忽略 URL `limit`，不承诺页大小覆盖；Coverage 保留已有
+Support、Accounts、Subscriptions 及 Audit 的固定页大小忽略 URL `limit`，不承诺页大小覆盖；Coverage 保留已有
 有界参数。Subscriptions 按操作任务使用 list，不为统一名称强制改成 table。
 URL 筛选、offset、focus、返回上下文及请求失败后的展示范围均按各路由契约保留。
 
