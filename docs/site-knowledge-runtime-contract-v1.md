@@ -136,11 +136,22 @@ The media projection separates two revisions:
   description change therefore rebuilds embeddings without requiring another
   visual-recognition call.
 
-A complete media-only refresh is incremental. Existing rows with the same
-`content_hash` remain in place and are reported as `unchanged_documents`;
-changed rows are replaced in the existing Site Knowledge vector subsystem.
-This optimization does not create another cache, queue, registry, or vector
-store.
+A complete media-only `refresh` is incremental when `media_items` supplies
+attachment IDs and `documents`/`comments` are empty or omitted. `post_ids` may
+be omitted; if supplied and nonempty, it must exactly match those attachment
+IDs to use this lane. Consumers need not add image IDs to `post_ids`.
+Existing rows with the same `content_hash` remain in place, require no new
+embedding, and are reported as `unchanged_documents`. Changed existing media
+rows are replaced with exact site/type/id cleanup in SQL and the active vector
+backend before upsert, including obsolete tail chunks after metadata shrinks.
+That cleanup also covers vector-only residue when the SQL root is absent; it
+runs only after normalization, chunk/embedding construction and the final
+quota recheck succeed. The existing unchanged-content shortcut remains unchanged.
+This replacement is a correctness requirement, not merely an embedding
+optimization. Same-number post/page roots, other media and other sites remain
+untouched. `rebuild`, mixed document/comment delivery and nonmatching nonempty
+`post_ids` retain their existing behavior. This does not create another cache,
+queue, registry, or vector store, or make SQL presence a vector-cleanliness proof.
 
 `site_knowledge_status.v1` additively accepts up to 20
 `media_attachment_ids`. Its `media_evidence_items` response returns existing
@@ -163,6 +174,111 @@ index. Cloud does not return article body content or become the WordPress
 content manifest. WordPress remains responsible for resolving titles, URLs,
 publication state, and presenting `indexed` versus `not_indexed` status to the
 operator.
+
+## Bounded typed deletion and storage presence
+
+The additive `source_items` field on the existing v1 abilities identifies an
+exact `(authenticated site, source_type, source_id)`. `text` is a legacy usage
+bucket, never a source identity. No new ability, REST route, contract version,
+WordPress write or Portal management surface is introduced.
+
+For `site_knowledge_sync.v1`, selectors are allowed only with `sync_mode=delete`:
+
+```json
+{
+  "contract_version": "site_knowledge_sync.v1",
+  "sync_mode": "delete",
+  "source_items": [{"source_type": "page", "source_id": 42}, {"source_type": "media", "source_id": 84}],
+  "operation_source": "admin_selected_delete",
+  "write_posture": "suggestion_only",
+  "direct_wordpress_write": false
+}
+```
+
+When present, `source_items` must be a list of 1–100 objects before
+deduplication. Every object has exactly `source_type` and `source_id`; the ID
+must be a strictly positive JSON integer (not bool, float or numeric string).
+Delete supports `post`, `page`, `media`; status additionally supports read-only
+`comment`. Duplicates collapse in first-input order; every distinct status
+selector receives one result. Empty, malformed, unknown-type and over-limit
+selectors fail with `SiteKnowledgeContractViolation`, never a whole-site
+fallback. Input cannot override `site_id`, `customer_id` or `account_id`.
+Typed delete rejects even empty `post_ids`, `documents`, `comments`,
+`media_items` or `maintenance` fields. Selectors on refresh/rebuild/search are
+rejected. Without `source_items`, all legacy selector/delete behavior remains.
+
+All selectors and post/page identity conflicts are checked before any deletion.
+Typed root removal uses exact site/type/ID in SQL and vector storage. A selected
+post/page additionally removes only comments linked by that site's
+`source_type=comment AND parent_post_id=root_id`: SQL documents and chunks
+(including orphan chunks) supply deduplicated comment identities, and an exact
+vector comment/parent filter also removes vector-only leftovers. A stored or
+selected opposite post/page type at the same ID fails the whole batch closed
+with `site_knowledge.source_identity_conflict`; comments lack a typed parent
+and cannot safely be assigned between those article roots. Before any batch
+deletion or progress side effect, preflight checks both relational storage and
+the active vector backend for that opposite typed root, including stale or
+vector-only residue left by a partial write. The vector check is an exact
+authenticated-site/type/ID scalar query with strong consistency, limited to
+one identity and no content retrieval; it is not approximate vector search.
+A query error or malformed response fails closed with
+`site_knowledge.zilliz_probe_failed`, with no batch deletions. This narrow
+preflight does not add vector observations to relational `source_presence`
+or promise exclusion of concurrent writers. Same-number media
+is an independent identity and is preserved. Media delete never cascades to
+its parent, sibling images, featured/embedded attachments or comments.
+
+Both storage operations must finish before cleanup reports completed. These
+stores do not form a distributed transaction: an exception can leave partial
+vector cleanup or rolled-back SQL. A failure is not evidence of released
+capacity or permission to automatically repeat an administrator confirmation.
+Existing runtime replay semantics remain unchanged: after an older producer
+rewrites a source, replaying the original delete key returns its old run. A
+separately approved, stable compensation attempt needs a distinct key; replay
+of that attempt keeps its own key and payload. This Cloud slice adds no
+operation registry, retry engine or producer suppression.
+
+For fresh relational readback, `site_knowledge_status.v1` accepts the same
+selectors and adds this top-level result member only when requested:
+
+```json
+{
+  "source_presence": {
+    "status": "complete",
+    "storage_scope": "relational_index",
+    "observed_at": "2026-10-25T08:00:00Z",
+    "requested_count": 1,
+    "items": [{
+      "source_type": "page",
+      "source_id": 42,
+      "document_present": false,
+      "stored_chunk_count": 0,
+      "public_document_present": false,
+      "public_chunk_count": 0,
+      "associated_comment_document_count": 0,
+      "associated_comment_stored_chunk_count": 0
+    }]
+  }
+}
+```
+
+`document_present` and `stored_chunk_count` include every stored status,
+including stale documents/chunks and orphan chunks. The separate public fields
+count only `post_status=publish` rows; they are index evidence, not a claim
+about current WordPress permissions. Post/page items separately count linked
+comment documents and chunks of all statuses; media/comment items return zero
+for those associated fields. An absent root with linked comment residue is
+therefore not fully removed. Responses contain identity/counts only, no body or
+other-site records. `observed_at` is this SQL read's time, not a global revision
+or a vector snapshot; relational status never claims to have queried vectors.
+Backend deletion/retrieval evidence must be checked independently. Capacity
+remains the separate existing usage projection and cannot prove a particular
+source absent or restored.
+
+This is the Cloud portion of text/image self-service reduction. Addon CAS
+pending/exclusion/restore state, complete image production, dispatch suppression,
+fresh-read consumption, bounded compensation ownership and the WordPress admin
+UI remain follow-up work. PDF/video ingestion, OCR and ASR remain deferred.
 
 ## Metering Boundary
 

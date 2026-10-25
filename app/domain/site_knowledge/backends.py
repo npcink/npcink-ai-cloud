@@ -35,6 +35,10 @@ class SiteKnowledgeVectorBackend(Protocol):
 
     def delete_source_index(self, site_id: str, source_type: str, source_id: int) -> None: ...
 
+    def delete_associated_comment_indexes(self, site_id: str, parent_post_id: int) -> None: ...
+
+    def has_source_index(self, site_id: str, source_type: str, source_id: int) -> bool: ...
+
     def upsert_chunks(
         self,
         *,
@@ -130,6 +134,52 @@ class ZillizCloudSiteKnowledgeBackend:
                 f"and source_id == {source_id}"
             )
         )
+
+    def delete_associated_comment_indexes(self, site_id: str, parent_post_id: int) -> None:
+        if parent_post_id <= 0:
+            return
+        self._delete(
+            expr=(
+                f'site_id == "{_escape_expr_string(site_id)}" '
+                'and source_type == "comment" '
+                f"and parent_post_id == {parent_post_id}"
+            )
+        )
+
+    def has_source_index(self, site_id: str, source_type: str, source_id: int) -> bool:
+        """Probe physical typed identity, including stale vector-only residue."""
+        try:
+            rows = self.client.query(
+                collection_name=self.collection,
+                filter=(
+                    f'site_id == "{_escape_expr_string(site_id)}" '
+                    f'and source_type == "{_escape_expr_string(source_type)}" '
+                    f"and source_id == {source_id}"
+                ),
+                limit=1,
+                output_fields=["site_id", "source_type", "source_id"],
+                consistency_level="Strong",
+            )
+            # Only a successful, well-formed empty query proves absence.
+            if (
+                not isinstance(rows, list)
+                or len(rows) > 1
+                or any(
+                    not isinstance(row, dict)
+                    or row.get("site_id") != site_id
+                    or row.get("source_type") != source_type
+                    or type(row.get("source_id")) is not int
+                    or row["source_id"] != source_id
+                    for row in rows
+                )
+            ):
+                raise ValueError("Invalid vector identity probe response")
+        except Exception as error:
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.zilliz_probe_failed",
+                "Zilliz site knowledge identity probe failed",
+            ) from error
+        return bool(rows)
 
     def upsert_chunks(
         self,

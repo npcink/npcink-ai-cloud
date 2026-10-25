@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
@@ -87,6 +87,96 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
+
+    def has_other_post_root(self, *, site_id: str, source_type: str, source_id: int) -> bool:
+        """Comments have a numeric parent only; do not guess between post and page."""
+        other_type = "page" if source_type == "post" else "post"
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            if (
+                self.session.scalar(
+                    select(model.source_id)
+                    .where(
+                        model.site_id == site_id,
+                        model.source_type == other_type,
+                        model.source_id == source_id,
+                    )
+                    .limit(1)
+                )
+                is not None
+            ):
+                return True
+        return False
+
+    def associated_comment_ids(self, *, site_id: str, parent_post_id: int) -> list[int]:
+        # Include orphan chunks: document-only enumeration is not physical cleanup.
+        identities: set[int] = set()
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            identities.update(
+                self.session.scalars(
+                    select(model.source_id).where(
+                        model.site_id == site_id,
+                        model.source_type == "comment",
+                        model.parent_post_id == parent_post_id,
+                    )
+                )
+            )
+        return sorted(identities)
+
+    def source_presence(
+        self, *, site_id: str, source_items: list[tuple[str, int]]
+    ) -> list[dict[str, Any]]:
+        """Physical SQL storage only. No vector read or WordPress-publicity claim."""
+        parents = [
+            source_id for source_type, source_id in source_items if source_type in ("post", "page")
+        ]
+        counts: list[dict[tuple[str, int], tuple[int, int]]] = []
+        associated: list[dict[int, int]] = []
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            rows = self.session.execute(
+                select(
+                    model.source_type,
+                    model.source_id,
+                    func.count(),
+                    func.sum(case((model.post_status == "publish", 1), else_=0)),
+                )
+                .where(
+                    model.site_id == site_id,
+                    tuple_(model.source_type, model.source_id).in_(source_items),
+                )
+                .group_by(model.source_type, model.source_id)
+            ).all()
+            counts.append({(row[0], row[1]): (int(row[2]), int(row[3])) for row in rows})
+            linked = (
+                self.session.execute(
+                    select(model.parent_post_id, func.count())
+                    .where(
+                        model.site_id == site_id,
+                        model.source_type == "comment",
+                        model.parent_post_id.in_(parents),
+                    )
+                    .group_by(model.parent_post_id)
+                ).all()
+                if parents
+                else []
+            )
+            associated.append({int(row[0]): int(row[1]) for row in linked})
+        return [
+            {
+                "source_type": source_type,
+                "source_id": source_id,
+                "document_present": counts[0].get((source_type, source_id), (0, 0))[0] > 0,
+                "stored_chunk_count": counts[1].get((source_type, source_id), (0, 0))[0],
+                "public_document_present": counts[0].get((source_type, source_id), (0, 0))[1] > 0,
+                "public_chunk_count": counts[1].get((source_type, source_id), (0, 0))[1],
+                "associated_comment_document_count": associated[0].get(source_id, 0)
+                if source_type in ("post", "page")
+                else 0,
+                "associated_comment_stored_chunk_count": associated[1].get(source_id, 0)
+                if source_type in ("post", "page")
+                else 0,
+            }
+            for source_type, source_id in source_items
+        ]
 
     def list_public_source_types(self, site_id: str) -> list[str]:
         return [

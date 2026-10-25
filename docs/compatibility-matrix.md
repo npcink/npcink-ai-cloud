@@ -26,6 +26,7 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 
 | Cloud 发布标识(SHA/tag) | 活跃契约名 | 推荐 Addon≥ | 推荐 Toolbox≥ | WP 地板 | 发布顺序备注 | 更新日期 |
 | --- | --- | --- | --- | --- | --- | --- |
+| Cloud typed lifecycle 候选（基线 `ade8acc5275a6a83bdf6fa287d14def7d6cf54b3`；实施 HEAD 以本批独立收据绑定，未发布） | `site_knowledge_sync.v1`; `site_knowledge_status.v1` additive `source_items` / `source_presence`；pure `media_items` refresh 无需 `post_ids`，同内容 unchanged、变更精确替换旧 SQL/vector chunks | **0.4.4**（legacy 保持；typed CAS/producer/UI 待后续 Addon 批次） | **0.6.0**（不放宽通用 refresh guard） | **WP ≥ 7.0** | **Cloud → Addon**；仅 Cloud 精确删除/关系 presence 与必要 media-only 增量接缝，非完整自助降量；mixed/rebuild 不扩展；SQL/vector 无跨库原子承诺，不构成 M4/生产部署证明。见 [runtime contract](site-knowledge-runtime-contract-v1.md#bounded-typed-deletion-and-storage-presence)。 | 2026-10-25 |
 | `c1278c11` (`c1278c11ea2e73cd6a89ba70ea8bee013b46bc67`, `origin/master` @ 2026-10-20) | `wordpress_operation.v1`; `cloud_connector_runtime.v1`; `ai_task_contract.v1` | **0.4.4** | **0.6.0** | **WP ≥ 7.0**（取 Addon 地板；Toolbox readme 为 6.9，联合部署以 Addon 为准） | 内测推荐顺序：**Cloud → Addon → Toolbox**。契约不匹配仍失败；本行不构成运行时版本硬门。 | 2026-10-20 |
 
 ### 示例行来源（可核查）
