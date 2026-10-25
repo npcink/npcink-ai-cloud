@@ -16,6 +16,7 @@ pnpm --dir frontend run test:e2e:isolated-channels pending-install complete-inst
 pnpm --dir frontend run test:e2e:isolated-channels optional-mobile
 node scripts/test-cloud-isolated-channel-guard.cjs
 node --test scripts/test-cloud-isolated-channel-output.cjs
+node --test scripts/test-cloud-isolated-channel-inputs.cjs
 ```
 
 The optional positional arguments select distinct channel names. After claiming
@@ -33,10 +34,42 @@ An existing path (including an empty directory, file or symlink) fails with
 attempt; do not delete old evidence to retry. The output regression invokes the
 real runner offline with tripwires for input reads, dependency resolution,
 child processes and network; it never starts a build or browser.
-Source inputs (including original snapshots)
-are hashed before build and after execution. The frontend and local Mock bind
+Source inputs (including original snapshots) are independently enumerated and
+hashed before build and after execution. The frontend and local Mock bind
 only loopback with fresh ports and stop after each channel. The runner never
 uses the external frontend/backend targets inherited from the shell.
+
+## Source binding (policy v2)
+
+`input-policy.json` records the scope for each new run. Filesystem scans include
+all files under `frontend/` (source, tests, configs and assets such as `public/`),
+repository-root files, and the runner/input/Mock/guard modules. This is a
+conservative superset of the current source inputs, including Tailwind, PostCSS,
+tsconfig, next-env, package/workspace/lock files and alternate root configs.
+Both endpoint scans discover their own paths; added or removed files and changed
+bytes make `inputsUnchanged` false. Git tracking and ignore rules do not filter
+these inputs: relevant untracked and ignored files are included as well.
+
+The explicit exclusions are root/frontend `node_modules/`, frontend `.next/`,
+`test-results/`, `playwright-report/`, and frontend-root `*.tsbuildinfo` caches.
+These exclusions apply to those locations, not similarly named nested source
+directories. Symlinks and special files in scope are rejected. Local `.env*`
+files other than `.env.example` are rejected without reading their values;
+an ignored environment file added during a run also fails the ending scan.
+Place receipts outside the input scope or in the default `test-results/` tree.
+
+This binds source/config/assets at two endpoints. It does not hash installed
+dependencies, browser or OS bytes, prove continuous immutability between scans,
+or discover arbitrary imports outside the declared roots. Extend the policy
+before introducing such external inputs; this is not a hermetic build claim.
+The offline regression mutates real temporary files, verifies Git-ignored and
+untracked inputs, and checks the real runner's pre-build receipt with build and
+network tripwires. It does not execute Next or a browser.
+
+Earlier receipts retain their original, narrower 388-key scope. Missing historic
+Tailwind/PostCSS/tsconfig hashes cannot be recovered from today's checkout.
+Keep the old PASS/FAIL evidence unchanged, and do not describe it as complete
+effective-input equality, a run under policy v2, or a final-HEAD runtime result.
 
 ## Acceptance matrix
 

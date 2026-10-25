@@ -18,10 +18,10 @@ fs.mkdirSync(path.dirname(output), { recursive: true });
 fs.mkdirSync(output);
 const http = require('node:http');
 const net = require('node:net');
-const { createHash } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { responseFor } = require('./lib/isolated-channel-mock.cjs');
+const { captureInputs, inputPolicy } = require('./lib/isolated-channel-inputs.cjs');
 const next = require.resolve('next/dist/bin/next', { paths: [frontend] });
 const playwright = require.resolve('@playwright/test/cli', { paths: [frontend] });
 const guard = path.join(__dirname, 'lib/isolated-channel-guard.cjs');
@@ -195,16 +195,8 @@ async function runLane(lane) {
 (async () => {
   // Always build current source; no reuse of a historical compiled frontend.
   const source = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const inputs = [...new Set([
-    ...execFileSync('git', ['ls-files', '-z', '--', 'frontend/src', 'frontend/tests/e2e',
-      'frontend/next.config.mjs', 'frontend/package.json', 'frontend/playwright.config.ts', 'pnpm-lock.yaml'],
-      { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean),
-    'frontend/playwright.isolated-channels.config.ts', 'frontend/tests/e2e/helpers/isolated-channel-fixture.ts',
-    'scripts/run-cloud-isolated-channels.cjs', 'scripts/lib/isolated-channel-guard.cjs', 'scripts/lib/isolated-channel-mock.cjs',
-  ])].sort();
-  const fingerprint = () => Object.fromEntries(inputs.map((file) => [file,
-    createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')]));
-  const before = fingerprint();
+  write(path.join(output, 'input-policy.json'), inputPolicy);
+  const before = captureInputs(root);
   write(path.join(output, 'inputs-before.json'), before);
   const build = launch([next, 'build', '--webpack'], { ...baseEnv,
     CLOUD_API_BASE_URL: 'http://127.0.0.1:1', CLOUD_PUBLIC_BASE_URL: 'http://127.0.0.1:1',
@@ -220,10 +212,11 @@ async function runLane(lane) {
   if (fs.existsSync(path.join(frontend, 'public'))) fs.cpSync(path.join(frontend, 'public'), path.join(standalone, 'public'), { recursive: true });
   const results = [];
   for (const lane of selected) results.push(await runLane(lane));
-  const after = fingerprint();
+  const after = captureInputs(root);
   write(path.join(output, 'inputs-after.json'), after);
   const inputsUnchanged = JSON.stringify(before) === JSON.stringify(after);
-  write(path.join(output, 'result.json'), { source, results, inputsUnchanged, passed: inputsUnchanged && results.every((result) => result.passed),
+  write(path.join(output, 'result.json'), { source, results, inputsUnchanged, inputPolicyVersion: inputPolicy.version,
+    passed: inputsUnchanged && results.every((result) => result.passed),
     scope: 'Local synthetic channels; no M4, production, real install, Provider or human acceptance proof.' });
   process.exitCode = inputsUnchanged && results.every((result) => result.passed) ? 0 : 1;
 })().catch(async (error) => { await cleanup(); console.error(error); process.exitCode = 1; });
