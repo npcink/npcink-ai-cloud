@@ -136,11 +136,22 @@ The media projection separates two revisions:
   description change therefore rebuilds embeddings without requiring another
   visual-recognition call.
 
-A complete media-only refresh is incremental. Existing rows with the same
-`content_hash` remain in place and are reported as `unchanged_documents`;
-changed rows are replaced in the existing Site Knowledge vector subsystem.
-This optimization does not create another cache, queue, registry, or vector
-store.
+A complete media-only `refresh` is incremental when `media_items` supplies
+attachment IDs and `documents`/`comments` are empty or omitted. `post_ids` may
+be omitted; if supplied and nonempty, it must exactly match those attachment
+IDs to use this lane. Consumers need not add image IDs to `post_ids`.
+Existing rows with the same `content_hash` remain in place, require no new
+embedding, and are reported as `unchanged_documents`. Changed existing media
+rows are replaced with exact site/type/id cleanup in SQL and the active vector
+backend before upsert, including obsolete tail chunks after metadata shrinks.
+That cleanup also covers vector-only residue when the SQL root is absent; it
+runs only after normalization, chunk/embedding construction and the final
+quota recheck succeed. The existing unchanged-content shortcut remains unchanged.
+This replacement is a correctness requirement, not merely an embedding
+optimization. Same-number post/page roots, other media and other sites remain
+untouched. `rebuild`, mixed document/comment delivery and nonmatching nonempty
+`post_ids` retain their existing behavior. This does not create another cache,
+queue, registry, or vector store, or make SQL presence a vector-cleanliness proof.
 
 `site_knowledge_status.v1` additively accepts up to 20
 `media_attachment_ids`. Its `media_evidence_items` response returns existing

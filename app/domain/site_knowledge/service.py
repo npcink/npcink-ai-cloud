@@ -534,14 +534,6 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
-            if incremental_media_refresh and source_type == "media" and existing_document:
-                if self.vector_backend is not None:
-                    self.vector_backend.delete_source_index(site_id, source_type, source_id)
-                deleted_entries += self.repository.delete_source_index(
-                    site_id=site_id,
-                    source_type=source_type,
-                    source_id=source_id,
-                )
             if allowed_chunks < MAX_CHUNKS_PER_DOCUMENT and _chunks_include_limit_truncation(
                 chunks
             ):
@@ -609,6 +601,14 @@ class SiteKnowledgeService:
                     quota_limited = True
                     processed_documents += 1
                     continue
+            if incremental_media_refresh and source_type == "media":
+                if self.vector_backend is not None:
+                    self.vector_backend.delete_source_index(site_id, source_type, source_id)
+                deleted_entries += self.repository.delete_source_index(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -1980,7 +1980,7 @@ def _is_complete_media_refresh(
         if isinstance(item, dict)
     }
     attachment_ids.discard(0)
-    return bool(attachment_ids) and attachment_ids == set(post_ids)
+    return bool(attachment_ids) and (not post_ids or attachment_ids == set(post_ids))
 
 
 def _filter_media_text_list(value: Any, *, max_items: int, max_chars: int) -> list[str]:

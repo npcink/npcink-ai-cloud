@@ -18,7 +18,7 @@ from sqlalchemy import delete, select
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import Site, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.core.models import Account, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
 from app.domain.site_knowledge.backends import (
     SiteKnowledgeBackendError,
     ZillizCloudSiteKnowledgeBackend,
@@ -150,6 +150,16 @@ class LocalVectorClient:
             raise RuntimeError("synthetic vector failure")
         self.filters.append(filter)
         self.rows = [row for row in self.rows if not self.matches(row, filter)]
+
+    def upsert(self, *, collection_name, data):
+        assert collection_name == "fixture"
+        # Milvus replaces by primary key; absent tail indices are NOT removed.
+        def identity(row):
+            return tuple(row[key] for key in ("site_id", "source_type", "source_id", "chunk_index"))
+
+        incoming = {identity(row) for row in data}
+        self.rows = [row for row in self.rows if identity(row) not in incoming]
+        self.rows.extend(deepcopy(data))
 
     def query(self, *, collection_name, filter, limit, output_fields, consistency_level):
         assert collection_name == "fixture"
@@ -759,3 +769,262 @@ def test_legacy_delete_retains_absent_selector_behavior(database):
         assert _hits(service) == {("media", 2)}
         service.sync(site_id="alpha", input_payload=legacy, run_id="all")
         assert _hits(service) == set()
+
+
+def _media_refresh(*, explicit_post_ids=False, description="A public landscape"):
+    return {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "refresh",
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+        **({"post_ids": [42]} if explicit_post_ids else {}),
+        "media_items": [
+            {
+                "attachment_id": 42,
+                "mime_type": "image/jpeg",
+                "url": "https://example.test/landscape.jpg",
+                "title": "Landscape",
+                "description": description,
+                "media_fingerprint": "same-image-bytes",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize("vector", [False, True], ids=["sql", "zilliz-adapter"])
+@pytest.mark.parametrize("explicit_post_ids", [False, True], ids=["media-only", "legacy-matching"])
+def test_media_refresh_unchanged_does_not_repeat_embedding(
+    database, monkeypatch, vector, explicit_post_ids
+):
+    with get_session(database) as session:
+        service = _service(session)
+        if vector:
+            service.vector_backend = _vector(session)
+        embedded = []
+        original_embed = service._embed_text
+
+        def embed(text, **kwargs):
+            embedded.append(text)
+            return original_embed(text, **kwargs)
+
+        monkeypatch.setattr(service, "_embed_text", embed)
+        payload = _media_refresh(explicit_post_ids=explicit_post_ids)
+        first = service.sync(site_id="alpha", input_payload=payload, run_id="media-first")
+        assert first["sync"]["indexed_documents"] == 1
+        assert embedded
+        calls = len(embedded)
+        sql_before = [
+            (row.id, row.chunk_text, row.embedding_json)
+            for row in session.scalars(select(SiteKnowledgeChunk))
+        ]
+        vector_before = deepcopy(service.vector_backend.client.rows) if vector else None
+        filters_before = list(service.vector_backend.client.filters) if vector else None
+        second = service.sync(site_id="alpha", input_payload=payload, run_id="media-new-attempt")
+        assert len(embedded) == calls
+        assert second["sync"]["unchanged_documents"] == 1
+        assert second["sync"]["indexed_documents"] == second["sync"]["indexed_chunks"] == 0
+        assert [
+            (row.id, row.chunk_text, row.embedding_json)
+            for row in session.scalars(select(SiteKnowledgeChunk))
+        ] == sql_before
+        if vector:
+            assert service.vector_backend.client.rows == vector_before
+            assert service.vector_backend.client.filters == filters_before
+
+
+@pytest.mark.parametrize("vector", [False, True], ids=["sql", "zilliz-adapter"])
+@pytest.mark.parametrize("explicit_post_ids", [False, True], ids=["media-only", "legacy-matching"])
+@pytest.mark.parametrize("missing_sql_root", [False, True], ids=["root-present", "root-absent"])
+def test_media_refresh_shorter_metadata_removes_tail_and_preserves_typed_sentinels(
+    database, vector, explicit_post_ids, missing_sql_root
+):
+    with get_session(database) as session:
+        for kind, key, site in (
+            ("post", 42, "alpha"),
+            ("page", 42, "alpha"),
+            ("media", 43, "alpha"),
+            ("media", 42, "beta"),
+        ):
+            _seed(session, kind, key, site=site)
+        service = _service(session)
+        if vector:
+            service.vector_backend = _vector(session)
+
+        def target(row):
+            return row.site_id == "alpha" and row.source_type == "media" and row.source_id == 42
+
+        def sql_sentinels():
+            return sorted(
+                (row.id, row.site_id, row.source_type, row.source_id, row.chunk_text)
+                for row in session.scalars(select(SiteKnowledgeChunk))
+                if not target(row)
+            )
+
+        def document_sentinels():
+            return sorted(
+                (row.id, row.site_id, row.source_type, row.source_id, row.content_hash)
+                for row in session.scalars(select(SiteKnowledgeDocument))
+                if not target(row)
+            )
+
+        def vector_target(row):
+            return (row["site_id"], row["source_type"], row["source_id"]) == ("alpha", "media", 42)
+
+        sql_before = sql_sentinels()
+        docs_before = document_sentinels()
+        vector_before = deepcopy(service.vector_backend.client.rows) if vector else None
+        long_payload = _media_refresh(
+            explicit_post_ids=explicit_post_ids, description="Old landscape detail. " * 180
+        )
+        first = service.sync(site_id="alpha", input_payload=long_payload, run_id="media-long")
+        assert first["sync"]["indexed_documents"] == 1
+        assert first["sync"]["indexed_chunks"] > 1
+        if vector:
+            assert sum(vector_target(row) for row in service.vector_backend.client.rows) > 1
+        filters_before = list(service.vector_backend.client.filters) if vector else []
+        if missing_sql_root:
+            # Model committed vector write followed by SQL failure/rollback.
+            service.repository.delete_source_index(
+                site_id="alpha", source_type="media", source_id=42
+            )
+            assert not service.repository.document_exists(
+                site_id="alpha", source_type="media", source_id=42
+            )
+        second = service.sync(
+            site_id="alpha",
+            input_payload=_media_refresh(explicit_post_ids=explicit_post_ids, description="Short"),
+            run_id="media-short",
+        )
+        assert second["sync"]["indexed_documents"] == second["sync"]["indexed_chunks"] == 1
+        assert second["sync"]["unchanged_documents"] == 0
+        chunks = [row for row in session.scalars(select(SiteKnowledgeChunk)) if target(row)]
+        assert len(chunks) == 1
+        assert chunks[0].chunk_index == 0
+        assert "Short" in chunks[0].chunk_text
+        assert "Old landscape detail" not in chunks[0].chunk_text
+        documents = [row for row in session.scalars(select(SiteKnowledgeDocument)) if target(row)]
+        assert len(documents) == 1
+        assert sql_sentinels() == sql_before
+        assert document_sentinels() == docs_before
+        if vector:
+            rows = service.vector_backend.client.rows
+            assert [row for row in rows if not vector_target(row)] == vector_before
+            current = [row for row in rows if vector_target(row)]
+            assert len(current) == 1
+            assert current[0]["chunk_index"] == 0
+            assert current[0]["chunk_text"] == chunks[0].chunk_text
+            assert service.vector_backend.client.filters == filters_before + [
+                'site_id == "alpha" and source_type == "media" and source_id == 42'
+            ]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"sync_mode": "rebuild"},
+        {"sync_mode": "delete"},
+        {"documents": [{"post_id": 7}]},
+        {"comments": [{"comment_id": 7}]},
+        {"post_ids": [7]},
+        {"post_ids": [42, 7]},
+        {"media_items": []},
+    ],
+    ids=["rebuild", "delete", "mixed-post", "mixed-comment", "mismatch", "extra-post", "empty"],
+)
+def test_media_refresh_incremental_lane_keeps_legacy_boundaries(overrides):
+    from app.domain.site_knowledge.service import _is_complete_media_refresh
+
+    args = dict(
+        sync_mode="refresh",
+        post_ids=[],
+        documents=[],
+        comments=[],
+        media_items=[{"attachment_id": 42}],
+    )
+    assert not _is_complete_media_refresh(**{**args, **overrides})
+
+
+@pytest.mark.parametrize("failure", ["normalization", "quota", "embedding"])
+@pytest.mark.parametrize("missing_sql_root", [False, True], ids=["root-present", "root-absent"])
+def test_media_refresh_failure_does_not_predelete_old_vectors(
+    database, monkeypatch, failure, missing_sql_root
+):
+    with get_session(database) as session:
+        _seed(session, "media", 42)
+        _seed(session, "post", 42)
+        service = _service(session)
+        service.vector_backend = _vector(session)
+        if missing_sql_root:
+            service.repository.delete_source_index(
+                site_id="alpha", source_type="media", source_id=42
+            )
+        vector_before = deepcopy(service.vector_backend.client.rows)
+        sql_before = [
+            (row.id, row.source_type, row.source_id, row.chunk_text)
+            for row in session.scalars(select(SiteKnowledgeChunk))
+        ]
+        payload = _media_refresh()
+        if failure == "normalization":
+            payload["media_items"][0]["url"] = ""
+        elif failure == "quota":
+            service.settings.site_knowledge_max_sync_documents_per_run = 0
+        else:
+            def failed_embed(*args, **kwargs):
+                raise SiteKnowledgeBackendError("fixture.embedding_failed", "Synthetic failure")
+
+            monkeypatch.setattr(service, "_embed_text", failed_embed)
+        if failure == "embedding":
+            with pytest.raises(SiteKnowledgeBackendError, match="Synthetic failure"):
+                service.sync(site_id="alpha", input_payload=payload, run_id="failed-media")
+        else:
+            result = service.sync(site_id="alpha", input_payload=payload, run_id="failed-media")
+            assert result["sync"]["indexed_documents"] == 0
+            field = "failed_documents" if failure == "normalization" else "skipped_due_to_quota"
+            assert result["sync"][field] == 1
+        assert service.vector_backend.client.filters == []
+        assert service.vector_backend.client.rows == vector_before
+        assert [
+            (row.id, row.source_type, row.source_id, row.chunk_text)
+            for row in session.scalars(select(SiteKnowledgeChunk))
+        ] == sql_before
+
+
+def test_media_refresh_final_quota_recheck_preserves_vector_only_residue(database):
+    with get_session(database) as session:
+        session.add(Account(account_id="media-race", name="Media race"))
+        session.flush()
+        for site in session.scalars(select(Site)):
+            site.account_id = "media-race"
+        _seed(session, "media", 42)
+        service = _service(session)
+        service.account_id = "media-race"
+        service.account_media_image_limit = 1
+        service.vector_backend = _vector(session)
+        vector_before = deepcopy(service.vector_backend.client.rows)
+        service.repository.delete_source_index(site_id="alpha", source_type="media", source_id=42)
+        session.commit()
+        competing_inserted = False
+
+        def record_progress(progress):
+            nonlocal competing_inserted
+            session.commit()
+            if progress.get("stage") != "writing" or competing_inserted:
+                return
+            with get_session(database) as competing_session:
+                _seed(competing_session, "media", 43, site="beta")
+                competing_session.commit()
+            competing_inserted = True
+
+        service.progress_callback = record_progress
+        result = service.sync(
+            site_id="alpha", input_payload=_media_refresh(), run_id="media-quota-race"
+        )
+        assert competing_inserted
+        assert result["sync"]["indexed_documents"] == 0
+        assert result["sync"]["skipped_due_to_quota"] == 1
+        assert service.vector_backend.client.rows == vector_before
+        assert service.vector_backend.client.filters == []
+        assert not service.repository.document_exists(
+            site_id="alpha", source_type="media", source_id=42
+        )
+        assert service.repository.document_exists(site_id="beta", source_type="media", source_id=43)
