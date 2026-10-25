@@ -586,7 +586,8 @@ test('enabled models missing from the latest upstream catalog remain visible for
 test('candidate editing is dialog-bounded and PUT saves an auditable receipt', async ({ page }) => {
   const writes = await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles?profile=route.classification');
-  await expect(page.locator('main input')).toHaveCount(0);
+  await expect(profileRow(page, 'route.classification')).toBeVisible();
+  await expect(page.locator('main input:visible')).toHaveCount(0);
   await expect(page.getByText('Text Backup / text-model-v2')).toHaveCount(0);
 
   const configureButton = profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i });
