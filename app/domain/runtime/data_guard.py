@@ -70,6 +70,26 @@ def find_runtime_data_guard_finding(
     value: Any,
     *,
     path: str = "input",
+    ability_name: str = "",
+    contract_version: str = "",
+) -> RuntimeDataGuardFinding | None:
+    site_knowledge_sync = (
+        ability_name == "npcink-cloud/site-knowledge-sync"
+        and contract_version == "site_knowledge_sync.v1"
+        and isinstance(value, dict)
+        and value.get("contract_version") == "site_knowledge_sync.v1"
+    )
+    return _find_runtime_data_guard_finding(
+        value, path=path, location=(), site_knowledge_sync=site_knowledge_sync
+    )
+
+
+def _find_runtime_data_guard_finding(
+    value: Any,
+    *,
+    path: str,
+    location: tuple[str | int, ...],
+    site_knowledge_sync: bool,
 ) -> RuntimeDataGuardFinding | None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -81,14 +101,24 @@ def find_runtime_data_guard_finding(
                     path=current_path,
                     code="secret_field",
                 )
-            nested = find_runtime_data_guard_finding(item, path=current_path)
+            nested = _find_runtime_data_guard_finding(
+                item,
+                path=current_path,
+                location=(*location, str(key)),
+                site_knowledge_sync=site_knowledge_sync,
+            )
             if nested is not None:
                 return nested
         return None
 
     if isinstance(value, list):
         for index, item in enumerate(value):
-            nested = find_runtime_data_guard_finding(item, path=f"{path}[{index}]")
+            nested = _find_runtime_data_guard_finding(
+                item,
+                path=f"{path}[{index}]",
+                location=(*location, index),
+                site_knowledge_sync=site_knowledge_sync,
+            )
             if nested is not None:
                 return nested
         return None
@@ -96,6 +126,16 @@ def find_runtime_data_guard_finding(
     if isinstance(value, str):
         if _contains_secret_value(value):
             return RuntimeDataGuardFinding(kind="secret", path=path, code="secret_value")
+        # This exact contract field is a revision digest, not media text or a phone number.
+        if (
+            site_knowledge_sync
+            and len(location) == 3
+            and location[0] == "media_items"
+            and isinstance(location[1], int)
+            and location[2] == "media_fingerprint"
+            and re.fullmatch(r"[0-9a-f]{64}", value)
+        ):
+            return None
         if _contains_pii_value(value):
             return RuntimeDataGuardFinding(kind="pii", path=path, code="pii_value")
 
