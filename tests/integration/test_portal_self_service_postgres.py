@@ -1824,6 +1824,7 @@ def test_totp_postgres_public_activation_replacement_and_lost_response(
         PortalTotpFactor,
     )
     from app.core.services import CloudServices
+    from app.domain.portal_sessions.service import AuthenticatedSession
     from app.domain.portal_totp.codec import hotp
     from tests.contract.test_runtime_data_encryption_migration import CURRENT_ROOT
 
@@ -1854,7 +1855,28 @@ def test_totp_postgres_public_activation_replacement_and_lost_response(
 
         other = primary()
         old = primary()
-        original_expiry = jwt.decode(old, options={"verify_signature": False})["exp"]
+        old_claims = jwt.decode(old, options={"verify_signature": False})
+        original_expiry = old_claims["exp"]
+        with get_session(url) as db:
+            original_version = db.get(Principal, "prn_close").session_version
+            old_rows = list(
+                db.scalars(select(PortalSession).where(PortalSession.principal_id == "prn_close"))
+            )
+            old_identities = {
+                row.session_id: AuthenticatedSession(
+                    row.principal_id, row.session_id, row.session_version, row.absolute_expires_at
+                )
+                for row in old_rows
+            }
+            primary_at = db.get(PortalSession, old_claims["sid"]).primary_authenticated_at
+        assert "pg_export_fixture" in old_identities
+        for token in [old, other]:
+            claims = jwt.decode(token, options={"verify_signature": False})
+            identity = old_identities[claims["sid"]]
+            assert identity.session_version == claims["session_version"] == original_version
+            assert identity.expires_at == datetime.fromtimestamp(claims["exp"], UTC)
+        for identity in old_identities.values():
+            _b3a_assert_auth(url, identity, True)
         response = client.post("/portal/v1/totp/setup/start")
         assert response.status_code == 200
         started = response.json()["data"]
@@ -1890,24 +1912,67 @@ def test_totp_postgres_public_activation_replacement_and_lost_response(
                 )
             )
             assert len(recovery_rows) == 8 and all(row.code_hash for row in recovery_rows)
-            assert (
-                db.scalar(
-                    select(func.count())
-                    .select_from(PortalSession)
-                    .where(
-                        PortalSession.principal_id == "prn_close",
-                        PortalSession.revoked_at.is_(None),
-                    )
+            rows = {
+                row.session_id: row
+                for row in db.scalars(
+                    select(PortalSession).where(PortalSession.principal_id == "prn_close")
                 )
-                == 1
+            }
+            # Retained historical rows are invalidated by the principal epoch.
+            assert old_identities.keys() <= rows.keys()
+            new_sids = rows.keys() - old_identities.keys()
+            assert len(new_sids) == 1
+            replacement_row = rows[new_sids.pop()]
+            assert (
+                replacement_row.session_version
+                == db.get(Principal, "prn_close").session_version
+                == original_version + 1
             )
+            assert replacement_row.revoked_at is None
+            assert replacement_row.factor_version == factor.factor_version == 2
+            assert replacement_row.primary_authenticated_at == primary_at is not None
+            assert replacement_row.primary_authenticated_at == challenge.primary_authenticated_at
+            assert replacement_row.auth_method == challenge.primary_method == "email_code"
+            assert replacement_row.second_factor_method == "totp"
+            assert replacement_row.second_factor_verified_at == challenge.consumed_at
+            assert replacement_row.second_factor_verified_at >= primary_at
+            assert (
+                replacement_row.absolute_expires_at == old_identities[old_claims["sid"]].expires_at
+            )
+            registered_replacement = AuthenticatedSession(
+                replacement_row.principal_id,
+                replacement_row.session_id,
+                replacement_row.session_version,
+                replacement_row.absolute_expires_at,
+            )
+            for sid, identity in old_identities.items():
+                assert (
+                    AuthenticatedSession(
+                        rows[sid].principal_id,
+                        sid,
+                        rows[sid].session_version,
+                        rows[sid].absolute_expires_at,
+                    )
+                    == identity
+                )
+        for identity in old_identities.values():
+            _b3a_assert_auth(url, identity, False)
+        # Even a lost HTTP response commits exactly one actually valid session.
+        _b3a_assert_auth(url, registered_replacement, True)
         if not lose_response:
             data = completed.json()["data"]
             assert len(data["recovery_codes"]) == len(set(data["recovery_codes"])) == 8
             replacement = client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN)
+            replacement_claims = jwt.decode(replacement, options={"verify_signature": False})
+            assert replacement_claims["exp"] == original_expiry
             assert (
-                jwt.decode(replacement, options={"verify_signature": False})["exp"]
-                == original_expiry
+                AuthenticatedSession(
+                    replacement_claims["sub"],
+                    replacement_claims["sid"],
+                    replacement_claims["session_version"],
+                    datetime.fromtimestamp(replacement_claims["exp"], UTC),
+                )
+                == registered_replacement
             )
             assert client.get("/portal/v1/session").status_code == 200
             status = client.get("/portal/v1/totp/status")
@@ -1952,6 +2017,21 @@ def test_totp_postgres_same_setup_serializes_one_recovery_batch(closure_database
     caller = AuthenticatedSession(
         issued.principal_id, issued.session_id, issued.session_version, issued.expires_at
     )
+    with get_session(url) as db:
+        original_version = db.get(Principal, "prn_close").session_version
+        old_identities = {
+            row.session_id: AuthenticatedSession(
+                row.principal_id, row.session_id, row.session_version, row.absolute_expires_at
+            )
+            for row in db.scalars(
+                select(PortalSession).where(PortalSession.principal_id == "prn_close")
+            )
+        }
+        primary_at = db.get(PortalSession, caller.session_id).primary_authenticated_at
+    assert "pg_export_fixture" in old_identities
+    assert old_identities[caller.session_id] == caller
+    for identity in old_identities.values():
+        _b3a_assert_auth(url, identity, True)
     started = start_management(settings, caller, "setup")
     code = hotp(base64.b32decode(started["secret"]), int(datetime.now(UTC).timestamp()) // 30)
 
@@ -1977,29 +2057,63 @@ def test_totp_postgres_same_setup_serializes_one_recovery_batch(closure_database
         assert factor.state == "enabled" and factor.factor_version == 2
         assert factor.recovery_generation == 1 and factor.pending_setup_id is None
         assert factor.last_accepted_counter is not None
-        assert db.get(PortalAuthChallenge, started["setup_id"]).consumed_at is not None
+        challenge = db.get(PortalAuthChallenge, started["setup_id"])
+        assert challenge.consumed_at is not None
         assert db.scalar(select(func.count()).select_from(PortalRecoveryCode)) == 8
-        assert (
-            db.scalar(
-                select(func.count())
-                .select_from(PortalSession)
-                .where(PortalSession.revoked_at.is_(None))
+        rows = {
+            row.session_id: row
+            for row in db.scalars(
+                select(PortalSession).where(PortalSession.principal_id == "prn_close")
             )
-            == 1
+        }
+        assert old_identities.keys() <= rows.keys()
+        new_sids = rows.keys() - old_identities.keys()
+        assert len(new_sids) == 1
+        replacement_row = rows[new_sids.pop()]
+        assert (
+            replacement_row.session_version
+            == db.get(Principal, "prn_close").session_version
+            == original_version + 1
         )
-    _b3a_assert_auth(url, caller, False)
+        assert replacement_row.revoked_at is None
+        assert replacement_row.factor_version == factor.factor_version
+        assert replacement_row.primary_authenticated_at == primary_at is not None
+        assert replacement_row.primary_authenticated_at == challenge.primary_authenticated_at
+        assert replacement_row.auth_method == challenge.primary_method == "email_code"
+        assert replacement_row.second_factor_method == "totp"
+        assert replacement_row.second_factor_verified_at == challenge.consumed_at
+        assert replacement_row.second_factor_verified_at >= primary_at
+        assert replacement_row.absolute_expires_at == caller.expires_at
+        registered_replacement = AuthenticatedSession(
+            replacement_row.principal_id,
+            replacement_row.session_id,
+            replacement_row.session_version,
+            replacement_row.absolute_expires_at,
+        )
+        for sid, identity in old_identities.items():
+            assert (
+                AuthenticatedSession(
+                    rows[sid].principal_id,
+                    sid,
+                    rows[sid].session_version,
+                    rows[sid].absolute_expires_at,
+                )
+                == identity
+            )
+    for identity in old_identities.values():
+        _b3a_assert_auth(url, identity, False)
     replacement = first["_portal_session"]
     assert replacement.expires_at == caller.expires_at
-    _b3a_assert_auth(
-        url,
+    assert (
         AuthenticatedSession(
             replacement.principal_id,
             replacement.session_id,
             replacement.session_version,
             replacement.expires_at,
-        ),
-        True,
+        )
+        == registered_replacement
     )
+    _b3a_assert_auth(url, registered_replacement, True)
 
 
 @pytest.mark.parametrize("same_resource", ["counter", "challenge", "recovery"])
