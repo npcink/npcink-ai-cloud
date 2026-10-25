@@ -4,12 +4,13 @@ import { readVerificationCodeRetryAfterSeconds } from '@/hooks/useVerificationCo
 import { ApiError } from '@/lib/errors';
 
 describe('verification code cooldown', () => {
-  it('reads the exact backend retry-after value from an API error', () => {
+  it('prefers the exact backend body retry-after value over header timing', () => {
     const error = new ApiError({
       statusCode: 429,
       errorCode: 'portal.login_code_rate_limited',
       message: 'rate limited',
       details: { retry_after_seconds: 47.2 },
+      retryAfterSeconds: 4,
     });
 
     expect(readVerificationCodeRetryAfterSeconds(error)).toBe(48);

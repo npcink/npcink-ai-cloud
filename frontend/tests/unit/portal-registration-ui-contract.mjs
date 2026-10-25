@@ -8,6 +8,7 @@ const loginPagePath = resolve(process.cwd(), 'src/app/portal/login/page.tsx');
 const registerPagePath = resolve(process.cwd(), 'src/app/portal/register/page.tsx');
 const authShellPath = resolve(process.cwd(), 'src/components/portal/PortalAuthShell.tsx');
 const cooldownHookPath = resolve(process.cwd(), 'src/hooks/useVerificationCodeCooldown.ts');
+const retryAfterPath = resolve(process.cwd(), 'src/lib/retry-after.ts');
 
 const clientSource = readFileSync(clientPath, 'utf8');
 const proxySource = readFileSync(proxyPath, 'utf8');
@@ -15,6 +16,7 @@ const loginSource = readFileSync(loginPagePath, 'utf8');
 const registerSource = readFileSync(registerPagePath, 'utf8');
 const authShellSource = readFileSync(authShellPath, 'utf8');
 const cooldownHookSource = readFileSync(cooldownHookPath, 'utf8');
+const retryAfterSource = readFileSync(retryAfterPath, 'utf8');
 
 assert.match(
   clientSource,
@@ -88,8 +90,33 @@ assert.match(
 );
 assert.match(
   cooldownHookSource,
-  /retry_after_seconds[\s\S]*Date\.now\(\)[\s\S]*remainingSeconds/,
-  'the shared cooldown must honor backend retry-after evidence and use an absolute deadline'
+  /import \{ readPortalRateLimitRetryAfterSeconds \} from '@\/lib\/retry-after'/,
+  'the shared cooldown must import the shared rate-limit evidence parser'
+);
+assert.match(
+  cooldownHookSource,
+  /export function readVerificationCodeRetryAfterSeconds\(error: unknown\): number \{\s*return readPortalRateLimitRetryAfterSeconds\(error\);\s*\}/,
+  'verification-code retry timing must delegate to the shared parser'
+);
+assert.match(
+  retryAfterSource,
+  /export function readPortalRateLimitRetryAfterSeconds[\s\S]*retry_after_seconds\);\s*if \(Number\.isFinite\(seconds\) && seconds > 0\) return Math\.ceil\(seconds\);[\s\S]*const seconds = error\.retryAfterSeconds;/,
+  'the shared parser must prefer valid backend body timing before header fallback'
+);
+assert.match(
+  cooldownHookSource,
+  /const startCooldownFromError[\s\S]*const retryAfterSeconds = readVerificationCodeRetryAfterSeconds\(error\);\s*if \(retryAfterSeconds > 0\) \{\s*startCooldown\(retryAfterSeconds\);/,
+  'error-driven cooldowns must start with the delegated retry-after evidence'
+);
+assert.match(
+  cooldownHookSource,
+  /setDeadlineMs\(Date\.now\(\) \+ normalizedSeconds \* 1_000\);\s*setRemainingSeconds\(normalizedSeconds\);/,
+  'the shared cooldown must establish an absolute deadline from the normalized duration'
+);
+assert.match(
+  cooldownHookSource,
+  /const nextRemaining = Math\.max\(0, Math\.ceil\(\(deadlineMs - Date\.now\(\)\) \/ 1_000\)\);\s*setRemainingSeconds\(nextRemaining\);/,
+  'remaining cooldown time must be recalculated from the absolute deadline'
 );
 
 assert.match(
