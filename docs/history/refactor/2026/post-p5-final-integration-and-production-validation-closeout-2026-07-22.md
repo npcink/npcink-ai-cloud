@@ -243,7 +243,7 @@ zero vulnerabilities. The API image contains exactly three allowlisted Python
 The operator acceptance is restricted to engineering rehearsal and controlled
 production validation, expires on `2026-08-05`, and explicitly sets
 `ga_authorized=false`; see the exact
-[Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md).
+[Python 3.14.6 Controlled Production Validation Risk Decision](../../../python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md).
 Before expiry, either:
 
 1. upgrade to a supported Python build containing the relevant fixes, repin the
