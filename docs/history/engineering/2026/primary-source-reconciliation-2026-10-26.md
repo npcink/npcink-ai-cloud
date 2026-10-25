@@ -9,7 +9,7 @@ authority.
 The reviewed source was the protected primary checkout at
 `f3e591abfd011244470d9456e7729db7ba913df6`. The comparison base is current
 `origin/master` at `635de872b1a5fb0fcb07e8c6e6e69695b21eecc7`. The eleven commits
-below are the exact first-parent range `244e9dbf81a087e8d241e99d12be8794d0409dc6..f3e591abfd011244470d9456e7729db7`.
+below are the exact first-parent range `244e9dbf81a087e8d241e99d12be8794d0409dc6..f3e591abfd011244470d9456e7729db7ba913df6`.
 
 The source branch is not an additional set of eleven outstanding product
 deliverables. Later master commits carry several intents forward, two commits
@@ -35,7 +35,7 @@ make these classifications.
 
 ## Current truth and boundaries
 
-The current quota and credit boundary remains the runtime/credit contract. The
+The current quota and credit boundary remains the [Site Knowledge runtime contract](../../../site-knowledge-runtime-contract-v1.md) and [AI credit contract](../../../ai-credit-charge-contract-v1.md). The
 old capacity examples, pricing examples, limits, and suggested dynamic quota
 models are not copied here and do not become current authority. The economics
 surface remains a read-only projection; browser-local bill drafts are not a
@@ -49,12 +49,14 @@ Those states remain unverified unless a separate current receipt says otherwise.
 
 ## Recoverable source references
 
-The exact source commits, old document blobs, and private recovery index remain
-in the local task receipt for this audit:
+This document is an intent-reconciliation summary index. The new audit receipt
+contains its JSON summary, checksums, and freeze marker; it does **not** contain
+the source files or Git blobs:
 
 `/Users/muze/.codex/task-receipts/npcink-ai-cloud/2026-10-26-primary-handoff-audit/`
 
-That private receipt is the recovery pointer; this historical document does not
-duplicate the old handoff or its stale commands. The prior reconciliation
-record, [主 checkout 九篇历史文档对账与开发经验 — 2026-10-25](primary-checkout-intent-reconciliation-2026-10-25.md),
-contains the detailed lesson mapping and source fingerprints.
+The original Git source remains in the protected primary checkout, with the
+prior private archive materials. For exact source/blob recovery, use the nine
+file fingerprint table in [主 checkout 九篇历史文档对账与开发经验 — 2026-10-25](primary-checkout-intent-reconciliation-2026-10-25.md)
+and its existing private archive; do not treat this new receipt as a source
+backup. This document does not duplicate the old handoff or its stale commands.
