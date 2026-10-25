@@ -803,6 +803,17 @@
     },
     {
       "package": "frontend",
+      "profile": "local_browser_state",
+      "owner_doc": "docs/engineering/isolated-excluded-playwright-channels.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["scripts/run-cloud-isolated-channels.cjs", "frontend/playwright.isolated-channels.config.ts"],
+      "commands": {
+        "test:e2e:isolated-channels": "Exercise four historical excluded keys on a fresh loopback frontend with a synthetic upstream; no real install, Provider or M4."
+      }
+    },
+    {
+      "package": "frontend",
       "profile": "local_source",
       "owner_doc": "frontend/DEVELOPMENT.md",
       "used_by": ["manual"],
