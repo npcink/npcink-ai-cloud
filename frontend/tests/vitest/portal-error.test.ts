@@ -141,6 +141,9 @@ describe('write outcome evidence and localized recovery', () => {
     }
     expect(error.statusCode).toBe(statusCode); expect(error.errorCode).toBe(errorCode);
     expect(classifyPortalWriteFailure(new TypeError('PRIVATE raw error'))).toBe('outcome_unknown');
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(formatPortalWriteErrorMessage(new TypeError('PRIVATE raw error'), translator(locale), 'fallback')).toBe(localize(locale, 'error.portal_write_outcome_unknown'));
+    }
   });
 
   it.each(['portal.idempotency_in_progress', 'portal.idempotency_indeterminate', 'portal.idempotency_conflict'])(
