@@ -1,7 +1,7 @@
 # Deferred Engineering Triggers v1
 
 Status: active trigger-gated planning record, reconciled on 2026-10-25 against
-Cloud c4831b5041dde32630d0d2f886322d8da97c6532. Original review dates were
+Cloud 8f64a0328f11883bb5519ab6b2e0cf36fe74701b. Original review dates were
 2026-09-18 (items 1–5), 2026-09-19 (item 6), 2026-09-20 (item 7), and
 2026-10-21 (item 8). Those dated observations remain historical evidence.
 
@@ -19,14 +19,39 @@ Cloud source is fixed to the commit above. Addon observations below are a
 bounded static sample at 46b11d807292e2b898b3161110a5c6fa495bb755, not proof
 of the installed plugin, WordPress.org package, enabled scene count or current
 request-log contents. Local, CI, M4 candidate, merged, M4 accepted, production
-and human evidence remain distinct. No live DB, container logs, deployment
-markers or production state were read for this reconciliation.
+and human evidence remain distinct. Items 1–5 and 7–8 use source and historical
+receipts only. Item 6 also uses the bounded M4 observations below. No live DB,
+container logs or production state were read for this reconciliation.
+
+The source ranges used for the eight-item disposition were rechecked against
+this Cloud baseline and the same fixed Addon sample without source changes.
+Existing historical test/acceptance receipts remain bound to their recorded
+revisions: they are not fresh passes at this baseline, proof of installed
+Addon state, or substitutes for the natural-use and field gates below.
 
 The companion contract-version deferral remains
 [ADR-053](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md).
 Current engineering cleanup is tracked in
 [the follow-up queue](engineering-follow-up-queue-v1.md); neither record is
 runtime authority.
+
+## Disposition index
+
+These states retain each item's original obligation and history. An unmet or
+unproved condition remains open; a delivered mitigation does not close a
+separate root-cause or behavior-evidence obligation.
+
+| Item | Delivered or superseded premise | Remaining gate / smallest next step |
+| --- | --- | --- |
+| 1 — Addon registry | Scenario guards/helpers were extracted; a registry was not delivered. | The approximate fifteen-scene threshold is unproved; count real Toolbox contracts at the next scene addition. |
+| 2 — Capability surface | Structured-output consumers and output validation already exist. | Decide the real task's native-schema guarantee before scoping capability evidence/routing; tool/stream consumers remain unproved. |
+| 3 — Quality routing | Read-only attribution exists; #1125 made quality analysis manual-only. | Establish sustained natural samples and provenance before a routing decision; no automatic quality routing or scheduler is authorized. |
+| 4 — Request-log identity | Upstream-first identity projection remains; TOKEN mapping did not fix it. | Complaint/product trigger is unproved; settle the site-visible identity contract before changing the Addon. |
+| 5 — Image profile | Cloud derives the hosted image profile; the Addon still sends/asserts the literal. | Remove the redundant field only with the retained Addon release/rename trigger; managed execution policy is separate. |
+| 6 — M4 markers | Source guards and the #1268 dirty-candidate/clean-master promotion chain have matching compiled and served-build evidence. | Reuse that bounded evidence; do not infer the old incident root cause or a separate unchanged-deploy replay. |
+| 7 — Production pause | #1075 and later release records superseded the indefinite pause. | No new production action is authorized; any new release retains current evidence and exact-SHA authorization gates. |
+| 8 — Inline orphans | Lease, bounded drain and delayed auto-fail are implemented. | Root cause and fresh recurrence triggers remain unproved; preserve incident evidence before a focused investigation. |
+
 
 ## Reviewed Item 1: Addon Facade → Scenario Contract Registry
 
@@ -200,10 +225,28 @@ PR or treat marker writes alone as proof the no-rebuild defect persists.
 The [static contract](../tests/contract/test_m4_preview_development_contract.py)
 guards selection, sync recreation and marker ordering but is not an M4 replay.
 
-**Field chain remains unverified.** No actual script SHA, runtime mode,
-container/served build or potentially polluted marker was read here. The old
-incident may concern a different deployed script/state; source does not resolve
-that history or prove today's markers trustworthy.
+**Current bounded behavior evidence.** The #1268 Portal layout batch supplies
+a matched chain on 2026-10-25: dirty candidate sync selected
+`frontend_source_changed=1` / `frontend_recreate=1`; the compiled production
+build `cXBbRBR1C-AW_SM4UA6Ko` matched 118 static-file hashes, and the browser
+reconciled 35 observed assets before/after 11 passing tests and 35 PC captures.
+The source bind remained present; `.next` used a volume and the configured
+standalone server existed. A source bind is not evidence that compilation was
+skipped.
+
+Clean-master promotion of `014d93b02a955fa8b96814b98551d3fa7d9a4a02`
+reported `accepted`, PR 1268, branch `master`, and `source_dirty=false`.
+The frontend fingerprint was unchanged, so promotion correctly selected
+`frontend_source_changed=0` / `frontend_recreate=0`; a new read confirmed the
+same build, 118 compiled hashes and three mounted product-source hashes.
+The retained frontend revision `64e44cd9` describes the reused compiled source;
+it is not the new backend/source revision. These observations support this
+specific candidate/promotion chain. They do not reconstruct the old September
+incident, prove every historical marker, or claim a separate unchanged-deploy
+replay. The separate postmerge smoke then passed 2/2 without skips or retries;
+all 11 PC captures were reviewed and matched the candidate bytes. The two dark
+outline-control observations remain open, and the two original mock gaps do
+not establish the corresponding business capabilities.
 
 **Retained trigger and minimum gate.** At the next authorized sync/deploy
 window or stale-frontend diagnosis, first reuse any matching behavior receipt;
@@ -213,8 +256,8 @@ and serve that compiled change; a following unchanged deploy may correctly
 reuse it and report no source change. Do not mechanically demand change=1 in
 both phases. If a controlled matching-source replay still fails, scope the
 smallest operations fix. Do not delete markers or redeploy merely from this
-planning record. The original dirty-candidate/served-content acceptance is not
-closed by source inspection.
+planning record. The original dirty-candidate/served-content question now has the bounded
+behavior evidence above; source inspection alone would not close it.
 
 ## Reviewed Item 7: Production Promotion Pause — Superseded by Gated Resumption
 
