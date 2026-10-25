@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
@@ -143,6 +144,12 @@ export function SetupWizard() {
   const [adminKeySaved, setAdminKeySaved] = useState(false);
   const [isSetupCodeVisible, setIsSetupCodeVisible] = useState(false);
   const [isDatabasePasswordVisible, setIsDatabasePasswordVisible] = useState(false);
+  const [adminHandoff, setAdminHandoff] = useState<'idle' | 'checking' | 'leaving'>('idle');
+  const handoffPendingRef = useRef(false);
+  const handoffStartedRef = useRef(false);
+  const installPendingRef = useRef(false);
+  const adminKeyIssuedRef = useRef(false);
+  const copyResetTimerRef = useRef<number | null>(null);
   const installIdempotencyKey = useRef(generateIdempotencyKey('cloud_first_install'));
   const installationComplete =
     Boolean(adminKey) || installationState?.installation_state === 'complete';
@@ -161,10 +168,12 @@ export function SetupWizard() {
     setStateRequest('loading');
     try {
       const response = await setupClient.request<SetupStateData>('/state');
+      if (handoffStartedRef.current) return;
       setInstallationState(response.data);
       setStateRequest('success');
-      if (response.data.installation_state === 'complete') {
+      if (response.data.installation_state === 'complete' && !installPendingRef.current && !adminKeyIssuedRef.current) {
         router.replace('/admin/login');
+        router.refresh();
       }
     } catch (caught) {
       setError(toApiError(caught));
@@ -174,6 +183,9 @@ export function SetupWizard() {
 
   useEffect(() => {
     void loadState();
+    return () => {
+      if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+    };
   }, [loadState]);
 
   useEffect(() => {
@@ -271,6 +283,8 @@ export function SetupWizard() {
   };
 
   const installCloud = async () => {
+    if (installPendingRef.current || adminKeyIssuedRef.current || handoffStartedRef.current) return;
+    installPendingRef.current = true;
     setRequestState('loading');
     setError(null);
     try {
@@ -283,24 +297,64 @@ export function SetupWizard() {
         },
         idempotencyKey: installIdempotencyKey.current,
       });
+      adminKeyIssuedRef.current = true;
       setAdminKey(response.data.admin_key);
       setDatabase(EMPTY_DATABASE);
       setRequestState('success');
     } catch (caught) {
       setRequestState('error');
       setError(toApiError(caught));
+    } finally {
+      installPendingRef.current = false;
     }
   };
 
   const copyAdminKey = async () => {
     try {
       await navigator.clipboard.writeText(adminKey);
+      if (handoffStartedRef.current) return;
       setAdminKeyCopied(true);
-      window.setTimeout(() => setAdminKeyCopied(false), 2000);
+      if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = window.setTimeout(() => setAdminKeyCopied(false), 2000);
     } catch {
       setAdminKeyCopied(false);
     }
   };
+
+  const openAdminLogin = async () => {
+    if (!adminKey || !adminKeySaved || handoffPendingRef.current) return;
+    handoffPendingRef.current = true;
+    setAdminHandoff('checking');
+    setError(null);
+    try {
+      // Keep the one-time key available on an uncertain status read. Only
+      // hand off after the no-store projection confirms the terminal state.
+      const response = await setupClient.request<SetupStateData>('/state');
+      if (response.data.installation_state !== 'complete') {
+        throw new ApiError({ statusCode: 503, errorCode: 'setup.state_unavailable', message: 'Installation completion is not confirmed' });
+      }
+      handoffStartedRef.current = true;
+      if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+      setAdminKey('');
+      setAdminKeyCopied(false);
+      setAdminKeySaved(false);
+      setSetupCode('');
+      setDatabase(EMPTY_DATABASE);
+      setDatabaseTest(null);
+      installIdempotencyKey.current = '';
+      setAdminHandoff('leaving');
+      // Replace removes the completed wizard from history. Refresh drops
+      // pre-install route state; admin login mounts its own fresh session probe.
+      router.replace('/admin/login');
+      router.refresh();
+    } catch (caught) {
+      handoffPendingRef.current = false;
+      setAdminHandoff('idle');
+      setError(toApiError(caught));
+    }
+  };
+
+  if (adminHandoff === 'leaving') return <LoadingFallback />;
 
   if (stateRequest === 'loading' && !installationState) {
     return (
@@ -416,6 +470,7 @@ export function SetupWizard() {
                 </div>
                 <h2 className="mt-4 text-2xl font-semibold text-slate-950 dark:text-white">{t('setup.admin_key_title')}</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{t('setup.admin_key_desc')}</p>
+                <SetupErrorNotice error={error} />
                 <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
                   <label htmlFor="generated_admin_key" className="text-sm font-semibold text-amber-950 dark:text-amber-100">
                     {t('setup.admin_key_label')}
@@ -447,8 +502,8 @@ export function SetupWizard() {
                 <button
                   type="button"
                   className="btn btn-primary mt-6 w-full sm:w-auto"
-                  disabled={!adminKeySaved}
-                  onClick={() => window.location.assign('/admin/login')}
+                  disabled={!adminKeySaved || adminHandoff === 'checking'}
+                  onClick={() => void openAdminLogin()}
                 >
                   {t('setup.open_admin')}
                 </button>

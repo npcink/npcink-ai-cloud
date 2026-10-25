@@ -87,6 +87,9 @@ function useSessionController(): UseSessionReturn {
     const loadPromise = (async () => {
       try {
         const response = await portalClient.getSession();
+        // A revoke/clear can finish while this read is pending. Retire it
+        // before it mutates refs or starts an automatic site-selection write.
+        if (requestVersion !== sessionRequestVersionRef.current) return;
         const challenge = parsePortalSecondFactorRequired(response.data);
         if (challenge) {
           currentSessionRef.current = null;
@@ -127,6 +130,9 @@ function useSessionController(): UseSessionReturn {
           secondFactorResolution: null,
         });
       } catch (error) {
+        // An obsolete failure must not bootstrap a challenge for a newer
+        // session (or for the signed-out login page).
+        if (requestVersion !== sessionRequestVersionRef.current) return;
         const normalizedError = error instanceof Error
           ? error
           : new Error('Failed to load session');

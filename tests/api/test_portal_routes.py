@@ -5087,9 +5087,11 @@ def test_portal_qq_optional_profile_parse_failure_falls_back(
     ) == {}
 
 
+@pytest.mark.parametrize("order", ["rotate-before", "revoke-before"])
 def test_portal_qq_unbind_revokes_current_session(
     tmp_path: Path,
     monkeypatch: Any,
+    order: str,
 ) -> None:
     database_url, client = _build_client(
         tmp_path,
@@ -5109,6 +5111,11 @@ def test_portal_qq_unbind_revokes_current_session(
         "_fetch_qq_openid",
         lambda request, *, access_token: {"openid": "qq-openid-unbind", "unionid": ""},
     )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {},
+    )
 
     client.post(
         "/internal/service/accounts",
@@ -5121,7 +5128,7 @@ def test_portal_qq_unbind_revokes_current_session(
             "site_id": "site_portal_qq_unbind",
             "account_id": "acct_portal_qq_unbind",
             "name": "Portal QQ Unbind Site",
-            "status": "provisioning",
+            "status": "active",
         },
         headers=build_internal_headers(idempotency_key="portal-qq-unbind-site-001"),
     )
@@ -5150,6 +5157,25 @@ def test_portal_qq_unbind_revokes_current_session(
     )
     assert bind_response.status_code == 200, bind_response.text
 
+    settings = client.app.state.services.settings
+    initial_cookie = str(client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or "")
+    assert initial_cookie
+    initial_claims = decode_portal_session_cookie_claims(settings, initial_cookie)
+    rotated_cookie = ""
+    if order == "rotate-before":
+        # A legitimately signed response can arrive after unbind in a browser.
+        # Keep its exact token for reinjection after revocation below.
+        selected_response = client.post(
+            "/portal/v1/session/site", json={"site_id": "site_portal_qq_unbind"}
+        )
+        assert selected_response.status_code == 200, selected_response.text
+        rotated_cookie = str(selected_response.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or "")
+        assert rotated_cookie
+        selected_claims = decode_portal_session_cookie_claims(settings, rotated_cookie)
+        assert selected_claims["site_id"] == "site_portal_qq_unbind"
+        for claim in ("sub", "sid", "session_version", "exp"):
+            assert selected_claims[claim] == initial_claims[claim]
+
     unbind_response = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
     assert unbind_response.status_code == 200
     unbind_data = unbind_response.json()["data"]
@@ -5161,12 +5187,30 @@ def test_portal_qq_unbind_revokes_current_session(
         binding = session.scalar(select(IdentityProviderBinding))
         assert identity is not None
         assert identity.principal_id == principal_id
+        assert identity.session_version == initial_claims["session_version"] + 1
         assert binding is not None
         assert binding.principal_id == principal_id
 
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 401
     assert session_response.json()["error_code"] == "auth.portal_session_revoked"
+
+    # Sequential real-API order regressions. These assert signing/revocation
+    # semantics, not concurrent PostgreSQL lock scheduling.
+    for stale_cookie in (initial_cookie, rotated_cookie):
+        if not stale_cookie:
+            continue
+        client.cookies.clear()
+        client.cookies.set(COOKIE_PORTAL_SESSION_TOKEN, stale_cookie)
+        stale_read = client.get("/portal/v1/session")
+        assert stale_read.status_code == 401, stale_read.text
+        assert stale_read.json()["error_code"] == "auth.portal_session_revoked"
+        rejected_selection = client.post(
+            "/portal/v1/session/site", json={"site_id": "site_portal_qq_unbind"}
+        )
+        assert rejected_selection.status_code == 401, rejected_selection.text
+        assert rejected_selection.json()["error_code"] == "auth.portal_session_revoked"
+        assert not rejected_selection.cookies.get(COOKIE_PORTAL_SESSION_TOKEN)
 
     dispose_engine(database_url)
 

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
@@ -54,7 +54,8 @@ function AccountPageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { session, isLoading, isAuthenticated, refresh, logout } = useSession();
+  const { session, isLoading, isAuthenticated, refresh, logout, clearSession } = useSession();
+  const unbindPendingRef = useRef(false);
   const [providerState, setProviderState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [providerError, setProviderError] = useState('');
   const [providers, setProviders] = useState<PortalIdentityProviderStatus[]>([]);
@@ -176,6 +177,8 @@ function AccountPageContent() {
   };
 
   const handleUnbindQq = async () => {
+    if (unbindPendingRef.current) return;
+    unbindPendingRef.current = true;
     setStatus('unbinding');
     setMessage('');
     try {
@@ -187,10 +190,20 @@ function AccountPageContent() {
             : provider
         )
       );
-      setMessage(t('portal.account.qq_unbound', undefined, 'QQ quick login has been unbound. Sign in again.'));
-      setStatus('idle');
-      window.location.assign('/portal/login?reason=qq_unbound');
+      // The successful unbind already revoked the server session. Portal's
+      // provider survives client navigation: retire its in-flight reads before
+      // login can observe it. Auth data lives in that provider, not the static
+      // route payload; refreshing alongside replace would race the transition.
+      // Commit the cleared view with the destination, so a slow route does
+      // not paint the protected-page session-error state between the two.
+      // clearSession retires pending request refs synchronously in this scope.
+      startTransition(() => {
+        clearSession();
+        publishPortalNotificationCount(0);
+        router.replace('/portal/login?reason=qq_unbound');
+      });
     } catch (error) {
+      unbindPendingRef.current = false;
       setStatus('error');
       setMessage(
         formatPortalErrorMessage(
