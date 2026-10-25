@@ -153,6 +153,7 @@ deleting the old decision history.
 - [Internal AI Advisor](internal-ai-advisor-v1.md) — advisory read layer over Cloud service evidence; allowed and forbidden internal AI usage
 
 - [七会话 Phase 1 收口与协作经验 — 2026-10-24](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md) — 七个会话的职责、证据分层、T2/M4 收口和可复用协作经验；不替代生产授权或 Phase 2 计划。
+- [七会话历史义务与资源处置：阶段检查点 — 2026-10-26](history/repository-hygiene/2026/seven-chat-historical-obligations-and-resource-disposition-2026-10-26.md) — 具名历史义务、恢复范围、保留资源与协作纠偏；记录当前阻塞和缺证，不是全历史清零或生产授权。
 - [Frontend security dependency reconciliation — 2026-10-25](history/engineering/2026/frontend-security-dependency-reconciliation-2026-10-25.md) — Next.js acceptance, Vite override and Vitest peer alignment, remaining audit debt, and dependency closeout lessons.
 - [FastAPI telemetry compatibility review — 2026-10-25](history/engineering/2026/fastapi-telemetry-compatibility-review-2026-10-25.md) — native telemetry ownership, callback redaction, query-default compatibility, and exporter-backed regression evidence.
 
