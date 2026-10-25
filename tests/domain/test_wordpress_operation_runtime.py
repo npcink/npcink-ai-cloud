@@ -1812,3 +1812,125 @@ def test_runtime_service_no_longer_defines_wordpress_operation_execution_details
     }
     assert forbidden_transaction_calls == set()
     assert len(service_source.splitlines()) <= 8_296
+
+
+@pytest.mark.parametrize(
+    ("title_schema", "title", "accepted"),
+    [
+        ({"enum": ["Hosted runtime guide"]}, "Hosted runtime guide", True),
+        ({"enum": ["Another valid title"]}, "Hosted runtime guide", False),
+        ({"minLength": 20}, "Hosted runtime guide", True),
+        ({"minLength": 21}, "Hosted runtime guide", False),
+        ({"maxLength": 20}, "Hosted runtime guide", True),
+        ({"maxLength": 19}, "Hosted runtime guide", False),
+        ({"enum": ["**Hosted runtime guide**"]}, "**Hosted runtime guide**", False),
+        ({"minLength": 0}, "**", False),
+        ({"minLength": 23}, "**Hosted runtime guide**", False),
+        ({"minLength": 22}, " Hosted runtime guide ", False),
+    ],
+)
+def test_title_property_schema_validates_raw_and_normalized_value(
+    title_schema: dict[str, Any],
+    title: str,
+    accepted: bool,
+) -> None:
+    runtime = _runtime()
+    schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string", **title_schema}},
+    }
+    normalized = runtime.normalize_provider_output(
+        {"output_text": json.dumps({"title": title})},
+        input_payload={
+            "metadata": {"task": "title_generation", "ability_output_schema": schema},
+            "text": "This article explains hosted runtime validation.",
+        },
+    )
+    assert bool(normalized) is accepted
+    if accepted:
+        assert normalized["output_text"] == title
+
+
+def test_title_projection_does_not_require_non_title_root_fields() -> None:
+    runtime = _runtime()
+    schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string"}, "explanation": {"type": "string"}},
+        "required": ["title", "explanation"],
+    }
+    original = json.dumps(schema, sort_keys=True)
+    normalized = runtime.normalize_provider_output(
+        {"output_text": '{"title":"Hosted runtime guide"}'},
+        input_payload={"metadata": {"task": "title_generation", "ability_output_schema": schema}},
+    )
+    assert normalized["output_text"] == "Hosted runtime guide"
+    assert runtime._provider_title_output_schema(schema) == {
+        "type": "object",
+        "properties": {"title": {"type": "string"}},
+        "required": ["title"],
+        "additionalProperties": False,
+    }
+    assert json.dumps(schema, sort_keys=True) == original
+
+
+@pytest.mark.parametrize("schema_type", ["number", "integer"])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        (-1, False),
+        (0, True),
+        (1, True),
+        (2, False),
+        (True, False),
+        (float("nan"), False),
+        (float("inf"), False),
+        (float("-inf"), False),
+    ],
+)
+def test_ability_numeric_bounds_reject_invalid_nested_values(
+    schema_type: str,
+    value: object,
+    accepted: bool,
+) -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "array",
+                "items": {"type": schema_type, "minimum": 0, "maximum": 1},
+            }
+        },
+        "required": ["scores"],
+    }
+    assert _runtime()._json_value_matches_schema({"scores": [value]}, schema) is accepted
+
+
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity", "1e999"])
+def test_ability_output_rejects_non_json_numbers_even_in_open_fields(raw: str) -> None:
+    schema = {"type": "object", "properties": {"label": {"type": "string"}}}
+    assert (
+        _runtime()._normalize_json_schema_output(
+            '{"label":"valid","extra":' + raw + "}",
+            output_schema=schema,
+        )
+        == ""
+    )
+
+
+@pytest.mark.parametrize("schema_type", ["integer", "number"])
+def test_ability_numeric_bounds_preserve_arbitrary_precision_integers(schema_type: str) -> None:
+    value = 10**1000
+    schema = {"type": schema_type, "minimum": value - 1, "maximum": value}
+    assert _runtime()._json_value_matches_schema(value, schema)
+    assert not _runtime()._json_value_matches_schema(value + 1, schema)
+
+
+@pytest.mark.parametrize(("value", "accepted"), [(-0.1, False), (0.5, True), (1.1, False)])
+def test_ability_number_bounds_preserve_fractional_values(value: float, accepted: bool) -> None:
+    assert (
+        _runtime()._json_value_matches_schema(
+            value,
+            {"type": "number", "minimum": 0, "maximum": 1},
+        )
+        is accepted
+    )
