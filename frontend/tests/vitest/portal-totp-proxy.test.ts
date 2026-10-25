@@ -62,3 +62,17 @@ it('does not classify a TOTP lookalike as a sensitive route', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ status: 'ok' })));
   expect((await proxyPortalBackendPath(request('totp-other'), '/portal/v1/totp-other', options)).headers.has('pragma')).toBe(false);
 });
+
+it.each([429, 503])('[F02-17] retains TOTP %s timing, private headers and clearing cookie', async (status) => {
+  const body = { status: 'error', error_code: 'auth.challenge_unavailable', data: null };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body, { status, headers: { 'Retry-After': '4', 'set-cookie': 'portal_totp_challenge=; Max-Age=0' } })));
+  const response = await proxyPortalBackendPath(request(paths[0]), `/portal/v1/${paths[0]}`, options);
+  expect(response.status).toBe(status); expect(await response.json()).toEqual(body); assertPrivate(response);
+  expect(response.headers.get('retry-after')).toBe('4'); expect(response.headers.getSetCookie()).toHaveLength(1);
+});
+
+it('[F02-17] generated TOTP invalid-body error has no upstream timing', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{bad', { headers: { 'content-type': 'application/json', 'Retry-After': '4' } })));
+  const response = await proxyPortalBackendPath(request(paths[0]), `/portal/v1/${paths[0]}`, options);
+  expect(response.status).toBe(502); assertPrivate(response); expect(response.headers.has('retry-after')).toBe(false);
+});

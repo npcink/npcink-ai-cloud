@@ -17,6 +17,14 @@ const COPIED_REQUEST_HEADERS = [
   'idempotency-key',
 ] as const;
 
+// Opaque upstream timing only; generated proxy errors never inherit this header.
+function appendPortalRetryAfter(upstream: Response, downstream: NextResponse): void {
+  const value = upstream.headers.get('retry-after')?.trim();
+  if (value && value.length <= 128 && !/[\r\n\0]/.test(value)) {
+    downstream.headers.set('Retry-After', value);
+  }
+}
+
 function buildPortalBackendPath(pathSegments: string[]): string {
   const normalized = pathSegments
     .map((segment) => segment.trim())
@@ -121,12 +129,14 @@ async function forwardPortalBackendPath(
     if (isPrivateRoute && method === 'HEAD') {
       const headResponse = new NextResponse(null, { status: response.status });
       appendForwardHeaders(response, headResponse);
+      appendPortalRetryAfter(response, headResponse);
       return withPortalSessionsPrivateHeaders(headResponse, response.headers);
     }
     if (isPrivateRoute && !(response.headers.get('content-type') || '').includes('application/json')) {
       throw new Error('Invalid session response');
     }
     const forwardedResponse = await forwardBackendJson(response);
+    appendPortalRetryAfter(response, forwardedResponse);
     if (isPrivateRoute) withPortalSessionsPrivateHeaders(forwardedResponse, response.headers);
     if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
       logActivityReadFailure(response.status, 'backend_response');

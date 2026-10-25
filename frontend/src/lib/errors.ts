@@ -7,6 +7,8 @@ export interface ApiErrorInit {
   requestId?: string;
   revision?: string;
   rawBody?: unknown;
+  responseStatusCode?: number;
+  retryAfterSeconds?: number;
   cause?: unknown;
 }
 
@@ -18,6 +20,8 @@ export class ApiError extends Error {
   readonly requestId: string;
   readonly revision: string;
   readonly rawBody: unknown;
+  readonly responseStatusCode?: number;
+  readonly retryAfterSeconds?: number;
   override readonly cause: unknown;
 
   constructor(init: ApiErrorInit) {
@@ -30,6 +34,8 @@ export class ApiError extends Error {
     this.requestId = init.requestId || '';
     this.revision = init.revision || '';
     this.rawBody = init.rawBody;
+    this.responseStatusCode = init.responseStatusCode;
+    this.retryAfterSeconds = init.retryAfterSeconds;
     this.cause = init.cause;
   }
 

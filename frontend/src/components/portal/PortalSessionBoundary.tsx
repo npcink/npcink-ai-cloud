@@ -74,7 +74,7 @@ export function PortalSessionBoundary({ children }: { children: ReactNode }) {
                 {t('portal.support_reference', {}, 'Reference')}: {reference}
               </p>
             ) : null}
-            <button type="button" className="btn btn-primary mt-5" onClick={() => void refresh()}>
+            <button type="button" className="btn btn-primary mt-5" onClick={() => void refresh().catch(() => undefined)}>
               {t('common.retry', {}, 'Try again')}
             </button>
           </div>

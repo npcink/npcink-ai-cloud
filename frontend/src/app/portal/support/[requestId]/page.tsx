@@ -29,6 +29,7 @@ import {
   formatPortalWriteErrorMessage,
 } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
+import { classifyPortalWriteFailure } from '@/lib/portal-write-outcome';
 
 function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger' {
   if (status === 'open') return 'warning';
@@ -116,8 +117,8 @@ function isSupportAttachmentGoneError(error: unknown): boolean {
 }
 
 function isUnconfirmedPortalWriteError(error: unknown): boolean {
-  if (!(error instanceof ApiError)) return true;
-  return error.statusCode === 0 || error.errorCode.startsWith('client.');
+  const disposition = classifyPortalWriteFailure(error);
+  return disposition === 'outcome_unknown' || disposition === 'reconciliation_required';
 }
 
 export default function PortalSupportRequestDetailPage() {

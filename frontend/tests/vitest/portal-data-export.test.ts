@@ -6,6 +6,21 @@ import { portalClient } from '@/lib/portal-client';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it.each(['code', 'confirm'] as const)('[F03-07] %s body reset never creates a Blob or retains partial data', async (operation) => {
+  const cause = new Error('PRIVATE-SENTINEL');
+  const response = new Response(null);
+  vi.spyOn(response, operation === 'code' ? 'json' : 'text').mockRejectedValue(cause);
+  const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+  const blob = vi.spyOn(globalThis, 'Blob');
+  const pending = operation === 'code'
+    ? portalClient.requestDataExportCode('en')
+    : portalClient.downloadPersonalData('challenge', '123456');
+  const error = await pending.catch((e) => e);
+  expect(error).toBe(cause); expect(error.rawBody).toBeUndefined(); expect(error.details).toBeUndefined();
+  expect(blob).not.toHaveBeenCalled(); expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).has('idempotency-key')).toBe(false);
+});
+
 it.each(['code', 'confirm'] as const)('private cache covers %s success, auth/error, network and parse failures', async (operation) => {
   for (const mode of ['success', 'auth', 'error', 'network', 'parse', 'html']) {
     const fetchMock = vi.fn().mockImplementation(async () => {
@@ -68,4 +83,14 @@ it.each(['code', 'confirm'] as const)('%s rejects unsupported methods locally an
     expect(response.headers.get('vary')).toBe('Cookie, Authorization');
   }
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it.each(['code', 'confirm'] as const)('[F02-19] %s dedicated protocol does not adopt upstream header timing', async (operation) => {
+  const body = { status: 'error', error_code: 'portal.login_code_rate_limited', data: {} };
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json(body, { status: 429, headers: { 'Retry-After': '4' } })); vi.stubGlobal('fetch', fetchMock);
+  const handler = operation === 'code' ? codeRoute.POST : confirmRoute.POST;
+  const response = await handler(new NextRequest(`http://localhost/api/portal/account/data-export/${operation}`, { method: 'POST', body: '{}' }));
+  expect(response.status).toBe(429); expect(response.headers.get('retry-after')).toBe('4'); expect(response.headers.get('cache-control')).toBe('private, no-store');
+  const error = await (operation === 'code' ? portalClient.requestDataExportCode('en') : portalClient.downloadPersonalData('challenge', '123456')).catch((e) => e);
+  expect(error.retryAfterSeconds).toBeUndefined(); expect(fetchMock).toHaveBeenCalledTimes(2);
 });

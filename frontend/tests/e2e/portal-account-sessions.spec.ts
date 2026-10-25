@@ -93,6 +93,66 @@ async function capture(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true });
 }
 
+for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark']) {
+  test(`[F04-01 F04-02 F04-03] boundary Retry is single-flight and catches repeated 503 ${locale} ${theme}`, async ({ page, baseURL }, info) => {
+    if (!baseURL) throw new Error('Bound isolated candidate required');
+    const origin = new URL(baseURL).origin;
+    const state = { unexpected: [] as string[], errors: [] as string[], sessionReads: 0, challengeReads: 0, writes: [] as string[] };
+    installed.set(page, state);
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.context().addCookies([{ name: 'npcink_portal_session_token', value: 'boundary-fixture', url: origin }]);
+    await page.addInitScript(({ locale, theme }) => {
+      localStorage.setItem('locale', locale); localStorage.setItem('theme', theme);
+      const unhandled: string[] = [];
+      Object.defineProperty(window, '__portalUnhandled', { value: unhandled });
+      window.addEventListener('unhandledrejection', (event) => unhandled.push(String(event.reason)));
+    }, { locale, theme });
+    page.on('pageerror', (error) => state.errors.push(error.message));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const reply = (route: Route, data: unknown, status = 200) => route.fulfill({ status, json: {
+      status: status === 200 ? 'ok' : 'error', error_code: status === 200 ? '' : 'service.unavailable',
+      message: 'fixture', data, meta: { trace_id: 'boundary-reference', revision: 'm7' },
+    } });
+    await page.context().route('**/*', async (route) => {
+      const request = route.request(); const url = new URL(request.url());
+      if (url.origin === origin && request.method() === 'GET' && !url.pathname.startsWith('/api/')) return route.continue();
+      if (url.origin === origin && request.method() === 'GET') {
+        if (url.pathname === '/api/portal/session') {
+          state.sessionReads += 1;
+          if (state.sessionReads === 2) await held;
+          return state.sessionReads < 3 ? reply(route, {}, 503) : reply(route, {
+            email: 'boundary@example.test', sites: [], selected_context: null, auth_mode: 'jwt',
+            session: { state: 'active', transport: 'cookie' },
+          });
+        }
+        if (url.pathname === '/api/portal/totp/challenge/status') { state.challengeReads += 1; return reply(route, {}, 503); }
+        if (url.pathname === '/api/portal/notifications') return reply(route, { items: [], total_count: 0, unread_count: 0, limit: 1, offset: 0 });
+        if (url.pathname === '/api/portal/auth/identity-providers') return reply(route, { providers: [] });
+        if (url.pathname === '/api/portal/auth/login-options') return reply(route, { qq_available: false });
+        if (url.pathname === '/api/portal/account/payment-orders') return reply(route, { items: [], total_count: 0, counts: { all: 0, pending: 0 }, limit: 10, offset: 0 });
+      }
+      if (request.method() !== 'GET') state.writes.push(`${request.method()} ${url.pathname}`);
+      state.unexpected.push(`${request.method()} ${url.origin}${url.pathname}`); await route.abort('blockedbyclient');
+    });
+    await page.goto('/portal/account');
+    const retry = page.getByRole('button', { name: /^(重试|Retry)$/ });
+    await expect(retry).toBeVisible(); expect(state.sessionReads).toBe(1); expect(state.challengeReads).toBe(1);
+    await expect(page.locator('[data-portal-account="sessions"]')).toHaveCount(0);
+    await retry.evaluate((button) => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+    await expect.poll(() => state.sessionReads).toBe(2); release();
+    await expect.poll(() => state.challengeReads).toBe(2); await expect(retry).toBeVisible();
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('boundary-reference');
+    await capture(page, info, 'boundary-retry-503');
+    await retry.click(); await expect(page.locator('[data-portal-account="sessions"]')).toBeVisible();
+    expect(state.sessionReads).toBe(3); expect(state.challengeReads).toBe(2); expect(state.writes).toEqual([]);
+    expect(await page.evaluate(() => (window as unknown as { __portalUnhandled: string[] }).__portalUnhandled)).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await capture(page, info, 'boundary-recovered');
+    await info.attach('boundary-read-counts', { body: JSON.stringify(state), contentType: 'application/json' });
+  });
+}
+
 for (const width of [1440, 1280]) for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark'] as const) {
   test(`PC own session table ${width} ${locale} ${theme}`, async ({ page, baseURL }, info) => {
     await page.setViewportSize({ width, height: 1050 });

@@ -11,8 +11,182 @@ function jsonResponse(body: unknown): Response {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+const supportIntent = {
+  topic: 'general', title: 'Recovery', description: 'Explicit user intent',
+  site_id: '', source_path: '/portal/support', context: { source: 'test' },
+};
+function writeResponse(status = 200, code = ''): Response {
+  return new Response(JSON.stringify({
+    status: code ? 'error' : 'ok', error_code: code, message: 'PRIVATE backend detail',
+    data: { request: { request_id: 'support_1' } },
+    meta: { trace_id: 'write-ref', revision: 'r1' },
+  }), { status, headers: { 'content-type': 'application/json', 'x-request-id': 'request-ref' } });
+}
+function writeFixture() {
+  vi.stubGlobal('crypto', undefined);
+  const fetchMock = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
+  vi.stubGlobal('fetch', fetchMock);
+  const client = new PortalClient('/api/portal');
+  return {
+    client, fetchMock,
+    write: (title = supportIntent.title) => client.createSupportRequest({ ...supportIntent, title }),
+    keys: () => fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get('idempotency-key')),
+  };
+}
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe('bounded Portal write intentions', () => {
+  it('[F03-05] keeps a write key when HTTP 200 arrives but its body resets', async () => {
+    const f = writeFixture(); const response = new Response(null, { status: 200 });
+    vi.spyOn(response, 'text').mockRejectedValue(new Error('PRIVATE partial response'));
+    f.fetchMock.mockResolvedValueOnce(response).mockResolvedValueOnce(writeResponse());
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 0, responseStatusCode: 200, errorCode: 'client.network_error' });
+    await f.write(); expect(f.keys()[1]).toBe(f.keys()[0]); expect(f.fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('[F01-01] retains a lost-response key until success, then starts an independent intent', async () => {
+    const f = writeFixture();
+    f.fetchMock.mockRejectedValueOnce(new Error('lost')).mockImplementation(async () => writeResponse());
+    await expect(f.write()).rejects.toMatchObject({ errorCode: 'client.network_error' });
+    await f.write(); await f.write();
+    expect(f.keys()[1]).toBe(f.keys()[0]); expect(f.keys()[2]).not.toBe(f.keys()[0]);
+    expect(f.fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    [502, 'proxy.upstream_unreachable'], [504, 'proxy.upstream_timeout'],
+    [503, 'portal.idempotency_persist_failed'], [503, 'portal.idempotency_receipt_unavailable'],
+    [500, 'portal.idempotency_response_invalid'], [500, 'portal.idempotency_response_too_large'],
+    [408, 'http.408'], [425, 'http.425'], [200, 'service.error'],
+    [409, 'portal.idempotency_in_progress'], [409, 'portal.idempotency_indeterminate'],
+    [409, 'portal.idempotency_conflict'],
+  ])('[F01-02 F01-04 F01-09] preserves %s/%s and its key without scheduled requests', async (status, code) => {
+    vi.useFakeTimers();
+    const f = writeFixture(); f.fetchMock.mockImplementation(async () => writeResponse(status, code));
+    await expect(f.write()).rejects.toMatchObject({ statusCode: status, errorCode: code, traceId: 'write-ref', requestId: 'request-ref' });
+    await vi.advanceTimersByTimeAsync(7 * 86_400_000);
+    expect(f.fetchMock).toHaveBeenCalledTimes(1);
+    await expect(f.write()).rejects.toMatchObject({ errorCode: code });
+    expect(f.keys()[1]).toBe(f.keys()[0]); expect(f.fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([400, 403, 429])('[F01-06] releases an initially definite %s rejection', async (status) => {
+    const f = writeFixture(); f.fetchMock.mockImplementation(async () => writeResponse(status, 'service.rejected'));
+    await expect(f.write()).rejects.toMatchObject({ statusCode: status });
+    await expect(f.write()).rejects.toMatchObject({ statusCode: status });
+    expect(f.keys()[1]).not.toBe(f.keys()[0]); expect(f.fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([403, 429])('[F01-07] keeps uncertainty sticky after later %s', async (status) => {
+    const f = writeFixture();
+    f.fetchMock.mockResolvedValueOnce(writeResponse(503, 'portal.idempotency_persist_failed'))
+      .mockImplementation(async () => writeResponse(status, 'auth.membership_denied'));
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    await expect(f.write()).rejects.toMatchObject({ statusCode: status, writeDisposition: 'outcome_unknown', cause: { statusCode: status } });
+    await expect(f.write()).rejects.toMatchObject({ statusCode: status, writeDisposition: 'outcome_unknown' });
+    expect(new Set(f.keys()).size).toBe(1); expect(f.fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('[F01-10] retains a key while any same-intent attempt remains pending', async () => {
+    const f = writeFixture(); const first = deferredResponse(); const second = deferredResponse();
+    f.fetchMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      .mockImplementation(async () => writeResponse(403, 'auth.denied'));
+    const a = f.write().catch((error) => error); const b = f.write().catch((error) => error);
+    await vi.waitFor(() => expect(f.fetchMock).toHaveBeenCalledTimes(2));
+    first.resolve(writeResponse(400, 'service.rejected')); await a;
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 403 });
+    second.resolve(writeResponse(403, 'auth.denied')); await b;
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 403 });
+    expect(new Set(f.keys().slice(0, 3)).size).toBe(1); expect(f.keys()[3]).not.toBe(f.keys()[0]);
+  });
+
+  it('[F01-11] late failure cannot restore a successful old entry or remove its replacement', async () => {
+    const f = writeFixture(); const a = deferredResponse(); const b = deferredResponse();
+    f.fetchMock.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+      .mockResolvedValueOnce(writeResponse(503, 'service.busy')).mockResolvedValueOnce(writeResponse());
+    const first = f.write(); const late = f.write().catch((error) => error);
+    await vi.waitFor(() => expect(f.fetchMock).toHaveBeenCalledTimes(2));
+    a.resolve(writeResponse()); await first;
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    b.resolve(writeResponse(403, 'auth.denied')); await late;
+    await f.write();
+    expect(f.keys()[0]).toBe(f.keys()[1]); expect(f.keys()[2]).not.toBe(f.keys()[0]); expect(f.keys()[3]).toBe(f.keys()[2]);
+  });
+
+  it.each([true, false])('[F01-12] preserves uncertainty in either settlement order (%s)', async (unknownFirst) => {
+    const f = writeFixture(); const a = deferredResponse(); const b = deferredResponse();
+    f.fetchMock.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise).mockResolvedValueOnce(writeResponse());
+    const p = f.write().catch((e) => e); const q = f.write().catch((e) => e);
+    await vi.waitFor(() => expect(f.fetchMock).toHaveBeenCalledTimes(2));
+    a.resolve(writeResponse(unknownFirst ? 503 : 403, 'service.first')); await p;
+    b.resolve(writeResponse(unknownFirst ? 403 : 503, 'service.second')); await q;
+    await f.write(); expect(new Set(f.keys()).size).toBe(1);
+  });
+
+  it('[F01-13 F01-14] keeps site A intentions across B and ordinary same-context reads', async () => {
+    const f = writeFixture();
+    f.fetchMock.mockImplementation(async (url) => String(url).endsWith('/session') ? writeResponse() : writeResponse(503, 'service.busy'));
+    f.client.setWriteIntentContext('A'); await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    f.client.setWriteIntentContext('B'); await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    f.client.setWriteIntentContext('A'); f.client.setWriteIntentContext('A');
+    await f.client.getSession(); await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.keys()[0]).not.toBe(f.keys()[1]); expect(f.keys()[3]).toBe(f.keys()[0]); expect(f.keys()[2]).toBeNull();
+    await expect(f.write('Different payload')).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.keys()[4]).not.toBe(f.keys()[0]); expect(f.fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it.each([200, 403])('[F01-15] old epoch settlement %s cannot delete the new epoch intent', async (status) => {
+    const f = writeFixture(); const old = deferredResponse();
+    f.fetchMock.mockReturnValueOnce(old.promise).mockResolvedValueOnce(writeResponse(503, 'service.busy')).mockResolvedValueOnce(writeResponse());
+    const pending = f.write().catch((e) => e); await vi.waitFor(() => expect(f.fetchMock).toHaveBeenCalledTimes(1));
+    f.client.resetWriteIntentScope(); expect(f.fetchMock).toHaveBeenCalledTimes(1);
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    old.resolve(writeResponse(status, status === 200 ? '' : 'auth.denied')); await pending; await f.write();
+    expect(f.keys()[1]).not.toBe(f.keys()[0]); expect(f.keys()[2]).toBe(f.keys()[1]);
+  });
+
+  it('[F01-14] separates method, path and exact JSON serialization without dropping older intentions', async () => {
+    const f = writeFixture(); f.fetchMock.mockImplementation(async () => writeResponse(503, 'service.busy'));
+    const { context, ...fields } = supportIntent;
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    await expect(f.client.createSupportRequest({ context, ...fields })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(f.client.deleteSupportRequestAttachment('one', 'attachment')).rejects.toMatchObject({ statusCode: 503 });
+    await expect(f.client.deleteSupportRequestAttachment('two', 'attachment')).rejects.toMatchObject({ statusCode: 503 });
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 503 });
+    expect(new Set(f.keys().slice(0, 4)).size).toBe(4); expect(f.keys()[4]).toBe(f.keys()[0]);
+  });
+
+  it.each(['epoch', 'context'])('[F01-16] refuses before fetch when %s changes during digest', async (scope) => {
+    const f = writeFixture(); let release!: (buffer: ArrayBuffer) => void;
+    vi.stubGlobal('crypto', { subtle: { digest: vi.fn(() => new Promise<ArrayBuffer>((resolve) => { release = resolve; })) } });
+    const pending = f.write().catch((e) => e);
+    if (scope === 'epoch') f.client.resetWriteIntentScope(); else f.client.setWriteIntentContext('B');
+    release(new ArrayBuffer(32));
+    await expect(pending).resolves.toMatchObject({ reason: 'scope_changed', errorCode: 'client.portal_write_scope_changed' });
+    expect(f.fetchMock).not.toHaveBeenCalled();
+    vi.stubGlobal('crypto', undefined); f.fetchMock.mockResolvedValueOnce(writeResponse()); await f.write();
+    expect(f.fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('[F01-17] protects all 64 unresolved intentions and refuses new work before fetch', async () => {
+    const f = writeFixture(); f.fetchMock.mockImplementation(async () => writeResponse(503, 'service.busy'));
+    for (let i = 0; i < 64; i += 1) await expect(f.write(`Intent ${i}`)).rejects.toMatchObject({ statusCode: 503 });
+    const original = f.keys();
+    await expect(f.write('Intent 64')).rejects.toMatchObject({ reason: 'capacity' });
+    expect(f.fetchMock).toHaveBeenCalledTimes(64);
+    for (let i = 0; i < 64; i += 1) await expect(f.write(`Intent ${i}`)).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.keys().slice(64, 128)).toEqual(original);
+    f.client.resetWriteIntentScope(); await expect(f.write('Intent 64')).rejects.toMatchObject({ statusCode: 503 });
+    expect(f.fetchMock).toHaveBeenCalledTimes(129);
+  });
 });
 
 describe('PortalClient shared transport', () => {
