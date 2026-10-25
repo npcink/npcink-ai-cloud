@@ -114,7 +114,7 @@ fixtures migrate to0091; B1's parent→0090→parent floor remains explicit.
 The integrator must separately run both gates, with zero skips/errors and exit0:
 
 - Existing Portal random-schema runner:
-  `pnpm run m4:preview:test -- focused tests/integration/test_portal_self_service_postgres.py -q`.
+  `pnpm run m4:preview:test -- --focused tests/integration/test_portal_self_service_postgres.py -q`.
   It proves parent→0091→parent→0091, old SID/version/expiry preservation, actual
   checks/FK/uniqueness, transaction locks with independent connections, slot
   inventory and flushed-write rollback. It does not prove TOTP authentication.
