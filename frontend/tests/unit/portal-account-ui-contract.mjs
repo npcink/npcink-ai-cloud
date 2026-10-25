@@ -149,10 +149,42 @@ assert.match(
   /portalClient\.unbindQqLogin/,
   'account center must support QQ unbinding through the shared client'
 );
+// Scope both branches to this handler so unrelated account actions cannot
+// satisfy session retirement, navigation, or retry assertions.
+const unbindHandler = accountSource.match(/const handleUnbindQq = async \(\) => \{([\s\S]*?)\n  \};/)?.[1];
+assert.ok(unbindHandler, 'account center must retain its QQ unbind handler');
+const unbindBranches = unbindHandler.split('} catch (error) {');
+assert.equal(unbindBranches.length, 2, 'QQ unbind must retain distinct success and failure branches');
+const [unbindSuccess, unbindFailure] = unbindBranches;
 assert.match(
-  accountSource,
-  /unbindQqLogin\(\)[\s\S]*setStatus\('idle'\)[\s\S]*window\.location\.assign\('\/portal\/login\?reason=qq_unbound'\)/,
-  'QQ unbind must treat revoked-session sign-in as the success path'
+  unbindSuccess,
+  /if \(unbindPendingRef\.current\) return;[\s\S]*unbindPendingRef\.current = true;[\s\S]*setStatus\('unbinding'\)[\s\S]*await portalClient\.unbindQqLogin\(\)/,
+  'QQ unbind must prevent duplicate requests while its success navigation is pending'
+);
+assert.match(
+  unbindSuccess,
+  /await portalClient\.unbindQqLogin\(\);[\s\S]*setProviders\([\s\S]*provider\.provider === 'qq'[\s\S]*bound: false, binding: null/,
+  'QQ unbind must retire its binding only after the request succeeds'
+);
+assert.match(
+  unbindSuccess,
+  /await portalClient\.unbindQqLogin\(\);[\s\S]*startTransition\(\(\) => \{\s*clearSession\(\);\s*publishPortalNotificationCount\(0\);\s*router\.replace\('\/portal\/login\?reason=qq_unbound'\);\s*\}\)/,
+  'QQ unbind must treat revoked-session sign-in as success, clearing shared session and notifications with client navigation'
+);
+assert.doesNotMatch(
+  unbindSuccess,
+  /\b(?:refresh|logout)\(|router\.refresh\(|window\.location\.|setStatus\('(?:idle|error)'\)|unbindPendingRef\.current = false/,
+  'successful QQ unbind must not reload the revoked session or reopen the action before navigation'
+);
+assert.match(
+  unbindFailure,
+  /unbindPendingRef\.current = false;[\s\S]*setStatus\('error'\);[\s\S]*setMessage\([\s\S]*formatPortalErrorMessage\([\s\S]*portal\.account\.qq_unbind_failed/,
+  'failed QQ unbind must release the pending guard and show an error so the user can retry'
+);
+assert.doesNotMatch(
+  unbindFailure,
+  /clearSession\(|publishPortalNotificationCount\(|router\.(?:replace|push)\(|window\.location\.|setProviders\(/,
+  'failed QQ unbind must preserve the shared session, notifications, binding, and current page'
 );
 
 assert.match(
