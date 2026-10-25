@@ -259,7 +259,7 @@ def _run_release_policy_with_restricted_path(
         docker_stub = restricted_bin / "docker"
         docker_stub.write_text(
             "#!/bin/sh\n"
-            "if [ \"$1\" = compose ]; then\n"
+            'if [ "$1" = compose ]; then\n'
             "  printf '%s\\n' '{\"services\":{}}'\n"
             "  exit 0\n"
             "fi\n"
@@ -2171,7 +2171,7 @@ def test_remote_deploy_keeps_env_file_private_end_to_end() -> None:
 
     assert 'REMOTE_INCOMING_ROOT="${REMOTE_DIR}/.incoming"' in deploy_script
     assert (
-        'install -d -o root -g root -m 0700 -- '
+        "install -d -o root -g root -m 0700 -- "
         '$(remote_shell_arg "${REMOTE_INCOMING_ROOT}")' in deploy_script
     )
     assert 'chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")' in deploy_script
@@ -2406,7 +2406,17 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "deploy_required:" in ci_workflow
     assert "frontend_only:" in ci_workflow
     ci_classifier = (cloud_root / "scripts" / "classify-ci-changes.sh").read_text()
-    assert ".github/workflows/ci.yml|frontend/*" in ci_classifier
+    for changed_path in (".github/workflows/ci.yml", "frontend/src/app/page.tsx"):
+        classification = subprocess.run(
+            ["bash", "scripts/classify-ci-changes.sh", changed_path],
+            cwd=cloud_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        outputs = dict(line.split("=", 1) for line in classification.stdout.splitlines())
+        for gate in ("deploy_required", "frontend_required", "frontend_e2e_required"):
+            assert outputs[gate] == "true", (changed_path, gate, outputs)
     assert ".github/workflows/deploy-production.yml|docker-compose*.yml" in ci_classifier
     assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_classifier
     assert "needs: [classify, backend-scope]" in ci_workflow
@@ -2459,10 +2469,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "wait_seconds=900" in deploy_workflow
     assert "poll_seconds=15" in deploy_workflow
     assert "Timed out waiting ${wait_seconds}s for exact production checks" in deploy_workflow
-    assert '-f status=completed' not in deploy_workflow
+    assert "-f status=completed" not in deploy_workflow
     assert (
-        'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]'
-        in deploy_workflow
+        'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]' in deploy_workflow
     )
     assert '"repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs"' in deploy_workflow
     assert "exact_run codeql.yml" in deploy_workflow
@@ -2513,9 +2522,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert setup_node_refs
     assert setup_python_refs
     assert all(re.fullmatch(r"actions/setup-node@v[1-9]\d*", ref) for ref in setup_node_refs)
-    assert all(
-        re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs
-    )
+    assert all(re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs)
     assert "pnpm/action-setup@v6" in ci_workflow
     assert "docker/setup-buildx-action@v4" in ci_workflow
     assert "gitleaks/gitleaks-action@v3" in ci_workflow
@@ -2655,7 +2662,7 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
     assert 'echo "- tool_sha=${GITHUB_SHA}"' in release_smoke_workflow
     assert (
-        'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+        "NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}"
         in release_smoke_workflow
     )
     assert "bash deploy/with-smoke-internal-tunnel.sh --" in release_smoke_workflow
@@ -2935,9 +2942,9 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
 def test_release_policy_compose_guard_rejects_unknown_mode() -> None:
     script_text = (_cloud_root() / "scripts" / "check-release-policy.sh").read_text()
 
-    assert 'NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required' in script_text
-    assert 'Production Compose protocol guard skipped for a non-runtime policy lane' in script_text
-    assert 'Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD' in script_text
+    assert "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required" in script_text
+    assert "Production Compose protocol guard skipped for a non-runtime policy lane" in script_text
+    assert "Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD" in script_text
 
 
 def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound() -> None:
@@ -3121,6 +3128,7 @@ def test_runtime_image_prepares_writable_shared_artifact_volume() -> None:
         compose = (cloud_root / compose_name).read_text()
         assert "NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts" in compose
         assert "cloud-artifacts-" in compose
+
 
 def test_prod_and_runtime_compose_require_service_healthchecks() -> None:
     cloud_root = _cloud_root()
