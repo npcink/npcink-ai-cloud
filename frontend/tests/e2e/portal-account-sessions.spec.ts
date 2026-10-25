@@ -136,13 +136,13 @@ for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark']) {
       state.unexpected.push(`${request.method()} ${url.origin}${url.pathname}`); await route.abort('blockedbyclient');
     });
     await page.goto('/portal/account');
-    const retry = page.getByRole('button', { name: /^(重试|Try again)$/ });
+    const retry = page.getByRole('button', { name: /^(重试|Retry)$/ });
     await expect(retry).toBeVisible(); expect(state.sessionReads).toBe(1); expect(state.challengeReads).toBe(1);
     await expect(page.locator('[data-portal-account="sessions"]')).toHaveCount(0);
     await retry.evaluate((button) => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
     await expect.poll(() => state.sessionReads).toBe(2); release();
     await expect.poll(() => state.challengeReads).toBe(2); await expect(retry).toBeVisible();
-    await expect(page.getByRole('alert')).toContainText('boundary-reference');
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('boundary-reference');
     await capture(page, info, 'boundary-retry-503');
     await retry.click(); await expect(page.locator('[data-portal-account="sessions"]')).toBeVisible();
     expect(state.sessionReads).toBe(3); expect(state.challengeReads).toBe(2); expect(state.writes).toEqual([]);

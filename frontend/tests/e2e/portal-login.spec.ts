@@ -653,8 +653,8 @@ for (const locale of ['zh-CN', 'en'] as const) {
       await fulfillError(route, 429, 'portal.login_code_rate_limited', index === 1 ? { retry_after_seconds: 7 } : {}, { 'Retry-After': timings[index] });
     });
     await page.goto('/portal/login');
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await page.clock.install({ time: new Date('2030-01-01T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2030-01-01T00:00:01Z'));
     await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
     const send = page.getByRole('button', { name: /Send verification code|发送验证码/i });
     await send.click();

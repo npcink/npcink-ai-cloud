@@ -63,7 +63,7 @@ const unknownCopy = (locale: string) => locale === 'en' ? 'Cloud could not confi
 for (const locale of ['zh-CN', 'en'] as const) for (const theme of ['light', 'dark'] as const) {
   test(`[F01-20] ${locale} ${theme} committed-but-unknown ordinary write keeps its key and offers honest readback`, async ({ page, baseURL }, info) => {
     const state = await fixture(page, baseURL, locale, theme);
-    await page.goto('/portal/support'); await page.clock.install(); await page.clock.pauseAt(new Date());
+    await page.goto('/portal/support'); await page.clock.install({ time: new Date('2030-01-01T00:00:00Z') }); await page.clock.pauseAt(new Date('2030-01-01T00:00:01Z'));
     const form = await openForm(page); await submit(page).click();
     await expect(form.getByRole('alert')).toHaveText(unknownCopy(locale));
     expect(state.posts).toHaveLength(1); expect(state.rows).toHaveLength(1);
