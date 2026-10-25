@@ -46,7 +46,7 @@ for changed_file in "$@"; do
 	esac
 
 	case "${changed_file}" in
-		.github/workflows/ci.yml|frontend/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|scripts/classify-ci-changes.sh|scripts/*.js|scripts/*.mjs|scripts/*.cjs)
+		.github/workflows/ci.yml|app/api/main.py|app/api/routes/portal_totp.py|frontend/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|scripts/classify-ci-changes.sh|scripts/*.js|scripts/*.mjs|scripts/*.cjs)
 			frontend_required=true
 			;;
 		.github/*|.github/**/*|app/*|app/**/*|deploy/*|deploy/**/*|docs/*|docs/**/*|migrations/*|migrations/**/*|site/terms/*|site/terms/**/*|tests/*|tests/**/*|scripts/*.py|scripts/*.sh|Dockerfile*|docker-compose*.yml|pyproject.toml|uv.lock|README.md|AGENTS.md|CONTRIBUTING.md|SECURITY.md)
@@ -57,7 +57,7 @@ for changed_file in "$@"; do
 	esac
 
 	case "${changed_file}" in
-		.github/workflows/ci.yml|frontend/*|package.json|pnpm-lock.yaml|scripts/run-cloud-frontend-playwright.js|scripts/admin-visual-plan.mjs|scripts/run-admin-visual-checks.mjs)
+		.github/workflows/ci.yml|app/api/main.py|app/api/routes/portal_totp.py|frontend/*|package.json|pnpm-lock.yaml|scripts/run-cloud-frontend-playwright.js|scripts/admin-visual-plan.mjs|scripts/run-admin-visual-checks.mjs)
 			deploy_required=true
 			static_terms_only=false
 			docs_only=false

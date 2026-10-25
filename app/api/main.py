@@ -32,6 +32,7 @@ from app.api.routes.portal_sessions import PortalSessionsCacheMiddleware
 from app.api.routes.portal_sessions import router as portal_sessions_router
 from app.api.routes.portal_totp import TotpCacheMiddleware
 from app.api.routes.portal_totp import router as portal_totp_router
+from app.api.routes.portal_totp import setup_router as portal_totp_setup_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
 from app.api.routes.service import router as service_router
@@ -213,6 +214,7 @@ def create_app(
     app.include_router(portal_data_export_router)
     app.include_router(portal_sessions_router)
     app.include_router(portal_totp_router)
+    app.include_router(portal_totp_setup_router)
     app.include_router(service_router)
     app.include_router(economics_admin_router, prefix="/internal/service")
     app.include_router(observability_router)

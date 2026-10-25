@@ -1,4 +1,4 @@
-"""Restricted Portal factor transport. Setup router awaits the joint candidate.
+"""Portal factor transport for login and authenticated factor management.
 
 No idempotency claims: one-shot secrets never enter generic receipts. Browser
 credentials use a separate HttpOnly cookie and are never ordinary Bearer tokens.
@@ -38,8 +38,7 @@ from app.domain.portal_totp.service import challenge_status, complete, start_man
 PREFIX = "/portal/v1/totp"
 CHALLENGE_COOKIE = "portal_totp_challenge"
 router = APIRouter(prefix=PREFIX, tags=["portal"])
-# Deliberately NOT composed into the application. The joint frontend/backend
-# candidate must explicitly mount this only after all consumers are ready.
+# Composed alongside the login/management router with the account consumer.
 setup_router = APIRouter(prefix=PREFIX, tags=["portal"])
 PRIVATE_HEADERS = {
     "Cache-Control": "private, no-store",

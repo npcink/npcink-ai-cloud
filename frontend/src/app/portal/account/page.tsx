@@ -12,6 +12,7 @@ import {
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import { PortalDataExport } from '@/components/portal/PortalDataExport';
+import { PortalTotpSettings } from '@/components/portal/PortalTotpSettings';
 import { PortalSessions } from '@/components/portal/PortalSessions';
 import { PortalRevokeSessions } from '@/components/portal/PortalRevokeSessions';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
@@ -493,6 +494,7 @@ function AccountPageContent() {
             </div>
           </PortalCard>
           )}
+        <PortalTotpSettings />
         <PortalSessions />
         <PortalRevokeSessions />
         <PortalDataExport />

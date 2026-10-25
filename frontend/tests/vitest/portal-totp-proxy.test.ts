@@ -6,7 +6,7 @@ import { readInstallationState } from '@/lib/installation-state';
 
 vi.mock('@/lib/installation-state', () => ({ readInstallationState: vi.fn() }));
 const options = { unreachableCode: 'proxy.portal_get_unreachable', unreachableMessage: 'Portal unavailable' };
-const paths = ['totp/challenge/status', 'totp/challenge/complete'];
+const paths = ['totp/challenge/status', 'totp/challenge/complete', 'totp/status', 'totp/setup/start', 'totp/setup/confirm', 'totp/disable/start', 'totp/disable/confirm', 'totp/recovery-reset/start', 'totp/recovery-reset/confirm'];
 const request = (path: string, method = 'GET') => new NextRequest(`http://localhost/api/portal/${path}`, {
   method, headers: { cookie: 'portal_totp_challenge=synthetic', origin: 'http://localhost' },
 });
