@@ -2,12 +2,6 @@
 // Four historical exclusions, exercised against a disposable local Next frontend.
 const fs = require('node:fs');
 const path = require('node:path');
-const http = require('node:http');
-const net = require('node:net');
-const { createHash } = require('node:crypto');
-const { spawn, execFileSync } = require('node:child_process');
-const { once } = require('node:events');
-const { responseFor } = require('./lib/isolated-channel-mock.cjs');
 const root = path.resolve(__dirname, '..');
 const frontend = path.join(root, 'frontend');
 const lanes = ['pending-install', 'complete-install', 'metadata', 'optional-mobile'];
@@ -18,7 +12,16 @@ if (selected.some((lane) => !lanes.includes(lane)) || new Set(selected).size !==
 }
 const output = path.resolve(process.env.NPCINK_CLOUD_ISOLATED_OUTPUT
   || path.join(frontend, 'test-results', `isolated-channels-${Date.now()}`));
-fs.mkdirSync(output, { recursive: true });
+// Claim a new receipt directory before resolving dependencies or writing inputs.
+// Never reuse even an empty directory, file, or symlink from an earlier attempt.
+fs.mkdirSync(path.dirname(output), { recursive: true });
+fs.mkdirSync(output);
+const http = require('node:http');
+const net = require('node:net');
+const { createHash } = require('node:crypto');
+const { spawn, execFileSync } = require('node:child_process');
+const { once } = require('node:events');
+const { responseFor } = require('./lib/isolated-channel-mock.cjs');
 const next = require.resolve('next/dist/bin/next', { paths: [frontend] });
 const playwright = require.resolve('@playwright/test/cli', { paths: [frontend] });
 const guard = path.join(__dirname, 'lib/isolated-channel-guard.cjs');

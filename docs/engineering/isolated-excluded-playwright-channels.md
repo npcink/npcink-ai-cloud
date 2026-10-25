@@ -15,16 +15,25 @@ pnpm --dir frontend run test:e2e:isolated-channels
 pnpm --dir frontend run test:e2e:isolated-channels pending-install complete-install metadata
 pnpm --dir frontend run test:e2e:isolated-channels optional-mobile
 node scripts/test-cloud-isolated-channel-guard.cjs
+node --test scripts/test-cloud-isolated-channel-output.cjs
 ```
 
-The optional positional arguments select distinct channel names. Every invocation
-builds current frontend source with webpack in the test environment, then runs
+The optional positional arguments select distinct channel names. After claiming
+a new receipt directory, the runner builds current frontend source with webpack
+in the test environment, then runs
 one worker and zero retries. It requires installed frontend dependencies and the
 existing Chromium cache; it does not download dependencies or browsers.
 
 Default receipts live in `frontend/test-results/isolated-channels-<timestamp>`.
 Set `NPCINK_CLOUD_ISOLATED_OUTPUT` to a new local receipt directory if needed.
-Do not reuse a receipt directory. Source inputs (including original snapshots)
+The runner creates missing parent directories, then exclusively creates the
+receipt directory before resolving dependencies, hashing inputs or building.
+An existing path (including an empty directory, file or symlink) fails with
+`EEXIST` and leaves the existing receipt unchanged. Choose a new path for each
+attempt; do not delete old evidence to retry. The output regression invokes the
+real runner offline with tripwires for input reads, dependency resolution,
+child processes and network; it never starts a build or browser.
+Source inputs (including original snapshots)
 are hashed before build and after execution. The frontend and local Mock bind
 only loopback with fresh ports and stop after each channel. The runner never
 uses the external frontend/backend targets inherited from the shell.
