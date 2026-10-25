@@ -2,12 +2,14 @@
 
 Status: T1 storage (#1245) and the restricted T2 login/management boundary
 (#1247, `0a0cdbad1ec629f64e1b7bf7a50ba2b3b8138d3c`) are historical merged
-and M4-accepted deliveries. The current SELF06/07 candidate mounts public
+and M4-accepted deliveries. SELF06/07 merged in #1279 at
+`ade8acc5275a6a83bdf6fa287d14def7d6cf54b3` and mounts public
 setup/start and setup/confirm and adds the complete Portal Account consumer.
-It is local candidate source, not a new M4 acceptance or production delivery.
-Real PostgreSQL, strict `@live`, independent reviews, required CI, M4 candidate
-and merged/accepted identity checks remain separate pending gates. No new
-migration or production operation is included. The historical receipts in
+Its PostgreSQL, controlled `@live`, independent reviews, six required CI checks
+and M4 accepted evidence are recorded separately in
+[the follow-on delivery record](history/engineering/2026/portal-self-service-and-knowledge-delivery-2026-10-26.md).
+Production, real mail delivery and new human acceptance were not established.
+No new migration or production operation is included. The historical receipts in
 [the seven-session closeout](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md)
 prove the earlier restricted delivery only, when setup was not mounted.
 
@@ -17,7 +19,7 @@ Cloud owns its Portal identity storage. This does not represent WordPress users,
 Admin sessions, site HMAC or a second WordPress control plane. Existing Portal
 Cookie/Bearer, login, site selection, export and revocation semantics stay intact.
 There is no new library, protocol, migration, task, raw device data or commercial write.
-The candidate publicly composes the existing setup router alongside the integrated
+The merged application publicly composes the existing setup router alongside the integrated
 issuers/verifiers; enabled-principal second-factor gates remain mandatory.
 Email login codes are a first factor, not TOTP or second-factor proof.
 
@@ -134,11 +136,11 @@ are separate evidence states.
 
 ## T2 integrated boundary and wire contract
 
-The candidate ordinary app composes public setup, login challenge completion,
+The ordinary app composes public setup, login challenge completion,
 disable/reset and count-only status. `app/api/main.py` mounts `setup_router`
 alongside the existing router; API tests use this actual application composition
-instead of adding a test-only mount. Public activation is candidate behavior
-and must not be described as deployed or accepted before the remaining gates.
+instead of adding a test-only mount. Public setup is merged application behavior;
+M4 acceptance does not establish deployment to production.
 Enabled-principal verification remains active independently of the Account UI.
 
 All email login/remember-me, existing registration, QQ JSON/HTML and the shared
@@ -161,8 +163,8 @@ client redirect. QQ OAuth proof and challenge commit together.
 | `POST /portal/v1/totp/disable/confirm` | Current full session + challenge cookie + code/method; disables factor and returns replacement full session. |
 | `POST /portal/v1/totp/recovery-reset/start` | Same recent-primary gate, purpose recovery_reset. |
 | `POST /portal/v1/totp/recovery-reset/confirm` | Same proof inputs; replaces generation, returns replacement full session and eight recovery_codes exactly once. |
-| `POST /portal/v1/totp/setup/start` (candidate public) | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
-| `POST /portal/v1/totp/setup/confirm` (candidate public) | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
+| `POST /portal/v1/totp/setup/start` | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
+| `POST /portal/v1/totp/setup/confirm` | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
 
 The challenge status bootstrap is cookie-only and carries no credential in its
 URL, request body, or response. Its projection keeps `status:
@@ -262,7 +264,7 @@ state together. A completed commit remains consumed if response delivery fails.
 Tests distinguish those outcomes with final DB readback and locally scoped
 fault patches restored before teardown.
 
-### Historical T2 evidence gates and future activation gate
+### Historical T2 evidence gates
 
 For the merged T2 batch, the gates below were executed and recorded: real
 PostgreSQL `101/101` plus original TOTP API `32/32`, strict PC replay `16/16`
@@ -280,10 +282,10 @@ controlled PostgreSQL lane with zero skips/errors and schema cleanup. The old
 shared environment or historical migration was changed by this backend batch.
 Whole-backend A01 review, complete C1 consumer review, joint browser proof,
 real PG, required CI, M4 candidate, merged and accepted were completed for
-#1247 and remain distinct evidence states. Production and public activation are
-still separate future gates.
+#1247 and remain distinct evidence states. The later public setup activation
+was delivered by #1279; production remains a separate gate.
 
-## SELF06/07 Account consumer and candidate verification
+## SELF06/07 Account consumer and delivery verification
 
 The PC Account page keeps one “登录与安全” section and adds an inline authenticator
 row beside the existing session controls. Setup shows a manual Base32 key (no
@@ -321,9 +323,14 @@ runs the compiled BFF script against that same `.next` artifact.
 primary credentials; missing inputs fail rather than skip or mock success.
 Sensitive tests disable trace, screenshots, video, HAR and page-text snapshots
 (`PLAYWRIGHT_NO_COPY_PROMPT=1`); assertions/reporting must contain only safe
-booleans/counts. Historical M4 results are not evidence for this candidate.
+booleans/counts. The earlier #1247 M4 results do not substitute for #1279 evidence.
 
-Remaining delivery gates: the parent serial lane must run the entire guarded
-PostgreSQL module (no skip counted as pass), real `@live`, independent backend
-and consumer reviews, exact-head required CI, M4 candidate and merged-source
-acceptance. Production is not performed or authorized by this candidate.
+The parent serial lane completed PostgreSQL 104/104 with zero skips at
+`346ab4cf2ba2fbb8a821b9af39a510f57ded75f7`; unchanged-source binding carried
+that evidence to final candidate `a9c2036a26f8af8ca5d2c06e9645ebc4b41e7a00`.
+One controlled `@live` case used a real temporary API/PostgreSQL, an in-process
+test mail sender and a test installation override. Independent reviews, six
+required CI checks, candidate/merge whole-tree equality and M4 accepted were
+completed for #1279. These gates are no longer pending. Production, actual
+SMTP delivery and natural-user acceptance remain unproven; future changes
+must validate their own exact source and risk envelope.
