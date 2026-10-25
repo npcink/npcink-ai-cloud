@@ -14,7 +14,8 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
 async function control(request: APIRequestContext, action: Record<string, unknown> = {}) {
   const response = await request.post(`${backend}/__test`, { data: action });
   expect(response.ok()).toBe(true);
-  return (await response.json()).data as { held: boolean; calls: string[]; installs: number };
+  return (await response.json()).data as { held: boolean; heldSelection: boolean; calls: string[]; installs: number;
+    selectionResult: { order: string; issuedBeforeRevoke: boolean; authenticatedAtRelease: boolean; status: number; cookieIssued: boolean } | null };
 }
 
 async function markDocument(page: Page) {
@@ -61,6 +62,15 @@ test('saved-key handoff rechecks completion, tears down the wizard and discovers
   await page.setViewportSize({ width: 1280, height: 1000 });
   await screenshot(page, info, 'setup-confirmed-key-1280');
   await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.evaluate(() => {
+    Reflect.set(window, 'navigationClipboardWrites', []);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => { Reflect.get(window, 'navigationClipboardWrites').push(value); },
+    } });
+  });
+  await page.getByRole('button', { name: /^复制$|^Copy$/i }).click();
+  await expect(page.getByRole('button', { name: /^已复制$|^Copied$/i })).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, 'navigationClipboardWrites'))).toEqual([adminKey]);
   await markDocument(page);
   const stateRead = page.waitForResponse(r => new URL(r.url()).pathname === '/api/setup/state');
   await open.dblclick(); // Busy/ref guard admits one transition.
@@ -70,6 +80,10 @@ test('saved-key handoff rechecks completion, tears down the wizard and discovers
   await expect(key).toHaveCount(0);
   await expect(page.getByLabel(/管理员密钥|Admin key/i)).toHaveValue('');
   await expect.poll(async () => (await control(request)).calls.filter(c => c === 'GET /admin/session').length).toBeGreaterThan(0);
+  // Let the real 2s copy reset deadline pass after teardown; no wizard/key may return.
+  await page.waitForTimeout(2100);
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(key).toHaveCount(0);
   await screenshot(page, info, 'admin-login-fresh');
   const storage = await page.evaluate(() => JSON.stringify([localStorage, sessionStorage, location.href, document.body.innerHTML]));
   expect(storage).not.toContain(adminKey);
@@ -83,6 +97,67 @@ test('saved-key handoff rechecks completion, tears down the wizard and discovers
   expect(await page.content()).not.toContain(adminKey);
   expect((await control(request)).installs).toBe(1);
 });
+
+for (const order of ['rotate-before', 'revoke-before'] as const) {
+  test(`QQ revoke retires automatic selection already in flight: ${order}`, async ({ page, request, context }, info) => {
+    await control(request, { resetPortal: true });
+    if (order === 'revoke-before') await page.setViewportSize({ width: 1280, height: 1000 });
+    await context.addCookies([{ name: 'npcink_portal_session_token', value: 'navigation-old', url: String(test.info().project.use.baseURL) }]);
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await page.goto('/portal/account');
+    const unlink = page.getByRole('button', { name: /解绑 QQ|Unbind QQ/i });
+    await expect(unlink).toBeEnabled();
+    await control(request, { holdNextSelection: order });
+    const unselectedRead = page.waitForResponse(response => new URL(response.url()).pathname === '/api/portal/session');
+    await page.evaluate(() => history.pushState(null, '', '/portal/account?qq=bound'));
+    const unselected = (await (await unselectedRead).json()).data;
+    expect(unselected.selected_context).toBeNull();
+    expect(unselected.sites.filter((site: { status: string }) => site.status === 'active')).toHaveLength(1);
+    await expect.poll(async () => (await control(request)).heldSelection).toBe(true);
+    await expect(unlink).toBeEnabled();
+    await screenshot(page, info, `account-selection-${order}-held`);
+    await markDocument(page);
+    await unlink.click();
+    await expect(page).toHaveURL(/\/portal\/login\?reason=qq_unbound$/);
+    await expectSameDocument(page);
+    const selectionResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/portal/session/site');
+    await control(request, { releaseSelection: true });
+    const selected = await selectionResponse;
+    expect(selected.status()).toBe(order === 'rotate-before' ? 200 : 401);
+    const headers = await selected.allHeaders();
+    if (order === 'rotate-before') {
+      expect(headers['set-cookie']).toContain('npcink_portal_session_token=navigation-rotated-old');
+      await expect.poll(async () => (await context.cookies()).find(cookie => cookie.name === 'npcink_portal_session_token')?.value)
+        .toBe('navigation-rotated-old');
+    } else {
+      expect(headers['set-cookie'] || '').not.toMatch(/npcink_portal_session_token=[^;]/);
+    }
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/portal\/login\?reason=qq_unbound$/);
+    await expectSameDocument(page);
+    await expect(page.locator('[data-portal-nav="logout"]')).toHaveCount(0);
+    await expect(page.getByRole('status')).toContainText(/QQ.*解绑|QQ.*unbound/i);
+    await expect(page.getByRole('button', { name: /解绑 QQ|Unbind QQ/i })).toHaveCount(0);
+    const state = await control(request);
+    expect(state.selectionResult).toEqual({ order, issuedBeforeRevoke: order === 'rotate-before',
+      authenticatedAtRelease: false, status: order === 'rotate-before' ? 200 : 401, cookieIssued: order === 'rotate-before' });
+    expect(state.calls.filter(call => call === 'POST /portal/v1/session/site')).toHaveLength(1);
+    expect(state.calls).not.toContain('GET /portal/v1/totp/challenge/status');
+    expect(state.calls).not.toContain('POST /portal/v1/logout');
+    expect((await page.request.get('/api/portal/session')).status()).toBe(401);
+    await screenshot(page, info, `qq-selection-${order}-signed-out`);
+    await info.attach('selection-order', { body: JSON.stringify({ selectionResult: state.selectionResult,
+      calls: state.calls, scope: 'fixture response ordering through real Next+BFF; not database-lock concurrency proof' }, null, 2), contentType: 'application/json' });
+    await page.getByLabel(/^邮箱地址$|^Email Address$/i).fill(email);
+    await page.getByRole('button', { name: /发送验证码|Send verification code/i }).click();
+    await page.getByRole('button', { name: /验证并继续|Verify and continue/i }).click();
+    await expect(page).toHaveURL(/\/portal$/);
+    expect((await page.request.get('/api/portal/session')).status()).toBe(200);
+    expect(pageErrors).toEqual([]);
+  });
+}
 
 for (const late of ['session', 'unauthorized'] as const) {
   test(`QQ revoke retires the shared session and late ${late} probe before client login`, async ({ page, request, context }, info) => {

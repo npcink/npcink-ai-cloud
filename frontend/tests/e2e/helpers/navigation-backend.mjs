@@ -16,6 +16,10 @@ let unbindFails = false;
 let nextStateFails = false;
 let heldSession = null;
 let holdNextSession = false;
+let selectionOrder = null;
+let nextSessionUnselected = false;
+let heldSelection = null;
+let selectionResult = null;
 let calls = [];
 let installs = 0;
 
@@ -31,17 +35,39 @@ const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const action = JSON.parse(Buffer.concat(chunks).toString() || '{}');
-    if (action.resetPortal) { authenticated = true; unbindFails = false; calls = []; }
+    if (action.resetPortal) {
+      if (heldSession || heldSelection) return reply(res, {}, 409, 'test.pending_response');
+      authenticated = true; unbindFails = false; calls = [];
+      holdNextSession = false; nextSessionUnselected = false; selectionOrder = null; selectionResult = null;
+    }
     if ('failUnbind' in action) unbindFails = Boolean(action.failUnbind);
     if (action.failNextState) nextStateFails = true;
     if (action.holdNextSession) holdNextSession = true;
+    if (action.holdNextSelection) {
+      if (!['rotate-before', 'revoke-before'].includes(action.holdNextSelection)) return reply(res, {}, 400, 'test.invalid_selection_order');
+      selectionOrder = action.holdNextSelection; nextSessionUnselected = true;
+    }
     if (action.releaseSession) {
       if (!heldSession) return reply(res, {}, 409, 'test.no_held_session');
       const held = heldSession; heldSession = null;
       if (action.releaseSession === 'unauthorized') reply(held, {}, 401, 'auth.portal_session_revoked');
       else reply(held, session(false));
     }
-    return reply(res, { installation, authenticated, held: Boolean(heldSession), calls, installs });
+    if (action.releaseSelection) {
+      if (!heldSelection) return reply(res, {}, 409, 'test.no_held_selection');
+      const held = heldSelection; heldSelection = null;
+      // Response timing model only. Real locking/version/signature semantics
+      // are exercised separately in test_portal_qq_unbind_revokes_current_session.
+      const accepted = held.preissued !== null || authenticated;
+      selectionResult = { order: held.order, issuedBeforeRevoke: held.preissued !== null,
+        authenticatedAtRelease: authenticated, status: accepted ? 200 : 401, cookieIssued: accepted };
+      if (accepted) reply(held.response, held.preissued?.data ?? session(), 200, '', {
+        'Set-Cookie': held.preissued?.cookie ?? 'npcink_portal_session_token=navigation-rotated-old; Path=/; HttpOnly; SameSite=Lax',
+      });
+      else reply(held.response, {}, 401, 'auth.portal_session_revoked');
+    }
+    return reply(res, { installation, authenticated, held: Boolean(heldSession),
+      heldSelection: Boolean(heldSelection), selectionResult, calls, installs });
   }
   if (path === '/__health') return reply(res, {});
   calls.push(`${req.method} ${path}`);
@@ -69,6 +95,22 @@ const server = createServer(async (req, res) => {
     holdNextSession = false; heldSession = res; return;
   }
   if (path.startsWith('/portal/v1/') && !authenticated) return reply(res, {}, 401, 'auth.portal_session_revoked');
+  if (path === '/portal/v1/session' && nextSessionUnselected) {
+    nextSessionUnselected = false;
+    return reply(res, session(false));
+  }
+  if (path === '/portal/v1/session/site' && req.method === 'POST' && selectionOrder) {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    if (JSON.parse(Buffer.concat(chunks).toString()).site_id !== site.site_id) return reply(res, {}, 400, 'test.invalid_site');
+    // Freeze the already-accepted fixture result before unbind; only its
+    // delivery is held. The other order defers acceptance until release.
+    heldSelection = { response: res, order: selectionOrder, preissued: selectionOrder === 'rotate-before'
+      ? { data: session(), cookie: 'npcink_portal_session_token=navigation-rotated-old; Path=/; HttpOnly; SameSite=Lax' }
+      : null };
+    selectionOrder = null;
+    return;
+  }
   if (path === '/portal/v1/session' || path === '/portal/v1/session/site') return reply(res, session());
   if (path === '/portal/v1/auth/qq/unbind') {
     if (unbindFails) return reply(res, {}, 503, 'service.unbind_unavailable');
@@ -87,5 +129,6 @@ const server = createServer(async (req, res) => {
 server.listen(port, '127.0.0.1');
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
   if (heldSession) heldSession.destroy();
+  if (heldSelection) heldSelection.response.destroy();
   server.close(() => process.exit(0));
 });
