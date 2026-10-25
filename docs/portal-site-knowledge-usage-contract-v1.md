@@ -4,6 +4,12 @@
 existing account usage detail URL. Authentication, account membership, visible
 site permissions and archived-site exclusion are unchanged. It is read-only.
 
+Current product scope is text and images only, per the latest operator decision
+on 2026-10-25. Video and PDF are explicitly deferred and not delivered. Their
+reserved read-only query values remain for compatibility; they do not authorize
+producers, parsing, ingestion, indexing or Quiet/usage feature expansion.
+See the [runtime extension discipline](site-knowledge-runtime-contract-v1.md#current-scope-and-extension-discipline).
+
 `source_type` defaults to `text`. Accepted values are `text`, `media`, `video`,
 `pdf` (case-insensitive, surrounding whitespace ignored). Unknown or explicitly
 empty values return HTTP 400 with

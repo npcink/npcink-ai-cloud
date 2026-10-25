@@ -13,6 +13,19 @@ Status: active product-focus pointer for agents.
 - Keep ordinary blog users simple; SEO users get stronger **general** editorial
   help in this phase — not the paused SEO/AEO/GEO specialist pack.
 
+## Site Knowledge source scope
+
+The operator decision on 2026-10-25 limits current Site Knowledge work to
+text and images. PDF and video support is explicitly deferred, not delivered;
+this supersedes the earlier same-day selection of PDF page text and existing
+video captions. Reserved source types or empty usage buckets do not enable
+those capabilities.
+
+Preserve the existing extension seams while developing text/image behavior;
+follow the [runtime contract's extension discipline](../site-knowledge-runtime-contract-v1.md#current-scope-and-extension-discipline).
+Do not build PDF/video producers, extraction, indexing or Quiet/usage features
+in this stage. Reopening them needs a new explicit scope decision.
+
 ## Audience split
 
 | Audience | Phase 1 meaning |
