@@ -289,7 +289,7 @@ for commit in unpushed:
 	created = gh(
 		f"repos/{repo}/git/commits",
 		{
-			"message": fmt("%B"),
+			"message": git_bytes("cat-file", "commit", commit).split(b"\n\n", 1)[1].decode("utf-8"),
 			"tree": tree["sha"],
 			"parents": [parent],
 			"author": {"name": fmt("%an"), "email": fmt("%ae"), "date": fmt("%aI")},
