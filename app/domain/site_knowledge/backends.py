@@ -35,6 +35,8 @@ class SiteKnowledgeVectorBackend(Protocol):
 
     def delete_source_index(self, site_id: str, source_type: str, source_id: int) -> None: ...
 
+    def delete_associated_comment_indexes(self, site_id: str, parent_post_id: int) -> None: ...
+
     def upsert_chunks(
         self,
         *,
@@ -128,6 +130,17 @@ class ZillizCloudSiteKnowledgeBackend:
                 f'site_id == "{_escape_expr_string(site_id)}" '
                 f'and source_type == "{_escape_expr_string(source_type)}" '
                 f"and source_id == {source_id}"
+            )
+        )
+
+    def delete_associated_comment_indexes(self, site_id: str, parent_post_id: int) -> None:
+        if parent_post_id <= 0:
+            return
+        self._delete(
+            expr=(
+                f'site_id == "{_escape_expr_string(site_id)}" '
+                'and source_type == "comment" '
+                f"and parent_post_id == {parent_post_id}"
             )
         )
 

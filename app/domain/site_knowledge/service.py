@@ -42,6 +42,7 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     coerce_positive_int,
+    normalize_source_items,
     normalize_source_passages,
     validate_site_knowledge_runtime_contract,
 )
@@ -209,6 +210,22 @@ class SiteKnowledgeService:
                 "site_knowledge.invalid_sync_mode",
                 "site knowledge sync_mode must be refresh, rebuild, or delete",
             )
+        source_items = normalize_source_items(
+            input_payload, ability_name=SITE_KNOWLEDGE_SYNC_ABILITY
+        )
+        if source_items is not None:
+            # Preflight the entire selection before any SQL/vector deletion.
+            for source_type, source_id in source_items:
+                if source_type in ("post", "page") and (
+                    ("page" if source_type == "post" else "post", source_id) in source_items
+                    or self.repository.has_other_post_root(
+                        site_id=site_id, source_type=source_type, source_id=source_id
+                    )
+                ):
+                    raise SiteKnowledgeContractViolation(
+                        "site_knowledge.source_identity_conflict",
+                        "post/page identity conflicts with another stored or selected root",
+                    )
         maintenance = validate_maintenance_batch(
             session=self.repository.session,
             site_id=site_id,
@@ -247,16 +264,37 @@ class SiteKnowledgeService:
                 sync_mode=sync_mode,
                 total_documents=total_documents,
             )
-            if self.vector_backend is not None:
+            if source_items is not None:
+                for source_type, source_id in source_items:
+                    related = (
+                        self.repository.associated_comment_ids(
+                            site_id=site_id, parent_post_id=source_id
+                        ) if source_type in ("post", "page") else []
+                    )
+                    identities = [(source_type, source_id)]
+                    identities.extend(("comment", item) for item in related)
+                    for identity_type, identity_id in identities:
+                        if self.vector_backend is not None:
+                            self.vector_backend.delete_source_index(
+                                site_id, identity_type, identity_id
+                            )
+                        deleted_entries += self.repository.delete_source_index(
+                            site_id=site_id, source_type=identity_type, source_id=identity_id
+                        )
+                    if self.vector_backend is not None and source_type in ("post", "page"):
+                        # Exact parent/type filter also reaches vector-only comments.
+                        self.vector_backend.delete_associated_comment_indexes(site_id, source_id)
+            elif self.vector_backend is not None:
                 if post_ids:
                     self.vector_backend.delete_post_indexes(site_id, post_ids)
                 else:
                     self.vector_backend.delete_site_index(site_id)
-            deleted_entries = (
-                self.repository.delete_post_indexes(site_id, post_ids)
-                if post_ids
-                else self.repository.delete_site_index(site_id)
-            )
+            if source_items is None:
+                deleted_entries = (
+                    self.repository.delete_post_indexes(site_id, post_ids)
+                    if post_ids
+                    else self.repository.delete_site_index(site_id)
+                )
             self._emit_sync_progress(
                 status="completed",
                 stage="completed",
@@ -755,6 +793,9 @@ class SiteKnowledgeService:
         )
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
+        source_items = normalize_source_items(
+            input_payload, ability_name=SITE_KNOWLEDGE_STATUS_ABILITY
+        )
         include_coverage = bool(input_payload.get("include_coverage"))
         requested_post_ids = _coerce_post_ids(input_payload.get("post_ids"))[
             :MAX_SITE_KNOWLEDGE_STATUS_POST_IDS
@@ -828,7 +869,7 @@ class SiteKnowledgeService:
             active_run=active_run,
         )
 
-        return {
+        result = {
             "artifact_type": "site_knowledge_status",
             "composition_role": "site_knowledge_status",
             "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_STATUS_ABILITY],
@@ -849,6 +890,18 @@ class SiteKnowledgeService:
             "write_posture": "suggestion_only",
             "direct_wordpress_write": False,
         }
+        if source_items is not None:
+            observed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            result["source_presence"] = {
+                "status": "complete",
+                "storage_scope": "relational_index",
+                "observed_at": observed_at,
+                "requested_count": len(source_items),
+                "items": self.repository.source_presence(
+                    site_id=site_id, source_items=source_items
+                ),
+            }
+        return result
 
     def search(
         self,
