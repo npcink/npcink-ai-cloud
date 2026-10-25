@@ -7,6 +7,38 @@ bounded public WordPress content that the local WordPress side sends through the
 Cloud Addon runtime client. It does not register WordPress abilities, own a
 workflow registry, or write WordPress content.
 
+## Current scope and extension discipline
+
+The operator's latest decision on 2026-10-25 keeps current knowledge support
+within text and images. Text includes the public post/page and opt-in comment
+sources below; images use the existing bounded attachment projection. PDF and
+video are explicitly deferred and have not been delivered. This supersedes the
+earlier same-day choice to implement PDF page text and existing video captions.
+A reserved type, metadata field or empty usage bucket is not ingestion,
+retrieval, metering or product-availability evidence.
+
+To keep later expansion possible without building it now:
+
+- Preserve `(site_id, source_type, source_id)` throughout storage, vector
+  identity, retrieval and typed removal; a bare WordPress post ID must not
+  replace a source-qualified identity. Keep existing text/image compatibility.
+- Preserve existing metadata, content-hash and image-fingerprint boundaries.
+  Future source revisions and page/time locators need an explicit validated
+  contract and propagation through chunking, both retrieval backends and the
+  consumer. Current metadata capacity does not prove that locator pipeline.
+- Keep WordPress as source, permission, local attachment and deletion truth.
+  Any future producer must define its update/removal lifecycle. Generic
+  post-ID cleanup is not evidence of typed removal for a new source kind.
+- Keep reserved video/PDF usage buckets read-only and inactive. Before future
+  activation, reconcile the legacy non-media text count and entitlement scope
+  in the [usage contract](portal-site-knowledge-usage-contract-v1.md).
+
+This extension floor does not require new tables, empty fields, parser
+registries, queues, raw-file downloads, OCR, ASR or new commercial meters.
+Future activation needs a newly agreed scope and real input-to-consumer
+acceptance for each type. Current text/image delivery, production state and
+human usage evidence still require their own verification.
+
 ## Runtime Abilities
 
 The Cloud runtime accepts these static managed ability names:
