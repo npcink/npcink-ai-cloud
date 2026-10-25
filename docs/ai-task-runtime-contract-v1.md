@@ -159,3 +159,25 @@ Changing or removing `ai_task_contract.v1` requires one coordinated update to
 the local producer, `wordpress_operation.v1` validation, Cloud runtime tests,
 and the consuming addon. Rollback restores that coordinated version; it must
 not restore the superseded connector envelope or introduce dual reads.
+
+
+### Bounded schema validation for connector results
+
+The title-only Provider projection retains the Ability-owned `title` property.
+Cloud validates its existing string type, enum and min/max length constraints
+on the raw title value and again on the normalized text returned for review.
+Trimming or Markdown cleanup must not return a value outside those constraints.
+Other root fields are not added to this title-only projection as new required
+Provider output; the original Ability schema is preserved unchanged.
+
+The existing JSON-object matcher checks numeric `minimum`/`maximum` bounds
+recursively for number/integer fields (including comment-analysis scores).
+Booleans do not count as numbers. Non-finite floats and non-JSON numeric tokens,
+including exponent overflow in open fields, are rejected; arbitrary-precision
+integers do not require conversion to float.
+
+These are bounded connector-side checks, not a full JSON Schema implementation
+or verified Provider-native constrained generation. `pattern`, combinators such
+as `oneOf`, and other unimplemented schema keywords are not new guarantees.
+The existing transport format-hint compatibility retry, runtime retry/fallback,
+usage accounting and WordPress review/write ownership remain unchanged.

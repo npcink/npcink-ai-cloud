@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 import unicodedata
 from collections import Counter
@@ -818,6 +819,13 @@ class WordPressOperationRuntime:
                 task=task,
             )
 
+        if title_output_schema:
+            properties = self._dict_or_empty(title_output_schema.get("properties"))
+            title_schema = self._dict_or_empty(properties.get("title"))
+            if not normalized_text or not self._json_value_matches_schema(
+                normalized_text, title_schema,
+            ):
+                return {}
         if not normalized_text and not strips_reasoning_noise:
             return output
         if self._transformation_quality_reason(
@@ -1056,6 +1064,10 @@ class WordPressOperationRuntime:
         if not isinstance(value, dict):
             return ""
         title = value.get("title")
+        # Title-only projection: validate the Ability-owned property, without
+        # requiring unrelated root fields omitted by the Provider projection.
+        if not WordPressOperationRuntime._json_value_matches_schema(title, title_schema):
+            return ""
         return title.strip() if isinstance(title, str) else ""
 
     def is_empty_text_output(
@@ -1461,10 +1473,18 @@ class WordPressOperationRuntime:
         for candidate in candidates:
             try:
                 parsed = json.loads(candidate)
-            except json.JSONDecodeError:
+                # Python accepts NaN/Infinity and overflowed exponents when
+                # decoding. Reject them anywhere, including open object fields.
+                normalized = json.dumps(
+                    parsed,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+            except ValueError:
                 continue
             if WordPressOperationRuntime._json_value_matches_schema(parsed, output_schema):
-                return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+                return normalized
         return ""
 
     @staticmethod
@@ -1515,10 +1535,26 @@ class WordPressOperationRuntime:
                 return False
             enum = schema.get("enum")
             return not isinstance(enum, list) or value in enum
-        if schema_type == "integer":
-            return isinstance(value, int) and not isinstance(value, bool)
-        if schema_type == "number":
-            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if schema_type in {"integer", "number"}:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False
+            if schema_type == "integer" and not isinstance(value, int):
+                return False
+            if isinstance(value, float) and not math.isfinite(value):
+                return False
+            for keyword in ("minimum", "maximum"):
+                if keyword not in schema:
+                    continue
+                bound = schema[keyword]
+                if isinstance(bound, bool) or not isinstance(bound, (int, float)):
+                    return False
+                if isinstance(bound, float) and not math.isfinite(bound):
+                    return False
+                if keyword == "minimum" and value < bound:
+                    return False
+                if keyword == "maximum" and value > bound:
+                    return False
+            return True
         if schema_type == "boolean":
             return isinstance(value, bool)
         enum = schema.get("enum")

@@ -5501,3 +5501,138 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
         ]
         == "text change only"
     )
+
+
+@pytest.mark.parametrize(
+    ("property_constraints", "title", "accepted"),
+    [
+        ({"enum": ["Hosted runtime guide"]}, "Hosted runtime guide", True),
+        ({"enum": ["Another valid title"]}, "Hosted runtime guide", False),
+        ({"minLength": 20, "maxLength": 20}, "Hosted runtime guide", True),
+        ({"minLength": 21}, "Hosted runtime guide", False),
+        ({"minLength": 22}, " Hosted runtime guide ", False),
+        ({"minLength": 23}, "**Hosted runtime guide**", False),
+        ({"maxLength": 19}, "Hosted runtime guide", False),
+        ({"enum": ["**Hosted runtime guide**"]}, "**Hosted runtime guide**", False),
+        ({"minLength": 0}, "**", False),
+    ],
+)
+def test_title_ability_property_constraints_gate_final_connector_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    property_constraints: dict[str, Any],
+    title: str,
+    accepted: bool,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    original_execute = provider.execute
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        result = original_execute(request)
+        result.output["output_text"] = json.dumps({"title": title})
+        return result
+
+    monkeypatch.setattr(provider, "execute", execute)
+    schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string", **property_constraints}},
+    }
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "This article explains hosted runtime validation.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded"],
+                    "output_schema": schema,
+                    "write_posture": "suggestion_only",
+                },
+            }
+        }
+    )
+    response = _execute(client, payload, idempotency_key="title-property-contract")
+    assert response.status_code == 200
+    data = response.json()
+    if accepted:
+        assert data["data"]["result"]["output"]["output_text"] == title
+        assert len(provider.requests) == 1
+    else:
+        assert data["status"] == "error"
+        assert data["error_code"] == "provider.output_quality_rejected"
+        assert len(provider.requests) == 4
+    assert provider.requests[0].input_payload["metadata"]["ability_output_schema"] == schema
+
+
+@pytest.mark.parametrize(
+    ("score_json", "accepted"),
+    [
+        ("-1", False),
+        ("0", True),
+        ("1", True),
+        ("2", False),
+        ("NaN", False),
+        ("Infinity", False),
+        ("-Infinity", False),
+        ("1e999", False),
+    ],
+)
+def test_comment_analysis_numeric_bounds_gate_final_connector_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    score_json: str,
+    accepted: bool,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    original_execute = provider.execute
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        result = original_execute(request)
+        result.output["output_text"] = (
+            '{"toxicity_score":' + score_json + ',"sentiment":"positive"}'
+        )
+        return result
+
+    monkeypatch.setattr(provider, "execute", execute)
+    payload = _payload(
+        {
+            "task": "comment_moderation",
+            "request": {
+                "prompt": "Please analyze this friendly comment.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/comment-analysis",
+                    "task": "comment_moderation",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                            "sentiment": {
+                                "type": "string",
+                                "enum": ["positive", "neutral", "negative"],
+                            },
+                        },
+                        "required": ["toxicity_score", "sentiment"],
+                        "additionalProperties": False,
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+    response = _execute(client, payload, idempotency_key="comment-numeric-contract")
+    assert response.status_code == 200
+    data = response.json()
+    if accepted:
+        output = json.loads(data["data"]["result"]["output"]["output_text"])
+        assert output["toxicity_score"] == int(score_json)
+        assert len(provider.requests) == 1
+    else:
+        assert data["status"] == "error"
+        assert data["error_code"] == "provider.output_quality_rejected"
