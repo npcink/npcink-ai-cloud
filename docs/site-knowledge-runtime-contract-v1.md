@@ -136,6 +136,15 @@ The media projection separates two revisions:
   description change therefore rebuilds embeddings without requiring another
   visual-recognition call.
 
+For `npcink-cloud/site-knowledge-sync` with both outer and input
+`site_knowledge_sync.v1` contracts, a complete 64-character lowercase hex
+`media_items[].media_fingerprint` is an opaque revision digest for data-guard
+purposes. Embedded digit sequences do not require PII classification. This
+recognition applies only to that exact structural field; secret checks still
+apply, and the same digest in ordinary text, titles, ALT, or URLs remains
+subject to PII checks. Other fingerprint formats keep the existing checks.
+Cloud does not change the request's classification or storage mode.
+
 A complete media-only `refresh` is incremental when `media_items` supplies
 attachment IDs and `documents`/`comments` are empty or omitted. `post_ids` may
 be omitted; if supplied and nonempty, it must exactly match those attachment
