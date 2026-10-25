@@ -33,6 +33,52 @@ afterEach(() => {
 });
 
 describe('ApiClient', () => {
+  it('[F03-01] normalizes body failure after headers without retaining private bytes', async () => {
+    const cause = new Error('PRIVATE body reset');
+    const response = new Response(null, { status: 200, headers: { 'x-request-id': 'body-ref' } });
+    vi.spyOn(response, 'text').mockRejectedValue(cause);
+    const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+    const error = await new ApiClient().request('/api/portal/session').catch((e) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ statusCode: 0, responseStatusCode: 200, errorCode: 'client.network_error', requestId: 'body-ref', traceId: 'body-ref' });
+    expect(error.rawBody).toBeUndefined(); expect(error.details).toBeUndefined(); expect(error.cause).toBe(cause);
+    expect(error.message).not.toContain('PRIVATE'); expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([200, 401, 503])('[F03-02] records observed HTTP %s while timeout interrupts its body', async (status) => {
+    const timeout = new AbortController(); vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+    const response = new Response(null, { status, headers: { 'x-request-id': 'timeout-ref' } });
+    vi.spyOn(response, 'text').mockImplementation(async () => { timeout.abort(); throw new Error('PRIVATE'); });
+    const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+    await expect(new ApiClient().request('/api/portal/session')).rejects.toMatchObject({
+      statusCode: 0, responseStatusCode: status, errorCode: 'client.request_timeout', rawBody: undefined, requestId: 'timeout-ref',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, false])('[F03-03] caller abort keeps cancellation semantics even with timeout=%s', async (alsoTimeout) => {
+    const caller = new AbortController(); const timeout = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+    const response = new Response(null, { status: 503 });
+    vi.spyOn(response, 'text').mockImplementation(async () => { caller.abort(); if (alsoTimeout) timeout.abort(); throw new Error('PRIVATE'); });
+    const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+    await expect(new ApiClient().request('/api/portal/session', { signal: caller.signal })).rejects.toMatchObject({
+      statusCode: 0, responseStatusCode: 503, errorCode: 'client.network_error', rawBody: undefined,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('[F03-04] drops partial ReadableStream bytes on reset', async () => {
+    const cause = new Error('PRIVATE stream');
+    const stream = new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('PRIVATE partial body')); controller.error(cause);
+    } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { headers: { 'content-type': 'application/json' } })));
+    const error = await new ApiClient().request('/api/portal/session').catch((e) => e);
+    expect(error).toMatchObject({ statusCode: 0, responseStatusCode: 200, errorCode: 'client.network_error' });
+    expect(error.rawBody).toBeUndefined(); expect(error.details).toBeUndefined(); expect(error.message).not.toContain('PRIVATE');
+  });
+
   it('returns a validated success envelope and forwards cookie, headers, and signal', async () => {
     const controller = new AbortController();
     const signal = controller.signal;

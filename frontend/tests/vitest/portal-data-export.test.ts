@@ -6,6 +6,21 @@ import { portalClient } from '@/lib/portal-client';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it.each(['code', 'confirm'] as const)('[F03-07] %s body reset never creates a Blob or retains partial data', async (operation) => {
+  const cause = new Error('PRIVATE-SENTINEL');
+  const response = new Response(null);
+  vi.spyOn(response, operation === 'code' ? 'json' : 'text').mockRejectedValue(cause);
+  const fetchMock = vi.fn().mockResolvedValue(response); vi.stubGlobal('fetch', fetchMock);
+  const blob = vi.spyOn(globalThis, 'Blob');
+  const pending = operation === 'code'
+    ? portalClient.requestDataExportCode('en')
+    : portalClient.downloadPersonalData('challenge', '123456');
+  const error = await pending.catch((e) => e);
+  expect(error).toBe(cause); expect(error.rawBody).toBeUndefined(); expect(error.details).toBeUndefined();
+  expect(blob).not.toHaveBeenCalled(); expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).has('idempotency-key')).toBe(false);
+});
+
 it.each(['code', 'confirm'] as const)('private cache covers %s success, auth/error, network and parse failures', async (operation) => {
   for (const mode of ['success', 'auth', 'error', 'network', 'parse', 'html']) {
     const fetchMock = vi.fn().mockImplementation(async () => {

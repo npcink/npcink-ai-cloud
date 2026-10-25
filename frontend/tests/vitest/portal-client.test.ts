@@ -45,6 +45,13 @@ function deferredResponse() {
 }
 
 describe('bounded Portal write intentions', () => {
+  it('[F03-05] keeps a write key when HTTP 200 arrives but its body resets', async () => {
+    const f = writeFixture(); const response = new Response(null, { status: 200 });
+    vi.spyOn(response, 'text').mockRejectedValue(new Error('PRIVATE partial response'));
+    f.fetchMock.mockResolvedValueOnce(response).mockResolvedValueOnce(writeResponse());
+    await expect(f.write()).rejects.toMatchObject({ statusCode: 0, responseStatusCode: 200, errorCode: 'client.network_error' });
+    await f.write(); expect(f.keys()[1]).toBe(f.keys()[0]); expect(f.fetchMock).toHaveBeenCalledTimes(2);
+  });
   it('[F01-01] retains a lost-response key until success, then starts an independent intent', async () => {
     const f = writeFixture();
     f.fetchMock.mockRejectedValueOnce(new Error('lost')).mockImplementation(async () => writeResponse());

@@ -246,7 +246,22 @@ export class ApiClient {
 
     const contentType = response.headers.get('content-type') || '';
     const responseReference = response.headers.get('x-request-id') || '';
-    const rawText = await response.text();
+    let rawText: string;
+    try {
+      rawText = await response.text();
+    } catch (cause) {
+      const timedOut = timeoutSignal.aborted && !options.signal?.aborted;
+      throw new ApiError({
+        statusCode: 0,
+        responseStatusCode: response.status,
+        errorCode: timedOut ? 'client.request_timeout' : 'client.network_error',
+        message: timedOut ? 'Request timed out while reading the response' : 'Response body could not be read',
+        traceId: responseReference,
+        requestId: responseReference,
+        rawBody: undefined,
+        cause,
+      });
+    }
     if (!contentType.toLowerCase().includes('json')) {
       throw new ApiError({
         statusCode: response.status,
