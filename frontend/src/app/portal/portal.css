@@ -53,9 +53,9 @@
     box-shadow: none;
   }
 
-  .portal-shell .btn-danger:hover {
-    border-color: #ff3b30;
-    background: #ff3b30;
+  .portal-shell .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #b90012;
+    background: #b90012;
   }
 
   .portal-shell .btn-outline {
@@ -65,9 +65,39 @@
     box-shadow: none;
   }
 
-  .portal-shell .btn-outline:hover {
+  .portal-shell .btn-outline:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: #b8b8bd;
     background: #fafafc;
+  }
+
+  .portal-shell .btn-outline.portal-outline-danger {
+    color: #b91c1c;
+  }
+
+  /* Portal buttons suppress box shadows, including the shared focus ring. */
+  .portal-shell .btn-outline:focus-visible,
+  .portal-shell .btn-danger:focus-visible {
+    outline: 2px solid #64748b;
+    outline-offset: 2px;
+  }
+
+  .dark .portal-shell .btn-outline {
+    border-color: #64748b;
+    color: #f8fafc;
+  }
+
+  .dark .portal-shell .btn-outline:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #94a3b8;
+    background: #1f2937;
+  }
+
+  .dark .portal-shell .btn-outline.portal-outline-danger {
+    color: #fca5a5;
+  }
+
+  .dark .portal-shell .btn-outline:focus-visible,
+  .dark .portal-shell .btn-danger:focus-visible {
+    outline-color: #94a3b8;
   }
 
   .portal-shell {

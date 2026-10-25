@@ -218,7 +218,7 @@ export function PortalPaymentOrderHistory({
           ) : (
             <button
               type="button"
-              className="btn btn-outline text-red-700 dark:text-red-300"
+              className="btn btn-outline portal-outline-danger"
               disabled={cancelPendingOrderId !== null}
               onClick={() => onCancelConfirmChange(order.order_id)}
             >
