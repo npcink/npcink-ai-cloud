@@ -1,25 +1,27 @@
-# Portal TOTP storage v1
+# Portal TOTP v1
 
-Status: T1 storage is merged via #1245. T2 is integrated and merged via #1247
-(`0a0cdbad1ec629f64e1b7bf7a50ba2b3b8138d3c`) and has reached M4 `accepted` after
-real PostgreSQL, compiled BFF, strict PC replay and independent review. The
-accepted M4 source is clean at `master`; migration `20261024_0091` is the live
-head and the TOTP test rows/schemas were cleaned to zero. Setup/confirm remain
-NOT mounted in the application, no public activation is available, and no
-production authorization has been granted. The T1 storage contract below
-remains the schema baseline. See [the seven-session closeout](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md)
-for the evidence split and retained receipts.
+Status: T1 storage (#1245) and the restricted T2 login/management boundary
+(#1247, `0a0cdbad1ec629f64e1b7bf7a50ba2b3b8138d3c`) are historical merged
+and M4-accepted deliveries. The current SELF06/07 candidate mounts public
+setup/start and setup/confirm and adds the complete Portal Account consumer.
+It is local candidate source, not a new M4 acceptance or production delivery.
+Real PostgreSQL, strict `@live`, independent reviews, required CI, M4 candidate
+and merged/accepted identity checks remain separate pending gates. No new
+migration or production operation is included. The historical receipts in
+[the seven-session closeout](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md)
+prove the earlier restricted delivery only, when setup was not mounted.
 
 ## Ownership and activation boundary
 
 Cloud owns its Portal identity storage. This does not represent WordPress users,
 Admin sessions, site HMAC or a second WordPress control plane. Existing Portal
 Cookie/Bearer, login, site selection, export and revocation semantics stay intact.
-There is no new library, flag, route, task, raw device data or commercial write.
-T2 must integrate all issuers/verifiers and clients before enabling any factor.
+There is no new library, protocol, migration, task, raw device data or commercial write.
+The candidate publicly composes the existing setup router alongside the integrated
+issuers/verifiers; enabled-principal second-factor gates remain mandatory.
 Email login codes are a first factor, not TOTP or second-factor proof.
 
-## Dormant schema
+## Storage schema
 
 Migration `20261024_0091` was allocated after observing unique head
 `20261024_0090`. It adds three tables and four nullable session evidence columns.
@@ -112,7 +114,7 @@ fixtures migrate to0091; B1's parent→0090→parent floor remains explicit.
 The integrator must separately run both gates, with zero skips/errors and exit0:
 
 - Existing Portal random-schema runner:
-  `pnpm run m4:preview:test -- focused tests/integration/test_portal_self_service_postgres.py -q`.
+  `pnpm run m4:preview:test -- --focused tests/integration/test_portal_self_service_postgres.py`.
   It proves parent→0091→parent→0091, old SID/version/expiry preservation, actual
   checks/FK/uniqueness, transaction locks with independent connections, slot
   inventory and flushed-write rollback. It does not prove TOTP authentication.
@@ -132,14 +134,12 @@ are separate evidence states.
 
 ## T2 integrated boundary and wire contract
 
-The ordinary app composes login challenge completion, disable/reset and status.
-`setup_router` in `app/api/routes/portal_totp.py` is deliberately not included by
-`app/api/main.py`; only isolated tests compose it. The integrator must assemble
-and review the complete frontend/backend candidate and explicitly mount setup
-only after every client consumes the restricted outcome. This is a source
-composition boundary, not an authentication bypass flag. Enabled-principal gates
-always run, even when setup entrypoints are absent. Do not ship this backend as
-an independently usable activation feature.
+The candidate ordinary app composes public setup, login challenge completion,
+disable/reset and count-only status. `app/api/main.py` mounts `setup_router`
+alongside the existing router; API tests use this actual application composition
+instead of adding a test-only mount. Public activation is candidate behavior
+and must not be described as deployed or accepted before the remaining gates.
+Enabled-principal verification remains active independently of the Account UI.
 
 All email login/remember-me, existing registration, QQ JSON/HTML and the shared
 session issuer return a restricted outcome for enabled principals. HTTP200 on a
@@ -161,8 +161,8 @@ client redirect. QQ OAuth proof and challenge commit together.
 | `POST /portal/v1/totp/disable/confirm` | Current full session + challenge cookie + code/method; disables factor and returns replacement full session. |
 | `POST /portal/v1/totp/recovery-reset/start` | Same recent-primary gate, purpose recovery_reset. |
 | `POST /portal/v1/totp/recovery-reset/confirm` | Same proof inputs; replaces generation, returns replacement full session and eight recovery_codes exactly once. |
-| `POST /portal/v1/totp/setup/start` — UNMOUNTED | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
-| `POST /portal/v1/totp/setup/confirm` — UNMOUNTED | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
+| `POST /portal/v1/totp/setup/start` (candidate public) | Recent-primary full session, disabled factor only; creates new pending slot and returns setup_id, secret, otpauth_uri exactly once plus challenge cookie/expiry. Replacing pending invalidates the previous setup binding. |
+| `POST /portal/v1/totp/setup/confirm` (candidate public) | Full session, setup challenge cookie and `{setup_id, code, method: "totp"}`; enables, consumes matched counter, returns replacement full session and eight recovery_codes once. |
 
 The challenge status bootstrap is cookie-only and carries no credential in its
 URL, request body, or response. Its projection keeps `status:
@@ -282,3 +282,48 @@ Whole-backend A01 review, complete C1 consumer review, joint browser proof,
 real PG, required CI, M4 candidate, merged and accepted were completed for
 #1247 and remain distinct evidence states. Production and public activation are
 still separate future gates.
+
+## SELF06/07 Account consumer and candidate verification
+
+The PC Account page keeps one “登录与安全” section and adds an inline authenticator
+row beside the existing session controls. Setup shows a manual Base32 key (no
+QR dependency); setup accepts only a six-digit TOTP. Protected recovery reset
+and disable accept the current TOTP or a recovery code and retain the same
+trusted recent-primary gate. Challenge expiry is capped by primary time +300s:
+299s can leave a usable challenge; exactly300s leaves no challenge lifetime and
+is rejected. Refreshing a JWT does not extend this boundary.
+
+A dedicated same-origin no-store client sends one request without automatic
+retry or idempotency receipts, validates bounded wire fields, and never keeps
+raw error bodies or causes. Confirmation first synchronously adopts a validated
+replacement Session through an authentication-epoch guard, retires old
+load/select results, then displays exactly eight recovery codes once. Session
+Context is reconstructed from public Session fields and never contains codes,
+seed or URI. No refresh or automatic site selection is inserted between commit
+and the one-time display.
+
+Seed, proof, URI and codes live only in component/request memory. Saved, cancel,
+expiry, route exit, logout, changed authentication, pagehide and bfcache restore
+clear them; pagehide synchronously scrubs secret DOM text/input before freezing.
+Late responses cannot restore retired secrets. Focus rereads current cookie
+state before another write; an in-flight operation becomes explicitly uncertain.
+A lost response may follow a committed rotation: clear all secrets, never
+repeat confirm automatically, reread Session/status or require fresh ordinary
+login and a protected reset. There is no retrieval of an earlier code batch.
+
+The source includes focused unit/API tests, public-route PostgreSQL readback
+and post-commit response-loss cases, a compiled standalone BFF matrix, and
+`portal-totp-activation.spec.ts` with explicit `@contract`/`@live` lanes. CI runs
+the deterministic `@contract` suite with its own standalone build/server, then
+runs the compiled BFF script against that same `.next` artifact.
+`@contract` uses synthetic responses and cannot prove real database behavior.
+`@live` requires a controlled compiled frontend/backend/PG and injected disposable
+primary credentials; missing inputs fail rather than skip or mock success.
+Sensitive tests disable trace, screenshots, video, HAR and page-text snapshots
+(`PLAYWRIGHT_NO_COPY_PROMPT=1`); assertions/reporting must contain only safe
+booleans/counts. Historical M4 results are not evidence for this candidate.
+
+Remaining delivery gates: the parent serial lane must run the entire guarded
+PostgreSQL module (no skip counted as pass), real `@live`, independent backend
+and consumer reviews, exact-head required CI, M4 candidate and merged-source
+acceptance. Production is not performed or authorized by this candidate.

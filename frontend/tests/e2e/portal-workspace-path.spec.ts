@@ -38,7 +38,7 @@ async function fulfillError(route: Route, errorCode: string, status = 503, trace
 
 function buildPortalSession(
   selectedSiteId: string,
-  options: { singleReadySite?: boolean; siteAttentionStatus?: string } = {}
+  options: { singleReadySite?: boolean; siteAttentionStatus?: string; sessionExpiresAt?: string } = {}
 ) {
   const sites = [
     {
@@ -112,7 +112,7 @@ function buildPortalSession(
       state: 'active',
       transport: 'cookie',
       issued_at: '2026-04-07T09:00:00Z',
-      expires_at: '2026-04-07T11:00:00Z',
+      expires_at: options.sessionExpiresAt || '2026-04-07T11:00:00Z',
       revocable: true,
     },
   };
@@ -126,6 +126,7 @@ async function installPortalMocks(
     paymentReturnProcessingStep?: boolean;
     paymentReturnTerminalStatus?: 'canceled' | 'refunded';
     delaySessionRefresh?: boolean;
+    sessionExpiresAt?: string;
     failPaymentReturnEntitlements?: boolean;
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
@@ -148,6 +149,9 @@ async function installPortalMocks(
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
   let sessionRequestCount = 0;
+  let paymentSessionRefreshRequestCount = 0;
+  let totpStatusRequestCount = 0;
+  let paymentEntitlementsRequestCount = 0;
   let accountProjectionRequestCount = 0;
   const accountProjectionRequests: string[] = [];
   let accountEntitlementsRequestCount = 0;
@@ -156,6 +160,10 @@ async function installPortalMocks(
   let releaseSessionRefreshGate: (() => void) | null = null;
   const sessionRefreshGate = new Promise<void>((resolve) => {
     releaseSessionRefreshGate = resolve;
+  });
+  let releasePaymentConfirmationGate: (() => void) | null = null;
+  const paymentConfirmationGate = new Promise<void>((resolve) => {
+    releasePaymentConfirmationGate = resolve;
   });
 
   await page.context().addCookies([
@@ -190,8 +198,9 @@ async function installPortalMocks(
         await fulfillError(route, 'auth.portal_session_expired', 401);
         return;
       }
-      if (options.delaySessionRefresh && sessionRequestCount > 1) {
-        await sessionRefreshGate;
+      if (paymentReturnConfirmed) {
+        paymentSessionRefreshRequestCount += 1;
+        if (options.delaySessionRefresh) await sessionRefreshGate;
       }
       const portalSession = buildPortalSession(selectedSiteId, options);
       await fulfillJson(route, options.emptySites
@@ -199,6 +208,12 @@ async function installPortalMocks(
         : options.withoutSelectedContext
         ? { ...portalSession, selected_context: null }
         : portalSession);
+      return;
+    }
+
+    if (pathname === '/totp/status' && route.request().method() === 'GET') {
+      totpStatusRequestCount += 1;
+      await fulfillJson(route, { enabled: false, recovery_codes_remaining: 0 });
       return;
     }
 
@@ -303,6 +318,7 @@ async function installPortalMocks(
 
     if (pathname === '/account/entitlements') {
       accountEntitlementsRequestCount += 1;
+      if (paymentReturnConfirmed) paymentEntitlementsRequestCount += 1;
       if (options.accountEntitlementsErrorCode) {
         const statusByCode: Record<string, number> = {
           'commercial.quota_exceeded': 429,
@@ -761,6 +777,7 @@ async function installPortalMocks(
           : options.paymentReturnProcessingStep && paymentReturnPollCount === 2
             ? 'processing'
             : options.paymentReturnTerminalStatus || 'paid';
+        if (status === 'paid' && options.delaySessionRefresh) await paymentConfirmationGate;
         paymentReturnConfirmed = status === 'paid';
         await fulfillJson(route, {
           account_id: 'acct_portal',
@@ -1742,6 +1759,10 @@ async function installPortalMocks(
     loginVerified: () => loginVerified,
     portalStateMutationRequestCount: () => portalStateMutationRequestCount,
     sessionRequestCount: () => sessionRequestCount,
+    paymentSessionRefreshRequestCount: () => paymentSessionRefreshRequestCount,
+    totpStatusRequestCount: () => totpStatusRequestCount,
+    paymentEntitlementsRequestCount: () => paymentEntitlementsRequestCount,
+    releasePaymentConfirmation: () => releasePaymentConfirmationGate?.(),
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
 }
@@ -2010,11 +2031,12 @@ for (const scenario of [
 
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
   page,
-}) => {
+}, testInfo) => {
   const calls = await installPortalMocks(page, {
     paymentReturnFlow: true,
     paymentReturnProcessingStep: true,
     delaySessionRefresh: true,
+    sessionExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   });
 
   await page.goto(
@@ -2022,14 +2044,28 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   );
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
+  const totp = page.locator('[data-totp-settings]');
+  const enableTotp = totp.getByRole('button', { name: /Enable authenticator|启用验证器/i });
+  // Finish independent security reads before making the paid result observable.
+  await expect(enableTotp).toBeVisible();
+  await expect.poll(calls.totpStatusRequestCount).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(calls.totpStatusRequestCount).toBe(2);
+  await expect(enableTotp).toBeVisible();
+  const sessionReadsBeforePayment = calls.sessionRequestCount();
+  expect(calls.paymentSessionRefreshRequestCount()).toBe(0);
+  expect(calls.paymentEntitlementsRequestCount()).toBe(0);
+  calls.releasePaymentConfirmation();
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 15_000 });
-  await expect.poll(calls.sessionRequestCount).toBe(2);
+  await expect.poll(calls.paymentSessionRefreshRequestCount).toBe(1);
+  expect(calls.sessionRequestCount()).toBe(sessionReadsBeforePayment + 1);
   await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
   await expect(page).toHaveURL('/portal/account#payment-orders');
   await expect(page.locator('#payment-orders [data-ui="payment-return-notice"]')).toBeVisible();
   await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
   await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
   expect(calls.portalStateMutationRequestCount()).toBe(0);
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).not.toContainText('12,419');
   calls.releaseSessionRefresh();
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
@@ -2055,6 +2091,21 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   await expect(page.locator('[data-payment-order-id="pay_return_polling"]')).toContainText('Paid');
 
   await expect(page).toHaveURL('/portal/account#payment-orders');
+  expect(calls.paymentSessionRefreshRequestCount()).toBe(1);
+  expect(calls.sessionRequestCount()).toBe(sessionReadsBeforePayment + 1);
+  expect(calls.paymentEntitlementsRequestCount()).toBe(1);
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
+  await testInfo.attach('payment-return-read-evidence', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      sessionReadsBeforePayment,
+      totpStatusReads: calls.totpStatusRequestCount(),
+      paymentSessionRefreshes: calls.paymentSessionRefreshRequestCount(),
+      totalSessionReads: calls.sessionRequestCount(),
+      paymentEntitlementsReads: calls.paymentEntitlementsRequestCount(),
+      stateMutations: calls.portalStateMutationRequestCount(),
+    }, null, 2),
+  });
 });
 
 test('confirmed Alipay return can retry when account totals fail to refresh', async ({

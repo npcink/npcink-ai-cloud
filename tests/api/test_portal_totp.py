@@ -1,4 +1,4 @@
-"""Actual Portal HTTP consumers; setup explicitly composed only in disposable tests."""
+"""Public Portal factor HTTP consumers on disposable identities."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.api.portal_session import COOKIE_PORTAL_SESSION_TOKEN
-from app.api.routes.portal_totp import CHALLENGE_COOKIE, setup_router
+from app.api.routes.portal_totp import CHALLENGE_COOKIE
 from app.core.db import get_session
 from app.core.models import PortalAuthChallenge, PortalRecoveryCode, PortalSession, PortalTotpFactor
 from app.core.secrets import decrypt_portal_totp_seed
@@ -17,10 +17,6 @@ from tests.api.test_portal_session_registry import setup as setup
 
 def settings_of(client):
     return client.app.state.services.settings
-
-
-def compose_setup(client):
-    client.app.include_router(setup_router)
 
 
 def proof(url, client, offset=0):
@@ -38,9 +34,8 @@ def proof(url, client, offset=0):
 def enable(setup):
     url, client, _ = setup
     old, _, _ = login(setup)
-    compose_setup(client)
     start = client.post("/portal/v1/totp/setup/start")
-    assert start.status_code == 200, start.text
+    assert start.status_code == 200
     data = start.json()["data"]
     response = client.post(
         "/portal/v1/totp/setup/confirm",
@@ -49,7 +44,7 @@ def enable(setup):
             "setup_id": data["setup_id"],
         },
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200
     codes = response.json()["data"]["recovery_codes"]
     assert len(codes) == len(set(codes)) == 8
     return old, codes, data
@@ -68,11 +63,90 @@ def primary(setup, remember=False):
     )
 
 
-def test_setup_not_public_and_requires_fresh_trusted_primary(setup):
+def test_public_activation_session_replacement_status_and_once_only_codes(setup):
+    _, client, _ = setup
+    assert client.post("/portal/v1/totp/setup/start").status_code == 401
+    old, codes, start = enable(setup)
+    current = client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN)
+    assert bool(current and current != old)
+    assert (
+        client.get("/portal/v1/session", headers={"Authorization": "Bearer " + old}).status_code
+        == 401
+    )
+    status = client.get("/portal/v1/totp/status")
+    assert status.json()["data"] == {"enabled": True, "recovery_codes_remaining": 8}
+    assert not any(code in status.text for code in codes)
+    replay = client.post(
+        "/portal/v1/totp/setup/confirm", json={"setup_id": start["setup_id"], "code": "000000"}
+    )
+    assert replay.status_code == 401
+    assert not any(code in replay.text for code in codes)
+    assert client.get("/portal/v1/session").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"setup_id": "x", "code": ""},
+        {"setup_id": "x", "code": "000000", "extra": True},
+        {"setup_id": "x" * 65, "code": "000000"},
+    ],
+)
+def test_public_setup_rejects_invalid_body_privately(setup, payload):
+    _, client, _ = setup
+    login(setup)
+    response = client.post("/portal/v1/totp/setup/confirm", json=payload)
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+@pytest.mark.parametrize("age, accepted", [(299, True), (300, False), (301, False), (-1, False)])
+def test_public_setup_exact_primary_freshness_boundary(setup, monkeypatch, age, accepted):
+    import app.domain.portal_totp.service as totp_service
+
     url, client, _ = setup
     login(setup)
-    assert client.post("/portal/v1/totp/setup/start").status_code == 404
-    compose_setup(client)
+    now = datetime.now(UTC).replace(microsecond=0)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz else now.replace(tzinfo=None)
+
+    monkeypatch.setattr(totp_service, "datetime", Clock)
+    with get_session(url) as db:
+        db.scalar(select(PortalSession)).primary_authenticated_at = now - timedelta(seconds=age)
+        db.commit()
+    response = client.post("/portal/v1/totp/setup/start")
+    assert response.status_code == (200 if accepted else 401)
+    if accepted:
+        status = client.get("/portal/v1/totp/status")
+        assert status.json()["data"] == {"enabled": False, "recovery_codes_remaining": 0}
+
+
+def test_setup_recovery_method_and_other_tab_setup_id_fail_closed(setup):
+    url, client, _ = setup
+    login(setup)
+    first = client.post("/portal/v1/totp/setup/start").json()["data"]
+    second = client.post("/portal/v1/totp/setup/start").json()["data"]
+    for setup_id, method in [(first["setup_id"], "totp"), (second["setup_id"], "recovery_code")]:
+        response = client.post(
+            "/portal/v1/totp/setup/confirm",
+            json={
+                "setup_id": setup_id,
+                "method": method,
+                "code": proof(url, client),
+            },
+        )
+        assert response.status_code == 401
+    assert client.get("/portal/v1/totp/status").json()["data"]["enabled"] is False
+
+
+def test_public_setup_requires_fresh_trusted_primary(setup):
+    url, client, _ = setup
+    login(setup)
+    assert client.post("/portal/v1/totp/setup/start").status_code == 200
     with get_session(url) as s:
         row = s.scalar(select(PortalSession))
         row.primary_authenticated_at = datetime.now(UTC) - timedelta(minutes=6)
@@ -113,7 +187,7 @@ def test_recovery_login_single_use_and_no_hash_or_secrets_in_session(setup):
     response = client.post(
         "/portal/v1/totp/challenge/complete", json={"method": "recovery_code", "code": codes[0]}
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200
     assert client.cookies.get(CHALLENGE_COOKIE) is None
     assert client.get("/portal/v1/session").status_code == 200
     assert codes[0] not in response.text and "code_hash" not in response.text
@@ -175,7 +249,7 @@ def test_management_primary_factor_and_old_generation_invalidation(setup, action
         generation, version = factor.recovery_generation, factor.factor_version
         watermark = factor.last_accepted_counter
     start = client.post(f"/portal/v1/totp/{action}/start")
-    assert start.status_code == 200, start.text
+    assert start.status_code == 200
     # Purpose cannot be exchanged for another management command.
     other = "disable" if action == "recovery-reset" else "recovery-reset"
     assert (
@@ -187,7 +261,7 @@ def test_management_primary_factor_and_old_generation_invalidation(setup, action
     response = client.post(
         f"/portal/v1/totp/{action}/confirm", json={"code": codes[0], "method": "recovery_code"}
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200
     assert (
         client.get("/portal/v1/session", headers={"Authorization": "Bearer " + current}).status_code
         == 401
@@ -230,7 +304,6 @@ def test_factor_transaction_failure_rolls_back_all_consumption(setup, monkeypatc
     url, client, _ = setup
     if kind == "setup":
         login(setup)
-        compose_setup(client)
         start = client.post("/portal/v1/totp/setup/start").json()["data"]
         path = "/portal/v1/totp/setup/confirm"
         payload = {"code": proof(url, client), "setup_id": start["setup_id"]}

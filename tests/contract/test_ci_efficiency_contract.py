@@ -538,14 +538,14 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "Select frontend-only backend gate" in workflow
     assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
     assert "node scripts/run-cloud-frontend-playwright.js" in workflow
-    assert workflow.count("PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers") == 2
+    assert workflow.count("PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers") == 3
     assert "tests/e2e/admin-operator-path.spec.ts" in workflow
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
     assert (
         "portal workspace interaction path|Alipay return polls|"
         "account projections remain available|account-level support stays available"
     ) in workflow
-    assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 2
+    assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 3
 
 
 def test_critical_frontend_paths_run_admin_operator_spec_without_title_filter() -> None:
@@ -566,9 +566,7 @@ def test_critical_frontend_paths_run_admin_operator_spec_without_title_filter() 
 def test_portal_workspace_critical_grep_alternatives_match_real_test_titles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     grep_lines = [
-        line
-        for line in workflow.splitlines()
-        if "portal workspace interaction path|" in line
+        line for line in workflow.splitlines() if "portal workspace interaction path|" in line
     ]
     assert grep_lines, "the portal workspace spec must stay behind a title grep"
     pattern_match = re.search(r"'([^']*portal workspace interaction path[^']*)'", grep_lines[0])
@@ -850,3 +848,37 @@ def test_manifest_visual_selection_and_advisor_paths_are_executed() -> None:
     assert "tests/e2e/admin-ai-advisor-pc-v2.spec.ts" in section
     for path in ("scripts/admin-visual-plan.mjs", "scripts/run-admin-visual-checks.mjs"):
         assert _classify(path)["frontend_e2e_required"] == "true"
+
+
+def test_totp_activation_contract_runs_after_build_with_private_artifacts() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    section = workflow.split("- name: TOTP activation contracts and compiled BFF", 1)[1].split(
+        "- name:", 1
+    )[0]
+    assert "if: needs.classify.outputs.frontend_e2e_required == 'true'" in section
+    assert "PLAYWRIGHT_NO_COPY_PROMPT: '1'" in section
+    bff = section.index("node frontend/tests/compiled/portal-totp-bff.mjs")
+    browser = section.index(
+        "tests/e2e/portal-totp-activation.spec.ts --grep '@contract' --retries=0 --workers=1"
+    )
+    assert browser < bff
+    assert "pnpm --dir frontend run build" not in section
+    config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
+    assert "command: `pnpm run build &&" in config
+    assert "reuseExistingServer: false" in config
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "frontend/tests/compiled/portal-totp-bff.mjs",
+        "frontend/tests/e2e/portal-totp-activation.spec.ts",
+        "app/api/main.py",
+        "app/api/routes/portal_totp.py",
+    ],
+)
+def test_totp_public_composition_selects_actual_frontend_lane(changed: str) -> None:
+    result = _classify(changed)
+    assert result["frontend_required"] == "true"
+    assert result["frontend_e2e_required"] == "true"
+    assert result["docs_only"] == "false"

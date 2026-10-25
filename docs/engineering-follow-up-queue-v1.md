@@ -166,12 +166,12 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 - **登录会话管理**：#1241 激活统一会话注册/验证，#1232/#1243/#1244 承接
   全部退出确认、本人会话列表、单条撤销及保留当前会话的“撤销其他”。会话
   不是经过验证的物理设备清单，不能据浏览器提示推定设备身份。
-- **TOTP 的受限交付**：#1245 的存储基础与 #1247 的 T2 登录挑战、已有因子的
-  受保护管理路径已合入；启用因子的用户须完成第二因子验证才能得到完整会话。
-  `POST /portal/v1/totp/setup/start` 与 `/setup/confirm` **仍未挂载**，无公开
-  自助开通入口；不能把 T2 写成完整自助 TOTP。现行边界与历史验证见
-  [TOTP 契约](portal-totp-v1.md)及
-  [七会话收口](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md)。
+- **TOTP 当前候选与历史交付**：#1245 存储及 #1247 T2 登录挑战/已有因子
+  受保护管理是历史已合入交付。SELF06/07 当前本地候选已公开挂载
+  `/totp/setup/start`、`/totp/setup/confirm`，补齐账号页开通、同步接纳替换
+  会话、八码一次展示、reset/disable 及秘密生命周期清理。真实 PG、`@live`、
+  独立审查、精确 head CI 与 M4 candidate/merged/accepted 仍待分层验收，
+  不得写成已上线；无 production 操作。见 [TOTP 契约](portal-totp-v1.md)。
 - **已关闭工单重开**：当前工单详情已有“重开并回复”入口与说明；本人回复
   resolved/closed 工单时服务端恢复 open，清除对应结束时间并回到支持队列。
   见[工单详情](../frontend/src/app/portal/support/[requestId]/page.tsx)及
@@ -187,9 +187,9 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 
 **仍待处理或单独验收（未取消）**：
 
-- **TOTP 自助开通**：setup/confirm 挂载、完整前后端开通消费及相应激活/恢复
-  验证仍是后续独立范围；有明确排期后按 TOTP 契约重新审查、验证，不能仅改
-  设置或挂路由即认定完成。
+- **TOTP 自助开通候选验收**：实现及 CI wiring 已纳入本地候选；后续由父
+  会话分配 PG/live/M4 串行 lane，并补独立审查与 required CI。源码挂载、
+  mock 浏览器或本地静态绿灯均不能代替这些证据，也不构成 production 授权。
 - **知识库索引自助降量**：现有 Portal 路由未提供知识库条目删除/缩减接口。
   套餐升级入口及只读容量恢复回归不等于此能力已实现。保留真实用户被容量
   卡住或明确产品排期时的范围评估，不在本次文档修正中新增删除/同步控制面。

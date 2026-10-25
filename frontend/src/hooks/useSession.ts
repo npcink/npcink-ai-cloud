@@ -19,6 +19,7 @@ import {
   type Site,
 } from '@/lib/portal-client';
 import { ApiError } from '@/lib/errors';
+import { parseManagementSession } from '@/lib/portal-totp-client';
 import {
   parsePortalSecondFactorFailure,
   parsePortalSecondFactorFromError,
@@ -50,6 +51,8 @@ export interface UseSessionReturn extends SessionState {
   clearSession: () => void;
   selectSite: (siteId: string) => Promise<void>;
   refresh: () => Promise<void>;
+  getAuthenticationEpoch: () => number;
+  acceptManagementSession: (session: PortalSession, expectedEpoch: number) => boolean;
 }
 
 const SessionContext = createContext<UseSessionReturn | undefined>(undefined);
@@ -69,6 +72,7 @@ function useSessionController(): UseSessionReturn {
     secondFactorResolution: null,
   });
   const sessionRequestVersionRef = useRef(0);
+  const authenticationEpochRef = useRef(0);
   const currentSessionRef = useRef<PortalSession | null>(null);
   const sessionLoadPromiseRef = useRef<Promise<void> | null>(null);
 
@@ -77,6 +81,7 @@ function useSessionController(): UseSessionReturn {
    */
   const loadSession = useCallback((): Promise<void> => {
     if (sessionLoadPromiseRef.current) return sessionLoadPromiseRef.current;
+    authenticationEpochRef.current += 1;
     const requestVersion = ++sessionRequestVersionRef.current;
     setState((previous) => ({
       ...previous,
@@ -271,6 +276,7 @@ function useSessionController(): UseSessionReturn {
   const acceptAuthenticationResult = useCallback(async (
     result: PortalAuthenticationResult
   ): Promise<PortalAuthenticationResult> => {
+    authenticationEpochRef.current += 1;
     portalClient.resetWriteIntentScope();
     const challenge = parsePortalSecondFactorRequired(result);
     if (challenge) {
@@ -303,7 +309,9 @@ function useSessionController(): UseSessionReturn {
     options: { rememberMe?: boolean } = {}
   ): Promise<PortalAuthenticationResult> => {
     try {
+      const epoch = ++authenticationEpochRef.current;
       const response = await portalClient.verifyLoginCode({ email, code, remember_me: Boolean(options.rememberMe) });
+      if (epoch !== authenticationEpochRef.current) return response.data;
       return await acceptAuthenticationResult(response.data);
     } catch (error) {
       throw error instanceof Error ? error : new Error('Failed to verify login code');
@@ -317,12 +325,16 @@ function useSessionController(): UseSessionReturn {
   const verifySecondFactor = useCallback(async (
     payload: PortalSecondFactorSubmission
   ): Promise<PortalAuthenticationResult> => {
+    const epoch = ++authenticationEpochRef.current;
     try {
       const response = await portalClient.verifySecondFactor(payload);
+      if (epoch !== authenticationEpochRef.current) return response.data;
       return await acceptAuthenticationResult(response.data);
     } catch (error) {
+      if (epoch !== authenticationEpochRef.current) throw error instanceof Error ? error : new Error('Authentication request retired');
       const failure = parsePortalSecondFactorFailure(error);
       if (failure.disposition === 'terminal') {
+        authenticationEpochRef.current += 1;
         portalClient.resetWriteIntentScope();
         sessionRequestVersionRef.current += 1;
         sessionLoadPromiseRef.current = null;
@@ -354,6 +366,7 @@ function useSessionController(): UseSessionReturn {
 
   // Local cleanup only: callers must establish or explain the remote outcome.
   const clearSession = useCallback((): void => {
+    authenticationEpochRef.current += 1;
     portalClient.resetWriteIntentScope();
     sessionRequestVersionRef.current += 1;
     sessionLoadPromiseRef.current = null;
@@ -373,6 +386,8 @@ function useSessionController(): UseSessionReturn {
    * 登出
    */
   const logout = useCallback(async (): Promise<void> => {
+    clearSession();
+    const epoch = authenticationEpochRef.current;
     sessionRequestVersionRef.current += 1;
     sessionLoadPromiseRef.current = null;
     currentSessionRef.current = null;
@@ -381,6 +396,7 @@ function useSessionController(): UseSessionReturn {
     } catch (error) {
       // 忽略登出错误
     }
+    if (epoch !== authenticationEpochRef.current) return;
     portalClient.resetWriteIntentScope();
     setState({
       session: null,
@@ -391,12 +407,13 @@ function useSessionController(): UseSessionReturn {
       secondFactor: null,
       secondFactorResolution: null,
     });
-  }, []);
+  }, [clearSession]);
 
   /**
    * 选择站点
    */
   const selectSite = useCallback(async (siteId: string): Promise<void> => {
+    authenticationEpochRef.current += 1;
     const requestVersion = ++sessionRequestVersionRef.current;
     sessionLoadPromiseRef.current = null;
     try {
@@ -422,6 +439,22 @@ function useSessionController(): UseSessionReturn {
     await loadSession();
   }, [loadSession]);
 
+  const getAuthenticationEpoch = useCallback(() => authenticationEpochRef.current, []);
+  const acceptManagementSession = useCallback((value: PortalSession, expectedEpoch: number): boolean => {
+    if (!currentSessionRef.current || expectedEpoch !== authenticationEpochRef.current) return false;
+    let session: PortalSession;
+    try { session = parseManagementSession(value); } catch { return false; }
+    authenticationEpochRef.current += 1;
+    sessionRequestVersionRef.current += 1;
+    sessionLoadPromiseRef.current = null;
+    portalClient.resetWriteIntentScope();
+    portalClient.setWriteIntentContext(session.selected_context?.site.site_id || null);
+    currentSessionRef.current = session;
+    setState({ session, isLoading: false, isAuthenticated: true, error: null,
+      sessionInvalid: false, secondFactor: null, secondFactorResolution: null });
+    return true;
+  }, []);
+
   // 初始加载
   useEffect(() => {
     void loadSession().catch(() => undefined);
@@ -437,6 +470,8 @@ function useSessionController(): UseSessionReturn {
     clearSession,
     selectSite,
     refresh,
+    getAuthenticationEpoch,
+    acceptManagementSession,
   };
 }
 
