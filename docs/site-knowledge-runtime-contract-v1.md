@@ -204,7 +204,16 @@ post/page additionally removes only comments linked by that site's
 vector comment/parent filter also removes vector-only leftovers. A stored or
 selected opposite post/page type at the same ID fails the whole batch closed
 with `site_knowledge.source_identity_conflict`; comments lack a typed parent
-and cannot safely be assigned between those article roots. Same-number media
+and cannot safely be assigned between those article roots. Before any batch
+deletion or progress side effect, preflight checks both relational storage and
+the active vector backend for that opposite typed root, including stale or
+vector-only residue left by a partial write. The vector check is an exact
+authenticated-site/type/ID scalar query with strong consistency, limited to
+one identity and no content retrieval; it is not approximate vector search.
+A query error or malformed response fails closed with
+`site_knowledge.zilliz_probe_failed`, with no batch deletions. This narrow
+preflight does not add vector observations to relational `source_presence`
+or promise exclusion of concurrent writers. Same-number media
 is an independent identity and is preserved. Media delete never cascades to
 its parent, sibling images, featured/embedded attachments or comments.
 

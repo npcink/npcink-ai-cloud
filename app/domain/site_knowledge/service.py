@@ -221,6 +221,12 @@ class SiteKnowledgeService:
                     or self.repository.has_other_post_root(
                         site_id=site_id, source_type=source_type, source_id=source_id
                     )
+                    or (
+                        self.vector_backend is not None
+                        and self.vector_backend.has_source_index(
+                            site_id, "page" if source_type == "post" else "post", source_id
+                        )
+                    )
                 ):
                     raise SiteKnowledgeContractViolation(
                         "site_knowledge.source_identity_conflict",

@@ -473,8 +473,9 @@ def test_typed_invalid_delete_is_rejected_at_ingress_without_queue_or_delete(
     )
 
 
+@pytest.mark.parametrize("failure_stage", ["delete", "probe"])
 def test_typed_delete_worker_failure_is_failed_not_completed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_stage: str
 ) -> None:
     from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 
@@ -482,9 +483,17 @@ def test_typed_delete_worker_failure_is_failed_not_completed(
     worker = RuntimeService(database_url, settings=settings, providers={}, runtime_queue=queue)
     _execute(client, _sync_payload(), idempotency_key="typed-failure-seed")
     assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    calls = []
 
     class FailingBackend:
+        def has_source_index(self, *args):
+            calls.append("probe")
+            if failure_stage == "probe":
+                raise SiteKnowledgeBackendError("site_knowledge.zilliz_probe_failed", "synthetic")
+            return False
+
         def delete_source_index(self, *args):
+            calls.append("delete")
             raise SiteKnowledgeBackendError("site_knowledge.zilliz_delete_failed", "synthetic")
 
     monkeypatch.setattr(
@@ -500,8 +509,18 @@ def test_typed_delete_worker_failure_is_failed_not_completed(
     queued = _execute(client, payload, idempotency_key="typed-failure-delete")["json"]["data"]
     processed = worker.process_next_queued_run(timeout_seconds=0)
     assert processed["run_id"] == queued["run_id"] and processed["status"] == "failed"
-    result = worker.get_run_result(queued["run_id"], site_id="site_alpha")
-    assert result["status"] == "failed"
+    failed = worker.get_run(queued["run_id"], site_id="site_alpha")
+    assert failed["status"] == "failed"
+    assert failed["error_code"] == f"site_knowledge.zilliz_{failure_stage}_failed"
+    if failure_stage == "delete":
+        assert calls == ["probe", "delete"]
+        assert worker.get_run_result(queued["run_id"], site_id="site_alpha")["status"] == "failed"
+    else:
+        from app.domain.runtime.errors import RuntimeResultNotReadyError
+
+        assert calls == ["probe"]
+        with pytest.raises(RuntimeResultNotReadyError):
+            worker.get_run_result(queued["run_id"], site_id="site_alpha")
     with get_session(database_url) as session:
         assert SiteKnowledgeRepository(session).source_presence(
             site_id="site_alpha", source_items=[("post", 123)]

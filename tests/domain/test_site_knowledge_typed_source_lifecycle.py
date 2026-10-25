@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -125,6 +126,7 @@ class LocalVectorClient:
             for row in session.scalars(select(SiteKnowledgeChunk))
         ]
         self.filters = []
+        self.probes = []
         self.fail_delete = False
 
     @staticmethod
@@ -148,6 +150,22 @@ class LocalVectorClient:
             raise RuntimeError("synthetic vector failure")
         self.filters.append(filter)
         self.rows = [row for row in self.rows if not self.matches(row, filter)]
+
+    def query(self, *, collection_name, filter, limit, output_fields, consistency_level):
+        assert collection_name == "fixture"
+        self.probes.append(
+            {
+                "filter": filter,
+                "limit": limit,
+                "output_fields": output_fields,
+                "consistency_level": consistency_level,
+            }
+        )
+        return [
+            {key: row[key] for key in output_fields}
+            for row in self.rows
+            if self.matches(row, filter)
+        ][:limit]
 
     def search(self, *, collection_name, filter, limit, **kwargs):
         assert collection_name == "fixture"
@@ -416,6 +434,156 @@ def test_other_post_type_conflict_rejects_entire_batch_before_vector_or_sql(data
                 site_id="alpha", source_type="media", source_id=1
             )
             == 1
+        )
+
+
+def _physical_rows(session):
+    return [
+        [
+            dict(row)
+            for row in session.execute(select(model.__table__).order_by(model.id)).mappings()
+        ]
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk)
+    ]
+
+
+@pytest.mark.parametrize("root_type", ["post", "page"])
+@pytest.mark.parametrize("root_status", ["publish", "stale"])
+@pytest.mark.parametrize("sql_residue", [False, True])
+def test_vector_only_opposite_root_blocks_whole_mixed_batch(
+    database, root_type, root_status, sql_residue
+):
+    with get_session(database) as session:
+        opposite = "post" if root_type == "page" else "page"
+        _seed(session, "media", 1)
+        _seed(session, opposite, 42, status=root_status)
+        _seed(session, "comment", 9, parent=42)
+        service = _service(session)
+        service.vector_backend = _vector(session)
+        # Model vector upsert success followed by relational failure/rollback.
+        service.repository.delete_source_index(site_id="alpha", source_type=opposite, source_id=42)
+        if not sql_residue:
+            service.repository.delete_site_index("alpha")
+        assert not service.repository.has_other_post_root(
+            site_id="alpha", source_type=root_type, source_id=42
+        )
+        sql_before = deepcopy(_physical_rows(session))
+        vector_before = deepcopy(service.vector_backend.client.rows)
+        progress = []
+        service.progress_callback = progress.append
+        with pytest.raises(SiteKnowledgeContractViolation) as error:
+            service.sync(
+                site_id="alpha",
+                input_payload=_input(("media", 1), (root_type, 42), delete_mode=True),
+                run_id="vector-root-conflict",
+            )
+        assert error.value.error_code == "site_knowledge.source_identity_conflict"
+        assert _physical_rows(session) == sql_before
+        assert service.vector_backend.client.rows == vector_before
+        assert service.vector_backend.client.filters == []
+        assert progress == []
+        assert len(service.vector_backend.client.probes) == 1
+
+
+@pytest.mark.parametrize("root_type", ["post", "page"])
+def test_vector_root_probe_is_exact_site_type_id_and_preserves_other_roots(database, root_type):
+    with get_session(database) as session:
+        opposite = "post" if root_type == "page" else "page"
+        _seed(session, "media", 1)
+        _seed(session, root_type, 42)
+        _seed(session, "comment", 9, parent=42)
+        _seed(session, opposite, 42, site="beta")
+        _seed(session, opposite, 99)
+        _seed(session, "media", 42, parent=42)
+        _seed(session, "comment", 42, parent=99)
+        service = _service(session)
+        service.vector_backend = _vector(session)
+        service.repository.delete_source_index(site_id="beta", source_type=opposite, source_id=42)
+        service.repository.delete_source_index(site_id="alpha", source_type=opposite, source_id=99)
+        result = service.sync(
+            site_id="alpha",
+            input_payload=_input(("media", 1), (root_type, 42), delete_mode=True),
+            run_id="vector-root-isolation",
+        )
+        assert result["status"] == "completed"
+        assert _hits(service) == {(opposite, 99), ("media", 42), ("comment", 42)}
+        assert _hits(service, "beta") == {(opposite, 42)}
+        assert service.vector_backend.client.probes == [
+            {
+                "filter": f'site_id == "alpha" and source_type == "{opposite}" and source_id == 42',
+                "limit": 1,
+                "output_fields": ["site_id", "source_type", "source_id"],
+                "consistency_level": "Strong",
+            }
+        ]
+        assert {
+            (row.source_type, row.source_id) for row in session.scalars(select(SiteKnowledgeChunk))
+        } == {("media", 42), ("comment", 42)}
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "exception",
+        None,
+        {},
+        [None],
+        [{"source_id": 42}],
+        [{"site_id": "beta", "source_type": "post", "source_id": 42}],
+        [{"site_id": "alpha", "source_type": "page", "source_id": 42}],
+        [{"site_id": "alpha", "source_type": "post", "source_id": 43}],
+        [{"site_id": "alpha", "source_type": "post", "source_id": "42"}],
+        [{"site_id": "alpha", "source_type": "post", "source_id": 42}] * 2,
+    ],
+)
+def test_vector_root_probe_failure_blocks_whole_mixed_batch(database, monkeypatch, failure):
+    with get_session(database) as session:
+        _seed(session, "media", 1)
+        _seed(session, "page", 42)
+        _seed(session, "comment", 9, parent=42)
+        service = _service(session)
+        service.vector_backend = _vector(session)
+        sql_before = deepcopy(_physical_rows(session))
+        vector_before = deepcopy(service.vector_backend.client.rows)
+        progress = []
+        service.progress_callback = progress.append
+
+        def failed_probe(**kwargs):
+            if failure == "exception":
+                raise RuntimeError("synthetic probe detail must not leak")
+            return failure
+
+        monkeypatch.setattr(service.vector_backend.client, "query", failed_probe)
+        with pytest.raises(SiteKnowledgeBackendError) as error:
+            service.sync(
+                site_id="alpha",
+                input_payload=_input(("media", 1), ("page", 42), delete_mode=True),
+                run_id="vector-root-probe-failed",
+            )
+        assert error.value.error_code == "site_knowledge.zilliz_probe_failed"
+        assert "synthetic" not in error.value.message
+        assert _physical_rows(session) == sql_before
+        assert service.vector_backend.client.rows == vector_before
+        assert service.vector_backend.client.filters == []
+        assert progress == []
+
+
+def test_vector_identity_probe_escapes_site_scope_without_content_read(database):
+    with get_session(database) as session:
+        _seed(session, "post", 42)
+        backend = _vector(session)
+        scope = 'alpha"\\suffix'
+        backend.client.rows[0]["site_id"] = scope
+        assert backend.has_source_index(scope, "post", 42) is True
+        assert backend.has_source_index("alpha", "post", 42) is False
+        assert backend.has_source_index(scope, "page", 42) is False
+        assert backend.has_source_index(scope, "post", 43) is False
+        assert backend.client.filters == []
+        assert all(
+            probe["output_fields"] == ["site_id", "source_type", "source_id"]
+            and probe["limit"] == 1
+            and probe["consistency_level"] == "Strong"
+            for probe in backend.client.probes
         )
 
 
