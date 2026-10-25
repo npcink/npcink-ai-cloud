@@ -133,9 +133,13 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
   2026-10-19 记录 package_version 3.14.8。旧“镜像仍固定3.14.7”不再作为
   当前前提。锁元数据不是本次镜像重建/扫描或已安装生产版本证明；下次已授权
   发布或上游安全更新时核对精确镜像、适用 advisory 和证据时效，不自动重建或部署。
-- **Next/eslint 配对仍缺**：[package.json](../frontend/package.json)当前为
-  Next ^16.4.1 与 eslint-config-next ^16.2.9，旧“升至16.3.6”的目标过时。
-  在下一项已授权前端依赖任务中选择兼容组合并更新锁与相应验证；本条不升级依赖。
+- **Next/eslint 配对已有后继**：上述对账时的版本差异已由
+  [#1269](https://github.com/npcink/npcink-ai-cloud/pull/1269)
+  （`8f64a0328f11883bb5519ab6b2e0cf36fe74701b`）承接；
+  [package.json](../frontend/package.json)中 Next 与 eslint-config-next 均为
+  ^16.4.1，锁文件同步更新。本地配对检查、必需 CI 与该批 M4 验证已记录，
+  不再为旧“升至16.3.6”或旧不匹配状态重复升级。当前生产安装版本与下一次
+  发布验收仍须另核，不能由依赖声明或该历史批次代替。
 - 本节只纠正历史实现/候选/镜像与依赖前提，不改变价格、既有商业范围、
   生产授权或冻结功能。
 

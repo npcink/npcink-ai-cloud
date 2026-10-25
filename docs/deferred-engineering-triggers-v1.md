@@ -245,8 +245,25 @@ specific candidate/promotion chain. They do not reconstruct the old September
 incident, prove every historical marker, or claim a separate unchanged-deploy
 replay. The separate postmerge smoke then passed 2/2 without skips or retries;
 all 11 PC captures were reviewed and matched the candidate bytes. The two dark
-outline-control observations remain open, and the two original mock gaps do
-not establish the corresponding business capabilities.
+outline-control observations and the two original mock gaps were still open
+at that checkpoint. Later bounded successors are recorded below; this original
+layout receipt alone did not establish the corresponding business capabilities.
+
+**Later bounded successors (2026-10-25).**
+[#1271](https://github.com/npcink/npcink-ai-cloud/pull/1271)
+(`a29a2e89b5d21a6bd58d46463a4f6917c04286ca`) delivered the Portal/Admin
+logout dark outline controls. Its clean-master M4 promotion reached accepted;
+postmerge browser checks covered four routes and the two Admin captures matched
+their original baselines. This closes those two control observations only,
+not every dark surface or human/production acceptance.
+[#1273](https://github.com/npcink/npcink-ai-cloud/pull/1273)
+(`e59bd469ac485c914c8ea2d4e532fb51f43d111c`) added five local API business
+test nodes for the two mock gaps: G01 site-relink authorization and G02
+monitoring account/site isolation, input bounds, and soft-remove/reconnect
+telemetry retention. Those nodes passed without skips or network attempts;
+required CI passed. These are SQLite/local business contracts, not M4 replay,
+current production evidence, natural usage or proof of all runtime history.
+The test-only batch did not promote M4. Retain the broader trigger below.
 
 **Retained trigger and minimum gate.** At the next authorized sync/deploy
 window or stale-frontend diagnosis, first reuse any matching behavior receipt;
