@@ -37,6 +37,18 @@ Implementation: `scripts/check_changed.py` (also uses
 
 Python lint/type via Docker: `pnpm run lint` (ruff + mypy through compose).
 
+## Isolated historical browser channels
+
+For pending/complete installation, retained metadata, and optional mobile
+observation, use [the isolated channel runbook](isolated-excluded-playwright-channels.md).
+The local Mock login POST is explicit; no real installation or Provider is used.
+Mobile remains outside PC acceptance, and a snapshot mismatch remains a failure.
+
+```bash
+pnpm --dir frontend run test:e2e:isolated-channels
+node scripts/test-cloud-isolated-channel-guard.cjs
+```
+
 ## Admin UI (only when Admin surfaces change)
 
 ```bash

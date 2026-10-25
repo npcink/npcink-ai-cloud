@@ -1,5 +1,6 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { test } from './helpers/critical-network-fixture';
+import { captureIsolatedCheckpoint } from './helpers/isolated-channel-fixture';
 
 const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
@@ -564,7 +565,7 @@ test('public authentication entry keeps current PC visual contracts', async ({ p
   });
 });
 
-test('optional mobile authentication visual observation', async ({ page }) => {
+test('optional mobile authentication visual observation', async ({ page }, testInfo) => {
   // Portal delivery is PC-only; retain historical mobile assertions for explicit observation.
   test.skip(process.env.NPCINK_CLOUD_PORTAL_MOBILE_VISUAL !== '1', 'Opt in with NPCINK_CLOUD_PORTAL_MOBILE_VISUAL=1');
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -579,7 +580,9 @@ test('optional mobile authentication visual observation', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
   ).toBeVisible();
-  await expect(page).toHaveScreenshot('portal-login-current-mobile.png', {
+  // Keep both historical comparisons observable even when the first baseline differs.
+  await captureIsolatedCheckpoint(page, testInfo, 'optional-mobile-login');
+  await expect.soft(page).toHaveScreenshot('portal-login-current-mobile.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
@@ -588,7 +591,8 @@ test('optional mobile authentication visual observation', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
   ).toBeVisible();
-  await expect(page).toHaveScreenshot('portal-register-current-mobile.png', {
+  await captureIsolatedCheckpoint(page, testInfo, 'optional-mobile-register');
+  await expect.soft(page).toHaveScreenshot('portal-register-current-mobile.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
