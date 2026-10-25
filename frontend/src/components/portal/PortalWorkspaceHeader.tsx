@@ -258,7 +258,7 @@ export function PortalWorkspaceHeader({
           || (metricsPlacement === 'below' && metrics.length > 0)
           || (siteSelectorPlacement === 'below' && Boolean(siteSelector))
           || Boolean(children)
-          ? 'portal-workspace-header space-y-4 border-b border-slate-200/75 pb-4 dark:border-slate-800'
+          ? 'portal-workspace-header space-y-[var(--portal-header-gap)] border-b border-slate-200/75 pb-[var(--portal-header-padding-bottom)] dark:border-slate-800'
           : 'portal-workspace-header border-b border-slate-200/75 pb-3 dark:border-slate-800'
       }
       data-portal-workspace-header={currentPage}

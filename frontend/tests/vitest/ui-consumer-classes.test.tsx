@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BackofficePageStack, BackofficeSectionPanel } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
-import { PortalCard } from '@/components/portal/PortalScaffold';
+import { PortalCard, PortalPageStack, PortalSection } from '@/components/portal/PortalScaffold';
 
 // Exercise production components and their public props. Do not mock cn/twMerge,
 // copy their rules, or assert the ordering of the entire class attribute.
@@ -48,9 +48,35 @@ describe('real UI consumers retain density and state classes', () => {
     const { classes } = rendered(<PortalCard className="py-8 text-center">No records</PortalCard>);
     expect(classes.has('py-8')).toBe(true);
     expect(classes.has('py-3.5')).toBe(false);
-    expect(classes.has('px-4')).toBe(true);
+    expect(classes.has('py-[var(--portal-card-padding-block)]')).toBe(false);
+    expect(classes.has('px-[var(--portal-card-padding-inline)]')).toBe(true);
     expect(classes.has('dark:bg-slate-950')).toBe(true);
     expect(classes.has('text-center')).toBe(true);
+  });
+
+  it('keeps the real Portal page gap override after tokenization', () => {
+    // Home, site and support pages pass this public override.
+    const { classes } = rendered(<PortalPageStack className="space-y-3">Rows</PortalPageStack>);
+    expect([...classes].filter((value) => value.startsWith('space-y-'))).toEqual(['space-y-3']);
+  });
+
+  it('keeps the Portal base padding override without erasing its desktop modifier', () => {
+    // Auth and recent activity use p-0; site/service status uses explicit md overrides.
+    const zero = rendered(<PortalSection className="overflow-hidden p-0">Rows</PortalSection>);
+    expect([...zero.classes].filter((value) => value.startsWith('p-'))).toEqual(['p-0']);
+    expect([...zero.classes].filter((value) => value.startsWith('md:p-'))).toHaveLength(1);
+    const site = rendered(<PortalSection className="p-3 md:px-4 md:py-3">Status</PortalSection>);
+    expect(site.classes.has('p-3')).toBe(true);
+    expect(site.classes.has('md:px-4')).toBe(true);
+    expect(site.classes.has('md:py-3')).toBe(true);
+  });
+
+  it('lets whole-card padding replace both token axes while preserving its responsive override', () => {
+    // The connect panel uses this exact p-6 sm:p-8 override.
+    const { classes } = rendered(<PortalCard className="p-6 sm:p-8">Connect</PortalCard>);
+    expect(classes.has('p-6')).toBe(true);
+    expect(classes.has('sm:p-8')).toBe(true);
+    expect([...classes].some((value) => /^p[xy]-/.test(value))).toBe(false);
   });
 
   it('switches a directory filter from hover affordance to selected state', () => {

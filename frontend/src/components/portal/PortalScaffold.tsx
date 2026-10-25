@@ -168,13 +168,13 @@ export function portalMetricColumnsClassName(count: number): string {
 }
 
 export function PortalPageStack({ children, className, variant: _variant, ...props }: PortalFrameProps) {
-  return <div className={cn('space-y-6', className)} {...props}>{children}</div>;
+  return <div className={cn('space-y-[var(--portal-page-gap)]', className)} {...props}>{children}</div>;
 }
 
 export function PortalSection({ children, className, variant: _variant, ...props }: PortalFrameProps) {
   return (
     <div
-      className={cn('rounded-[18px] border border-slate-200/80 bg-white p-4 shadow-none dark:border-slate-800 dark:bg-slate-950 md:p-5', className)}
+      className={cn('rounded-[var(--portal-section-radius)] border border-slate-200/80 bg-white p-[var(--portal-section-padding)] shadow-none dark:border-slate-800 dark:bg-slate-950 md:p-[var(--portal-section-padding-wide)]', className)}
       {...props}
     >
       {children}
@@ -185,7 +185,7 @@ export function PortalSection({ children, className, variant: _variant, ...props
 export function PortalCard({ children, className, variant: _variant, ...props }: PortalFrameProps) {
   return (
     <div
-      className={cn('rounded-xl border border-slate-200/75 bg-white px-4 py-3.5 shadow-none dark:border-slate-800 dark:bg-slate-950', className)}
+      className={cn('rounded-[var(--portal-card-radius)] border border-slate-200/75 bg-white px-[var(--portal-card-padding-inline)] py-[var(--portal-card-padding-block)] shadow-none dark:border-slate-800 dark:bg-slate-950', className)}
       {...props}
     >
       {children}
@@ -333,8 +333,8 @@ export function PortalPrimaryPanel({
   const hasAside = aside != null && aside !== false && aside !== true
     && !(typeof aside === 'string' && !aside.trim());
   return (
-    <section className={cn('glass-panel overflow-hidden rounded-[1.6rem] p-0', className)}>
-      <div className={cn('px-5 py-6 md:px-7 md:py-7', contentClassName)}>
+    <section className={cn('glass-panel overflow-hidden rounded-[var(--portal-panel-radius)] p-0', className)}>
+      <div className={cn('px-[var(--portal-panel-padding-inline)] py-[var(--portal-panel-padding-block)] md:px-[var(--portal-panel-padding-inline-wide)] md:py-[var(--portal-panel-padding-block-wide)]', contentClassName)}>
         <div className={cn(
           'flex flex-col gap-4',
           hasAside && 'xl:flex-row xl:items-start xl:justify-between'
