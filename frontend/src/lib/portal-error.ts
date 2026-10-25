@@ -1,5 +1,6 @@
 import { ApiError, resolveUiErrorMessage } from './errors';
 import { formatDate } from './utils';
+import { classifyPortalWriteFailure, PortalWriteNotDispatchedError } from './portal-write-outcome';
 
 type PortalTranslator = (
   key: string,
@@ -35,10 +36,13 @@ export function formatPortalWriteErrorMessage(
   t: PortalTranslator,
   fallbackMessage: string
 ): string {
-  if (
-    error instanceof ApiError
-    && (error.statusCode === 0 || error.errorCode.startsWith('client.'))
-  ) {
+  const disposition = classifyPortalWriteFailure(error);
+  if (error instanceof PortalWriteNotDispatchedError) {
+    return error.reason === 'capacity'
+      ? t('error.portal_write_not_started', undefined, 'Another change was not started. Check the changes awaiting confirmation first.')
+      : t('error.portal_write_scope_changed', undefined, 'The context changed. Check the current page before starting again.');
+  }
+  if (disposition === 'outcome_unknown' || disposition === 'reconciliation_required') {
     return t(
       'error.portal_write_outcome_unknown',
       undefined,

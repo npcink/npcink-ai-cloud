@@ -92,6 +92,7 @@ function useSessionController(): UseSessionReturn {
         if (requestVersion !== sessionRequestVersionRef.current) return;
         const challenge = parsePortalSecondFactorRequired(response.data);
         if (challenge) {
+          if (currentSessionRef.current) portalClient.resetWriteIntentScope();
           currentSessionRef.current = null;
           if (requestVersion === sessionRequestVersionRef.current) {
             setState({
@@ -107,6 +108,7 @@ function useSessionController(): UseSessionReturn {
           return;
         }
         let nextSession = response.data as PortalSession;
+        portalClient.setWriteIntentContext(nextSession.selected_context?.site.site_id || null);
         const activeSites = nextSession.sites.filter((site) => site.status === 'active');
         if (!nextSession.selected_context && activeSites.length === 1) {
           try {
@@ -119,6 +121,7 @@ function useSessionController(): UseSessionReturn {
           }
         }
         if (requestVersion !== sessionRequestVersionRef.current) return;
+        portalClient.setWriteIntentContext(nextSession.selected_context?.site.site_id || null);
         currentSessionRef.current = nextSession;
         setState({
           session: nextSession,
@@ -194,6 +197,9 @@ function useSessionController(): UseSessionReturn {
           }
         }
         if (requestVersion === sessionRequestVersionRef.current) {
+          if (sessionInvalid || challengeResolution === 'terminal' || (challenge && currentSessionRef.current)) {
+            portalClient.resetWriteIntentScope();
+          }
           setState((previous) => {
             if (challenge) {
               currentSessionRef.current = null;
@@ -265,6 +271,7 @@ function useSessionController(): UseSessionReturn {
   const acceptAuthenticationResult = useCallback(async (
     result: PortalAuthenticationResult
   ): Promise<PortalAuthenticationResult> => {
+    portalClient.resetWriteIntentScope();
     const challenge = parsePortalSecondFactorRequired(result);
     if (challenge) {
       sessionRequestVersionRef.current += 1;
@@ -316,6 +323,7 @@ function useSessionController(): UseSessionReturn {
     } catch (error) {
       const failure = parsePortalSecondFactorFailure(error);
       if (failure.disposition === 'terminal') {
+        portalClient.resetWriteIntentScope();
         sessionRequestVersionRef.current += 1;
         sessionLoadPromiseRef.current = null;
         currentSessionRef.current = null;
@@ -346,6 +354,7 @@ function useSessionController(): UseSessionReturn {
 
   // Local cleanup only: callers must establish or explain the remote outcome.
   const clearSession = useCallback((): void => {
+    portalClient.resetWriteIntentScope();
     sessionRequestVersionRef.current += 1;
     sessionLoadPromiseRef.current = null;
     currentSessionRef.current = null;
@@ -372,6 +381,7 @@ function useSessionController(): UseSessionReturn {
     } catch (error) {
       // 忽略登出错误
     }
+    portalClient.resetWriteIntentScope();
     setState({
       session: null,
       isLoading: false,
@@ -392,6 +402,7 @@ function useSessionController(): UseSessionReturn {
     try {
       const response = await portalClient.selectSite(siteId);
       if (requestVersion !== sessionRequestVersionRef.current) return;
+      portalClient.setWriteIntentContext(response.data.selected_context?.site.site_id || null);
       currentSessionRef.current = response.data;
       setState((prev) => ({
         ...prev,

@@ -10,6 +10,11 @@ import { getPortalApiBaseUrl } from './env';
 import { ApiError } from './errors';
 import { generateIdempotencyKey } from './idempotency';
 import {
+  classifyPortalWriteFailure,
+  PortalWriteNotDispatchedError,
+  PortalWriteOutcomeError,
+} from './portal-write-outcome';
+import {
   buildPortalSecondFactorSubmission,
   PORTAL_SECOND_FACTOR_STATUS_PATH,
   PORTAL_SECOND_FACTOR_VERIFY_PATH,
@@ -1809,6 +1814,12 @@ export interface PortalSiteDiagnostics {
 
 export type PortalEnvelope<T> = ApiEnvelope<T>;
 const MAX_PENDING_WRITE_INTENTS = 64;
+interface PendingWriteIntent {
+  key: string;
+  pendingAttempts: number;
+  everUnconfirmed: boolean;
+  reconciliationRequired: boolean;
+}
 
 function fallbackWriteIntentDigest(value: string): string {
   let first = 0x811c9dc5;
@@ -1827,16 +1838,34 @@ function fallbackWriteIntentDigest(value: string): string {
 
 export class PortalClient {
   private apiClient?: ApiClient;
-  private readonly pendingWriteKeys = new Map<string, string>();
+  private readonly pendingWriteKeys = new Map<string, PendingWriteIntent>();
+  private writeAuthEpoch = 0;
+  private writeContextVersion = 0;
+  private writeContextSite: string | null = null;
 
   constructor(private readonly baseUrl?: string) {}
+
+  // Local identity boundary only; this does not undo or adjudicate a write.
+  resetWriteIntentScope(): void {
+    this.writeAuthEpoch += 1;
+    this.writeContextVersion += 1;
+    this.writeContextSite = null;
+    this.pendingWriteKeys.clear();
+  }
+
+  setWriteIntentContext(siteId: string | null): void {
+    if (this.writeContextSite === siteId) return;
+    this.writeContextSite = siteId;
+    this.writeContextVersion += 1;
+  }
 
   private async writeIntentSignature(
     method: ApiMethod,
     path: string,
-    body: unknown
+    body: unknown,
+    contextSite: string | null
   ): Promise<string> {
-    const serializedIntent = `${method}:${path}:${body === undefined ? '' : JSON.stringify(body)}`;
+    const serializedIntent = JSON.stringify([contextSite, method, path, body === undefined ? '' : JSON.stringify(body)]);
     if (!globalThis.crypto?.subtle) {
       return fallbackWriteIntentDigest(serializedIntent);
     }
@@ -1845,26 +1874,6 @@ export class PortalClient {
       new TextEncoder().encode(serializedIntent)
     );
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-  }
-
-  private rememberPendingWriteKey(writeIntent: string, idempotencyKey: string): void {
-    if (
-      !this.pendingWriteKeys.has(writeIntent)
-      && this.pendingWriteKeys.size >= MAX_PENDING_WRITE_INTENTS
-    ) {
-      const oldestIntent = this.pendingWriteKeys.keys().next().value;
-      if (oldestIntent) {
-        this.pendingWriteKeys.delete(oldestIntent);
-      }
-    }
-    this.pendingWriteKeys.set(writeIntent, idempotencyKey);
-  }
-
-  private isUnconfirmedWriteError(error: unknown): boolean {
-    if (!(error instanceof ApiError)) {
-      return true;
-    }
-    return error.statusCode === 0 || error.errorCode.startsWith('client.');
   }
 
   /**
@@ -1881,14 +1890,26 @@ export class PortalClient {
       idempotencyPrefix: 'portal_write',
     });
     const isWrite = method !== 'GET' && method !== 'HEAD';
+    const epoch = this.writeAuthEpoch;
+    const contextVersion = this.writeContextVersion;
     const writeIntent = isWrite && options.idempotencyKey === undefined
-      ? await this.writeIntentSignature(method, path, body) : '';
-    const idempotencyKey = isWrite
-      ? options.idempotencyKey ?? (this.pendingWriteKeys.get(writeIntent) || generateIdempotencyKey('portal_write'))
-      : undefined;
-    if (writeIntent && !this.pendingWriteKeys.has(writeIntent)) {
-      this.rememberPendingWriteKey(writeIntent, idempotencyKey as string);
+      ? await this.writeIntentSignature(method, path, body, this.writeContextSite) : '';
+    if (writeIntent && (epoch !== this.writeAuthEpoch || contextVersion !== this.writeContextVersion)) {
+      throw new PortalWriteNotDispatchedError('scope_changed');
     }
+    let entry = writeIntent ? this.pendingWriteKeys.get(writeIntent) : undefined;
+    if (writeIntent && !entry) {
+      if (this.pendingWriteKeys.size >= MAX_PENDING_WRITE_INTENTS) {
+        throw new PortalWriteNotDispatchedError('capacity');
+      }
+      entry = { key: generateIdempotencyKey('portal_write'), pendingAttempts: 0, everUnconfirmed: false, reconciliationRequired: false };
+      this.pendingWriteKeys.set(writeIntent, entry);
+    }
+    const idempotencyKey = isWrite
+      ? options.idempotencyKey ?? entry?.key
+      : undefined;
+    if (entry) entry.pendingAttempts += 1;
+    const ownsEntry = () => Boolean(entry && epoch === this.writeAuthEpoch && this.pendingWriteKeys.get(writeIntent) === entry);
 
     try {
       const response = await this.apiClient.request<T>(path, {
@@ -1896,15 +1917,27 @@ export class PortalClient {
         ...(body === undefined ? {} : { body }),
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
-      if (writeIntent) {
+      if (ownsEntry()) {
         this.pendingWriteKeys.delete(writeIntent);
       }
       return response;
     } catch (error) {
-      if (writeIntent && !this.isUnconfirmedWriteError(error)) {
-        this.pendingWriteKeys.delete(writeIntent);
+      if (ownsEntry() && entry) {
+        const failure = classifyPortalWriteFailure(error);
+        if (failure === 'outcome_unknown' || failure === 'reconciliation_required') entry.everUnconfirmed = true;
+        if (failure === 'reconciliation_required') entry.reconciliationRequired = true;
+        if (failure === 'rejected_current_attempt' && entry.everUnconfirmed && error instanceof ApiError) {
+          throw new PortalWriteOutcomeError(error, entry.reconciliationRequired ? 'reconciliation_required' : 'outcome_unknown');
+        }
       }
       throw error;
+    } finally {
+      if (entry) {
+        entry.pendingAttempts -= 1;
+        if (ownsEntry() && entry.pendingAttempts === 0 && !entry.everUnconfirmed) {
+          this.pendingWriteKeys.delete(writeIntent);
+        }
+      }
     }
   }
 

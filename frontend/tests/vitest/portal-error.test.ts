@@ -4,7 +4,12 @@ import { ApiError } from '@/lib/errors';
 import {
   formatPortalErrorMessage,
   formatPortalErrorReference,
+  formatPortalWriteErrorMessage,
 } from '@/lib/portal-error';
+import { translate as localize, type Locale } from '@/lib/i18n';
+import {
+  classifyPortalWriteFailure, PortalWriteNotDispatchedError, PortalWriteOutcomeError,
+} from '@/lib/portal-write-outcome';
 
 const translate = (
   _key: string,
@@ -119,4 +124,61 @@ describe('Portal customer-safe errors', () => {
 
 it('uses the translated Portal fallback for uncoded English transport failures', () => {
   expect(formatPortalErrorMessage(new Error('fetch failed'), translate, '加载失败，请稍后重试。')).toBe('加载失败，请稍后重试。');
+});
+
+const translator = (locale: Locale) => (key: string, params?: Record<string, string>, fallback?: string) => localize(locale, key, params, fallback);
+describe('write outcome evidence and localized recovery', () => {
+  it.each([
+    [502, 'proxy.upstream_unreachable'], [504, 'proxy.upstream_timeout'],
+    [503, 'portal.idempotency_persist_failed'], [503, 'portal.idempotency_receipt_unavailable'],
+    [500, 'portal.idempotency_response_invalid'], [500, 'portal.idempotency_response_too_large'],
+    [400, 'portal.idempotency_persist_failed'], [0, 'client.network_error'],
+    [400, 'client.arbitrary'], [408, 'http.408'], [425, 'http.425'], [200, 'service.error'],
+  ])('[F01-03] treats %s/%s as unknown without exposing backend prose', (statusCode, errorCode) => {
+    const error = new ApiError({ statusCode, errorCode, message: 'PRIVATE <html>cause</html>' });
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(formatPortalWriteErrorMessage(error, translator(locale), 'fallback')).toBe(localize(locale, 'error.portal_write_outcome_unknown'));
+    }
+    expect(error.statusCode).toBe(statusCode); expect(error.errorCode).toBe(errorCode);
+    expect(classifyPortalWriteFailure(new TypeError('PRIVATE raw error'))).toBe('outcome_unknown');
+  });
+
+  it.each(['portal.idempotency_in_progress', 'portal.idempotency_indeterminate', 'portal.idempotency_conflict'])(
+    '[F01-05] recognizes reconciliation code %s before HTTP status', (errorCode) => {
+      for (const statusCode of [200, 409, 503]) {
+        const error = new ApiError({ statusCode, errorCode, message: 'PRIVATE' });
+        expect(classifyPortalWriteFailure(error)).toBe('reconciliation_required');
+        expect(formatPortalWriteErrorMessage(error, translator('zh-CN'), 'fallback')).toBe(localize('zh-CN', 'error.portal_write_outcome_unknown'));
+        expect(error.statusCode).toBe(statusCode);
+      }
+    }
+  );
+
+  it('[F01-08] preserves every 403 response field while presenting the prior unknown honestly', () => {
+    const details = { reason: 'PRIVATE membership' }; const rawBody = { data: details };
+    const original = new ApiError({ statusCode: 403, errorCode: 'auth.membership_denied', message: 'PRIVATE',
+      details, traceId: 'trace', requestId: 'request', revision: 'revision', rawBody,
+      responseStatusCode: 403, retryAfterSeconds: 7 });
+    const wrapped = new PortalWriteOutcomeError(original, 'outcome_unknown');
+    for (const field of ['statusCode', 'errorCode', 'message', 'details', 'traceId', 'requestId', 'revision', 'rawBody', 'responseStatusCode', 'retryAfterSeconds'] as const) {
+      expect(wrapped[field]).toBe(original[field]);
+    }
+    expect(wrapped.cause).toBe(original); expect(wrapped.details).toBe(details); expect(wrapped.rawBody).toBe(rawBody);
+    expect(details).toEqual({ reason: 'PRIVATE membership' });
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(formatPortalWriteErrorMessage(wrapped, translator(locale), 'fallback')).toBe(localize(locale, 'error.portal_write_outcome_unknown'));
+    }
+  });
+
+  it.each(['capacity', 'scope_changed'] as const)('[F01-18] only a local not-dispatched subclass proves %s', (reason) => {
+    const local = new PortalWriteNotDispatchedError(reason);
+    expect(classifyPortalWriteFailure(local)).toBe('not_dispatched');
+    const forged = new ApiError({ statusCode: 400, errorCode: local.errorCode, message: 'PRIVATE backend' });
+    expect(classifyPortalWriteFailure(forged)).toBe('outcome_unknown');
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(formatPortalWriteErrorMessage(local, translator(locale), 'fallback')).toBe(localize(locale,
+        reason === 'capacity' ? 'error.portal_write_not_started' : 'error.portal_write_scope_changed'));
+      expect(formatPortalWriteErrorMessage(forged, translator(locale), 'fallback')).toBe(localize(locale, 'error.portal_write_outcome_unknown'));
+    }
+  });
 });
