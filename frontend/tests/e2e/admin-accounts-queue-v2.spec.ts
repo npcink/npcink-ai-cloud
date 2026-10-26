@@ -723,13 +723,17 @@ test('customer directory separates account status from login issues and contains
   await expect(page.getByText(/Conflicting login identities|登录身份冲突/)).toBeVisible();
   await expect(page.getByText(/Login access disabled|登录访问已禁用/)).toBeVisible();
   await expect(unnamed.locator('[title="acct_0123456789abcdef0123456789abcdef"]')).toHaveCount(1);
-  for (const width of [1920, 1440, 1280, 390]) {
+  for (const width of [1920, 1440, 1280, 1056, 390]) {
     await page.setViewportSize({ width, height: 1050 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (width >= 1440) {
       const search = await page.getByLabel(/^Search$|^搜索$/i).boundingBox();
       const sort = await page.getByRole('combobox', { name: /Sort|排序/i }).boundingBox();
       expect(Math.abs(search!.y - sort!.y)).toBeLessThan(3);
+    }
+    if (width >= 1056) {
+      const body = page.locator('[data-ui="customer-directory-table"] > div.overflow-x-auto');
+      expect(await body.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     }
     const details = unnamed.getByRole('link', { name: /^Details$|^详情$/i });
     await details.scrollIntoViewIfNeeded();

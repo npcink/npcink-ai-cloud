@@ -517,7 +517,7 @@ function AccountsContent() {
             className="flex flex-wrap items-center gap-3"
             onSubmit={applySearch}
           >
-            <label className="min-w-0 basis-full sm:basis-64 sm:flex-1">
+            <label className="min-w-0 basis-full xl:basis-64 xl:flex-1">
               <span className="sr-only">{t('common.search', {}, 'Search')}</span>
               <input
                 type="search"
@@ -630,18 +630,18 @@ function AccountsContent() {
             footer={directoryPagination}
           >
             <table
-              className="w-full min-w-[54rem] table-fixed border-collapse text-left text-sm"
+              className="w-full min-w-[44rem] table-fixed border-collapse text-left text-sm"
               aria-label={t('admin.accounts.table_region_label', {}, 'Customer directory')}
             >
               <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                 <tr>
-                  <th className="w-[27%] px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
+                  <th className="px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
                   <th className="w-[30%] px-4 py-3">
                     {t('admin.accounts.login_email_label', {}, 'Login email')}
                   </th>
-                  <th className="w-[14%] px-4 py-3">{t('admin.accounts.account_status_label', {}, 'Account status')}</th>
-                  <th className="w-[12%] px-4 py-3">{t('common.package', {}, 'Package')}</th>
-                  <th className="w-[9%] px-4 py-3">
+                  <th className="w-32 px-4 py-3">{t('admin.accounts.account_status_label', {}, 'Account status')}</th>
+                  <th className="w-24 px-4 py-3">{t('common.package', {}, 'Package')}</th>
+                  <th className="w-16 px-4 py-3">
                     {t('admin.accounts.sites_label', {}, 'Sites')}
                   </th>
                   <th className="w-20 px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
