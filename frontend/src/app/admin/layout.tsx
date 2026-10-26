@@ -597,12 +597,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               >
                 {t('portal.logout')}
               </Link>
-              <Link
-                href="/portal"
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
-              >
-                {t('nav.portal')} →
-              </Link>
               <button
                 type="button"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/85 text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white lg:hidden"
@@ -637,14 +631,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <ThemeToggle />
             </div>
             {renderNavGroups('mobile')}
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/portal"
-                className="btn btn-secondary justify-center"
-                onClick={() => setMobileNavOpen(false)}
-              >
-                {t('nav.portal')}
-              </Link>
+            <div className="grid gap-2">
               <Link
                 href="/admin/logout"
                 prefetch={false}
