@@ -362,8 +362,13 @@ test('customer identity audit and access disable live in the specified customer 
   await expect(disableDialog).toBeVisible();
   await disableDialog.getByLabel(/Reason|原因/i).fill('Customer requested access hold');
   await disableDialog.getByRole('button', { name: /Confirm disable|确认禁用/i }).click();
-  await expect(page.getByText(/access was disabled|访问已禁用/i).first()).toBeVisible();
+  const accessReceipt = page.locator('[data-ui="admin-mutation-receipt"]');
+  await expect(accessReceipt.getByRole('status')).toContainText(/User access updated|用户访问权限已更新/);
+  await expect(page.getByRole('status').filter({ hasText: /User access updated|用户访问权限已更新/ })).toHaveCount(1);
   await expect(page.getByRole('button', { name: /Disable login access|禁用登录访问/i })).toHaveCount(0);
+  await page.getByRole('tab', { name: /Overview|概况/i }).click();
+  await page.getByRole('tab', { name: /^Access$|^访问$/i }).click();
+  await expect(accessReceipt.getByRole('status')).toContainText(/User access updated|用户访问权限已更新/);
   await page.getByRole('button', { name: /Identity audit|身份审计/i }).click();
   await expect(auditDialog.getByText('portal_user.disable', { exact: true })).toBeVisible();
   await expect(auditDialog.locator('dl > div').filter({ hasText: /^Disables|^禁用/i }).locator('dd')).toHaveText('1');

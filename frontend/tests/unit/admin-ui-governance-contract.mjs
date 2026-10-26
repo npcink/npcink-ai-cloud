@@ -220,8 +220,8 @@ assert.match(
 );
 assert.match(
   providerPageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*data-ui="model-maintenance-table"[\s\S]*rowId="manual-model-add"[\s\S]*data-ui="model-clear-all-confirm"/,
-  'the reference provider editor must keep model controls in one stable toolbar and in-flow maintenance table'
+  /data-ui="model-visibility-toolbar"[\s\S]*<details data-ui="model-maintenance-table"[\s\S]*data-ui="model-clear-all-confirm"/,
+  'the reference provider editor must keep model controls in one stable toolbar and collapsed in-flow maintenance operations'
 );
 assert.doesNotMatch(
   providerPageSource,
@@ -294,8 +294,8 @@ assert.match(
 );
 assert.match(
   runtimeProfilesPageSource,
-  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*primaryAction=\{[\s\S]*saveProfiles\(\)[\s\S]*summaryItems=\{\[[\s\S]*summaryAside=/,
-  'runtime profiles must declare its page model and keep supplier navigation secondary to the one save action'
+  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*summaryItems=\{\[[\s\S]*<AdminWorkbenchDialog[\s\S]*onSubmit=\{\(\) => void saveProfiles\(\)\}/,
+  'runtime profiles must declare the configuration model and save only inside the usage dialog'
 );
 assert.match(
   configurationTableSource,

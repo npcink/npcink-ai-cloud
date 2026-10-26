@@ -10,7 +10,6 @@ export type ProviderPreset = {
   docsUrl?: string;
   capabilityIds: string;
   runtimeProfileIds: string;
-  modelIds: string;
 };
 
 export type ProviderExternalLinkItem = {
@@ -27,46 +26,46 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: 'https://api.openai.com/v1', websiteUrl: 'https://openai.com/',
     statusUrl: 'https://status.openai.com/', docsUrl: 'https://developers.openai.com/api/docs',
     capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality', modelIds: '',
+    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
   },
   {
     id: 'newapi', label: 'New API / One API', providerId: 'newapi', kind: 'openai_compatible',
     displayName: 'New API channel', baseUrl: 'https://api.example.com/v1',
     websiteUrl: 'https://www.newapi.ai/en', docsUrl: 'https://www.newapi.ai/en/docs',
     capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality', modelIds: '',
+    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
   },
   {
     id: 'deepseek', label: 'DeepSeek', providerId: 'deepseek', kind: 'openai_compatible',
     displayName: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1',
     websiteUrl: 'https://www.deepseek.com/', statusUrl: 'https://status.deepseek.com/',
     docsUrl: 'https://api-docs.deepseek.com/', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'deepseek-v4-flash, deepseek-v4-pro',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'kimi', label: 'Kimi', providerId: 'kimi', kind: 'openai_compatible',
     displayName: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', websiteUrl: 'https://www.kimi.com/',
     docsUrl: 'https://platform.kimi.com/docs/api/overview', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'kimi-k2.6',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'doubao', label: 'Doubao / Volcengine Ark', providerId: 'doubao', kind: 'openai_compatible',
     displayName: 'Doubao / Volcengine Ark', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     websiteUrl: 'https://www.volcengine.com/product/ark',
     docsUrl: 'https://docs.volcengine.com/docs/82379/1795150', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'doubao-seed-2-0-lite-260215',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'xiaomi_mimo', label: 'Xiaomi MiMo', providerId: 'xiaomi_mimo', kind: 'openai_compatible',
     displayName: 'Xiaomi MiMo', baseUrl: 'https://api.xiaomimimo.com/v1',
     websiteUrl: 'https://mimo.mi.com/', docsUrl: 'https://mimo.mi.com/docs/quick-start/first-api-call',
-    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai', modelIds: 'mimo-v2.5-pro',
+    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai',
   },
   {
     id: 'longcat', label: 'LongCat / Meituan', providerId: 'longcat', kind: 'openai_compatible',
     displayName: 'LongCat / Meituan', baseUrl: 'https://api.longcat.chat/openai/v1',
     websiteUrl: 'https://longcat.chat/', docsUrl: 'https://longcat.chat/platform/docs/APIDocs.html',
-    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai', modelIds: 'LongCat-2.0',
+    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai',
   },
   {
     id: 'qwen', label: 'Qwen / Alibaba Cloud Model Studio', providerId: 'qwen', kind: 'openai_compatible',
@@ -74,60 +73,60 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     websiteUrl: 'https://www.aliyun.com/product/bailian',
     docsUrl: 'https://help.aliyun.com/zh/model-studio/base-url', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'qwen3.6-plus',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'hunyuan', label: 'Hunyuan / Tencent TokenHub', providerId: 'hunyuan', kind: 'openai_compatible',
     displayName: 'Hunyuan / Tencent TokenHub', baseUrl: 'https://tokenhub.tencentmaas.com/v1',
     websiteUrl: 'https://cloud.tencent.com/product/hunyuan',
     docsUrl: 'https://cloud.tencent.com/document/product/1729/131925', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'hy3-preview',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'zhipu_glm', label: 'Zhipu GLM', providerId: 'zhipu_glm', kind: 'openai_compatible',
     displayName: 'Zhipu GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     websiteUrl: 'https://www.bigmodel.cn/',
     docsUrl: 'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
-    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai', modelIds: 'glm-5.1',
+    capabilityIds: 'text_generation', runtimeProfileIds: 'text.ai',
   },
   {
     id: 'anthropic', label: 'Anthropic', providerId: 'anthropic', kind: 'anthropic',
     displayName: 'Anthropic', baseUrl: 'https://api.anthropic.com',
     websiteUrl: 'https://www.anthropic.com/', statusUrl: 'https://status.claude.com/',
     docsUrl: 'https://platform.claude.com/docs', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: 'claude-3-5-sonnet-latest',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'openrouter', label: 'OpenRouter', providerId: 'openrouter', kind: 'openrouter',
     displayName: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1',
     websiteUrl: 'https://openrouter.ai/', statusUrl: 'https://status.openrouter.ai/',
     docsUrl: 'https://openrouter.ai/docs', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: '',
+    runtimeProfileIds: 'text.ai',
   },
   {
     id: 'siliconflow', label: 'SiliconFlow', providerId: 'siliconflow', kind: 'siliconflow',
     displayName: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1',
     websiteUrl: 'https://www.siliconflow.com/',
     docsUrl: 'https://docs.siliconflow.com/en/userguide/introduction',
-    capabilityIds: 'text_generation, embedding, image_generation', runtimeProfileIds: 'text.ai, embed.default', modelIds: '',
+    capabilityIds: 'text_generation, embedding, image_generation', runtimeProfileIds: 'text.ai, embed.default',
   },
   {
     id: 'minimax', label: 'MiniMax', providerId: 'minimax', kind: 'minimax',
     displayName: 'MiniMax', baseUrl: '', websiteUrl: 'https://www.minimax.io/',
     statusUrl: 'https://status.minimax.io/', docsUrl: 'https://platform.minimax.io/docs',
     capabilityIds: 'text_generation, image_generation, audio_generation, video_generation',
-    runtimeProfileIds: '', modelIds: '',
+    runtimeProfileIds: '',
   },
   {
     id: 'ollama', label: 'Ollama', providerId: 'ollama', kind: 'openai_compatible',
     displayName: 'Ollama', baseUrl: 'http://localhost:11434/v1', websiteUrl: 'https://ollama.com/',
     docsUrl: 'https://docs.ollama.com/api/openai-compatibility',
-    capabilityIds: 'text_generation, embedding', runtimeProfileIds: 'text.ai, embed.default', modelIds: '',
+    capabilityIds: 'text_generation, embedding', runtimeProfileIds: 'text.ai, embed.default',
   },
   {
     id: 'custom', label: 'Custom', providerId: 'custom', kind: 'openai_compatible',
     displayName: 'Custom provider', baseUrl: '', capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai', modelIds: '',
+    runtimeProfileIds: 'text.ai',
   },
 ];
 

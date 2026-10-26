@@ -70,6 +70,8 @@ export type RuntimeRunEvidence = {
   started_at: string | null;
   finished_at: string | null;
   duration_ms: number | null;
+  selected_provider_id?: string | null;
+  selected_model_id?: string | null;
   provider_call_count: number;
   has_meter_event: boolean;
 };

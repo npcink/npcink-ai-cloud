@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminConfigurationRow, AdminConfigurationTable } from '@/components/admin/AdminConfigurationTable';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
@@ -49,6 +50,7 @@ type RuntimeInstance = {
   capability_tags: string[];
   model_status: string;
   model_feature: string;
+  upstream_model_id: string;
   catalog_source: string;
   upstream_status: string;
   vision_evidence: CapabilityEvidence | null;
@@ -72,6 +74,7 @@ type RuntimeProfile = {
   revision: string;
   updated_at: string;
   status: string;
+  availability_state: 'active' | 'paused';
   platform_kind: 'wordpress';
   connector_id: 'wordpress_ai_connector';
 };
@@ -91,6 +94,17 @@ type RuntimeProfilesData = {
     audio_generation: RuntimeInstance[];
   };
   profiles: RuntimeProfile[];
+  read_only_profiles: Array<{
+    profile_id: 'text.ai';
+    selection_mode: 'automatic';
+    candidates: Array<{
+      instance_id: string;
+      provider_id: string;
+      provider_display_name: string;
+      model_id: string;
+      upstream_model_id: string;
+    }>;
+  }>;
   receipt?: AdminMutationReceiptPayload | null;
 };
 
@@ -173,6 +187,7 @@ function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
     capability_tags: Array.isArray(item.capability_tags) ? item.capability_tags.map(String) : [],
     model_status: String(item.model_status || ''),
     model_feature: String(item.model_feature || ''),
+    upstream_model_id: String(item.upstream_model_id || item.model_id || ''),
     catalog_source: String(item.catalog_source || ''),
     upstream_status: String(item.upstream_status || 'current'),
     vision_evidence: item.vision_evidence && typeof item.vision_evidence === 'object'
@@ -245,6 +260,7 @@ function normalizeRuntimeProfile(value: unknown): RuntimeProfile {
     revision: String(item.revision || ''),
     updated_at: String(item.updated_at || ''),
     status: String(item.status || ''),
+    availability_state: item.availability_state === 'paused' ? 'paused' : 'active',
     platform_kind: 'wordpress',
     connector_id: 'wordpress_ai_connector',
   };
@@ -311,10 +327,37 @@ function normalizeRuntimeProfilesData(value: unknown): RuntimeProfilesData {
       audio_generation: list('audio_generation'),
     },
     profiles,
+    read_only_profiles: normalizeReadOnlyProfiles(data.read_only_profiles),
     receipt: data.receipt && typeof data.receipt === 'object'
       ? data.receipt as AdminMutationReceiptPayload
       : null,
   };
+}
+
+function normalizeReadOnlyProfiles(value: unknown): RuntimeProfilesData['read_only_profiles'] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TypeError('Read-only runtime profiles must be an array.');
+  return value.map((raw) => {
+    if (!raw || raw.profile_id !== 'text.ai' || raw.selection_mode !== 'automatic' || !Array.isArray(raw.candidates)) {
+      throw new TypeError('Read-only runtime profile must describe the automatic text.ai route.');
+    }
+    return {
+      profile_id: 'text.ai',
+      selection_mode: 'automatic',
+      candidates: raw.candidates.map((candidate: Record<string, unknown> | null) => {
+        if (!candidate || !candidate.instance_id || !candidate.provider_id || !candidate.model_id) {
+          throw new TypeError('Read-only candidate requires recorded routing identity.');
+        }
+        return {
+          instance_id: String(candidate.instance_id),
+          provider_id: String(candidate.provider_id),
+          provider_display_name: String(candidate.provider_display_name || ''),
+          model_id: String(candidate.model_id),
+          upstream_model_id: String(candidate.upstream_model_id || candidate.model_id),
+        };
+      }),
+    };
+  });
 }
 
 function normalizeCapabilityProbeSummary(value: unknown): CapabilityProbeSummary {
@@ -410,14 +453,14 @@ function mediaRecognitionSwitchClassName(checked: boolean): string {
 
 function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInstance>): 'success' | 'warning' | 'error' {
   const primary = instances.get(profile.candidate_instance_ids[0] || '');
-  if (!primary) return 'warning';
+  if (!primary) return profile.candidate_instance_ids.length ? 'error' : 'warning';
   if (profile.candidate_instance_ids.some((instanceId) => {
     const instance = instances.get(instanceId);
     return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
   })) return 'error';
   const tones = profile.candidate_instance_ids.map((id) => {
     const instance = instances.get(id);
-    return instance ? instanceTone(instance, profile.execution_kind) : 'warning';
+    return instance ? instanceTone(instance, profile.execution_kind) : 'error';
   });
   if (tones.includes('error')) return 'error';
   if (tones.includes('warning')) return 'warning';
@@ -451,7 +494,7 @@ function profileLabelKey(profile: RuntimeProfile): string {
 
 function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: string): boolean {
   const feature = instance.model_feature === 'text_generation' ? 'text' : instance.model_feature;
-  return feature === executionKind || (executionKind === 'vision' && feature === 'text');
+  return feature === executionKind || (['text', 'vision'].includes(executionKind) && ['text', 'vision'].includes(feature));
 }
 
 function requiresCapabilityVerification(executionKind: string): boolean {
@@ -505,15 +548,13 @@ export default function RuntimeProfilesPage() {
     return key ? copy(key, profile.label || profile.profile_id) : (profile.label || profile.routing_intent || profile.profile_id);
   }, [copy]);
   const [data, setData] = useState<RuntimeProfilesData | null>(null);
-  const [drafts, setDrafts] = useState<RuntimeProfile[]>([]);
-  const [baseline, setBaseline] = useState('[]');
+  const drafts = data?.profiles || [];
+  const [editingProfile, setEditingProfile] = useState<RuntimeProfile | null>(null);
   const [activeProfileId, setActiveProfileId] = useState('');
-  const [editingProfileId, setEditingProfileId] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [verifyingBeforeSave, setVerifyingBeforeSave] = useState(false);
   const [probingInstanceId, setProbingInstanceId] = useState('');
   const [probeError, setProbeError] = useState('');
   const [error, setError] = useState('');
@@ -531,8 +572,6 @@ export default function RuntimeProfilesPage() {
 
   const applyData = useCallback((next: RuntimeProfilesData) => {
     setData(next);
-    setDrafts(next.profiles);
-    setBaseline(profileSnapshot(next.profiles));
     const requestedProfileId = typeof window === 'undefined'
       ? ''
       : new URLSearchParams(window.location.search).get('profile') || '';
@@ -548,10 +587,8 @@ export default function RuntimeProfilesPage() {
     setLoading(true);
     setError('');
     setData(null);
-    setDrafts([]);
-    setBaseline('[]');
     setActiveProfileId('');
-    setEditingProfileId('');
+    setEditingProfile(null);
     setProbeSummary(null);
     setProbeSummaryError('');
     try {
@@ -623,30 +660,15 @@ export default function RuntimeProfilesPage() {
     () => new Map(allInstances.map((instance) => [instance.instance_id, instance])),
     [allInstances]
   );
-  const changedProfiles = useMemo(() => drafts.filter((profile) => {
-    const saved = data?.profiles.find((item) => item.profile_id === profile.profile_id);
-    return !saved || profileSnapshot([profile]) !== profileSnapshot([saved]);
-  }), [drafts, data]);
-  const pendingSelectedProbes = useMemo(() => {
-    const seen = new Set<string>();
-    return changedProfiles.flatMap((profile) => {
-      if (!requiresCapabilityVerification(profile.execution_kind)) return [];
-      return profile.candidate_instance_ids.flatMap((instanceId) => {
-        const instance = instancesById.get(instanceId);
-        if (!instance || capabilityEvidence(instance, profile.execution_kind)?.state === 'verified') return [];
-        const key = `${instanceId}:${profile.execution_kind}`;
-        if (seen.has(key)) return [];
-        seen.add(key);
-        return [{ profile, instance }];
-      });
-    });
-  }, [changedProfiles, instancesById]);
-  const editingProfile = drafts.find((profile) => profile.profile_id === editingProfileId) || null;
-  const profileDirty = profileSnapshot(drafts) !== baseline;
+  const savedEditingProfile = data?.profiles.find((profile) => profile.profile_id === editingProfile?.profile_id);
+  const profileDirty = Boolean(editingProfile && profileSnapshot([editingProfile]) !== profileSnapshot(savedEditingProfile ? [savedEditingProfile] : []));
   const mediaRecognitionDirty = mediaRecognitionPolicySnapshot(mediaRecognitionForm) !== mediaRecognitionBaseline;
   const dirty = profileDirty || mediaRecognitionDirty;
-  const configuredCount = drafts.filter((profile) => profile.candidate_instance_ids.length > 0).length;
-  const attentionCount = drafts.filter((profile) => profileTone(profile, instancesById) !== 'success').length;
+  const activeProfiles = drafts.filter((profile) => profile.availability_state !== 'paused');
+  const configuredCount = activeProfiles.filter((profile) => profile.candidate_instance_ids.length > 0 && profileTone(profile, instancesById) !== 'error').length;
+  const unconfiguredCount = activeProfiles.filter((profile) => !profile.candidate_instance_ids.length).length;
+  const pausedCount = drafts.length - activeProfiles.length;
+  const attentionCount = activeProfiles.filter((profile) => profile.candidate_instance_ids.length > 0 && profileTone(profile, instancesById) === 'error').length;
   const mediaRecognitionProfile = data?.profiles.find((profile) => profile.profile_id === 'vision.ai') || null;
   const mediaRecognitionPrimary = mediaRecognitionProfile
     ? instancesById.get(mediaRecognitionProfile.candidate_instance_ids[0] || '')
@@ -729,7 +751,7 @@ export default function RuntimeProfilesPage() {
         ? data.available_instances.image_generation
         : editingProfile.execution_kind === 'audio_generation'
           ? data.available_instances.audio_generation
-          : data.available_instances.text;
+          : [...data.available_instances.text, ...data.available_instances.vision];
     const selectedIds = editingProfile.candidate_instance_ids;
     const selected = selectedIds
       .map((instanceId) => instancesById.get(instanceId))
@@ -762,9 +784,7 @@ export default function RuntimeProfilesPage() {
   }, [candidatePool]);
 
   function updateProfile(profileId: string, patch: Partial<RuntimeProfile>) {
-    setDrafts((current) => current.map((profile) => profile.profile_id === profileId
-      ? { ...profile, ...patch }
-      : profile));
+    setEditingProfile((current) => current?.profile_id === profileId ? { ...current, ...patch } : current);
   }
 
   function selectProfile(profileId: string) {
@@ -775,17 +795,18 @@ export default function RuntimeProfilesPage() {
   }
 
   function setCandidate(profileId: string, position: 0 | 1, instanceId: string) {
-    const profile = drafts.find((item) => item.profile_id === profileId);
+    const profile = editingProfile?.profile_id === profileId ? editingProfile : null;
     if (!profile) return;
     const next = [...profile.candidate_instance_ids];
     next[position] = instanceId;
     updateProfile(profileId, {
       candidate_instance_ids: next.filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
+      ...(position === 1 ? { allow_fallback: true } : {}),
     });
   }
 
   function clearCandidate(profileId: string, position: 0 | 1) {
-    const profile = drafts.find((item) => item.profile_id === profileId);
+    const profile = editingProfile?.profile_id === profileId ? editingProfile : null;
     if (!profile) return;
     updateProfile(profileId, {
       candidate_instance_ids: position === 0
@@ -858,76 +879,46 @@ export default function RuntimeProfilesPage() {
   }
 
   async function saveProfiles() {
-    if (!profileDirty || saving) return;
-    const incompatible = changedProfiles.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
-      const instance = instancesById.get(instanceId);
-      return instance && (
-        !instanceMatchesExecutionKind(instance, profile.execution_kind)
-      );
-    }));
-    if (incompatible) {
-      setError(copy('incompatible_candidate', '{{profile}} 只能使用 {{kind}} 类型的模型，请更换候选模型后再保存。', {
-        profile: profileName(incompatible),
-        kind: incompatible.execution_kind === 'vision' ? copy('execution_kind_vision', '视觉') : incompatible.execution_kind === 'image_generation' ? copy('execution_kind_image_generation', '图片生成') : incompatible.execution_kind,
-      }));
+    if (!editingProfile || saving) return;
+    if (!profileDirty) { setEditingProfile(null); return; }
+    const profile = editingProfile;
+    if (profile.candidate_instance_ids.some((id) => {
+      const instance = instancesById.get(id);
+      return !instance || !instanceMatchesExecutionKind(instance, profile.execution_kind);
+    })) {
+      setProbeError(copy('incompatible_candidate', '{{profile}} requires compatible {{kind}} models.', { profile: profileName(profile), kind: profile.execution_kind }));
+      return;
+    }
+    if (requiresCapabilityVerification(profile.execution_kind) && profile.candidate_instance_ids.some((id) => {
+      const instance = instancesById.get(id);
+      return !instance || capabilityEvidence(instance, profile.execution_kind)?.state !== 'verified';
+    })) {
+      setProbeError(copy('explicit_verification_required', 'Use Verify capability for the selected models before saving. Saving does not start a capability probe.'));
       return;
     }
     setSaving(true);
-    setError('');
     setProbeError('');
     try {
-      if (pendingSelectedProbes.length) {
-        setVerifyingBeforeSave(true);
-        for (const { profile, instance } of pendingSelectedProbes) {
-          setProbingInstanceId(instance.instance_id);
-          try {
-            const probeResponse = await requestCapabilityProbe(instance, profile.execution_kind, profile.timeout_ms);
-            applyCapabilityEvidence(instance.instance_id, normalizeCapabilityProbeEvidence(probeResponse.data));
-          } catch (cause) {
-            const failedEvidence = capabilityProbeEvidenceFromError(cause);
-            if (failedEvidence?.capability) {
-              applyCapabilityEvidence(instance.instance_id, failedEvidence);
-            }
-            selectProfile(profile.profile_id);
-            setEditingProfileId(profile.profile_id);
-            setProbeError(probeFailureMessage(cause, instance));
-            await loadProbeSummary();
-            return;
-          } finally {
-            setProbingInstanceId('');
-          }
-        }
-      }
-      setVerifyingBeforeSave(false);
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles', {
         method: 'PATCH',
         body: {
-          contract_version: 'cloud-hosted-runtime-profiles.v1',
-          platform_kind: 'wordpress',
-          connector_id: 'wordpress_ai_connector',
-          operation_contract_version: 'wordpress_operation.v1',
-          profiles: changedProfiles.map((profile) => ({
-            profile_id: profile.profile_id,
-            candidate_instance_ids: profile.candidate_instance_ids,
-            timeout_ms: profile.timeout_ms,
-            allow_fallback: profile.allow_fallback,
-            max_retries: profile.max_retries,
-            note: profile.note,
-          })),
+          contract_version: 'cloud-hosted-runtime-profiles.v1', platform_kind: 'wordpress',
+          connector_id: 'wordpress_ai_connector', operation_contract_version: 'wordpress_operation.v1',
+          profiles: [{
+            profile_id: profile.profile_id, candidate_instance_ids: profile.candidate_instance_ids,
+            timeout_ms: profile.timeout_ms, allow_fallback: profile.allow_fallback,
+            max_retries: profile.max_retries, note: profile.note,
+          }],
         },
       });
-      const next = normalizeRuntimeProfilesData(response.data);
-      applyData(next);
+      applyData(normalizeRuntimeProfilesData(response.data));
+      setEditingProfile(null);
       setMediaRecognitionError('');
       setMediaRecognitionErrorCode('');
-      toast.success(copy('message_saved', 'Hosted runtime profiles saved.'), t('common.success'));
+      if (!response.data.receipt) toast.success(copy('message_saved', 'Usage configuration saved.'), t('common.success'));
     } catch (cause) {
-      setError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save hosted runtime profiles.')));
-    } finally {
-      setVerifyingBeforeSave(false);
-      setProbingInstanceId('');
-      setSaving(false);
-    }
+      setProbeError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save usage configuration.')));
+    } finally { setSaving(false); }
   }
 
   async function saveMediaRecognitionPolicy() {
@@ -988,7 +979,7 @@ export default function RuntimeProfilesPage() {
 
   function instanceLabel(instance: RuntimeInstance | undefined): string {
     if (!instance) return copy('model_unassigned', 'Not assigned');
-    return `${instance.provider_display_name || instance.provider_id} / ${instance.model_id}`;
+    return `${instance.provider_display_name || instance.provider_id} · ${instance.upstream_model_id}`;
   }
 
   if (loading) {
@@ -999,40 +990,18 @@ export default function RuntimeProfilesPage() {
     <BackofficePageStack className="space-y-3" data-page-model="configuration">
       <BackofficeConfigurationHeader
         title={copy('title', 'Runtime Profiles')}
-        description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.')}
+        description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.') + ' ' + copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
         secondaryAction={(
           <Link href="/admin/ai-resources" className="btn btn-secondary">
             {copy('action_open_suppliers', 'Model suppliers')}
           </Link>
         )}
-        primaryAction={(
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!profileDirty || saving}
-            onClick={() => void saveProfiles()}
-          >
-            {saving
-              ? verifyingBeforeSave
-                ? copy('action_verifying_and_saving', 'Verifying and saving...')
-                : copy('action_saving', 'Saving...')
-              : pendingSelectedProbes.length
-                ? copy('action_verify_and_save', 'Verify and save')
-                : copy('action_save', 'Save profiles')}
-          </button>
-        )}
         summaryItems={[
-          { label: copy('summary_platform', 'Platform'), value: 'WordPress' },
-          { label: copy('summary_profiles', 'Profiles'), value: String(drafts.length) },
-          { label: copy('summary_configured', 'Configured'), value: `${configuredCount}/${drafts.length}` },
-          { label: copy('summary_attention', 'Needs attention'), value: String(attentionCount) },
-          {
-            label: t('common.status'),
-            value: dirty ? copy('unsaved_status', 'Unsaved') : copy('saved_status', 'Configuration saved'),
-            toneClassName: dirty ? 'text-amber-700 dark:text-amber-300' : undefined,
-          },
+          { label: copy('summary_configured', 'Configured'), value: String(configuredCount) },
+          { label: copy('summary_unconfigured', 'Unconfigured'), value: String(unconfiguredCount) },
+          { label: copy('summary_paused', 'Paused'), value: String(pausedCount) },
+          { label: copy('summary_configuration_error', 'Configuration error'), value: String(attentionCount) },
         ]}
-        summaryAside={copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
       />
 
       {error ? (
@@ -1046,6 +1015,45 @@ export default function RuntimeProfilesPage() {
         </div>
       ) : null}
       {data ? <AdminMutationReceipt receipt={receipt} title={copy('receipt_title', 'Latest profile change')} /> : null}
+
+      {data ? drafts.length === 0 ? (
+        <BackofficeEmptyState
+          title={copy('empty_title', 'No hosted runtime profiles')}
+          description={copy('empty_description', 'The WordPress connector has not projected any Cloud-hosted task profiles.')}
+        />
+      ) : (
+        <AdminDataTableFrame
+          title={copy('directory_title', 'Hosted profile directory')}
+          resultLabel={copy('usage_count', '{{count}} usages', { count: String(drafts.length) })}
+          dataUi="runtime-profile-table"
+          density="compact"
+        >
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup><col className="w-[28%]" /><col className="w-[38%]" /><col className="w-[20%]" /><col className="w-[14%]" /></colgroup>
+            <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800">
+              <tr><th className="px-3 py-2">{copy('column_profile', 'Usage')}</th><th className="px-3 py-2">{copy('primary_model', 'Primary model')}</th><th className="px-3 py-2">{t('common.status')}</th><th className="px-3 py-2 text-right">{copy('column_action', 'Action')}</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {drafts.map((profile) => {
+                const tone = profileTone(profile, instancesById);
+                const paused = profile.availability_state === 'paused';
+                const primary = instancesById.get(profile.candidate_instance_ids[0] || '');
+                return <tr key={profile.profile_id} data-profile-id={profile.profile_id} data-selected={profile.profile_id === activeProfileId ? 'true' : 'false'}>
+                  <th className="px-3 py-3 text-left align-top" scope="row"><span className="block font-semibold">{profileName(profile)}</span><span className="mt-1 block text-xs font-normal text-slate-500">{copy(`${profileLabelKey(profile)}_tasks`, profile.description)}</span></th>
+                  <td className="break-words px-3 py-3 align-top"><span>{instanceLabel(primary)}</span><span className="mt-1 block text-xs text-slate-500">{profile.candidate_instance_ids[1] ? `${copy('fallback_model', 'Fallback')}: ${instanceLabel(instancesById.get(profile.candidate_instance_ids[1]))}` : copy('fallback_unconfigured', 'No fallback configured')}</span>{primary?.upstream_status === 'missing_from_latest_catalog' ? <span className="block text-xs text-amber-700">{copy('catalog_unconfirmed', 'Catalog unconfirmed')}</span> : null}</td>
+                  <td className="px-3 py-3 align-top"><BackofficeStatusBadge status={paused ? 'disabled' : tone} label={paused ? copy('status_paused', 'Paused') : !profile.candidate_instance_ids.length ? copy('summary_unconfigured', 'Unconfigured') : tone === 'error' ? copy('summary_configuration_error', 'Configuration error') : copy('status_configured', 'Usage configured')} /></td>
+                  <td className="px-3 py-3 text-right align-top"><button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                    selectProfile(profile.profile_id);
+                    setProviderFilter(new URLSearchParams(window.location.search).get('provider') || '');
+                    setModelSearch(''); setProbeError('');
+                    setEditingProfile({ ...profile, candidate_instance_ids: [...profile.candidate_instance_ids] });
+                  }}>{copy('action_configure', 'Configure')}</button></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </AdminDataTableFrame>
+      ) : null}
 
       {data ? (
         <BackofficeDisclosure summary={copy('probe_summary_title', 'Capability verification history')}>
@@ -1099,99 +1107,13 @@ export default function RuntimeProfilesPage() {
         </BackofficeDisclosure>
       ) : null}
 
-      {data ? drafts.length === 0 ? (
-        <BackofficeEmptyState
-          title={copy('empty_title', 'No hosted runtime profiles')}
-          description={copy('empty_description', 'The WordPress connector has not projected any Cloud-hosted task profiles.')}
-        />
-      ) : (
-        <AdminDataTableFrame
-          title={copy('directory_title', 'Hosted profile directory')}
-          resultLabel={copy('directory_description', 'Primary model, fallback, policy, status, and the next action are shown in one table.')}
-          dataUi="runtime-profile-table"
-          density="compact"
-        >
-          <table className="w-full min-w-[1040px] table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-[20%]" />
-              <col className="w-[17%]" />
-              <col className="w-[17%]" />
-              <col className="w-[18%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[8%]" />
-            </colgroup>
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
-              <tr>
-                <th className="px-3 py-1.5" scope="col">{copy('column_profile', 'Profile')}</th>
-                <th className="px-3 py-1.5" scope="col">{copy('primary_model', 'Primary model')}</th>
-                <th className="px-3 py-1.5" scope="col">{copy('fallback_model', 'Fallback model')}</th>
-                <th className="px-3 py-1.5" scope="col">{copy('column_policy', 'Runtime policy')}</th>
-                <th className="px-3 py-1.5" scope="col">{t('common.status')}</th>
-                <th className="px-3 py-1.5" scope="col">{copy('column_updated', 'Updated')}</th>
-                <th className="px-3 py-1.5 text-right" scope="col">{copy('column_action', 'Action')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {drafts.map((profile) => {
-                const tone = profileTone(profile, instancesById);
-                const active = profile.profile_id === activeProfileId;
-                return (
-                  <tr
-                    key={profile.profile_id}
-                    data-profile-id={profile.profile_id}
-                    data-selected={active ? 'true' : 'false'}
-                    className={active ? 'bg-blue-50/60 dark:bg-blue-950/15' : 'bg-white dark:bg-slate-950'}
-                  >
-                    <th className="px-3 py-2 align-middle" scope="row">
-                      <span className="truncate font-semibold text-slate-950 dark:text-white">
-                        {profileName(profile)}
-                      </span>
-                      <span className="ml-2 truncate text-xs font-normal text-slate-500 dark:text-slate-400">
-                        {profile.tasks.length} {copy('task_count_suffix', 'tasks')}
-                      </span>
-                    </th>
-                    <td className="px-3 py-2 align-middle text-slate-700 dark:text-slate-200">
-                      <span className="block truncate">{instanceLabel(instancesById.get(profile.candidate_instance_ids[0] || ''))}</span>
-                    </td>
-                    <td className="px-3 py-2 align-middle text-slate-700 dark:text-slate-200">
-                      <span className="block truncate">{instanceLabel(instancesById.get(profile.candidate_instance_ids[1] || ''))}</span>
-                    </td>
-                    <td className="px-3 py-2 align-middle text-xs text-slate-600 dark:text-slate-300">
-                      {Math.round(profile.timeout_ms / 1000)}s · {profile.allow_fallback ? copy('fallback_enabled_short', 'Fallback on') : copy('fallback_disabled_short', 'Fallback off')}
-                      <span className="text-slate-500 dark:text-slate-400"> · {copy('retry_count', '{{count}} retries', { count: String(profile.max_retries) })}</span>
-                    </td>
-                    <td className="px-3 py-2 align-middle">
-                      <BackofficeStatusBadge
-                        label={tone === 'success' ? copy('status_ready', 'Ready') : tone === 'error' ? copy('status_error', 'Blocked') : copy('status_attention', 'Needs config')}
-                        status={tone}
-                      />
-                    </td>
-                    <td className="px-3 py-2 align-middle text-xs tabular-nums text-slate-500 dark:text-slate-400">
-                      {formatDate(profile.updated_at) || '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right align-middle">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          selectProfile(profile.profile_id);
-                          setProviderFilter('');
-                          setModelSearch('');
-                          setProbeError('');
-                          setEditingProfileId(profile.profile_id);
-                        }}
-                      >
-                        {copy('action_configure', 'Configure')}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </AdminDataTableFrame>
-      ) : null}
+      {data?.read_only_profiles.map((profile) => <details key={profile.profile_id} data-ui="automatic-runtime-profile" className="border-y border-slate-200 px-3 py-4 dark:border-slate-800">
+        <summary className="cursor-pointer text-sm font-semibold">{copy('automatic_title', 'Toolbox content assistance · Automatic model selection')}</summary>
+        <p className="mt-1 text-xs text-slate-500">{copy('automatic_notice', 'text.ai is read-only. These are configured candidates in order, not evidence of a model used in a past call.')}</p>
+        <ol className="mt-2 list-inside list-decimal text-sm">{profile.candidates.map((candidate) => <li key={candidate.instance_id}>{candidate.provider_display_name || candidate.provider_id} · {candidate.upstream_model_id}</li>)}</ol>
+        {!profile.candidates.length ? <p className="mt-2 text-sm">{copy('automatic_empty', 'No configured candidates')}</p> : null}
+        <Link href="/admin/troubleshooting" className="mt-2 inline-block text-sm font-semibold text-blue-700 dark:text-blue-300">{copy('action_view_actual_runs', 'View actual calls')}</Link>
+      </details>)}
 
       {data ? (
         <BackofficeDisclosure
@@ -1376,22 +1298,18 @@ export default function RuntimeProfilesPage() {
         saving={saving}
         closeLabel={t('common.close')}
         cancelLabel={t('common.cancel')}
-        saveLabel={copy('action_done', 'Done')}
+        saveLabel={copy('action_save_usage', 'Save usage')}
         savingLabel={copy('action_saving', 'Saving...')}
-        footerNotice={copy('dialog_save_notice', 'Changes remain in the page draft until you use Save profiles.')}
-        footerActions={(
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditingProfileId('')}>
-            {copy('action_done', 'Done')}
-          </button>
-        )}
+        footerNotice={copy('dialog_save_notice', 'Save applies this usage immediately. Cancel discards changes.')}
         density="compact"
         contentMode="contained"
-        onClose={() => setEditingProfileId('')}
-        onSubmit={() => setEditingProfileId('')}
+        onClose={() => { setEditingProfile(null); setProbeError(''); }}
+        onSubmit={() => void saveProfiles()}
       >
         {editingProfile ? (
           <div className="flex min-h-0 flex-1 flex-col gap-2.5">
-            <div className="shrink-0">
+            <details className="shrink-0 text-xs text-slate-500"><summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary><p className="mt-1 break-words">{editingProfile.tasks.join(' · ')}</p><p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p></details>
+            <div className="shrink-0 max-h-[45vh] overflow-y-auto">
               <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
                 name: profileName(editingProfile),
@@ -1418,7 +1336,7 @@ export default function RuntimeProfilesPage() {
               <AdminConfigurationRow
                 rowId="runtime-fallback-model"
                 label={copy('fallback_model', 'Fallback model')}
-                value={instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[1] || ''))}
+                value={editingProfile.candidate_instance_ids[1] ? instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[1])) : copy('fallback_unconfigured', 'No fallback configured')}
                 detail={editingProfile.candidate_instance_ids[1] ? (
                   <button
                     type="button"
@@ -1429,6 +1347,9 @@ export default function RuntimeProfilesPage() {
                   </button>
                 ) : copy('fallback_optional_note', 'Optional; requires a primary model.')}
               />
+              </AdminConfigurationTable>
+              <BackofficeDisclosure summary={copy('advanced_settings', 'Advanced settings')}>
+              <AdminConfigurationTable ariaLabel={copy('advanced_settings', 'Advanced settings')} itemHeading={copy('configuration_item_heading', 'Setting')} valueHeading={copy('configuration_value_heading', 'Current value')} detailHeading={copy('configuration_detail_heading', 'Action / note')} density="compact">
               <AdminConfigurationRow
                 rowId="runtime-timeout"
                 label={copy('timeout', 'Timeout')}
@@ -1436,17 +1357,17 @@ export default function RuntimeProfilesPage() {
                   <input
                     id="runtime-profile-timeout"
                     type="number"
-                    min={1000}
-                    max={editingProfile.max_timeout_ms || 120000}
-                    step={1000}
-                    value={editingProfile.timeout_ms}
-                    onChange={(event) => updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) })}
+                    min={1}
+                    max={(editingProfile.max_timeout_ms || 120000) / 1000}
+                    step={1}
+                    value={editingProfile.timeout_ms / 1000}
+                    onChange={(event) => updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) * 1000 })}
                     className="input w-36"
                     aria-label={copy('timeout', 'Timeout')}
                   />
                 )}
-                detail={copy('timeout_note', 'Milliseconds; maximum {{max}}.', {
-                  max: String(editingProfile.max_timeout_ms || 120000),
+                detail={copy('timeout_seconds_note', 'Seconds; maximum {{max}}.', {
+                  max: String((editingProfile.max_timeout_ms || 120000) / 1000),
                 })}
               />
               <AdminConfigurationRow
@@ -1459,7 +1380,7 @@ export default function RuntimeProfilesPage() {
                       checked={editingProfile.allow_fallback}
                       onChange={(event) => updateProfile(editingProfile.profile_id, { allow_fallback: event.target.checked })}
                     />
-                    {editingProfile.allow_fallback ? copy('enabled', 'Enabled') : copy('disabled', 'Disabled')}
+                    {!editingProfile.candidate_instance_ids[1] ? copy('fallback_unconfigured', 'No fallback configured') : editingProfile.allow_fallback ? copy('enabled', 'Enabled') : copy('disabled', 'Disabled')}
                   </label>
                 )}
                 detail={copy('fallback_policy_note', 'Uses the selected fallback only when the primary route fails.')}
@@ -1482,6 +1403,7 @@ export default function RuntimeProfilesPage() {
                 detail={copy('retry_note', 'Bounded to 0 or 1 retry.')}
               />
               </AdminConfigurationTable>
+              </BackofficeDisclosure>
             </div>
 
             <section className="flex min-h-0 flex-1 flex-col gap-2.5 pt-1">
@@ -1490,9 +1412,7 @@ export default function RuntimeProfilesPage() {
                   <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
                     {copy('candidate_table_title', 'Candidate models')}
                   </h3>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
-                  </p>
+                  <AdminHelpTip label={copy('candidate_help', 'How to choose models')}>{copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}</AdminHelpTip>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <select
@@ -1514,6 +1434,11 @@ export default function RuntimeProfilesPage() {
                   />
                 </div>
               </div>
+              {requiresCapabilityVerification(editingProfile.execution_kind) ? (
+                <p data-ui="capability-verification-notice" className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                  {copy('verification_cost_notice', 'Verification sends a real test request to this supplier and may incur a charge. Verify selected models before saving; saving does not start a test.')}
+                </p>
+              ) : null}
               {probeError ? (
                 <div
                   role="alert"
@@ -1525,7 +1450,7 @@ export default function RuntimeProfilesPage() {
               ) : null}
               {candidates.length ? (
                 <div data-ui="runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
-                  <table className="w-full min-w-[960px] table-auto text-left text-sm">
+                  <table className="w-full min-w-[760px] table-auto text-left text-sm">
                     <colgroup>
                       <col className="w-[18%]" />
                       <col className="w-[36%]" />
@@ -1565,11 +1490,11 @@ export default function RuntimeProfilesPage() {
                                 </span>
                               ) : null}
                             </td>
-                            <th className="px-3 py-2 align-middle" scope="row" title={instance.instance_id}>
-                              <span className="block whitespace-nowrap font-semibold text-slate-950 dark:text-white">{instance.model_id}</span>
+                            <th className="px-3 py-2 align-middle" scope="row" title={`${instance.model_id} · ${instance.instance_id}`}>
+                              <span className="block break-words font-semibold text-slate-950 dark:text-white">{instance.upstream_model_id}</span>
                               {instance.upstream_status === 'missing_from_latest_catalog' ? (
                                 <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-300">
-                                  {copy('candidate_upstream_missing', 'Enabled, but not returned by the latest upstream catalog. Verify before use.')}
+                                  {copy('candidate_upstream_missing', 'Enabled; catalog unconfirmed. The latest account catalog did not return this model.')}
                                 </span>
                               ) : null}
                             </th>
@@ -1578,11 +1503,19 @@ export default function RuntimeProfilesPage() {
                                 label={verificationFailed
                                   ? copy('candidate_status_failed', 'Verification failed')
                                   : tone === 'success'
-                                    ? copy('candidate_status_ready', 'Ready')
+                                    ? requiresCapabilityVerification(editingProfile.execution_kind) ? copy('candidate_status_verified', 'Capability verified') : instance.upstream_status === 'missing_from_latest_catalog' ? copy('catalog_unconfirmed', 'Catalog unconfirmed') : copy('candidate_status_configured', 'Configured')
                                     : tone === 'error'
                                       ? copy('candidate_status_unavailable', 'Unavailable')
-                                      : copy('candidate_status_pending', 'Needs verification')}
-                                status={tone}
+                                      : requiresCapabilityVerification(editingProfile.execution_kind)
+                                        ? copy('candidate_status_pending', 'Needs verification')
+                                        : instance.upstream_status === 'missing_from_latest_catalog'
+                                          ? copy('catalog_unconfirmed', 'Catalog unconfirmed')
+                                          : copy('candidate_status_unconfirmed', 'Status unconfirmed')}
+                                status={tone === 'success'
+                                  && !requiresCapabilityVerification(editingProfile.execution_kind)
+                                  && instance.upstream_status === 'missing_from_latest_catalog'
+                                  ? 'warning'
+                                  : tone}
                               />
                             </td>
                             <td className="min-w-24 whitespace-nowrap px-3 py-2 text-center align-middle">
@@ -1592,7 +1525,7 @@ export default function RuntimeProfilesPage() {
                                 checked={primary}
                                 disabled={tone === 'error'}
                                 onChange={() => setCandidate(editingProfile.profile_id, 0, instance.instance_id)}
-                                aria-label={copy('select_primary_named', 'Use {{name}} as primary', { name: instance.model_id })}
+                                aria-label={copy('select_primary_named', 'Use {{name}} as primary', { name: instance.upstream_model_id })}
                               />
                             </td>
                             <td className="px-3 py-2 text-center align-middle">
@@ -1602,7 +1535,7 @@ export default function RuntimeProfilesPage() {
                                 checked={fallback}
                                 disabled={tone === 'error' || primary || !editingProfile.candidate_instance_ids[0]}
                                 onChange={() => setCandidate(editingProfile.profile_id, 1, instance.instance_id)}
-                                aria-label={copy('select_fallback_named', 'Use {{name}} as fallback', { name: instance.model_id })}
+                                aria-label={copy('select_fallback_named', 'Use {{name}} as fallback', { name: instance.upstream_model_id })}
                               />
                             </td>
                             <td className="px-3 py-2 text-center align-middle">
@@ -1614,7 +1547,7 @@ export default function RuntimeProfilesPage() {
                                   disabled={Boolean(probingInstanceId)}
                                   onClick={() => void verifyInstance(instance, editingProfile.execution_kind, editingProfile.timeout_ms)}
                                 >
-                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy('verify', '验证')}
+                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy(`verify_${editingProfile.execution_kind}`, 'Verify capability')}
                                 </button>
                               ) : capabilityEvidence(instance, editingProfile.execution_kind)?.state === 'verified' ? (
                                 <span className="whitespace-nowrap text-xs text-emerald-600">{copy('verified', '已验证')}</span>
@@ -1644,12 +1577,8 @@ export default function RuntimeProfilesPage() {
         onClose={() => setPendingNavigationHref('')}
         onConfirm={() => {
           const href = pendingNavigationHref;
-          if (data) {
-            setDrafts(data.profiles);
-            setBaseline(profileSnapshot(data.profiles));
-          }
           setMediaRecognitionForm(JSON.parse(mediaRecognitionBaseline) as MediaRecognitionPolicyForm);
-          setEditingProfileId('');
+          setEditingProfile(null);
           setProviderFilter('');
           setModelSearch('');
           setPendingNavigationHref('');

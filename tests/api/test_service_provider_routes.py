@@ -404,9 +404,10 @@ def test_admin_runtime_profiles_requires_auth_and_idempotency_and_retires_old_ro
 
 
 def test_admin_provider_connections_store_encrypted_credentials_and_project_to_ai_resources(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url, client = _build_client(tmp_path)
+    _mock_account_catalog(monkeypatch, ["gpt-5.5", "gpt-4o-mini"])
 
     response = client.post(
         "/internal/service/admin/provider-connections",
@@ -618,7 +619,8 @@ def test_admin_provider_connection_catalog_preview_fetches_models_without_persis
         "status": "available",
         "is_deprecated": False,
         "runtime_supported": True,
-        "verified": True,
+        "verified": False,
+        "upstream_model_id": "",
         "capability_tags": [],
     }
     assert data["models"][1]["runtime_supported"] is False
@@ -833,7 +835,7 @@ def test_provider_catalog_sync_keeps_enabled_models_missing_from_partial_upstrea
             "capability_ids": ["text_generation"],
             "runtime_profile_ids": [TEXT_AI_PROFILE_ID, VISION_AI_PROFILE_ID],
             "config": {
-                "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"],
+                "model_ids": ["gpt-5.5"],
                 "model_id": "gpt-5.5",
             },
             "metadata": {
@@ -859,6 +861,12 @@ def test_provider_catalog_sync_keeps_enabled_models_missing_from_partial_upstrea
         },
     )
     assert create_response.status_code == 200, create_response.text
+    # Seed retained historical choices that predate the account-only Admin rule.
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "partial_gateway")
+        assert row is not None
+        row.config_json = {**row.config_json, "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"]}
+        session.commit()
 
     test_response = client.post(
         "/internal/service/admin/provider-connections/partial_gateway/test",
@@ -2162,8 +2170,8 @@ def test_admin_provider_connection_delete_rejects_stale_preflight(
     assert preflight_response.status_code == 200, preflight_response.text
     expected_updated_at = preflight_response.json()["data"]["expected_updated_at"]
 
-    update_response = client.post(
-        "/internal/service/admin/provider-connections",
+    update_response = client.patch(
+        "/internal/service/admin/provider-connections/delete_conflict_provider",
         headers=build_internal_headers(idempotency_key="provider-delete-conflict-update"),
         json={
             "connection_id": "delete_conflict_provider",
@@ -2198,3 +2206,194 @@ def test_admin_provider_connection_delete_rejects_stale_preflight(
         connection["display_name"]
         for connection in list_response.json()["data"]["connections"]
     ] == ["Delete conflict updated"]
+
+
+def test_provider_create_conflict_and_edit_preserve_saved_credentials(tmp_path: Path, monkeypatch) -> None:
+    from sqlalchemy.orm import Session
+
+    database_url, client = _build_client(tmp_path)
+    _mock_account_catalog(monkeypatch, ["gpt-5.5"])
+    payload = {
+        "connection_id": "create-only-provider", "provider_id": "openai",
+        "provider_type": "openai_compatible", "kind": "openai_compatible",
+        "display_name": "Original", "enabled": True,
+        "base_url": "https://api.openai.test/v1", "capability_ids": ["text_generation"],
+        "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+        "config": {"model_ids": ["gpt-5.5"]}, "credential": "fixture-original-credential",
+    }
+    path = "/internal/service/admin/provider-connections"
+    def headers(key):
+        return build_internal_headers(idempotency_key=key)
+
+    assert client.post(path, headers=headers("create-original"), json=payload).status_code == 200
+    duplicate = {**payload, "display_name": "Overwrite attempt", "credential": "fixture-replacement"}
+    response = client.post(path, headers=headers("duplicate-create"), json=duplicate)
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "provider_connection.already_exists"
+
+    # Simulate the connection appearing between the lookup and INSERT. The DB
+    # uniqueness constraint, rather than the initial lookup, must protect it.
+    original_get = Session.get
+    skip_once = True
+    def raced_get(session, entity, ident, *args, **kwargs):
+        nonlocal skip_once
+        if skip_once and entity is ProviderConnection and ident == payload["connection_id"]:
+            skip_once = False
+            return None
+        return original_get(session, entity, ident, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Session, "get", raced_get)
+        response = client.post(path, headers=headers("racing-create"), json=duplicate)
+    assert response.status_code == 409, response.text
+    assert not skip_once
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, payload["connection_id"])
+        assert row is not None and row.display_name == "Original"
+        assert decrypt_provider_connection_secret(row.secret_ciphertext, settings=client.app.state.services.settings) == "fixture-original-credential"
+
+    edit = {key: value for key, value in payload.items() if key != "credential"}
+    edit["display_name"] = "Edited without replacing Key"
+    response = client.patch(path + "/" + payload["connection_id"], headers=headers("edit-no-key"), json=edit)
+    assert response.status_code == 200, response.text
+    assert "fixture-original-credential" not in response.text
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, payload["connection_id"])
+        assert row.display_name == edit["display_name"]
+        assert decrypt_provider_connection_secret(row.secret_ciphertext, settings=client.app.state.services.settings) == "fixture-original-credential"
+    response = client.patch(path + "/missing-provider", headers=headers("edit-missing"), json=edit)
+    assert response.status_code == 404, response.text
+
+
+def test_admin_model_additions_require_live_account_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    calls: list[str] = []
+    returned = ["account-model", "vendorA/foo"]
+    directory_unavailable = False
+
+    class AccountAdapter:
+        def fetch_catalog(self) -> ProviderCatalogSnapshot:
+            calls.append("catalog")
+            if directory_unavailable:
+                raise RuntimeError("fixture directory unavailable")
+            return ProviderCatalogSnapshot(
+                provider_id="deepseek", display_name="DeepSeek", adapter_type="openai",
+                models=[CatalogModelSeed(
+                    model_id=f"deepseek/{model_id}", family="text", feature="text",
+                    status="available", raw_json={"catalog_source": "provider_api"},
+                ) for model_id in returned],
+            )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda *_: AccountAdapter(),
+    )
+    payload: dict[str, Any] = {
+        "connection_id": "account_guard", "provider_id": "deepseek",
+        "provider_type": "openai_compatible", "kind": "openai_compatible",
+        "base_url": "https://api.example.test/v1", "credential": "fixture-key",
+        "config": {"model_ids": ["phantom"], "model_namespace_prefix": "deepseek"},
+        # A forged client preview must never prove membership.
+        "metadata": {"model_catalog_preview": {"model_ids": ["phantom"]}},
+    }
+
+    def create(key: str) -> Any:
+        return client.post(
+            "/internal/service/admin/provider-connections",
+            headers=build_internal_headers(idempotency_key=key), json=payload,
+        )
+
+    rejected = create("phantom-create")
+    assert rejected.status_code == 400, rejected.text
+    assert rejected.json()["error_code"] == "provider_connection.account_model_required"
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, "account_guard") is None
+
+    payload["config"]["model_ids"] = ["account-model", "vendorA/foo"]
+    accepted = create("account-create")
+    assert accepted.status_code == 200, accepted.text
+    assert len(calls) == 2
+
+    directory_unavailable = True
+    payload["config"]["model_ids"] = ["account-model", "vendorA/foo", "new-model"]
+    unavailable = client.patch(
+        "/internal/service/admin/provider-connections/account_guard",
+        headers=build_internal_headers(idempotency_key="directory-unavailable"), json=payload,
+    )
+    assert unavailable.status_code == 502, unavailable.text
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "account_guard")
+        assert row is not None
+        assert row.config_json["model_ids"] == ["account-model", "vendorA/foo"]
+
+    # Legacy IDs can be retained or removed without any account request.
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "account_guard")
+        assert row is not None
+        row.config_json = {**row.config_json, "model_ids": ["legacy-missing", "account-model"]}
+        row.metadata_json = {"model_ids": ["legacy-missing", "account-model"]}
+        session.commit()
+    payload.pop("credential")
+    payload["config"]["model_ids"] = ["legacy-missing"]
+    response = client.patch(
+        "/internal/service/admin/provider-connections/account_guard",
+        headers=build_internal_headers(idempotency_key="legacy-retain"), json=payload,
+    )
+    assert response.status_code == 200, response.text
+    assert len(calls) == 3
+
+    # Explicit empty config beats stale metadata, including after refresh.
+    payload["config"]["model_ids"] = []
+    payload["metadata"] = {"model_ids": ["legacy-missing"]}
+    response = client.patch(
+        "/internal/service/admin/provider-connections/account_guard",
+        headers=build_internal_headers(idempotency_key="clear-models"), json=payload,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["model_ids"] == []
+    listing = client.get(
+        "/internal/service/admin/provider-connections", headers=build_internal_headers(),
+    )
+    saved = next(row for row in listing.json()["data"]["connections"] if row["connection_id"] == "account_guard")
+    assert saved["model_ids"] == []
+    assert len(calls) == 3
+
+    directory_unavailable = False
+    # Removed legacy IDs lose their grandfathering, and vendor paths remain distinct.
+    for model_id in ["legacy-missing", "vendorB/foo"]:
+        payload["config"]["model_ids"] = [model_id]
+        response = client.patch(
+            "/internal/service/admin/provider-connections/account_guard",
+            headers=build_internal_headers(idempotency_key=f"reject-{model_id}"), json=payload,
+        )
+        assert response.status_code == 400, response.text
+    payload["config"]["model_ids"] = ["account-model"]
+    response = client.patch(
+        "/internal/service/admin/provider-connections/account_guard",
+        headers=build_internal_headers(idempotency_key="add-account-model"), json=payload,
+    )
+    assert response.status_code == 200, response.text
+
+    # An address change cannot reuse the old account's retained legacy choice.
+    payload["config"]["model_ids"] = ["account-model"]
+    returned.clear()
+    payload["base_url"] = "https://other-account.example.test/v1"
+    response = client.patch(
+        "/internal/service/admin/provider-connections/account_guard",
+        headers=build_internal_headers(idempotency_key="changed-address"), json=payload,
+    )
+    assert response.status_code == 400, response.text
+
+
+def _mock_account_catalog(monkeypatch: pytest.MonkeyPatch, model_ids: list[str]) -> None:
+    def fetch_catalog(self: Any) -> ProviderCatalogSnapshot:
+        return ProviderCatalogSnapshot(
+            provider_id=self.provider_id, display_name=self.display_name, adapter_type="openai",
+            models=[CatalogModelSeed(
+                model_id=model_id, family="text", feature="text", status="available",
+                raw_json={"catalog_source": "provider_api"},
+            ) for model_id in model_ids],
+        )
+    monkeypatch.setattr("app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog", fetch_catalog)

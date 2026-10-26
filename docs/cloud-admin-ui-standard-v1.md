@@ -32,14 +32,18 @@ accessibility, preserve the stronger boundary first.
 2. one summary strip;
 3. search, status filter, latest operation, and one create action;
 4. one semantic comparison table;
-5. frequent row actions before one overflow entry;
+5. Configure beside each supplier; normal connection tests in More, with failed-test retry kept visible;
 6. a wide edit workbench with one dense connection table above model
    visibility;
 7. explicit credential replacement instead of a prefilled secret field;
-8. one stable model toolbar for search, filters, history visibility, and
-   synchronization;
-9. one in-flow model-maintenance table for reference source, manual additions,
-   and confirmed bulk clearing; it must not float over the model data table.
+8. enabled/account counts, account fetch, and search remain visible, with a
+   visible unconfirmed-count filter. Optional filters and reference browsing
+   start collapsed; reference source/history/timestamps live inside reference
+   browsing and never inflate account counts;
+9. More operations groups manual model entry and confirmed batch mutations
+   in flow, without another configuration table or floating panel. Pending IDs
+   participate in save. Model switches stay visible; context, price, and
+   capability detail expand per row. Hide pagination for a single page.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
@@ -74,15 +78,18 @@ second customer directory and must not be merged into the Accounts route.
 `/admin/runtime-profiles` is the accepted PC reference for a
 candidate-chain configuration page:
 
-1. one semantic profile table showing primary model, fallback model, policy,
-   state, update time, and one configure action;
+1. one semantic profile table showing usage, primary model, state, and one
+   configure action; fallback appears as secondary model context;
 2. one shared wide workbench instead of a route-local dialog;
-3. one dense policy table above the candidate list;
+3. primary/fallback configuration above the candidate list, with timeout in
+   seconds and retry policy inside advanced settings;
 4. one stable supplier/search toolbar;
 5. one semantic candidate table with radio columns for primary and fallback;
-6. page-level draft state and one explicit final save;
+6. an independent dialog draft and immediate save of only the current usage;
+   cancel, Escape, and close discard it; no page-level second save;
 7. contract identity, revision, and other low-frequency evidence outside the
-   default working table.
+   default working table; automatic Toolbox candidates start collapsed, while
+   their order, routing rule, and actual-call evidence stay unchanged.
 
 The three primary runtime-configuration routes form one visual family without
 sharing an identical body layout:
@@ -91,12 +98,17 @@ sharing an identical body layout:
   service directory;
 - `/admin/vector-settings` summarizes the fixed profile and readiness before
   its connection table;
-- `/admin/runtime-profiles` summarizes configured and needs-attention counts
+- `/admin/runtime-profiles` summarizes configured, unconfigured, paused, and configuration-error counts
   before the candidate-chain directory.
 
 Use `Ready` / `已就绪` for an operable runtime object, `Needs config` /
 `待配置` for an incomplete object, and `Configuration saved` / `配置已保存`
-only for page-draft persistence. Keep each route's operator-specific working
+only for persistence. Model onboarding instead names the proven stage:
+`Connection saved`, `Catalog fetched`, `Usage configured`, and `Capability verified`.
+An enabled text model absent from the account catalog is `Catalog unconfirmed`,
+without an additional paid verification gate. Paused usages do not count as
+configuration errors, and Cloud configuration does not establish site adoption.
+Keep each route's operator-specific working
 surface; visual consistency does not require wrapping all three routes in the
 same extra panel or adding another shared component.
 
@@ -458,9 +470,11 @@ workspace tabs through `navigation.ts`.
 - Essential connection values use one dense configuration table during routine
   editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
-- Model maintenance uses concise in-flow configuration rows. Historical-model
-  visibility remains a filter, manual IDs remain a row-level add operation,
-  and clearing all enabled models requires an impact-specific confirmation.
+- Model maintenance uses concise in-flow rows for enabled-model mutations.
+  Historical-model visibility and reference source selection are explicit
+  browsing preferences inside collapsed reference browsing. Manual entry is
+  discoverable in More operations and participates in save; disabling all
+  enabled models requires an impact-specific confirmation.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
 - Short, fixed service configuration uses `AdminConfigurationTable` instead of

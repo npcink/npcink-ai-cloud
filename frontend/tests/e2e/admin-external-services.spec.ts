@@ -117,6 +117,18 @@ test('fixed service directory uses a table and one configuration workbench', asy
     contentType: 'image/png',
   });
 
+  await page.setViewportSize({ width: 1056, height: 733 });
+  const serviceTable = page.locator('[data-ui="external-service-table"]');
+  expect(await serviceTable.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const configure = page.locator('[data-external-service-id="tavily"]').getByRole('button', { name: /Configure|配置/i });
+  const configureBox = await configure.boundingBox();
+  expect(configureBox!.x + configureBox!.width).toBeLessThanOrEqual(1056);
+  await configure.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: testInfo.outputPath('external-services-1056.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+
   await page.getByRole('tab', { name: /Image sources|图库来源/i }).click();
   await expect(page.locator('[data-external-service-id="unsplash"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="pixabay"]')).toBeVisible();

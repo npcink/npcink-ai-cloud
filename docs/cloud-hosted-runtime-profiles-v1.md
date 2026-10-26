@@ -93,7 +93,10 @@ The read projection contains:
 
 - explicit platform and connector identity;
 - available runtime instances grouped by execution kind;
-- supported hosted profiles and their ordered candidate instance IDs;
+- six supported WordPress profiles, ordered candidate instance IDs, and
+  `availability_state` (`active` or `paused`);
+- independent `read_only_profiles` containing the existing `text.ai` automatic
+  binding snapshot in configured order; this is not historical call evidence;
 - the Cloud/local ownership boundary.
 
 The write request must repeat `contract_version`, `platform_kind`,
@@ -102,8 +105,14 @@ nonempty subset, validates only that subset, and preserves omitted profiles
 including their binding revisions and failed or stale media evidence. Both
 methods return the complete read projection and retain the same permission,
 idempotency, candidate validation, and service audit requirements. The Admin
-page sends only edited profiles using `PATCH`; unchanged media profiles never
-trigger capability probes during a text-only save.
+page opens an independent dialog draft and sends exactly that usage using
+`PATCH`. Success refreshes the complete projection and closes the dialog; a
+failure retains input. Cancel, Escape, and close discard that draft. No page
+second save exists. Ordinary saves never trigger capability probes, including
+for the edited media usage: explicit **Verify capability** supplies existing
+required evidence before saving. Media recognition policy saves independently.
+`read_only_profiles` is never accepted by the write interface; the six-profile
+whitelist and `text.ai` automatic selection rules are unchanged.
 Candidate instances, when present, must be available, enabled by the provider
 model allowlist, compatible with the profile execution kind, and limited to a
 primary plus one fallback. An empty candidate chain is an explicit fail-closed `needs_candidates` state, so a
@@ -142,11 +151,46 @@ fallback value.
 
 The page is a configuration workspace:
 
-1. compact readiness and boundary summary;
+1. configured / unconfigured / paused / configuration-error summary and boundary;
 2. hosted profile directory;
 3. selected profile inspector;
 4. candidate selection only inside the edit dialog;
-5. one save action with an auditable receipt.
+5. one dialog save per usage with an auditable receipt, plus independent media
+   recognition policy save.
+
+Model suppliers use POST for create (duplicate ID, including a concurrent
+create, returns 409) and PATCH for edit (missing ID returns 404). Credentials
+remain masked and an omitted replacement preserves the stored Key. Fetching
+the account catalog preserves enabled choices and never auto-selects all
+models. Missing configured models remain visible as catalog unconfirmed.
+Reference information refreshes independently and never counts as account
+availability. Save persists connection and enabled models before directory
+sync; directory failure offers a retry and cannot be reported as save failure.
+The preview fetch is not a stored runtime catalog. Saving therefore performs a
+second account catalog fetch to update runtime instances; explain this before
+submission rather than trusting a browser-supplied catalog as runtime truth.
+Missing credentials direct the operator back to Key entry; manual model entry
+remains discoverable in collapsed More operations. Duplicate-create errors name
+an actionable recovery, and changing a new supplier's display name updates its
+generated ID. Capability verification identifies its target capability and
+states that it sends a real, potentially billable Provider request.
+The model list defaults to account-returned models plus selected IDs that the
+account catalog has not confirmed, with separate counts. Reference models have
+their own browsing scope and never inflate the account count. Normalize only
+qualified/bare forms of the same ID; do not guess aliases between different
+IDs. Reference timestamps identify reference updates, not account fetches.
+Historical-model visibility is a browser-persisted list preference; reference
+source selection is explicitly view-only. Neither is supplier configuration or
+a reason to require saving. More operations groups manual model entry and confirmed enabled-model
+mutations; view preferences remain in reference browsing. Pending manually typed model IDs are included when saving even if
+the operator did not click Add.
+The next action configures usages with a supplier filter, or enables models
+first when none are selected.
+
+Existing runtime run details expose `selected_provider_id` and
+`selected_model_id` from the recorded run alongside `run_id`. Absent fields are
+null and shown as no call evidence; current routing configuration must never
+be used to reconstruct historical selection. No schema migration is needed.
 
 It must use the shared strict `ApiClient`. It must not fetch Site Knowledge
 embedding state, create audio jobs, expose generated media bytes, or imply
@@ -164,3 +208,32 @@ pnpm run check:perimeter
 pnpm run check:anti-drift
 pnpm run lint
 ```
+
+### 账户目录与型号身份（2026-10-26）
+
+- 内部 `model_id` 继续用于路由与历史证据。供应商内显示上游原始型号；
+  跨供应商位置显示供应商名称与上游型号，内部 ID 放在详情。
+- 仅归一化连接明确使用的系统 namespace；保留上游型号的大小写和斜杠路径，
+  不按名称相似度合并、替换型号，不把 `vendorA/foo` 与 `vendorB/foo` 当成一个型号。
+- `vision` 是已有目录主分类，文本用途也可选择这类文本输出模型；界面显示
+  “文本 · 支持图片输入”。目录声明不代表能力验证，视觉用途继续要求当前路由的
+  独立验证证据。普通文本保存不发起媒体验证。
+- 此兼容修正不修改 `text.ai` 自动候选的规则、标签或顺序。
+- 已保存但最新目录未返回的型号标为“已保存，目录未返回”，保留现有选择，
+  不显示成参考资料自动启用。停用前展示存储用途引用与保存影响，提供用途配置入口。
+- 所有供应商预设只填连接信息，不能预填任何启用型号；Admin 不再提供自由输入
+  型号的手动添加入口。参考资料只读，不提供单项或批量启用。
+- 新增启用必须从账户目录明确选择，不自动全选。Admin POST/PATCH 在新增选择时
+  重新获取账户目录，独立于客户端提交的预览/参考元数据校验，拒绝未返回或停用型号；
+  目录失败保留草稿，不写入连接。仅保留/减少已有选择不额外请求目录，不发起付费探测。
+  改变供应商、类型、地址或 namespace 后不得沿用旧连接的型号来源证明。
+- 已有手动配置保持兼容；未返回型号可保留/移除，但移除后重新启用需有账户目录证明。
+  内部 bootstrap/import 的 `upsert` 保留历史兼容能力，不暴露为 Admin 任意型号写入口。
+- `config.model_ids` 字段存在且为空时，明确表示没有启用模型；运行 allowlist 同样拒绝
+  该供应商的全部型号，不得恢复 metadata 或默认目录。只有字段缺失的旧连接才兼容
+  metadata 回退。无模型目录/仅部署 ID 的新连接目前不能通过普通 Admin 启用模型；
+  出现实需后单独设计部署 ID 接入，不恢复通用自由输入。
+
+成因记录：旧预设会将硬编码型号直接填入启用选择，保存未校验账户目录，目录同步又会
+为避免中断已有用途保留已保存型号；这条组合路径能够长期保留目录未返回型号。
+以上规则同时约束预设、参考入口、写接口和空列表语义，不能仅删除单个型号。

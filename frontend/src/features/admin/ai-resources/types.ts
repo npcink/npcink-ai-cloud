@@ -28,6 +28,8 @@ export type SupplierConnection = {
   capability_ids: string[];
   runtime_profile_ids: string[];
   model_ids?: string[];
+  model_namespace_prefix?: string;
+  model_usage_references?: Array<{ model_id: string; profile_id: string; role: string }>;
   config?: {
     image_response_format?: string;
     image_output_hosts?: string[];

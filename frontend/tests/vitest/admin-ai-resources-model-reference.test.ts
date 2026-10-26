@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelIdentityKeys } from '@/features/admin/ai-resources/model-reference-identity';
+import { modelIdentityKeys, upstreamModelId } from '@/features/admin/ai-resources/model-reference-identity';
 import {
   buildModelVisibilityRows,
   formatReferenceContext,
@@ -37,8 +37,19 @@ const reference: ModelReferenceEntry = {
 };
 
 describe('AI resources model reference projection', () => {
+  it('keeps upstream vendor paths and case-sensitive IDs distinct', () => {
+    const first = modelIdentityKeys('gateway/vendorA/foo', 'gateway');
+    const second = modelIdentityKeys('gateway/vendorB/foo', 'gateway');
+    expect([...first].some((key) => second.has(key))).toBe(false);
+    expect(modelIdentityKeys('Qwen/Qwen3', '')).toEqual(new Set(['Qwen/Qwen3']));
+    expect(modelIdentityKeys('gateway/Qwen/Qwen3', 'gateway')).toEqual(new Set(['Qwen/Qwen3', 'gateway/Qwen/Qwen3']));
+    expect(modelIdentityKeys('Foo', 'gateway').has('foo')).toBe(false);
+    expect(upstreamModelId('deepseek/deepseek-flash', 'deepseek')).toBe('deepseek-flash');
+    expect(upstreamModelId('Qwen/Qwen3', 'gateway')).toBe('Qwen/Qwen3');
+  });
+
   it('normalizes provider-qualified model identities once for every consumer', () => {
-    expect(modelIdentityKeys('OpenAI/GPT-5.5', 'openai')).toEqual(new Set([
+    expect(modelIdentityKeys('openai/gpt-5.5', 'openai')).toEqual(new Set([
       'openai/gpt-5.5',
       'gpt-5.5',
     ]));
@@ -46,6 +57,18 @@ describe('AI resources model reference projection', () => {
       'gpt-5.5',
       'openai/gpt-5.5',
     ]));
+  });
+
+  it('merges explicit reference namespaces with a custom connection namespace and uses account capabilities', () => {
+    const rows = buildModelVisibilityRows({
+      references: [{ ...reference, model_id: 'openai/gpt-5.5', feature: 'text_generation' }],
+      catalogPreview: normalizeProviderCatalogPreview({ models: [{ model_id: 'gateway/gpt-5.5', upstream_model_id: 'gpt-5.5', feature: 'vision' }] }),
+      selectedModelIds: [], providerId: 'openai', namespacePrefix: 'gateway', search: '',
+      featureFilter: 'text', visibilityFilter: 'all', intelligenceFilter: 'all', showDeprecated: false,
+      upstreamLabel: 'Account', manualLabel: 'Manual', enabledOnlyLabel: 'Saved',
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ modelId: 'gateway/gpt-5.5', sourceKind: 'catalog', feature: 'vision', selected: false });
   });
 
   it('normalizes untrusted catalog previews without retaining malformed rows', () => {
@@ -94,7 +117,7 @@ describe('AI resources model reference projection', () => {
       modelId: 'gpt-5.5',
       selected: true,
       verified: true,
-      sourceKind: 'reference',
+      sourceKind: 'catalog',
       reference,
     });
     expect(rows[1]).toMatchObject({
@@ -102,6 +125,41 @@ describe('AI resources model reference projection', () => {
       selected: true,
       sourceKind: 'manual',
     });
+  });
+
+  it('merges prefixed and bare catalog identities even before either model is selected', () => {
+    const options = {
+      references: [reference], catalogPreview: normalizeProviderCatalogPreview({ models: [{ model_id: 'gpt-5.5', feature: 'text' }] }),
+      selectedModelIds: [], providerId: 'openai', search: '',
+      featureFilter: 'all' as const, visibilityFilter: 'all' as const, intelligenceFilter: 'all' as const,
+      showDeprecated: false, upstreamLabel: 'Account', manualLabel: 'Manual', enabledOnlyLabel: 'Saved',
+    };
+    expect(buildModelVisibilityRows(options)).toHaveLength(1);
+    expect(buildModelVisibilityRows(options)[0]).toMatchObject({ modelId: 'gpt-5.5', reference, sourceKind: 'catalog', selected: false });
+  });
+
+  it('keeps account evidence separate from reference-only models and retains unconfirmed saved IDs', () => {
+    const options = {
+      references: [reference], catalogPreview: normalizeProviderCatalogPreview({ models: [{ model_id: 'account-model', feature: 'text' }] }),
+      selectedModelIds: ['saved-model'], providerId: 'openai', search: '',
+      featureFilter: 'all' as const, visibilityFilter: 'all' as const, intelligenceFilter: 'all' as const,
+      showDeprecated: false, upstreamLabel: 'Account', manualLabel: 'Manual', enabledOnlyLabel: 'Saved',
+    };
+    expect(buildModelVisibilityRows({ ...options, sourceScope: 'account' }).map(row => row.modelId)).toEqual(['saved-model', 'account-model']);
+    expect(buildModelVisibilityRows({ ...options, sourceScope: 'reference' }).map(row => row.modelId)).toEqual(['openai/gpt-5.5']);
+    const distinct = buildModelVisibilityRows({ ...options,
+      references: [{ ...reference, provider_id: 'deepseek', model_id: 'deepseek-v4-flash' }],
+      providerId: 'deepseek', selectedModelIds: ['deepseek-v4-flash'],
+      catalogPreview: normalizeProviderCatalogPreview({ models: [{ model_id: 'deepseek/deepseek-flash', feature: 'text' }] }),
+    });
+    expect(distinct).toHaveLength(2);
+    const historicalAccount = { ...options,
+      references: [{ ...reference, is_deprecated: true }],
+      catalogPreview: normalizeProviderCatalogPreview({ models: [{ model_id: 'gpt-5.5', feature: 'text' }] }),
+      selectedModelIds: [],
+    };
+    expect(buildModelVisibilityRows({ ...historicalAccount, sourceScope: 'account' })).toHaveLength(1);
+    expect(buildModelVisibilityRows({ ...historicalAccount, sourceScope: 'reference' })).toHaveLength(0);
   });
 
   it('preserves accepted sync, context, price, and missing-intelligence semantics', () => {

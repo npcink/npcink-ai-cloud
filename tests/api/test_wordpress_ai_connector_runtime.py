@@ -4446,6 +4446,15 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     ]
     assert data["boundary"]["direct_wordpress_write"] is False
     assert len(data["profiles"]) == 6
+    assert {profile["availability_state"] for profile in data["profiles"]} <= {"active", "paused"}
+    audio_profile = next(profile for profile in data["profiles"] if profile["execution_kind"] == "audio_generation")
+    assert audio_profile["availability_state"] == "paused"
+    with get_session(database_url) as session:
+        binding = session.get(RoutingBinding, "text.ai")
+        expected_candidates = list(binding.candidate_instance_ids) if binding else []
+    assert data["read_only_profiles"][0]["profile_id"] == "text.ai"
+    assert data["read_only_profiles"][0]["selection_mode"] == "automatic"
+    assert [candidate["instance_id"] for candidate in data["read_only_profiles"][0]["candidates"]] == expected_candidates
 
     assert all(len(profile["candidate_instance_ids"]) <= 2 for profile in data["profiles"])
     assert set(data["available_instances"]) == {
@@ -5636,3 +5645,35 @@ def test_comment_analysis_numeric_bounds_gate_final_connector_result(
     else:
         assert data["status"] == "error"
         assert data["error_code"] == "provider.output_quality_rejected"
+
+
+def test_admin_text_usage_accepts_image_input_text_model_without_vision_probe(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    before = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    profiles = _runtime_profile_replacement_from_projection(before["profiles"])
+    short_text = next(item for item in profiles if item["profile_id"] == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID)
+    short_text["candidate_instance_ids"] = ["openai-wp-ai-vision-test"]
+    # Text usage must not require, manufacture, or consume image-input evidence.
+    with get_session(database_url) as session:
+        for evidence in session.scalars(select(CatalogCapabilityEvidence)):
+            session.delete(evidence)
+        session.commit()
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="vision-model-text-use")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": [short_text],
+        },
+    )
+    assert response.status_code == 200, response.text
+    saved = response.json()["data"]["profiles"]
+    assert next(item for item in saved if item["profile_id"] == short_text["profile_id"])["candidate_instance_ids"] == ["openai-wp-ai-vision-test"]
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalars(select(CatalogCapabilityEvidence)).all() == []

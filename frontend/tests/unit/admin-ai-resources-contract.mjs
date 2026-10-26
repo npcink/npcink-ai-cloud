@@ -54,9 +54,9 @@ assert.match(pageSource, /openNewProviderConnection[\s\S]*action_add_model_suppl
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*toolbar=\{\([\s\S]*<SupplierToolbar/);
 assert.doesNotMatch(pageSource, /<SupplierSummaryCards/);
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*connections=\{aiSupplierConnections\}/);
-assert.match(pageSource, /href="\/admin\/runtime-profiles"[\s\S]*action_open_runtime_profiles/);
+assert.match(pageSource, /data-ui="supplier-next-step"[\s\S]*href=\{`\/admin\/runtime-profiles\?provider=[\s\S]*action_configure_usage/);
 assert.match(pageSource, /modelFeatureLabel/);
-assert.match(pageSource, /hosted runtime profile candidate chains/);
+assert.match(read('src/app/admin/runtime-profiles/page.tsx'), /Cloud-hosted candidate chain/);
 assert.doesNotMatch(pageSource, /abilityModelFeatureLabel|ability-model routing|new routing choices/i);
 assert.doesNotMatch(
   aiResourcesTranslationSource,
@@ -101,11 +101,7 @@ assert.match(
 );
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
 assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
-assert.match(
-  pageSource,
-  /catch \(testError\) \{[\s\S]*?testFailed = true;[\s\S]*?setMessage\(''\);[\s\S]*?testErrorMessage = aiText\([\s\S]*?message_connection_saved_test_failed[\s\S]*?await loadResources\(\);[\s\S]*?if \(testFailed\) \{[\s\S]*?setError\(testErrorMessage\);/,
-  'Provider save failures must clear the transient testing message and restore the test error after refreshing resources'
-);
+assert.match(pageSource, /setSavedSupplier[\s\S]*directoryError: testFailed \? testErrorMessage/, 'a directory failure must retain saved connection state and retry action');
 assert.match(
   pageSource,
   /useState<AsyncOperationState>\(IDLE_ASYNC_OPERATION\)/,
@@ -126,11 +122,9 @@ assert.match(
   /setLoadingModelReferences\(IDLE_ASYNC_OPERATION\)/,
   'Switching away from model references must clear the prior loading operation'
 );
-assert.match(
-  pageSource,
-  /if \(referenceSyncFailed\) \{[\s\S]*?setFetchingProviderCatalog\(failAsyncOperation\(referenceSyncFailed\)\);[\s\S]*?\} else \{[\s\S]*?setFetchingProviderCatalog\(succeedAsyncOperation\(\)\);/,
-  'Catalog refresh must settle its status after the optional reference sync'
-);
+const catalogFetch = pageSource.slice(pageSource.indexOf('  async function fetchProviderCatalogPreview()'), pageSource.indexOf('  async function syncModelReferences()'));
+assert.doesNotMatch(catalogFetch, /syncModelReferencesForProvider|setProviderModelIds/, 'directory fetch neither refreshes references nor auto-enables models');
+assert.match(catalogFetch, /setFetchingProviderCatalog\(succeedAsyncOperation\(\)\)/, 'catalog success must settle independently');
 assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
 assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
 assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
@@ -155,15 +149,15 @@ assert.match(pageSource, /field_visibility_filter[\s\S]*filter_all_visibility/);
 assert.match(pageSource, /field_feature_filter[\s\S]*filter_all_features/);
 assert.match(pageSource, /data-ui="model-metadata-gap-filter"[\s\S]*set_reference_intelligence_filter/);
 assert.match(pageSource, /<details data-ui="model-maintenance-table"/);
-assert.match(pageSource, /data-ui="model-maintenance-table"[\s\S]*rowId="historical-model-visibility"[\s\S]*field_show_deprecated_models_compact/);
+assert.match(pageSource, /data-ui="model-list-scope"[\s\S]*history_view_preference[\s\S]*data-ui="model-maintenance-table"/);
 assert.match(pageSource, /data-ui="model-clear-all-request"/);
 assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
 assert.match(pageSource, /data-ui="model-filtered-enable-request"/);
 assert.match(pageSource, /data-ui="model-filtered-disable-request"/);
 assert.match(pageSource, /filtered_models_batch_confirmation[\s\S]*data-ui="model-filtered-batch-confirm"/);
 assert.match(pageSource, /model_reference_compact_synced/);
-assert.match(pageSource, /column_model_intelligence[\s\S]*data-ui="model-reference-details"/);
-assert.match(pageSource, /catalog_model_status_upstream_available/);
+assert.match(pageSource, /model_details[\s\S]*data-ui="model-reference-details"/);
+assert.match(pageSource, /role="switch"[\s\S]*aria-checked=\{row\.selected\}/);
 assert.match(providerPresetsSource, /id: 'ollama'[\s\S]*https:\/\/docs\.ollama\.com\/api\/openai-compatibility/);
 assert.match(providerPresetsSource, /id: 'siliconflow'[\s\S]*capabilityIds: 'text_generation, embedding, image_generation'/);
 assert.match(providerPresetsSource, /connection\.metadata\?\.website_url/);

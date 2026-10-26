@@ -17,7 +17,7 @@ assert.match(
 assert.match(
   pageSource,
   /\.request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles', \{[\s\S]*method: 'PATCH'[\s\S]*body: \{[\s\S]*contract_version: 'cloud-hosted-runtime-profiles\.v1'[\s\S]*platform_kind: 'wordpress'[\s\S]*connector_id: 'wordpress_ai_connector'[\s\S]*operation_contract_version: 'wordpress_operation\.v1'[\s\S]*profiles:/,
-  'hosted runtime profile saves must use PUT with all four contract identity fields'
+  'hosted runtime profile saves must use PATCH with all four contract identity fields'
 );
 
 const supersededConnectorContractField = ['connector', 'contract', 'version'].join('_');
@@ -145,7 +145,7 @@ assert.match(
 
 for (const silentFallback of [
   /const item = value && typeof value === 'object' \? value as Record<string, unknown> : \{\}/,
-  /const available = data\.available_instances[\s\S]*: \{\}/,
+  /const available = data\.available_instances[^;]*: \{\}/,
   /const list = \(key: string\) => Array\.isArray\(available\[key\]\)[\s\S]*: \[\]/,
   /profiles: Array\.isArray\(data\.profiles\)[\s\S]*: \[\]/,
   /\.filter\(\(item\) => item\.instance_id\)|\.filter\(\(profile\) => profile\.profile_id\)/,
@@ -155,7 +155,7 @@ for (const silentFallback of [
 
 assert.match(
   pageSource,
-  /function instanceLabel[\s\S]*provider_display_name \|\| instance\.provider_id[\s\S]*instance\.model_id[\s\S]*Primary model[\s\S]*instanceLabel\(instancesById\.get/,
+  /function instanceLabel[\s\S]*provider_display_name \|\| instance\.provider_id[\s\S]*instance\.upstream_model_id[\s\S]*Primary model[\s\S]*instanceLabel\(instancesById\.get/,
   'selected candidate summaries must preserve the supplier and model route label'
 );
 
@@ -167,7 +167,7 @@ assert.match(
 );
 
 const dialogIndex = pageSource.indexOf('<AdminWorkbenchDialog');
-const candidateRowsIndex = pageSource.indexOf('candidates.map');
+const candidateRowsIndex = pageSource.indexOf('candidates.map', dialogIndex);
 assert.ok(dialogIndex >= 0, 'hosted runtime profile editing must use the shared admin workbench');
 assert.ok(candidateRowsIndex > dialogIndex, 'model candidates must only render inside the edit dialog');
 assert.equal(pageSource.indexOf('candidates.map', candidateRowsIndex + 1), -1, 'model candidates must not be duplicated outside the dialog');
@@ -204,7 +204,7 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[18%\][\s\S]*w-\[36%\][\s\S]*w-\[14%\][\s\S]*w-\[10%\][\s\S]*w-\[10%\][\s\S]*w-\[12%\][\s\S]*whitespace-nowrap/,
+  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[760px\] table-auto[\s\S]*w-\[18%\][\s\S]*w-\[36%\][\s\S]*w-\[14%\][\s\S]*w-\[10%\][\s\S]*w-\[10%\][\s\S]*w-\[12%\][\s\S]*whitespace-nowrap/,
   'candidate context and self-labelled compact controls must share one balanced toolbar above the workbench sole vertical scroll region'
 );
 
@@ -246,23 +246,12 @@ assert.match(
   'capability verification failures must use dialog-local error state'
 );
 
-assert.match(
-  pageSource,
-  /const pendingSelectedProbes = useMemo[\s\S]*requiresCapabilityVerification[\s\S]*capabilityEvidence/,
-  'the primary action must disclose when selected candidates require verification'
-);
-
-assert.match(
-  pageSource,
-  /pendingSelectedProbes\.length[\s\S]*action_verify_and_save/,
-  'the primary action must be labelled verify and save when selected evidence is pending'
-);
-
-assert.match(
-  pageSource,
-  /async function saveProfiles[\s\S]*for \(const \{ profile, instance \} of pendingSelectedProbes\)[\s\S]*requestCapabilityProbe\(instance, profile\.execution_kind, profile\.timeout_ms\)[\s\S]*setEditingProfileId\(profile\.profile_id\)[\s\S]*setProbeError\(probeFailureMessage[\s\S]*request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles'/,
-  'save must verify only selected pending candidates, stop on failure, and PATCH only after verification succeeds'
-);
+const saveSource = pageSource.slice(pageSource.indexOf('  async function saveProfiles()'), pageSource.indexOf('  async function saveMediaRecognitionPolicy()'));
+assert.doesNotMatch(saveSource, /requestCapabilityProbe/, 'saving must never implicitly dispatch a media probe');
+assert.match(saveSource, /explicit_verification_required/, 'saving must explain missing evidence');
+assert.match(saveSource, /profiles: \[\{[\s\S]*profile_id: profile.profile_id/, 'only the dialog usage may be submitted');
+assert.match(pageSource, /onClose=\{\(\) => \{ setEditingProfile\(null\)/, 'cancel and close discard dialog state');
+assert.match(pageSource, /onSubmit=\{\(\) => void saveProfiles\(\)\}/, 'dialog save must commit immediately');
 
 assert.match(
   pageSource,
@@ -296,7 +285,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /<ConfirmModal[\s\S]*isOpen=\{Boolean\(pendingNavigationHref\)\}[\s\S]*unsaved_leave_title[\s\S]*unsaved_leave_desc[\s\S]*discard_and_leave[\s\S]*onClose=\{\(\) => setPendingNavigationHref\(''\)\}[\s\S]*setDrafts\(data\.profiles\)[\s\S]*setBaseline\(profileSnapshot\(data\.profiles\)\)[\s\S]*router\.push\(href\)/,
+  /<ConfirmModal[\s\S]*isOpen=\{Boolean\(pendingNavigationHref\)\}[\s\S]*unsaved_leave_title[\s\S]*unsaved_leave_desc[\s\S]*discard_and_leave[\s\S]*onClose=\{\(\) => setPendingNavigationHref\(''\)\}[\s\S]*setEditingProfile\(null\)[\s\S]*router\.push\(href\)/,
   'dirty navigation must use the shared ConfirmModal and only discard the draft on confirmation'
 );
 

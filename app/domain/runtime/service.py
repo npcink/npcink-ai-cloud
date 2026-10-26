@@ -1717,6 +1717,8 @@ class RuntimeService:
                     "duration_ms": duration_ms,
                     "provider_call_count": calls_by_run.get(run.run_id, 0),
                     "has_meter_event": run.run_id in metered_run_ids,
+                    "selected_provider_id": run.selected_provider_id or None,
+                    "selected_model_id": run.selected_model_id or None,
                 }
             )
         return {
