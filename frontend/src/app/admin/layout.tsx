@@ -12,7 +12,7 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
-import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
+import { AdminHeaderLayout } from '@/components/admin/AdminHeaderLayout';
 import { AdminWorkspaceNavigation } from '@/components/admin/AdminWorkspaceNavigation';
 import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -304,8 +304,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
     return (item.activePrefixes || [href]).some(isPathMatch);
   };
-  const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
-  const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -518,7 +516,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">
         <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
-          <div className="flex min-h-12 items-center gap-3 px-4 py-1.5 md:px-5">
+          <AdminHeaderLayout left={(<>
             <Link
               href="/admin"
               className="flex items-center gap-3 lg:hidden"
@@ -538,7 +536,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 shrink-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-sidebar-control" className="hidden lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -558,19 +556,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   <path d="M15 6 9 12l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                {t('admin.operator_surface', {}, 'Operator surface')}
-              </span>
-              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-              {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
-                <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
-              </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
             </div>
 
-            <React.Suspense fallback={null}>
-              <AdminWorkspaceNavigation variant="header" />
-            </React.Suspense>
-
+          </>)} navigation={(
+            <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
+          )} utilities={(
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 type="button"
@@ -621,7 +611,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 )}
               </button>
             </div>
-          </div>
+          )} />
 
         <div
           id="admin-mobile-nav"
@@ -712,8 +702,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
-              <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
-              <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>
           </AdminQueryProvider>

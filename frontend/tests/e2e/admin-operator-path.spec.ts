@@ -504,14 +504,11 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await expect(workspaceTabs.getByRole('link')).toHaveCount(2);
   await expect(workspaceTabs.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
   await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toBeVisible();
-  const breadcrumb = page.locator('[data-ui="admin-route-breadcrumb"]');
-  await expect(breadcrumb.getByText(/^Customers$|^客户$/i)).toHaveCount(1);
+  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
 
   await page.goto('/admin/support-requests');
   await expect(adminPrimaryNav.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
   await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toHaveAttribute('aria-current', 'page');
-  await expect(breadcrumb).toContainText(/Customers|客户/i);
-  await expect(breadcrumb).toContainText(/Tickets|工单/i);
 
   await page.goto('/admin/subscriptions');
   const main = page.locator('main');
@@ -521,8 +518,6 @@ test('admin navigation stays customer-first', async ({ page }) => {
     '/admin/coverage', '/admin/subscriptions', '/admin/plans', '/admin/credit-packs', '/admin/economics',
   ]);
   await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
-  await expect(breadcrumb).toContainText(/Commercial records|商业记录/i);
-  await expect(breadcrumb).toContainText(/Subscriptions|订阅/i);
   await expect(main.getByRole('link', { name: /^Customer register$|^客户目录$|^客戶目錄$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Registered users$|^注册用户$|^註冊使用者$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Service follow-up$|^服务跟进$|^服務跟進$/i })).toHaveCount(0);

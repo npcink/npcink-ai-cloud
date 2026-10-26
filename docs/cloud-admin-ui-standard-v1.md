@@ -514,7 +514,7 @@ configuration-page compatibility alias and delegates to the same primitive.
 Keep the header order stable:
 one page title with an information hint, no more than one primary action plus
 bounded secondary action, then one compact factual summary row. The page header
-does not repeat parent context as an eyebrow; the route breadcrumb and workspace
+does not repeat parent context as an eyebrow; the active sidebar entry and centered workspace
 tabs already carry it. Use `BackofficeLayer` only for a section inside the page;
 it must not create a second page title. Loading and failure shells may use `BackofficePrimaryPanel`
 when they need to retain a bounded retry surface without fabricating summary
