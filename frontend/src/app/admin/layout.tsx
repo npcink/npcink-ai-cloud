@@ -593,9 +593,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <Link
                 href="/admin/logout"
                 prefetch={false}
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
+                aria-label={t('portal.logout')}
+                title={t('portal.logout')}
+                className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
               >
-                {t('portal.logout')}
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <path d="m16 17 5-5-5-5M21 12H9" />
+                </svg>
               </Link>
               <button
                 type="button"
