@@ -40,8 +40,8 @@ type AccountFixture = {
     membership_status: string;
     qq_bound: boolean;
     qq_binding_count: number;
-  };
-  identity_relationship_state: 'healthy';
+  } | null;
+  identity_relationship_state: 'healthy' | 'missing' | 'conflict' | 'access_disabled';
 };
 
 function identityFixture(accountId: string, email: string) {
@@ -158,7 +158,7 @@ async function installAccountsQueueMocks(page: Page, initialItems = initialAccou
     const status = url.searchParams.get('status') || '';
     const sort = url.searchParams.get('sort') || 'display_name';
     let items = accounts.filter((item) => {
-      const searchable = [item.account.account_id, item.account.name, item.primary_identity.email, item.display_package_label, item.account.metadata?.operator_note].join(' ').toLowerCase();
+      const searchable = [item.account.account_id, item.account.name, item.primary_identity?.email, item.display_package_label, item.account.metadata?.operator_note].join(' ').toLowerCase();
       return (!q || q.split(/\s+/).every(term => searchable.includes(term))) && (!status || item.account.status === status);
     });
     const hiddenInternalTotal = items.filter(item => item.account.account_id === 'acct_smoke_fixture').length;
@@ -248,12 +248,12 @@ test('customer directory persists customer filters and opens the specified custo
   const mocks = await installAccountsQueueMocks(page);
 
   await page.goto('/admin/accounts');
-  await expect(page.getByRole('main').getByRole('heading', { name: /^Customers$|^客户$/i }).first()).toBeVisible();
+  await expect(page.getByRole('main').getByRole('heading', { name: /^(Customers|客户)( · [\d,]+)?$/i }).first()).toBeVisible();
   await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(3);
   await expect(page.locator('table')).toHaveCount(1);
   expect(mocks.getRequestCount()).toBe(1);
   const toolbarBox = await page.locator('[data-ui="customer-directory-toolbar"]').boundingBox();
-  const searchBox = await page.locator('[data-ui="customer-directory-search"]').boundingBox();
+  const searchBox = await page.getByLabel(/^Search$|^搜索$/i).boundingBox();
   expect(toolbarBox).not.toBeNull();
   expect(searchBox).not.toBeNull();
   expect(searchBox!.width).toBeLessThan(toolbarBox!.width * 0.7);
@@ -269,7 +269,7 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(directoryRows).toContainText('Zeta Customer');
 
   await page.getByLabel(/^Search$|^搜索$/i).fill('Zeta');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expect(page).toHaveURL(/q=Zeta/);
 
   await page.reload();
@@ -288,7 +288,7 @@ test('customer directory persists customer filters and opens the specified custo
 
   mocks.failNextRequest();
   await page.getByLabel(/^Search$|^搜索$/i).fill('Missing');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(directoryRows).toHaveCount(1);
   await expect(directoryRows).toContainText('Zeta Customer');
@@ -452,7 +452,7 @@ test('customer directory pages real results and keeps explicit search, status an
   const beforeTyping = mocks.getRequestCount();
   await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 19');
   expect(mocks.getRequestCount()).toBe(beforeTyping);
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('Directory customer 19');
   await expectRange(page, 1, 1, 1);
@@ -518,7 +518,7 @@ test('customer directory blocks retained paging across a failed new search and r
   const release = mocks.holdNextRequest();
   const failedSearch = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/accounts' && new URL(response.url()).searchParams.get('q') === 'customer' && response.status() === 503);
   await page.getByLabel(/^Search$|^搜索$/i).fill('customer');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expect(page).toHaveURL('/admin/accounts?q=customer');
   await expect.poll(() => mocks.getRequests().at(-1)?.get('q')).toBe('customer');
   await expectRange(page, 51, 60, 81);
@@ -553,7 +553,7 @@ test('customer directory blocks retained paging across a failed new search and r
   const releaseEmpty = mocks.holdNextRequest();
   const failedEmptySearch = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/accounts' && new URL(response.url()).searchParams.get('q') === 'customer 00' && response.status() === 503);
   await page.getByLabel('Search', { exact: true }).fill('customer 00');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByLabel('Search', { exact: true }).press('Enter');
   await expect(page).toHaveURL('/admin/accounts?q=customer+00');
   await expect.poll(() => mocks.getRequests().at(-1)?.get('q')).toBe('customer 00');
   await expectRange(page, 0, 0, 81);
@@ -612,7 +612,7 @@ test('customer directory internal visibility and both detail links retain the di
   await expect(page).toHaveURL('/admin/accounts?sort=created_at');
   await expectRange(page, 1, 10, 11);
   await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 10');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expectRange(page, 1, 1, 1);
   const row = page.locator('[data-ui="customer-directory-row"]');
   const links = row.getByRole('link');
@@ -636,10 +636,10 @@ test('customer directory rejects a late response after a newer explicit search s
   const release = mocks.holdNextRequest();
   const firstResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('q') === 'Directory');
   await page.getByLabel(/^Search$|^搜索$/i).fill('Directory');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expect.poll(() => mocks.getRequests().at(-1)?.get('q')).toBe('Directory');
   await page.getByLabel(/^Search$|^搜索$/i).fill('Directory customer 20');
-  await page.getByRole('button', { name: /^Search$|^搜索$/i }).click();
+  await page.getByLabel(/^Search$|^搜索$/i).press('Enter');
   await expectRange(page, 1, 1, 1);
   release();
   await firstResponse;
@@ -676,7 +676,7 @@ test('customer directory Quiet PC preview keeps real language and theme controls
   await expect(page.locator('html')).not.toHaveClass(/dark/);
   await page.getByRole('button', { name: '语言', exact: true }).click();
   await page.getByRole('option', { name: 'English', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Customers', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Customers · [\d,]+$/ }).first()).toBeVisible();
   const englishAction = page.locator('[data-ui="customer-directory-row"]').first().getByRole('link', { name: 'Details', exact: true });
   await englishAction.scrollIntoViewIfNeeded();
   const englishBox = await englishAction.boundingBox();
@@ -696,7 +696,45 @@ test('customer directory Quiet PC preview keeps real language and theme controls
     await page.screenshot({ path: testInfo.outputPath(`accounts-en-dark-${width}.png`), fullPage: true, animations: 'disabled' });
   }
   await page.getByLabel('Search', { exact: true }).fill('No such customer');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByLabel('Search', { exact: true }).press('Enter');
   await expectRange(page, 0, 0, 0);
   await page.screenshot({ path: testInfo.outputPath('accounts-empty-en-dark.png'), fullPage: true, animations: 'disabled' });
+});
+
+
+test('customer directory separates account status from login issues and contains long content', async ({ page }, testInfo) => {
+  const items = directoryAccounts(4);
+  items[0].account.name = '0123456789abcdef0123456789abcdef';
+  items[0].account.account_id = 'acct_0123456789abcdef0123456789abcdef';
+  items[0].primary_identity = null;
+  items[0].identity_relationship_state = 'missing';
+  items[1].identity_relationship_state = 'conflict';
+  items[2].identity_relationship_state = 'access_disabled';
+  items[2].account.name = 'Long customer name '.repeat(12);
+  items[2].primary_identity!.email = `${'longaddress'.repeat(12)}@example.test`;
+  await installAccountsQueueMocks(page, items);
+  await page.goto('/admin/accounts');
+  await expectRange(page, 1, 4, 4);
+  await expect(page.getByRole('button', { name: /^Clear filters$|^清除筛选$/i })).toHaveCount(0);
+  const unnamed = page.locator('[data-ui="customer-directory-row"]').filter({ hasText: /Unnamed customer|未命名客户/ });
+  await expect(unnamed).toHaveCount(1);
+  await expect(unnamed.locator('td').nth(1)).toContainText(/Login identity missing|缺少登录身份/);
+  await expect(unnamed.locator('td').nth(2)).not.toContainText(/Missing|缺失|身份/);
+  await expect(page.getByText(/Conflicting login identities|登录身份冲突/)).toBeVisible();
+  await expect(page.getByText(/Login access disabled|登录访问已禁用/)).toBeVisible();
+  await expect(unnamed.locator('[title="acct_0123456789abcdef0123456789abcdef"]')).toHaveCount(1);
+  for (const width of [1920, 1440, 1280, 390]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (width >= 1440) {
+      const search = await page.getByLabel(/^Search$|^搜索$/i).boundingBox();
+      const sort = await page.getByRole('combobox', { name: /Sort|排序/i }).boundingBox();
+      expect(Math.abs(search!.y - sort!.y)).toBeLessThan(3);
+    }
+    const details = unnamed.getByRole('link', { name: /^Details$|^详情$/i });
+    await details.scrollIntoViewIfNeeded();
+    await expect(details).toBeVisible();
+    await expect(details).not.toHaveClass(/btn-primary/);
+    await page.screenshot({ path: testInfo.outputPath(`accounts-edge-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
 });

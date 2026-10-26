@@ -204,7 +204,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('#site-footprint')).toBeVisible();
 
   await page.goto('/admin/accounts', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Customers|客户|客戶)( · [\d,]+)?$/i }).first()).toBeVisible();
 
   await page.goto('/admin/sites/site_mvp');
   await expect(page.getByRole('heading', { name: /MVP Site|site_mvp/i }).first()).toBeVisible();
@@ -302,7 +302,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await expect(page.getByText(/Pilot customer\. Confirm package before public release\./i).first()).toBeVisible();
   await expect(page.getByText(/Free Account|免费客户|免費客戶/i)).toBeVisible();
   await expect(page.getByText(/Uncovered Account|未覆盖客户|未覆蓋客戶/i)).toBeVisible();
-  await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Customers|客户|客戶)( · [\d,]+)?$/i }).first()).toBeVisible();
   await expect(page.locator('table')).toHaveCount(1);
   await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(3);
   await expect(page.locator('#account-inspector')).toHaveCount(0);

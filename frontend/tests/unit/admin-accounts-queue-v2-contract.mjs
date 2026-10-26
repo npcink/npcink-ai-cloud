@@ -26,8 +26,8 @@ const serviceSource = readFileSync(
 
 assert.match(
   directorySource,
-  /BackofficePageHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*<table/,
-  'customer directory must use one compact header, summary strip, and semantic directory table'
+  /BackofficePageHeader[\s\S]*AdminDataTableFrame[\s\S]*<table/,
+  'customer directory must use one compact header and semantic directory table'
 );
 assert.match(directorySource, /const PAGE_SIZE = 10;/, 'directory pages must request exactly ten customers');
 assert.match(directorySource, /BackofficeFilterPill[\s\S]*role="group"[\s\S]*aria-pressed=\{appliedStatus === value\}/, 'status uses the existing mutually exclusive named pills');
@@ -44,7 +44,8 @@ assert.match(directorySource, /nextOffset === offset\) void loadAccounts\(true\)
 assert.match(directorySource, /customer-directory-range[\s\S]*common.pagination_summary/, 'single and empty pages must show an honest visible range');
 assert.match(directorySource, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages need an explicit bounded recovery without misleading no-match text');
 assert.doesNotMatch(directorySource, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination|useAdminQueueKeyboard/, 'the directory must not gain URL page size, a copied pager, or keyboard selection');
-assert.ok(directorySource.includes('summary_customers'), 'directory keeps a single customers summary fact');
+assert.doesNotMatch(directorySource, /summaryItems=|subscription_count_value/, 'directory avoids duplicate count strips and detail-only subscription totals');
+assert.match(directorySource, /hasLoaded \? ` · \$\{formatInteger\(total\)\}`/, 'successful customer total appears in the title');
 assert.doesNotMatch(
   directorySource,
   /summary_active|summary_login_ready/,

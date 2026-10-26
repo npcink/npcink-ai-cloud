@@ -22,7 +22,7 @@ Status: current contract index; shell workspace-tab density + accounts Quiet pol
 | 路由及契约 | 分页 | 搜索与操作 |
 | --- | --- | --- |
 | [Support](../frontend/tests/unit/admin-support-requests-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 单一互斥 view-pills；显式 Apply（Enter 提交表单）；Inspect 为可见行操作 |
-| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 摘要收敛为客户总数；搜索 250ms debounce + Enter；大蓝「搜索」降为 sr-only；清除筛选用文字链；不承接服务风险队列职责 |
+| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 客户总数并入标题，边界说明收进标题帮助；搜索/状态/排序宽屏同行、窄屏换行；账户状态与登录身份分列；目录保留站点数，订阅数留在详情；详情为文字链接；搜索 250ms debounce + Enter；大蓝「搜索」降为 sr-only；清除筛选用文字链；不承接服务风险队列职责 |
 | [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 响应式任务 list；独立命名的风险/生命周期等筛选、drawer 与 URL focus |
 | [Coverage](../frontend/tests/unit/admin-coverage-workspace-contract.mjs) | 默认 10；保留 URL `limit` 的 `1..500` | 保留状态 pills、250ms 搜索 debounce 与服务端排序/分页 |
 | [Audit](../frontend/tests/unit/admin-audit-workspace-contract.mjs) | 固定 10；不读取 URL `limit` | 只读 diagnostic 证据；11 个 URL 筛选与语义表同一工作区，显式 Apply；范围来自成功响应，深页恢复遵循服务端 `last_offset` |
@@ -57,7 +57,7 @@ Support 由 #1235/#1237、Accounts 由 #1239、Subscriptions 由 #1240、Coverag
 不采纳旧 #1223 对 **support-requests** 的独立 attention/status 双组、hover-only Inspect
 及弱化 status 的组合改版。Support 互斥 view / 显式 Apply / 可见 Inspect 仍按已合入契约。
 
-**本会话授权例外（Accounts + 壳层）**：账号目录允许摘要收敛、搜索 debounce+Enter、
+**本会话授权例外（Accounts + 壳层）**：账号目录允许总数并入标题、筛选区响应式同行、明确账户/登录状态、未命名客户回退、窄操作列与文字详情链、边界说明收进标题帮助、搜索 debounce+Enter、
 降级蓝「搜索」、清除筛选用文字链；workspace tab 允许上移顶栏（见 §2.1）。
 不因此重开 support #1223 全量视觉提案，也不冒称旧 closed PR heads 已合入。
 
