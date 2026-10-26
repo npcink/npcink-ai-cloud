@@ -103,6 +103,14 @@ Prefer `pnpm run pr:publish` over ad-hoc bodies that drop headings.
 
 ## Verification commands
 
+当前项目仅做 **PC 端开发与界面验收**（公共站点、Portal、登录及 Admin）；
+移动端和平板端不在当前适配/优化/验收范围。PC 窄窗口仍属 PC 范围。
+前端检查按改动影响选择：纯文案/间距/列宽通常只查当前页面与相关 PC 宽度；
+涉及颜色/主题才补明暗检查，交互变化查对应行为，共享变更再扩大页面矩阵。
+不为局部外观调整反复跑全后台；保留已有代码、测试及强制 CI 门禁。
+执行细则与旧文档范围优先级见
+[PC 范围与选择检查规范](docs/frontend-pc-scope-and-selective-verification-v1.md)。
+
 [docs/engineering/verification-commands.md](docs/engineering/verification-commands.md) —
 only repository-real entry points. Prefer the narrowest gate for the seam.
 Inventory governance: [engineering-command-inventory-standard-v1.md](docs/engineering-command-inventory-standard-v1.md).

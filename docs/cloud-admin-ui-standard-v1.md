@@ -2,6 +2,11 @@
 
 Status: active implementation standard.
 
+Current device scope and local check selection follow
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md).
+Development and UI acceptance currently target PC only; mobile/tablet work is
+out of scope. Narrow PC windows remain in scope.
+
 Purpose: keep `frontend/src/app/admin/**` a compact PC operator workspace when
 human or AI contributors add and change routes. This standard turns the
 accepted information architecture into reusable implementation rules and
@@ -219,8 +224,8 @@ the accepted reference for the tier.
   configuration tables use a quiet header boundary plus whitespace between
   rows. Neither restores an outer rounded frame, and interactive controls keep
   their own visible boundary.
-- Mobile remains accessible, but mobile-specific redesign is not required by
-  a PC-only change unless the changed primitive breaks the core task.
+- Preserve existing responsive implementation; mobile and tablet adaptation
+  and acceptance are outside the current PC-only development scope.
 
 Geometry values must come from the shared `--admin-*` tokens in
 `frontend/src/app/globals.css`. Do not repeat equivalent width literals in
@@ -583,6 +588,10 @@ For `material` work, run the route-focused visual spec and write its receipt
 before preview. Run `check:admin-ui` before publish, and run the complete
 `check:admin-ui:visual` matrix once at closeout when the changed seam or PR
 policy requires it; do not repeat the matrix after every styling edit.
+Route-local appearance work does not by itself require the full matrix.
+Select themes, PC widths, languages and interactions by actual impact under
+the PC scope standard. Pure spacing/column-width changes with no theme impact
+normally need no repeated dark-mode check.
 
 For `shared` work, or any change involving behavior, state ownership, API/data
 contracts, credentials, destructive actions, dependencies, or runtime inputs,
@@ -642,7 +651,13 @@ Inner loop:
 pnpm run check:admin-ui
 ```
 
-Focused PC browser evidence:
+Focused PC browser evidence (select the spec for the changed route; example):
+
+```bash
+pnpm --dir frontend run test:e2e tests/e2e/admin-accounts-queue-v2.spec.ts
+```
+
+Complete registered cross-route visual matrix (when required at closeout):
 
 ```bash
 pnpm run check:admin-ui:visual
