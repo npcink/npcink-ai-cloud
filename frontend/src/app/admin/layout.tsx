@@ -14,7 +14,7 @@ import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
 import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
 import { AdminWorkspaceNavigation } from '@/components/admin/AdminWorkspaceNavigation';
-import { adminSecondaryParentHref, adminWorkspaceTabForPath } from '@/features/admin/navigation';
+import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
@@ -306,10 +306,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   };
   const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
   const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
-  const activeWorkspaceTab = adminWorkspaceTabForPath(pathname);
-  const activeWorkspaceTabLabel = activeWorkspaceTab
-    ? t(activeWorkspaceTab.labelKey, {}, activeWorkspaceTab.fallback)
-    : '';
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -522,7 +518,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">
         <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
-          <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
+          <div className="flex min-h-12 items-center gap-3 px-4 py-1.5 md:px-5">
             <Link
               href="/admin"
               className="flex items-center gap-3 lg:hidden"
@@ -542,7 +538,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 shrink-0 items-center gap-2 text-sm lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -569,15 +565,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
                 <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
               </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
-              {activeWorkspaceTabLabel && activeWorkspaceTabLabel !== activeNavLabel ? (
-                <>
-                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-                  <span className="truncate text-slate-600 dark:text-slate-300">{activeWorkspaceTabLabel}</span>
-                </>
-              ) : null}
             </div>
 
-            <div className="flex items-center gap-2">
+            <React.Suspense fallback={null}>
+              <AdminWorkspaceNavigation variant="header" />
+            </React.Suspense>
+
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 className="hidden h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 text-sm text-slate-500 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white sm:inline-flex"

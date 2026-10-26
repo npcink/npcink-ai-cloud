@@ -44,11 +44,17 @@ assert.match(directorySource, /nextOffset === offset\) void loadAccounts\(true\)
 assert.match(directorySource, /customer-directory-range[\s\S]*common.pagination_summary/, 'single and empty pages must show an honest visible range');
 assert.match(directorySource, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages need an explicit bounded recovery without misleading no-match text');
 assert.doesNotMatch(directorySource, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination|useAdminQueueKeyboard/, 'the directory must not gain URL page size, a copied pager, or keyboard selection');
-for (const summary of ['summary_customers', 'summary_active', 'summary_login_ready', "common.sites", "common.subscriptions"]) {
-  assert.ok(directorySource.includes(summary), `existing summary ${summary} must remain`);
-}
+assert.ok(directorySource.includes('summary_customers'), 'directory keeps a single customers summary fact');
+assert.doesNotMatch(
+  directorySource,
+  /summary_active|summary_login_ready/,
+  'directory must not keep the decorative multi-metric summary strip'
+);
 assert.match(directorySource, /loadedAt[\s\S]*common.updated_at/, 'successful read freshness must remain visible');
-assert.match(directorySource, /onSubmit=\{applySearch\}[\s\S]*onChange=\{\(event\) => setDraftQuery/, 'typing remains a local draft until explicit search');
+assert.match(directorySource, /onSubmit=\{applySearch\}[\s\S]*onChange=\{\(event\) => setDraftQuery/, 'search keeps a local draft with Enter submit');
+assert.match(directorySource, /setTimeout\([\s\S]*updateDirectoryUrl\([\s\S]*q:/, 'search also applies through a short debounce');
+assert.match(directorySource, /button type="submit" className="sr-only"/, 'primary Search control is demoted from a blue button');
+assert.match(directorySource, /underline-offset-2[\s\S]*common\.clear_filters/, 'clear filters is a text link, not a secondary button');
 assert.match(directorySource, /hiddenInternalTotal > 0[\s\S]*show_internal_records[\s\S]*hide_internal_records|hiddenInternalTotal > 0[\s\S]*hide_internal_records[\s\S]*show_internal_records/, 'the internal record notice and visibility toggle must remain');
 
 assert.doesNotMatch(

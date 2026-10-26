@@ -320,23 +320,20 @@ function AccountsContent() {
     setDraftQuery(appliedQuery);
   }, [appliedQuery]);
 
+  // Quiet density: debounce search into the URL; Enter still applies immediately.
+  useEffect(() => {
+    const nextQuery = draftQuery.trim();
+    const currentQuery = appliedQuery.trim();
+    if (nextQuery === currentQuery) return;
+    const timer = window.setTimeout(() => {
+      updateDirectoryUrl({ q: nextQuery || null, offset: null });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [appliedQuery, draftQuery, updateDirectoryUrl]);
+
   const visibleAccounts = useMemo(
     () => (showInternalAccounts ? accounts : accounts.filter((account) => !isInternalAccount(account))),
     [accounts, showInternalAccounts]
-  );
-  const pageSummary = useMemo(
-    () => ({
-      active: visibleAccounts.filter((account) => account.status === 'active').length,
-      loginReady: visibleAccounts.filter(
-        (account) => account.identity_relationship_state === 'healthy'
-      ).length,
-      sites: visibleAccounts.reduce((sum, account) => sum + account.site_count, 0),
-      subscriptions: visibleAccounts.reduce(
-        (sum, account) => sum + account.subscription_count,
-        0
-      ),
-    }),
-    [visibleAccounts]
   );
   const isShowingRetainedResults = Boolean(
     loadError && loadedRequestKey && loadedRequestKey !== requestKey
@@ -485,22 +482,6 @@ function AccountsContent() {
             label: t('admin.accounts.summary_customers', {}, 'Customers'),
             value: formatInteger(total),
           },
-          {
-            label: t('admin.accounts.summary_active', {}, 'Active accounts'),
-            value: formatInteger(pageSummary.active),
-          },
-          {
-            label: t('admin.accounts.summary_login_ready', {}, 'Login ready'),
-            value: formatInteger(pageSummary.loginReady),
-          },
-          {
-            label: t('common.sites', {}, 'Sites'),
-            value: formatInteger(pageSummary.sites),
-          },
-          {
-            label: t('common.subscriptions', {}, 'Subscriptions'),
-            value: formatInteger(pageSummary.subscriptions),
-          },
         ]}
       />
 
@@ -576,30 +557,28 @@ function AccountsContent() {
               </BackofficeFilterPill>
             ))}
           </div>
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-            <form
-              data-ui="customer-directory-search"
-              className="flex min-w-0 flex-1 gap-2 lg:max-w-2xl"
-              onSubmit={applySearch}
-            >
-              <label className="min-w-0 flex-1">
-                <span className="sr-only">{t('common.search', {}, 'Search')}</span>
-                <input
-                  type="search"
-                  className="input w-full"
-                  value={draftQuery}
-                  placeholder={t(
-                    'admin.accounts.search_placeholder',
-                    {},
-                    'Customer name, email, account ID, or note'
-                  )}
-                  onChange={(event) => setDraftQuery(event.target.value)}
-                />
-              </label>
-              <button type="submit" className="btn btn-primary">
-                {t('common.search', {}, 'Search')}
-              </button>
-            </form>
+          <form
+            data-ui="customer-directory-search"
+            className="flex flex-col gap-2 lg:flex-row lg:items-end"
+            onSubmit={applySearch}
+          >
+            <label className="min-w-0 flex-1 lg:max-w-2xl">
+              <span className="sr-only">{t('common.search', {}, 'Search')}</span>
+              <input
+                type="search"
+                className="input w-full"
+                value={draftQuery}
+                placeholder={t(
+                  'admin.accounts.search_placeholder',
+                  {},
+                  'Customer name, email, account ID, or note'
+                )}
+                onChange={(event) => setDraftQuery(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="sr-only">
+              {t('common.search', {}, 'Search')}
+            </button>
             <label className="shrink-0 lg:w-48">
               <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
               <select
@@ -620,15 +599,17 @@ function AccountsContent() {
                 </option>
               </select>
             </label>
-            <button
-              type="button"
-              className="btn btn-secondary shrink-0 whitespace-nowrap"
-              disabled={!hasFilters && !draftQuery}
-              onClick={clearFilters}
-            >
-              {t('common.clear_filters', {}, 'Clear filters')}
-            </button>
-          </div>
+            <div className="flex items-center justify-end whitespace-nowrap lg:ml-auto">
+              <button
+                type="button"
+                className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline dark:text-slate-400 dark:hover:text-slate-200"
+                disabled={!hasFilters && !draftQuery}
+                onClick={clearFilters}
+              >
+                {t('common.clear_filters', {}, 'Clear filters')}
+              </button>
+            </div>
+          </form>
         </div>
 
         {hiddenInternalTotal > 0 ? (

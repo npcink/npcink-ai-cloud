@@ -1,6 +1,6 @@
 # Admin Quiet 队列契约索引
 
-Status: current contract index; no new UI mandate.
+Status: current contract index; shell workspace-tab density + accounts Quiet polish authorized this session (PR pending).
 
 2026-10-25 对账基线：`3b920f25025b165ac387595ec34309d7f0cac2f4`。
 本文补齐旧 #1215 的文档入口，记录已合入的路由契约与旧提案处置；
@@ -22,7 +22,7 @@ Status: current contract index; no new UI mandate.
 | 路由及契约 | 分页 | 搜索与操作 |
 | --- | --- | --- |
 | [Support](../frontend/tests/unit/admin-support-requests-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 单一互斥 view-pills；显式 Apply（Enter 提交表单）；Inspect 为可见行操作 |
-| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 客户目录筛选及返回上下文按本路由契约；不承接服务风险队列职责 |
+| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 摘要收敛为客户总数；搜索 250ms debounce + Enter；大蓝「搜索」降为 sr-only；清除筛选用文字链；不承接服务风险队列职责 |
 | [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 响应式任务 list；独立命名的风险/生命周期等筛选、drawer 与 URL focus |
 | [Coverage](../frontend/tests/unit/admin-coverage-workspace-contract.mjs) | 默认 10；保留 URL `limit` 的 `1..500` | 保留状态 pills、250ms 搜索 debounce 与服务端排序/分页 |
 | [Audit](../frontend/tests/unit/admin-audit-workspace-contract.mjs) | 固定 10；不读取 URL `limit` | 只读 diagnostic 证据；11 个 URL 筛选与语义表同一工作区，显式 Apply；范围来自成功响应，深页恢复遵循服务端 `last_offset` |
@@ -40,6 +40,13 @@ URL 筛选、offset、focus、返回上下文及请求失败后的展示范围�
 - drawer、键盘导航、焦点恢复与等待对象等既有操作契约不得因密度调整回退。
 - Portal 未发送的草稿附件与 Admin 隔离；队列展示不改变附件 API 或 WordPress 最终写入权。
 
+## 2.1 壳层 workspace tab 密度（本会话授权）
+
+- workspace tab（如客户运营「客户 | 工单」）可从上移到 sticky 顶栏，放在 `admin-route-breadcrumb` 与 ⌘K 之间，以省内容区一行高度。
+- tab 用下划线/字重，**不要**写成面包屑第三级；窄屏（`<lg`）回退内容区一行。
+- 适用于全部 `workspaceNavigation` 组；商业冻结 note 仍留在内容区。
+- 不拆除 `admin-route-breadcrumb`，不复制 Portal 顶栏 IA。
+
 ## 3. 旧提案与后续实现
 
 Support 由 #1235/#1237、Accounts 由 #1239、Subscriptions 由 #1240、Coverage
@@ -47,11 +54,12 @@ Support 由 #1235/#1237、Accounts 由 #1239、Subscriptions 由 #1240、Coverag
 的 exact heads 原样合入，或每项旧视觉提案均已实现。
 
 本轮保持当前已合入契约：不采纳旧 #1215 的跨路由统一 URL page-size override；
-不采纳旧 #1223 的独立 attention/status 双组、自动 debounce/Enter immediate、
-移除 Apply、hover-only Inspect 及弱化 status 的组合改版。
-当前互斥 view 保持队列语义，显式 Apply 保持请求提交边界，可见 Inspect 和 status
-保留操作可发现性与状态可读性。没有当前使用证据要求再次更换这套操作模型；
-这些旧提案不作为本轮未交付功能重开，也不冒称已实现。
+不采纳旧 #1223 对 **support-requests** 的独立 attention/status 双组、hover-only Inspect
+及弱化 status 的组合改版。Support 互斥 view / 显式 Apply / 可见 Inspect 仍按已合入契约。
+
+**本会话授权例外（Accounts + 壳层）**：账号目录允许摘要收敛、搜索 debounce+Enter、
+降级蓝「搜索」、清除筛选用文字链；workspace tab 允许上移顶栏（见 §2.1）。
+不因此重开 support #1223 全量视觉提案，也不冒称旧 closed PR heads 已合入。
 
 旧 #1215 的逐批点头流程不替代操作者当前授权；是否可自动合入按会话有效授权
 及现行 review/CI 规则执行。本文合入不授权任何新的 UI、共享组件或生产改动。
