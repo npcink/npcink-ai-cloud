@@ -47,8 +47,8 @@ assert.match(subscriptionsPage, /<AdminQueueKeyboardHint \/>/, 'subscription que
 assert.match(subscriptionsPage, /open=\{Boolean\(selectedSubscription\) && !keyboardFocus\}/, 'keyboard selection must not let the subscription drawer take Enter');
 
 assert.doesNotMatch(navigationCatalog, /noteKey: 'admin\.commercial_freeze_hint'/, 'operator-resumed commercial development must not display the retired freeze notice');
-assert.match(workspaceNavigation, /group\.noteKey/, 'workspace navigation must render the group note when present');
-assert.match(workspaceNavigation, /data-ui="admin-workspace-navigation-note"/, 'the freeze note needs a stable surface marker');
+assert.match(workspaceNavigation, /data-placement="header"/, 'workspace navigation belongs to the shared header');
+assert.doesNotMatch(workspaceNavigation, /group\.noteKey|data-ui="admin-workspace-navigation-note"/, 'compact workspace navigation must not restore retired group notes');
 assert.match(i18n, /'admin\.commercial_freeze_hint':[\s\S]*?Phase 1[\s\S]*?development freeze/, 'the English freeze note must state Phase 1 development freeze');
 assert.match(i18n, /'admin\.commercial_freeze_hint':\s*\n?\s*'Phase 1 开发冻结/, 'the Chinese freeze note must state Phase 1 development freeze');
 assert.match(i18n, /仍有?可正常读取和运营/, 'the Chinese freeze note must keep existing commercial reads operational');

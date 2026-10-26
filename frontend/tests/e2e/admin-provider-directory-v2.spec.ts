@@ -888,6 +888,25 @@ test('large model directories render one bounded page and reset pagination when 
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toHaveCount(0);
 
   if (await dialog.locator('[data-ui="model-maintenance-table"]').getAttribute('open') === null) await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
+  await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeDisabled();
+  await page.route('**/api/admin/provider-connections/preview-catalog', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        models: referenceItems.map((item) => ({
+          model_id: item.model_id, feature: item.feature, family: item.family,
+          status: item.status, is_deprecated: false, runtime_supported: true,
+          verified: false, capability_tags: ['text_generation'],
+        })),
+        model_ids: referenceItems.map((item) => item.model_id),
+        model_count: referenceItems.length,
+      })),
+    });
+  });
+  await dialog.locator('[data-ui="model-sync-primary"]').click();
+  await expect(directory.locator('tbody tr')).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeEnabled();
   await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
   await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
   await dialog.locator('[data-ui="model-filtered-batch-confirm"]').click();

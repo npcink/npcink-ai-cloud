@@ -59,6 +59,8 @@ export const FAMILY_SOURCES = {
     'src/app/admin/page.tsx; overview.operatorProjection.readiness.failureScopes from backend',
   'admin.accounts.identity_':
     'src/app/admin/accounts/page.tsx, [accountId]/page.tsx, CustomerAccessPanel.tsx; identity_relationship_state enum from backend accounts',
+  'admin.accounts.directory_identity_':
+    'src/app/admin/accounts/page.tsx; compact directory labels over the backend identity_relationship_state enum',
   'admin.plugin_obs_action_':
     'src/app/admin/plugin-observability/page.tsx attentionActionLabel; bounded AttentionStateAction values (acknowledge/mute/...)',
   'admin.plans.state_':
