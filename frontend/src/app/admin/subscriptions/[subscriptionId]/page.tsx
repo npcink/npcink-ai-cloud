@@ -278,7 +278,7 @@ function SubscriptionDetailContent() {
         {},
         'Budget pressure is visible. Confirm the customer coverage first, then inspect a covered site only if runtime service is affected.'
       )
-    : normalized.status === 'past_due' || normalized.status === 'expired'
+    : ['past_due', 'expired', 'suspended'].includes(normalized.status)
       ? t(
           'admin.subscription_detail.next_step_status',
           {},
