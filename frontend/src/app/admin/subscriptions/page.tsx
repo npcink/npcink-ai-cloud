@@ -2,6 +2,7 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -74,6 +75,7 @@ interface SubscriptionApiItem {
   account?: {
     account_id?: string;
     name?: string;
+    metadata?: Record<string, unknown>;
   };
   covered_sites?: Array<{
     site_id?: string;
@@ -138,7 +140,7 @@ function normalizeSubscription(item: SubscriptionApiItem): Subscription {
   return {
     subscription_id: subscription.subscription_id || '',
     account_id: subscription.account_id || account.account_id || '',
-    account_name: account.name || '',
+    account_name: customerLabel(account, ''),
     site_count: Number(item.coverage?.site_count || sites.length || 0),
     covered_sites: sites
       .map((site) => ({
@@ -462,9 +464,9 @@ function SubscriptionsContent() {
     past_due: t('admin.subscriptions.reason_past_due', {}, 'Billing follow-up is already active and may affect service continuity.'),
     expired: t('admin.subscriptions.reason_expired', {}, 'The subscription has ended and needs a renewal or closure decision.'),
     suspended: t('admin.subscriptions.reason_suspended', {}, 'Service is suspended and requires an explicit operator decision.'),
-    snapshot_stale: t('admin.subscriptions.reason_snapshot_stale', {}, 'This period billing statistics need refresh before the account is treated as reconciled.'),
-    snapshot_missing: t('admin.subscriptions.reason_snapshot_missing', {}, 'This period billing statistics are missing for at least one covered site.'),
-    expiring: t('admin.subscriptions.reason_expiring', {}, 'Current period ends soon, so renewal or follow-up should happen before support load increases.'),
+    snapshot_stale: t('admin.subscriptions.reason_snapshot_stale', {}, 'Usage statistics need refresh; this does not establish payment failure or blocked access.'),
+    snapshot_missing: t('admin.subscriptions.reason_snapshot_missing', {}, 'A current site is missing usage statistics; this does not establish payment failure.'),
+    expiring: t('admin.subscriptions.reason_expiring', {}, 'The service period ends soon. Check next-period coverage; this reminder alone does not establish a payment obligation.'),
     trialing: t('admin.subscriptions.reason_trialing', {}, 'Trial coverage is still active and should be checked before converting or ending.'),
     canceled: t('admin.subscriptions.reason_canceled', {}, 'The subscription is canceled and should remain visible until its service posture is closed.'),
     snapshot_unknown: t('admin.subscriptions.reason_snapshot_unknown', {}, 'Billing statistics are not yet classifiable, so the subscription needs monitoring.'),
@@ -541,7 +543,7 @@ function SubscriptionsContent() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
-                  {t('admin.subscriptions.queue_list_title', {}, 'Customers needing service follow-up')}
+                  {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
                 </h2>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                   {t(
@@ -733,7 +735,9 @@ function SubscriptionsContent() {
 
                     <div className={riskLevel === 'stable' ? 'hidden' : 'min-w-0'}>
                       <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(riskLevel))}>
-                        {t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
+                        {subscription.operator_risk.reason_code.startsWith('snapshot_')
+                          ? t('admin.customer_ops.statistics_maintenance', {}, 'Statistics maintenance')
+                          : t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
                       </span>
                       <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{riskReason}</p>
                     </div>
@@ -744,7 +748,7 @@ function SubscriptionsContent() {
                         <dd className="font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(subscription.site_count)}</dd>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <dt>{t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot')}</dt>
+                        <dt>{t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics')}</dt>
                         <dd className="font-semibold text-slate-950 dark:text-white">
                           {t(`status.${snapshotStatus}`, undefined, snapshotStatus)}
                         </dd>
@@ -889,7 +893,7 @@ function SubscriptionsContent() {
                   {[
                     [t('common.subscription', {}, 'Subscription'), t(`status.${selectedSubscription.status}`, undefined, selectedSubscription.status)],
                     [t('common.sites', {}, 'Sites'), formatInteger(selectedSubscription.site_count)],
-                    [t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot'), t(`status.${selectedSubscription.billing_snapshot_status?.status || 'unknown'}`, undefined, selectedSubscription.billing_snapshot_status?.status || 'unknown')],
+                    [t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics'), t(`status.${selectedSubscription.billing_snapshot_status?.status || 'unknown'}`, undefined, selectedSubscription.billing_snapshot_status?.status || 'unknown')],
                     [t('admin.period_start'), formatDate(selectedSubscription.current_period_start)],
                     [t('admin.period_end'), formatDate(selectedSubscription.current_period_end)],
                     [t('admin.usage_cost'), formatAdminCurrency(selectedSubscription.billing_summary?.total_cost || 0)],

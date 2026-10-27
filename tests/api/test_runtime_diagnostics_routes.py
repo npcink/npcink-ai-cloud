@@ -313,6 +313,11 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         "result_json" not in item and "input_json" not in item
         for item in run_evidence["items"]
     )
+    for item in run_evidence["items"]:
+        with get_session(database_url) as session:
+            recorded = session.get(RunRecord, item["run_id"])
+            assert item["selected_provider_id"] == (recorded.selected_provider_id or None)
+            assert item["selected_model_id"] == (recorded.selected_model_id or None)
     provider_run_ids = {
         item["run_id"]
         for item in provider_run_evidence_response.json()["data"]["items"]
@@ -325,7 +330,9 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert "site-knowledge.managed" in capability_by_id["knowledge"]["profile_ids"]
     assert capability_by_id["vision"]["provider_calls"] == 0
     assert data["governance_gaps"]["unmetered_capabilities"] == ["uncovered_text"]
-    assert data["governance_gaps"]["missing_provider_call_capabilities"] == ["uncovered_text"]
+    assert data["governance_gaps"]["missing_provider_call_capabilities"] == [
+        "uncovered_text", "vision"
+    ]
     assert data["governance_gaps"]["unmetered_run_count"] == 1
     missing = client.get(
         f"/internal/service/admin/runtime-telemetry/runs?site_id={site_id}"

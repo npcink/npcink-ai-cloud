@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-10-11T13:45:00Z",
-  "resolved_from_revision": "21d58e0d412ac3821e806af24a327c517ba0098b",
+  "resolved_at_utc": "2026-10-27T05:44:00Z",
+  "resolved_from_revision": "e520b81897fc31a4c9f0046f6112dccdd8b71529",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -43,8 +43,8 @@
       "key": "redis",
       "kind": "compose_external",
       "tag": "redis:7-alpine",
-      "digest": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
-      "reference": "redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "digest": "sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af",
+      "reference": "redis:7-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af",
       "release_reference": "npcink-ai-cloud-external-redis:prod",
       "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
       "services": ["redis"],
@@ -54,8 +54,8 @@
       "key": "nginx",
       "kind": "compose_external",
       "tag": "nginx:1.30-alpine-slim",
-      "digest": "sha256:32463212baf0e7d91aded2e9b843a4f2b9e017804b8c9d5bae7b51dcef64389c",
-      "reference": "nginx:1.30-alpine-slim@sha256:32463212baf0e7d91aded2e9b843a4f2b9e017804b8c9d5bae7b51dcef64389c",
+      "digest": "sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7",
+      "reference": "nginx:1.30-alpine-slim@sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7",
       "release_reference": "npcink-ai-cloud-external-nginx:prod",
       "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
       "services": ["proxy"],
@@ -146,7 +146,7 @@
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",
     "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
-    "authoritative_not_affected_sha256": "4c84c7df29a534d0b7f80dd7fc10c9c15e9f799729f006e129f80555e1f9585e",
+    "authoritative_not_affected_sha256": "da54246cb9f61be6cb00d8b123f683f1f3aef55cc39132539cfde1b1ad9b7a36",
     "generated_artifacts_must_not_be_committed": true
   }
 }

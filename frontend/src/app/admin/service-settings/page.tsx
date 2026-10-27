@@ -1998,9 +1998,7 @@ export default function AdminServiceSettingsPage() {
                 <div>
                   <div className="flex min-w-0 items-baseline gap-3">
                   <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.email_title', {}, 'Email delivery')}</h2>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {t('admin.service_settings.email_summary_desc', {}, '常用检查保留在页面上；低频 SMTP 字段需要编辑时再展开。')}
-                  </p>
+
                   </div>
                 </div>
                 <button

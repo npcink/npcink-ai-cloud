@@ -2,6 +2,11 @@
 
 Status: active implementation standard.
 
+Current device scope and local check selection follow
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md).
+Development and UI acceptance currently target PC only; mobile/tablet work is
+out of scope. Narrow PC windows remain in scope.
+
 Purpose: keep `frontend/src/app/admin/**` a compact PC operator workspace when
 human or AI contributors add and change routes. This standard turns the
 accepted information architecture into reusable implementation rules and
@@ -27,17 +32,68 @@ accessibility, preserve the stronger boundary first.
 2. one summary strip;
 3. search, status filter, latest operation, and one create action;
 4. one semantic comparison table;
-5. frequent row actions before one overflow entry;
-6. a wide edit workbench with one dense connection table above model
-   visibility;
+5. Configure beside each supplier; normal connection tests in More, with failed-test retry kept visible;
+6. a wide edit workbench with separate connection, account-model, and read-only
+   reference tabs;
 7. explicit credential replacement instead of a prefilled secret field;
-8. one stable model toolbar for search, filters, history visibility, and
-   synchronization;
-9. one in-flow model-maintenance table for reference source, manual additions,
-   and confirmed bulk clearing; it must not float over the model data table.
+8. enabled/account counts, account fetch, and search remain visible, with a
+   visible unconfirmed-count filter. Optional filters start collapsed. Reference
+   browsing never changes account rows or counts; source/history/timestamps
+   belong in the reference tab. Account fetch independently checks source
+   freshness and refreshes references after 24 hours, with separate failure and
+   retry (see [model reference contract](model-reference-metadata-v1.md));
+9. More operations appears only for account directories larger than one page
+   and groups confirmed filtered batch mutations in flow. No manual model-add
+   or disable-all shortcut. Model switches stay visible; context, price,
+   source/date, and capability detail expand per row. Missing exact-ID metadata
+   is explained. Hide pagination for a single page.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
+
+### Bounded model test
+
+Supplier model rows may open **Model test / 模型测试** for a saved, enabled
+text/vision model. This is an Admin integration diagnostic, not a chat,
+benchmark, batch evaluation, or WordPress editor surface. The shared workbench
+shows editable input, a few examples, optional image input, actual output,
+dispatched provider/model, latency, input/output tokens, and a server test ID.
+Return restores the supplier draft; testing never saves it. One primary action
+starts the test. Failure keeps input and allows explicit retry; no duplicate toast.
+
+The additive `POST /api/admin/provider-connections/{id}/model-tests` proxy requires
+`can_manage_catalog`, with the internal route requiring token authentication,
+idempotency/replay protection, and the existing Provider spend guard. It accepts
+only `model_id`, `capability` (`text`/`vision`), `prompt` (1–4000 characters), and
+optional `image_data_url`. There is no arbitrary endpoint, API key, routing
+override, fallback, system prompt, tools, or advanced generation parameter.
+The exact saved model must exist in the account catalog. A test uses the saved
+connection, 60-second timeout and 2,048 output-token limit (including reasoning where supplied). Vision defaults to a
+256×256 red square; uploads are PNG/JPEG/WebP up to 512 KB / 4 MP, decoded,
+sanitized and resized on the server. Remote image URLs are rejected.
+
+Output is transient Markdown rendered without raw HTML, embedded images, or
+active controls. External links permit only HTTP(S) and open with isolation.
+The result includes a read-only USD cost projection: supplier-reported amount
+when available, otherwise tokens × complete catalog rates, or fresh exact
+provider/model reference rates (same snapshot as an active source, <24 hours).
+No aliases, cross-provider reference guesses, external refresh on dispatch, or
+missing-price-as-zero. Cache rates are used when present; falling back to the
+input rate is explicitly conservative. Missing usage or required rates means
+“unable to estimate”. Details disclose per-million rates, source and timestamp;
+estimates are not supplier bills, and reference rates never affect budgets,
+routing or customer billing. Tiny positive amounts must not display as zero.
+Only diagnostic metadata enters the existing
+service audit (test ID, model/provider, kind, latency, tokens, outcome/error);
+prompts, images and outputs are not persisted. Test IDs are distinct from
+business `run_id`s, and tests create no customer usage or business run rows.
+Provider budget claims still account for dispatch. Successful custom tests mean
+**this call succeeded**, and never update capability evidence or runtime profiles.
+Keep the existing explicit capability-verification path separate. Development
+acceptance uses available M4 Ollama models; no paid calls solely for evidence.
+Saved local connections retain their server-side `secretless` flag when preview
+or edit omits it. The redacted browser projection need not expose this flag;
+an explicit `false` still replaces the saved value.
 
 The customer operations workspace provides two bounded references:
 
@@ -69,15 +125,18 @@ second customer directory and must not be merged into the Accounts route.
 `/admin/runtime-profiles` is the accepted PC reference for a
 candidate-chain configuration page:
 
-1. one semantic profile table showing primary model, fallback model, policy,
-   state, update time, and one configure action;
+1. one semantic profile table showing usage, primary model, state, and one
+   configure action; fallback appears as secondary model context;
 2. one shared wide workbench instead of a route-local dialog;
-3. one dense policy table above the candidate list;
+3. primary/fallback configuration above the candidate list, with timeout in
+   seconds and retry policy inside advanced settings;
 4. one stable supplier/search toolbar;
 5. one semantic candidate table with radio columns for primary and fallback;
-6. page-level draft state and one explicit final save;
+6. an independent dialog draft and immediate save of only the current usage;
+   cancel, Escape, and close discard it; no page-level second save;
 7. contract identity, revision, and other low-frequency evidence outside the
-   default working table.
+   default working table; automatic Toolbox candidates start collapsed, while
+   their order, routing rule, and actual-call evidence stay unchanged.
 
 The three primary runtime-configuration routes form one visual family without
 sharing an identical body layout:
@@ -86,12 +145,17 @@ sharing an identical body layout:
   service directory;
 - `/admin/vector-settings` summarizes the fixed profile and readiness before
   its connection table;
-- `/admin/runtime-profiles` summarizes configured and needs-attention counts
+- `/admin/runtime-profiles` summarizes configured, unconfigured, paused, and configuration-error counts
   before the candidate-chain directory.
 
 Use `Ready` / `已就绪` for an operable runtime object, `Needs config` /
 `待配置` for an incomplete object, and `Configuration saved` / `配置已保存`
-only for page-draft persistence. Keep each route's operator-specific working
+only for persistence. Model onboarding instead names the proven stage:
+`Connection saved`, `Catalog fetched`, `Usage configured`, and `Capability verified`.
+An enabled text model absent from the account catalog is `Catalog unconfirmed`,
+without an additional paid verification gate. Paused usages do not count as
+configuration errors, and Cloud configuration does not establish site adoption.
+Keep each route's operator-specific working
 surface; visual consistency does not require wrapping all three routes in the
 same extra panel or adding another shared component.
 
@@ -125,8 +189,9 @@ new candidate remains separate from this target contract:
    Scoped filters may occupy an additional row when present;
 2. the runtime conclusion shares the metric row rather than an empty banner;
 3. one bounded anomaly list carrying severity, count with its unit, and scope;
-4. one adjacent inspector that selects the first anomaly when no valid focus is
-   provided. Keep valid URL focus on refresh; selecting another anomaly opens
+4. one adjacent inspector that selects the first anomaly when no focus is
+   provided. Keep explicit URL focus on refresh, including an absent-issue
+   state when the returned evidence does not contain it; selecting another anomaly opens
    its overview. The inspector has one task tab row: Overview, Run records,
    and Daily trend. Overview includes function totals and the next action;
 5. Run records initially shows five returned records, loading, partial/total
@@ -155,6 +220,9 @@ new candidate remains separate from this target contract:
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
+
+Runtime observation, affected-versus-comparison evidence and recovery review
+follow [Runtime Observation and Diagnostic Closure](runtime-observation-diagnostics-v1.md).
 
 ### 1.1 Diagnostic Density Tier v2 (operator-authorized 2026-09-22)
 
@@ -219,8 +287,8 @@ the accepted reference for the tier.
   configuration tables use a quiet header boundary plus whitespace between
   rows. Neither restores an outer rounded frame, and interactive controls keep
   their own visible boundary.
-- Mobile remains accessible, but mobile-specific redesign is not required by
-  a PC-only change unless the changed primitive breaks the core task.
+- Preserve existing responsive implementation; mobile and tablet adaptation
+  and acceptance are outside the current PC-only development scope.
 
 Geometry values must come from the shared `--admin-*` tokens in
 `frontend/src/app/globals.css`. Do not repeat equivalent width literals in
@@ -453,9 +521,11 @@ workspace tabs through `navigation.ts`.
 - Essential connection values use one dense configuration table during routine
   editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
-- Model maintenance uses concise in-flow configuration rows. Historical-model
-  visibility remains a filter, manual IDs remain a row-level add operation,
-  and clearing all enabled models requires an impact-specific confirmation.
+- Model maintenance uses concise in-flow rows for enabled-model mutations.
+  Historical-model visibility and reference source selection are explicit
+  browsing preferences inside collapsed reference browsing. Manual entry is
+  discoverable in More operations and participates in save; disabling all
+  enabled models requires an impact-specific confirmation.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
 - Short, fixed service configuration uses `AdminConfigurationTable` instead of
@@ -509,7 +579,7 @@ configuration-page compatibility alias and delegates to the same primitive.
 Keep the header order stable:
 one page title with an information hint, no more than one primary action plus
 bounded secondary action, then one compact factual summary row. The page header
-does not repeat parent context as an eyebrow; the route breadcrumb and workspace
+does not repeat parent context as an eyebrow; the active sidebar entry and centered workspace
 tabs already carry it. Use `BackofficeLayer` only for a section inside the page;
 it must not create a second page title. Loading and failure shells may use `BackofficePrimaryPanel`
 when they need to retain a bounded retry surface without fabricating summary
@@ -583,6 +653,10 @@ For `material` work, run the route-focused visual spec and write its receipt
 before preview. Run `check:admin-ui` before publish, and run the complete
 `check:admin-ui:visual` matrix once at closeout when the changed seam or PR
 policy requires it; do not repeat the matrix after every styling edit.
+Route-local appearance work does not by itself require the full matrix.
+Select themes, PC widths, languages and interactions by actual impact under
+the PC scope standard. Pure spacing/column-width changes with no theme impact
+normally need no repeated dark-mode check.
 
 For `shared` work, or any change involving behavior, state ownership, API/data
 contracts, credentials, destructive actions, dependencies, or runtime inputs,
@@ -642,7 +716,13 @@ Inner loop:
 pnpm run check:admin-ui
 ```
 
-Focused PC browser evidence:
+Focused PC browser evidence (select the spec for the changed route; example):
+
+```bash
+pnpm --dir frontend run test:e2e tests/e2e/admin-accounts-queue-v2.spec.ts
+```
+
+Complete registered cross-route visual matrix (when required at closeout):
 
 ```bash
 pnpm run check:admin-ui:visual
@@ -693,3 +773,14 @@ Reject a change when:
 4. Keep legacy exceptions explicit and reduce them; never grow them silently.
 5. Use GitHub required checks for merge authority and M4 promotion for accepted
    development-runtime evidence.
+
+### 保存反馈与候选分层
+
+供应商保存只弹出一次简短成功提示；自动获取目录不再追加行内测试成功。
+后续引导只说明下一步操作，目录同步失败则在重试按钮旁说明，不冒充保存失败。
+手动检查仅说明已经验证的阶段，不笼统称模型“就绪”。
+用途候选默认显示当前目录型号；未选中的目录未确认、不可用型号折叠保留，
+当前用途已选中的异常主模型和兜底保持可见并说明原因。展示分组不改变选模资格、
+能力验证要求或已保存配置，不自动删除历史选择。
+
+Model tests distinguish the requested model from the supplier-reported model; a missing report stays unknown. A token-limit response retains usage evidence even when no visible text was produced. Health cost totals expose `cost_known` and `unpriced_call_count`; missing/partial prices are not a free call, and tiny positive USD amounts remain visible.

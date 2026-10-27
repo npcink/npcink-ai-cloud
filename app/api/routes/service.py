@@ -17,6 +17,7 @@ from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.api.routes.admin_model_tests import router as admin_model_tests_router
 from app.api.routes.commercial_subscriptions_admin import (
     router as commercial_subscriptions_admin_router,
 )
@@ -41,10 +42,13 @@ from app.domain.audio_generation.workbench import (
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
-from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
+from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID, TEXT_AI_PROFILE_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
-from app.domain.model_capabilities.contracts import MODEL_CAPABILITIES
+from app.domain.model_capabilities.contracts import (
+    MODEL_CAPABILITIES,
+    model_supports_execution_kind,
+)
 from app.domain.model_capabilities.evidence import (
     capability_evidence_is_current,
     capability_evidence_is_fresh,
@@ -100,6 +104,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
 from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
+router.include_router(admin_model_tests_router)
 router.include_router(site_compliance_admin_router)
 router.include_router(commercial_subscriptions_admin_router)
 logger = get_logger(__name__)
@@ -690,7 +695,7 @@ class ProviderConnectionPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     credential: str | None = None
     secret: str | None = None
-    secretless: bool = False
+    secretless: bool | None = None
 
 
 class ProviderConnectionDeletePayload(BaseModel):
@@ -1357,6 +1362,9 @@ def _serialize_hosted_runtime_instance(
         "capability_tags": list(instance.capability_tags or []),
         "model_status": str(model.status or ""),
         "model_feature": str(model.feature or ""),
+        "upstream_model_id": str(
+            model_metadata.get("upstream_model_id") or instance.model_id or ""
+        ),
         "catalog_source": str(model_metadata.get("catalog_source") or ""),
         "upstream_status": str(model_metadata.get("upstream_status") or "current"),
         "price_input": model.price_input,
@@ -1537,6 +1545,12 @@ def _build_hosted_runtime_profile_projection(
                     "label": spec.label,
                     "description": spec.description,
                     "tasks": list(spec.tasks),
+                    "availability_state": (
+                        "paused" if paused_runtime_feature(
+                            ability_name="", execution_kind=spec.execution_kind,
+                            profile_id=spec.profile_id,
+                        ) else "active"
+                    ),
                     "execution_kind": (
                         profile.execution_kind if profile is not None else spec.execution_kind
                     ),
@@ -1544,7 +1558,7 @@ def _build_hosted_runtime_profile_projection(
                     "timeout_ms": int(policy.get("timeout_ms") or spec.timeout_ms),
                     "max_timeout_ms": spec.max_timeout_ms,
                     "allow_fallback": bool(policy.get("allow_fallback", spec.allow_fallback)),
-                    "max_retries": int(policy.get("max_retries") or spec.max_retries),
+                    "max_retries": int(policy.get("max_retries", spec.max_retries)),
                     "note": note,
                     "revision": str(binding.revision if binding is not None else ""),
                     "updated_at": (
@@ -1558,6 +1572,38 @@ def _build_hosted_runtime_profile_projection(
                 }
             )
 
+        # A snapshot of the existing automatic route, never an editable seventh
+        # WordPress profile. Reading this must not seed or change its binding.
+        text_binding = repository.get_routing_binding(TEXT_AI_PROFILE_ID)
+        read_only_profiles = [{
+            "profile_id": TEXT_AI_PROFILE_ID,
+            "selection_mode": "automatic",
+            "candidates": [
+                {
+                    "instance_id": read_only_instance.instance_id,
+                    "provider_id": read_only_instance.provider_id,
+                    "provider_display_name": (
+                        providers_by_id[read_only_instance.provider_id].display_name
+                        if read_only_instance.provider_id in providers_by_id
+                        else read_only_instance.provider_id
+                    ),
+                    "model_id": read_only_instance.model_id,
+                    "upstream_model_id": (
+                        str(
+                            (models_by_id[read_only_instance.model_id].raw_json or {}).get(
+                                "upstream_model_id"
+                            )
+                            or read_only_instance.model_id
+                        )
+                        if read_only_instance.model_id in models_by_id
+                        else read_only_instance.model_id
+                    ),
+                }
+                for instance_id in (text_binding.candidate_instance_ids if text_binding else [])
+                if (read_only_instance := instances_by_id.get(instance_id)) is not None
+            ],
+        }]
+
     return {
         "contract_version": "cloud-hosted-runtime-profiles.v1",
         "surface": "admin_hosted_runtime_profiles",
@@ -1568,6 +1614,7 @@ def _build_hosted_runtime_profile_projection(
         "operation_contract_version": WORDPRESS_OPERATION_CONTRACT,
         "available_instances": available_instances_by_kind,
         "profiles": profiles,
+        "read_only_profiles": read_only_profiles,
         "boundary": {
             "public_runtime_accepts_raw_model_instance": False,
             "results_write_posture": "suggestion_only",
@@ -1643,8 +1690,8 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
-                feature_compatible = model.feature == spec.execution_kind or (
-                    spec.execution_kind == "vision" and model.feature == "text"
+                feature_compatible = model_supports_execution_kind(
+                    model.feature, spec.execution_kind
                 )
                 if not feature_compatible:
                     return [], (
@@ -5380,7 +5427,7 @@ async def create_admin_provider_connection(
         result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection, payload.model_dump(mode="json"))
+        ).save_connection, payload.model_dump(mode="json"), operation="create")
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5443,7 +5490,8 @@ async def update_admin_provider_connection(
         result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection, payload.model_dump(mode="json"), connection_id=connection_id)
+        ).save_connection, payload.model_dump(mode="json"), connection_id=connection_id,
+            operation="update")
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -6718,6 +6766,7 @@ async def get_runtime_telemetry_diagnostics(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
+    since: datetime | None = None,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6729,6 +6778,7 @@ async def get_runtime_telemetry_diagnostics(
         site_id=site_id,
         capability=capability,
         recent_minutes=recent_minutes,
+        since=since,
         limit=limit,
     )
     return build_envelope(
@@ -6746,7 +6796,9 @@ async def get_runtime_run_evidence(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     issue_code: str | None = Query(default=None, max_length=64),
+    evidence_scope: Literal["affected", "context"] = Query(default="affected"),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
+    since: datetime | None = None,
     limit: int = Query(default=25, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6758,7 +6810,9 @@ async def get_runtime_run_evidence(
         site_id=site_id,
         capability=capability,
         issue_code=issue_code,
+        evidence_scope=evidence_scope,
         recent_minutes=recent_minutes,
+        since=since,
         limit=limit,
     )
     return build_envelope(

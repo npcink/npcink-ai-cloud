@@ -271,7 +271,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['POST'],
-    pattern: /^provider-connections\/[^/]+\/image-delivery-probes$/,
+    pattern: /^provider-connections\/[^/]+\/(?:image-delivery-probes|model-tests)$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },
@@ -450,6 +450,7 @@ async function proxyAdminRequest(
       headers,
       body,
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildErrorResponse(

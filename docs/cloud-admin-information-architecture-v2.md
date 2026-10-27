@@ -136,8 +136,10 @@ Every non-authentication route must resolve to exactly one active primary
 navigation parent. Detail pages remain accessible from their owning queue or
 object, and standalone secondary pages remain accessible through the global
 quick switcher and their visible navigation family. A secondary page must not
-silently inherit Overview. Its header parent link provides a stable return
-entrance; the page's existing queue return preserves detailed queue context.
+silently inherit Overview. The shared centered header navigation provides a
+stable family return entrance; each detail page's existing queue return
+preserves detailed queue context. The shell omits redundant breadcrumb text
+(operator decision 2026-10-26; see [Admin UI contract index](admin-ui-spec.md#21-壳层二级导航2026-10-26-操作者授权)).
 
 Audit evidence (`/admin/audit`) is the persistent read-only service-operation
 workspace under Runtime diagnostics. It is a contextual destination for exact

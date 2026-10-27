@@ -5,13 +5,14 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 
 from app.adapters.providers.base import (
     CatalogInstanceSeed,
@@ -28,12 +29,19 @@ from app.adapters.providers.openai import (
 )
 from app.adapters.providers.registry import (
     _RUNTIME_CONFIG_CONNECTION_KINDS,
+    OPENAI_COMPATIBLE_CONNECTION_KINDS,
     SUPPORTED_CONNECTION_KINDS,
     build_provider_adapter_from_connection,
 )
 from app.core.config import Settings
 from app.core.db import get_session
-from app.core.models import CatalogInstance, CatalogModel, ProviderConnection, RunRecord
+from app.core.models import (
+    CatalogInstance,
+    CatalogModel,
+    ProviderConnection,
+    RoutingBinding,
+    RunRecord,
+)
 from app.core.secrets import decrypt_provider_connection_secret, encrypt_provider_connection_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.image_generation.materialization import (
@@ -134,6 +142,20 @@ class ProviderConnectionAdminService:
                     )
                 )
             )
+            # Resolve stored bindings once; do not infer usage from advertised profiles.
+            instances = {
+                item.instance_id: item for item in session.scalars(select(CatalogInstance))
+            }
+            usages: dict[str, list[dict[str, str]]] = {}
+            for binding in session.scalars(select(RoutingBinding)):
+                for position, instance_id in enumerate(binding.candidate_instance_ids or []):
+                    instance = instances.get(instance_id)
+                    if instance is not None:
+                        usages.setdefault(instance.provider_id, []).append({
+                            "model_id": instance.model_id,
+                            "profile_id": binding.profile_id,
+                            "role": "primary" if position == 0 else "fallback",
+                        })
         runtime_projection = self._runtime_effective_projection(rows)
         connections = [
             self._serialize(
@@ -142,6 +164,8 @@ class ProviderConnectionAdminService:
             )
             for row in rows
         ]
+        for connection in connections:
+            connection["model_usage_references"] = usages.get(str(connection["provider_id"]), [])
         connections.sort(
             key=lambda item: (
                 not bool(item.get("enabled")),
@@ -161,11 +185,36 @@ class ProviderConnectionAdminService:
         payload: dict[str, Any],
         *,
         connection_id: str | None = None,
+        operation: Literal["create", "update", "upsert"] = "upsert",
     ) -> dict[str, Any]:
         normalized = self._normalize_payload(payload, connection_id=connection_id)
         now = datetime.now(UTC)
         with get_session(self.database_url) as session:
             row = session.get(ProviderConnection, normalized["connection_id"])
+            if operation == "create" and row is not None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.already_exists",
+                    "a connection with this ID already exists; edit it or use a different ID",
+                    status_code=409,
+                )
+            if operation == "update" and row is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.not_found",
+                    "provider connection was not found",
+                    status_code=404,
+                )
+            # Admin writes must prove new selections against the account directory.
+            # Internal upsert is retained for existing bootstrap/import compatibility.
+            if (
+                operation != "upsert"
+                and normalized["config_json"].get("kind") not in _RUNTIME_CONFIG_CONNECTION_KINDS
+            ):
+                selected = connection_model_ids(
+                    normalized["config_json"], normalized["metadata_json"],
+                )
+                normalized["config_json"]["model_ids"] = selected
+                normalized["metadata_json"]["model_ids"] = selected
+                self._validate_account_model_additions(payload, normalized, row)
             credential = normalized["credential"]
             if row is None:
                 row = ProviderConnection(
@@ -240,6 +289,21 @@ class ProviderConnectionAdminService:
                 configured=configured,
                 credential_error=credential_error,
             )
+            # Flush before competing-connection queries can autoflush. The primary
+            # key also protects creates that race after the existence check.
+            try:
+                session.flush()
+            except IntegrityError as error:
+                session.rollback()
+                if operation == "create" and session.get(
+                    ProviderConnection, normalized["connection_id"]
+                ) is not None:
+                    raise ProviderConnectionAdminError(
+                        "provider_connection.already_exists",
+                        "a connection with this ID already exists",
+                        status_code=409,
+                    ) from error
+                raise
             if row.enabled and configured:
                 _disable_competing_runtime_connections(
                     session,
@@ -570,7 +634,7 @@ class ProviderConnectionAdminService:
                     budget_guard.reconcile(
                         session=session,
                         claim_ids=budget_claim_ids,
-                        actual_cost_usd=execution_result.cost,
+                        actual_cost_usd=execution_result.budget_cost_usd(),
                     )
                 probe_result = _inspect_image_delivery_probe_candidate(
                     execution_result.media_candidates,
@@ -695,6 +759,55 @@ class ProviderConnectionAdminService:
             result["connection"] = self._serialize(row)
             return result
 
+    def _validate_account_model_additions(
+        self,
+        payload: dict[str, Any],
+        normalized: dict[str, Any],
+        existing: ProviderConnection | None,
+    ) -> None:
+        config = normalized["config_json"]
+        selected = connection_model_ids(config, normalized["metadata_json"])
+        previous = (
+            connection_model_ids(_dict(existing.config_json), _dict(existing.metadata_json))
+            if existing is not None else []
+        )
+        # Changing the provider/address cannot grandfather another account's IDs.
+        if existing is not None and (
+            existing.base_url != normalized["base_url"]
+            or _dict(existing.config_json).get("provider_id") != normalized["provider_id"]
+            or _dict(existing.config_json).get("kind") != config.get("kind")
+            or _configured_model_namespace(_dict(existing.config_json), normalized["provider_id"])
+            != _configured_model_namespace(config, normalized["provider_id"])
+        ):
+            previous = []
+        namespace = _configured_model_namespace(config, normalized["provider_id"])
+        previous_keys = {
+            key for model_id in previous
+            for key in _provider_model_identity_keys(model_id, namespace)
+        }
+        added = [
+            model_id for model_id in selected
+            if not _provider_model_identity_keys(model_id, namespace).intersection(previous_keys)
+        ]
+        if not added:
+            return
+        # Do not trust client-supplied preview metadata or configured candidate seeds.
+        preview = self.preview_catalog({**payload, "connection_id": normalized["connection_id"]})
+        returned_keys = {
+            key for model in preview["models"]
+            if not model["is_deprecated"]
+            for key in _provider_model_identity_keys(model["model_id"], namespace)
+        }
+        if any(
+            not _provider_model_identity_keys(model_id, namespace).intersection(returned_keys)
+            for model_id in added
+        ):
+            raise ProviderConnectionAdminError(
+                "provider_connection.account_model_required",
+                "newly enabled models must be returned by the current account directory; "
+                "fetch account models and select again",
+            )
+
     def preview_catalog(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_payload(payload, connection_id=None)
         secret_ciphertext = ""
@@ -755,10 +868,16 @@ class ProviderConnectionAdminService:
                 status_code=502,
             ) from error
 
-        preview_models = [_catalog_preview_model(model) for model in list(snapshot.models or [])]
+        preview_models = [
+            _catalog_preview_model(model) for model in list(snapshot.models or [])
+            if _dict(model.raw_json).get("catalog_source") not in {
+                "sample", "configured_selection", "tei_config",
+            }
+        ]
         model_ids = [model["model_id"] for model in preview_models if model["model_id"]]
         return {
             "surface": "admin_provider_connection_catalog_preview",
+            "model_namespace_prefix": str(getattr(adapter, "model_namespace_prefix", "") or ""),
             "provider_id": str(snapshot.provider_id or normalized["provider_id"]),
             "display_name": str(snapshot.display_name or normalized["display_name"]),
             "adapter_type": str(snapshot.adapter_type or ""),
@@ -1103,7 +1222,26 @@ class ProviderConnectionAdminService:
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
-        secretless = bool(payload.get("secretless") or config.get("secretless"))
+        # This boolean is deliberately absent from the credential-redacted public
+        # config. Editing/previewing a saved local connection must retain it.
+        raw_config = _dict(payload.get("config"))
+        explicit_secretless = payload.get("secretless")
+        secretless = (
+            bool(raw_config.get("secretless"))
+            if explicit_secretless is None else bool(explicit_secretless)
+        )
+        if payload.get("secretless") is None and "secretless" not in raw_config:
+            with get_session(self.database_url) as session:
+                existing = session.get(ProviderConnection, normalized_connection_id)
+                if existing is not None:
+                    existing_config = _dict(existing.config_json)
+                    same_provider = (
+                        _string(existing_config.get("provider_id") or existing.connection_id)
+                        == normalized_provider_id
+                        and existing.provider_type == normalized_provider_type
+                    )
+                    if same_provider:
+                        secretless = bool(existing_config.get("secretless"))
         if (
             normalized_provider_type == "web_search_provider"
             and normalized_provider_id == "jina_reader"
@@ -1228,6 +1366,7 @@ class ProviderConnectionAdminService:
             "capability_ids": capability_ids,
             "runtime_profile_ids": runtime_profile_ids,
             "model_ids": model_ids,
+            "model_namespace_prefix": _configured_model_namespace(config, provider_id),
             "secrets": {
                 "credential": {
                     "configured": configured,
@@ -1364,6 +1503,7 @@ def _select_image_delivery_probe_target(
             status_code=409,
         )
     provider_id = _string(config.get("provider_id") or row.connection_id)
+    namespace_prefix = _configured_model_namespace(config, provider_id)
     rows = session.execute(
         select(CatalogModel, CatalogInstance)
         .join(CatalogInstance, CatalogInstance.model_id == CatalogModel.model_id)
@@ -1378,11 +1518,11 @@ def _select_image_delivery_probe_target(
     ).all()
     targets_by_key: dict[str, list[tuple[CatalogModel, CatalogInstance]]] = {}
     for model, instance in rows:
-        for key in _provider_model_identity_keys(model.model_id, provider_id):
+        for key in _provider_model_identity_keys(model.model_id, namespace_prefix):
             targets_by_key.setdefault(key, []).append((model, instance))
     for selected_model_id in selected_model_ids:
         candidates: list[tuple[CatalogModel, CatalogInstance]] = []
-        for key in _provider_model_identity_keys(selected_model_id, provider_id):
+        for key in _provider_model_identity_keys(selected_model_id, namespace_prefix):
             candidates.extend(targets_by_key.get(key, []))
         if candidates:
             candidates.sort(
@@ -1400,19 +1540,28 @@ def _select_image_delivery_probe_target(
     )
 
 
-def _provider_model_identity_keys(model_id: str, provider_id: str) -> set[str]:
-    normalized_model_id = _string(model_id).lower()
-    normalized_provider_id = _string(provider_id).lower()
-    if not normalized_model_id:
+def _provider_model_identity_keys(model_id: str, namespace_prefix: str) -> set[str]:
+    model_id = _string(model_id)
+    prefix = _string(namespace_prefix).strip("/")
+    if not model_id:
         return set()
-    keys = {normalized_model_id}
-    if "/" in normalized_model_id:
-        keys.add(normalized_model_id.split("/", 1)[1])
-    if normalized_provider_id and normalized_model_id.startswith(f"{normalized_provider_id}/"):
-        keys.add(normalized_model_id[len(normalized_provider_id) + 1 :])
-    if normalized_provider_id and not normalized_model_id.startswith(f"{normalized_provider_id}/"):
-        keys.add(f"{normalized_provider_id}/{normalized_model_id}")
-    return keys
+    raw_id = (
+        model_id[len(prefix) + 1 :] if prefix and model_id.startswith(f"{prefix}/") else model_id
+    )
+    return {raw_id, f"{prefix}/{raw_id}"} if prefix else {raw_id}
+
+
+def _configured_model_namespace(config: dict[str, Any], provider_id: str) -> str:
+    if "model_namespace_prefix" in config:
+        return _string(config.get("model_namespace_prefix")).strip("/")
+    kind = _string(config.get("kind")).lower()
+    if kind == "siliconflow":
+        return "siliconflow"
+    return (
+        provider_id
+        if kind in OPENAI_COMPATIBLE_CONNECTION_KINDS and provider_id != "openai"
+        else ""
+    )
 
 
 def _merge_configured_catalog_candidates(
@@ -1428,11 +1577,12 @@ def _merge_configured_catalog_candidates(
         return snapshot
 
     provider_id = _string(snapshot.provider_id or config.get("provider_id") or row.connection_id)
+    namespace_prefix = _configured_model_namespace(config, provider_id)
     upstream_models = list(snapshot.models or [])
     upstream_keys = {
         key
         for model in upstream_models
-        for key in _provider_model_identity_keys(model.model_id, provider_id)
+        for key in _provider_model_identity_keys(model.model_id, namespace_prefix)
     }
     preview = _dict(metadata.get("model_catalog_preview"))
     preview_models = (
@@ -1447,7 +1597,7 @@ def _merge_configured_catalog_candidates(
 
     configured_candidates: list[CatalogModelSeed] = []
     for selected_model_id in selected_model_ids:
-        identity_keys = _provider_model_identity_keys(selected_model_id, provider_id)
+        identity_keys = _provider_model_identity_keys(selected_model_id, namespace_prefix)
         if identity_keys.intersection(upstream_keys):
             continue
         catalog_model_id = _configured_catalog_model_id(
@@ -1459,7 +1609,7 @@ def _merge_configured_catalog_candidates(
             (
                 item
                 for preview_model_id, item in preview_models.items()
-                if _provider_model_identity_keys(preview_model_id, provider_id).intersection(
+                if _provider_model_identity_keys(preview_model_id, namespace_prefix).intersection(
                     identity_keys
                 )
             ),
@@ -1481,7 +1631,10 @@ def _merge_configured_catalog_candidates(
                 raw_json={
                     "catalog_source": "configured_selection",
                     "upstream_status": "missing_from_latest_catalog",
-                    "upstream_model_id": selected_model_id,
+                    "upstream_model_id": (
+                        selected_model_id.removeprefix(f"{namespace_prefix}/")
+                        if namespace_prefix else selected_model_id
+                    ),
                     "reference_source": "saved_provider_catalog_preview"
                     if preview_model
                     else "configured_model_id",
@@ -1522,13 +1675,7 @@ def _configured_catalog_model_id(
     provider_id: str,
     config: dict[str, Any],
 ) -> str:
-    kind = _string(config.get("kind")).lower()
-    if "model_namespace_prefix" in config:
-        prefix = _string(config.get("model_namespace_prefix")).strip("/")
-    elif kind in {"openai", "openai_compatible", "openai-compatible"} and provider_id != "openai":
-        prefix = provider_id
-    else:
-        prefix = ""
+    prefix = _configured_model_namespace(config, provider_id)
     return model_id if not prefix or model_id.startswith(f"{prefix}/") else f"{prefix}/{model_id}"
 
 
@@ -1710,7 +1857,10 @@ def _catalog_preview_model(model: Any) -> dict[str, Any]:
         "status": str(getattr(model, "status", "") or ""),
         "is_deprecated": bool(getattr(model, "is_deprecated", False)),
         "runtime_supported": runtime_supported,
-        "verified": runtime_supported,
+        "verified": False,
+        "upstream_model_id": str(
+            _dict(getattr(model, "raw_json", {})).get("upstream_model_id") or ""
+        ),
         "capability_tags": capability_tags,
     }
 

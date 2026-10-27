@@ -39,7 +39,7 @@ export function SupplierToolbar({
             aria-label={translate('status_filter_label', 'Status')}
           >
             <option value="all">{translate('filter_all_statuses', 'All statuses')}</option>
-            <option value="ready">{translate('filter_ready', 'Ready')}</option>
+            <option value="ready">{translate('filter_ready', 'Connection normal')}</option>
             <option value="attention">{translate('filter_attention', 'Needs attention')}</option>
             <option value="missing_secret">{translate('filter_missing_secret', 'Missing secret')}</option>
             <option value="disabled">{translate('filter_disabled', 'Disabled')}</option>

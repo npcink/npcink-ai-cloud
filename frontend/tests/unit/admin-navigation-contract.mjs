@@ -43,7 +43,8 @@ for (const route of [...primary, ...families]) {
   assert.ok(route in manifest.routes, `${route} points at an undeclared page`);
 }
 assert.match(layout, /adminSecondaryParentHref\(pathname\)/, 'the shell must resolve family parents instead of defaulting auxiliary routes to Overview');
-assert.match(layout, /AdminParentNavigationLink/, 'child pages need a clickable parent entrance');
-assert.match(layout, /AdminDiagnosticNavigation/, 'diagnostic child pages need visible related entrances');
+assert.doesNotMatch(layout, /admin-route-breadcrumb|AdminParentNavigationLink/, 'shell omits redundant route breadcrumbs; owning queues retain detail return context');
+assert.match(read('src/components/admin/AdminWorkspaceNavigation.tsx'), /observationNavigation[\s\S]*diagnosticNavigation[\s\S]*data-admin-secondary-navigation/, 'one shell navigation must own all six route families');
+assert.equal(layout.match(/<AdminWorkspaceNavigation/g)?.length, 1, 'shell must render one secondary navigation, without hidden duplicate menus');
 assert.match(read('src/app/admin/plugin-observability/page.tsx'), /<AdminObservabilityTabs showWindow=\{false\}/, 'plugin investigation must share tabs without duplicating time controls');
 console.log(`admin_navigation_contract: ok (${Object.keys(manifest.routes).length} routes; no orphan business page)`);

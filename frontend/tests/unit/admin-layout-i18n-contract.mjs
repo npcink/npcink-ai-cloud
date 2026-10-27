@@ -106,7 +106,6 @@ assert.match(
 
 const desktopAsideStart = layoutSource.indexOf('<aside');
 const desktopAsideEnd = layoutSource.indexOf('</aside>', desktopAsideStart);
-const desktopAsideSource = layoutSource.slice(desktopAsideStart, desktopAsideEnd);
 
 assert.ok(
   desktopAsideStart >= 0 && desktopAsideEnd > desktopAsideStart,
@@ -114,9 +113,9 @@ assert.ok(
 );
 
 assert.doesNotMatch(
-  desktopAsideSource,
+  layoutSource,
   /href="\/portal"/,
-  'Admin desktop sidebar must not include a Portal shortcut; cross-surface links belong in the top bar or mobile drawer'
+  'Admin navigation must not include a customer Portal shortcut in the sidebar, top bar, or mobile drawer'
 );
 
 assert.doesNotMatch(

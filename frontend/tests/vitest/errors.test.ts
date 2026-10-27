@@ -14,6 +14,8 @@ describe('localized UI errors', () => {
   it.each([
     ['client.network_error', '无法连接云端服务'],
     ['client.request_timeout', '云端服务请求超时'],
+    ['provider_connection.already_exists', '供应商已存在'],
+    ['provider_connection.not_found', '供应商已不存在'],
     ['provider_connection.auth_failed', '供应商认证失败'],
     ['provider.auth_invalid', '供应商认证失败'],
     ['provider_connection.network_error', '无法连接供应商'],

@@ -45,7 +45,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await page.keyboard.press('Escape');
   await expect(page.getByRole('tooltip')).toBeHidden();
   await metricHints.nth(3).hover();
-  await expect(page.getByRole('tooltip')).toContainText(/开始和结束时间|start and finish times/);
+  await expect(page.getByRole('tooltip')).toContainText(/完整起止时间|Completed timing/);
   await definitions.locator('summary').click();
   await expect(definitions.locator('dd')).toHaveCount(3);
   await expect(definitions.locator('dl')).toBeVisible();
@@ -76,14 +76,16 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await page.screenshot({ path: testInfo.outputPath('table-narrow.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await expect(page.getByRole('link', { name: /Site diagnostics|站点诊断/ })).toHaveAttribute('href', '/admin/troubleshooting?window=336&from=usage-statistics&site=site-a');
-  await page.getByRole('link', { name: /By function|按功能/ }).click();
+  await page.getByRole('link', { name: /By runtime type|按运行类型/ }).click();
   await expect(page.locator('[data-ui="usage-breakdown"]')).toContainText(/Classification|内容分类/);
-  await expect(page.getByRole('link', { name: /Function diagnostics|功能诊断/ })).toHaveAttribute('href', '/admin/troubleshooting?window=336&from=usage-statistics&function=wp-ai.classification');
+  await expect(page.getByRole('link', { name: /Runtime type diagnostics|运行类型诊断/ })).toHaveAttribute('href', '/admin/troubleshooting?window=336&from=usage-statistics&function=wp-ai.classification');
   await page.getByRole('link', { name: /Plugin activity records|插件运行记录/ }).click();
   await page.getByRole('tab', { name: /Table|表格/ }).click();
   const events = page.locator('[data-ui="usage-recent-activity"]');
   await expect(events.getByRole('heading', { name: /Plugin events|插件事件/, exact: true })).toBeVisible();
   await expect(events.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('[data-ui=\"backoffice-page-header\"]')).not.toContainText(/Run success rate|运行成功率/);
+  await expect(page.locator('[data-ui=\"usage-source-note\"]')).toContainText(/events|事件/);
   await expect(events.locator('tbody')).toContainText('2');
   await expect(page.getByRole('heading', { name: /Recent reports|近期上报记录|插件上报事件/ })).toHaveCount(0);
   await expect(page.getByText(/未关联运行表示暂无对应运行证据/)).toBeHidden();
@@ -149,7 +151,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   pluginFail = true;
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
   await expect(page.locator('p[role="alert"]')).toBeVisible();
-  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('12');
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText(/Run success rate|运行成功率/);
   await expect(events.locator('tbody tr')).toHaveCount(0);
   await expect(events).not.toContainText('2 条记录');
   await expect(events).toContainText(/History could not be loaded|记录加载失败/);
@@ -165,7 +167,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
   await expect(page.getByText(/5,000-run cap reached|已达到 5000 条上限/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('chart-truncated.png'), fullPage: true });
-  await writeAdminVisualReceipt({ page, testInfo, dataMode: 'mocked', route: '/admin/usage-statistics', pageModel: 'diagnostic', testedStates: ['ready', 'filtered', 'partial_error'], pageTitle: page.getByRole('heading', { name: /Usage Statistics|使用统计/, exact: true }), workingSurface: page.locator('[data-ui="usage-statistics-workspace"]'), browserEvidence: evidence, humanAcceptance: 'pending', expectedConsoleErrors: [/503/], routeRuleResults: [
+  await writeAdminVisualReceipt({ page, testInfo, dataMode: 'mocked', route: '/admin/usage-statistics', pageModel: 'diagnostic', testedStates: ['ready', 'filtered', 'partial_error'], pageTitle: page.getByRole('heading', { name: /Runtime observation|运行观测/, exact: true }), workingSurface: page.locator('[data-ui="usage-statistics-workspace"]'), browserEvidence: evidence, humanAcceptance: 'pending', expectedConsoleErrors: [/503/], routeRuleResults: [
     { id: 'single-primary-action', status: 'not_applicable', evidence: 'read-only filters and navigation' },
     { id: 'textual-status', status: 'pass', evidence: 'explicit source error and unavailable text' },
     { id: 'action-object-proximity', status: 'pass', evidence: 'site and function diagnostic links preserve identity; test scope returns to activity records' },

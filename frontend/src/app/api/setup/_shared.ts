@@ -168,10 +168,8 @@ export async function proxySetupPath(
   }
 
   let response: Response;
-  const stateController = rule.path === 'state' ? new AbortController() : null;
-  const stateTimeout = stateController
-    ? setTimeout(() => stateController.abort(), SETUP_STATE_TIMEOUT_MS)
-    : null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), rule.path === 'state' ? SETUP_STATE_TIMEOUT_MS : 12_000);
   try {
     response = await fetch(`${getApiBaseUrl().replace(/\/$/, '')}${rule.backendPath}`, {
       method,
@@ -179,8 +177,9 @@ export async function proxySetupPath(
       body: body && body.byteLength > 0 ? body : undefined,
       cache: 'no-store',
       redirect: 'manual',
-      ...(stateController ? { signal: stateController.signal } : {}),
+      signal: AbortSignal.any([request.signal, controller.signal]),
     });
+    return await forwardSetupResponse(response);
   } catch {
     if (rule.path === 'state') {
       return buildSetupErrorResponse(
@@ -191,10 +190,6 @@ export async function proxySetupPath(
     }
     return buildSetupErrorResponse(502, 'proxy.setup_unreachable', 'failed to reach setup endpoint');
   } finally {
-    if (stateTimeout !== null) {
-      clearTimeout(stateTimeout);
-    }
+    clearTimeout(timeout);
   }
-
-  return forwardSetupResponse(response);
 }

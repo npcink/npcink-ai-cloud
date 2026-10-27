@@ -11,6 +11,11 @@ Prove the WordPress editor loop with real evidence:
 `WordPress Ability → Cloud Addon → Cloud runtime → hosted model → reviewed editor adoption → bounded feedback`
 
 Keep only usage, error, provider, and quality evidence needed for that loop.
+The operator-approved 2026-10-27
+[value-first development decision](docs/engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)
+freezes further ecosystem, workflow, adaptive-routing, analytics and platform expansion.
+Prioritize title/summary/selected-text rewrite value; retain existing services,
+security/correctness maintenance and the approved sales/trial exception.
 Details: [phase-1-scope.md](docs/engineering/phase-1-scope.md),
 [README Current Focus](README.md#current-focus),
 [early-product-validation-and-minimal-telemetry-standard-v1.md](docs/early-product-validation-and-minimal-telemetry-standard-v1.md),
@@ -37,7 +42,10 @@ operations requiring explicit authorization.
 
 ## Follow-on (Phase 2–3)
 
-After Phase 1 loop evidence: continue Phase 2 portal e2e triage (assertion
+Select follow-on work under the value-first decision above; technical loop
+evidence alone does not activate the entire backlog. Maintain applicable gates
+and fix core-path, safety and correctness failures. Phase 2 includes portal e2e
+triage (assertion
 batches through #1196 merged; screenshot baseline + residual failures need a
 fresh master re-scan — see follow-on §2.1), watch the bounded auto-fail for
 orphan `running` inline runs (the lease prevents lockout; the worker fails a
@@ -102,6 +110,14 @@ Required human headings (CI-enforced): **Scope**, **Boundary**, **Verification**
 Prefer `pnpm run pr:publish` over ad-hoc bodies that drop headings.
 
 ## Verification commands
+
+当前项目仅做 **PC 端开发与界面验收**（公共站点、Portal、登录及 Admin）；
+移动端和平板端不在当前适配/优化/验收范围。PC 窄窗口仍属 PC 范围。
+前端检查按改动影响选择：纯文案/间距/列宽通常只查当前页面与相关 PC 宽度；
+涉及颜色/主题才补明暗检查，交互变化查对应行为，共享变更再扩大页面矩阵。
+不为局部外观调整反复跑全后台；保留已有代码、测试及强制 CI 门禁。
+执行细则与旧文档范围优先级见
+[PC 范围与选择检查规范](docs/frontend-pc-scope-and-selective-verification-v1.md)。
 
 [docs/engineering/verification-commands.md](docs/engineering/verification-commands.md) —
 only repository-real entry points. Prefer the narrowest gate for the seam.

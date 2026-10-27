@@ -39,6 +39,20 @@ def test_empty_usage_has_no_success_rate_or_duration() -> None:
     assert result["possibly_truncated"] is False
 
 
+def test_long_failed_tasks_do_not_inflate_succeeded_duration() -> None:
+    now = datetime.now(UTC)
+    runs = [
+        RunRecord(site_id="site", profile_id="text.ai", status=status,
+                  started_at=now - timedelta(seconds=seconds), finished_at=now)
+        for status, seconds in [("succeeded", 2), ("failed", 9000)]
+    ]
+    result = build_usage_statistics(runs, since=now - timedelta(days=1), until=now)
+    assert result["avg_latency_ms"] == 4501000
+    assert result["succeeded_avg_latency_ms"] == 2000
+    assert result["failed_avg_latency_ms"] == 9000000
+    assert result["functions"][0]["succeeded_avg_latency_ms"] == 2000
+
+
 def test_dimension_comparison_has_distinct_zero_filled_series_and_other() -> None:
     now = datetime(2026, 9, 10, 12, tzinfo=UTC)
     runs = [

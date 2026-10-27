@@ -121,13 +121,13 @@ must use the digest-locked candidates recorded in
 `deploy/image-lock/production-images.json`. The six OpenSSL
 `CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
-`frontend`, and `nginx`. Seventeen time-boxed CVE exceptions for the retag-only
-`redis` and `nginx` images are active from 2026-10-11 until 2026-10-25
-(owner `release-security`) because no upstream rebuild carrying the fixed
-Alpine libraries existed at promotion time; `api` and `frontend` findings are
-repaired by minimum-version in-image package upgrades. Each exception is valid
-through its `expires_on` date in UTC; the gate fails closed after 2026-10-25.
-This withdraws authorization; it does not establish that any image is fixed.
+`frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
+2026-10-25 and were retired on 2026-10-27. The canonical CVE allowlist is empty.
+The updated digest-locked candidates carry OpenSSL 3.5.9-r0, pcre2 10.49-r0
+and zlib 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
+`api` and `frontend` retain their minimum-version in-image package upgrades.
+Retiring exceptions does not establish that any image is fixed or deployed;
+fresh platform-specific scans must verify the exact candidates.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
 must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
 guards remain in force. A changed base-image digest still requires rebuilding,

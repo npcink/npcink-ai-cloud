@@ -23,6 +23,19 @@ Capability = Literal[
     "video_generation",
 ]
 
+
+def model_supports_execution_kind(feature: str, execution_kind: str) -> bool:
+    """Catalog families describe a primary capability, not exclusive uses.
+
+    Text/vision chat models both generate text. Vision selection still requires
+    current route-bound verification; this compatibility check is not evidence.
+    """
+    normalized = "text" if feature == "text_generation" else feature
+    return normalized == execution_kind or (
+        execution_kind in {"text", "vision"} and normalized in {"text", "vision"}
+    )
+
+
 CAPABILITY_EVIDENCE_STATES = (
     "unverified",
     "verified",

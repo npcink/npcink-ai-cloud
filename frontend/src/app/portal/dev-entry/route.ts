@@ -176,6 +176,7 @@ export async function GET(request: NextRequest) {
       headers: requestHeaders,
       body: JSON.stringify({ email }),
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildDeniedRedirect(request, 'auth.dev_portal_unreachable');
@@ -205,6 +206,7 @@ export async function GET(request: NextRequest) {
       }),
       body: JSON.stringify({ email, code }),
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildDeniedRedirect(request, 'auth.dev_portal_verify_unreachable');

@@ -355,6 +355,12 @@ sample from this record.
 
 ## Current Highest Priority
 
+Apply the operator-approved
+[2026-10-27 value-first decision](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)
+before scheduling any item here. Its expansion freeze does not erase these
+historical obligations or their evidence gaps; a trigger permits reassessment,
+not automatic implementation, routing writes, paid calls or production action.
+
 Reuse genuine natural editor work and valid receipts; do not manufacture usage
 to unlock deferred architecture. Sample-stage evidence, complaints, source
 maintenance opportunities and release decisions are different triggers.
