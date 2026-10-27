@@ -32,6 +32,13 @@ The current product focus is the normal WordPress Ability -> Addon -> Cloud
 runtime -> hosted model -> reviewed editor-adoption loop. Keep only the usage,
 error, provider, and quality evidence needed to prove that loop.
 
+The operator confirmed the
+[value-first development decision on 2026-10-27](docs/engineering/phase-1-scope.md#value-first-development-decision-2026-10-27):
+focus new improvements on title, summary and selected-text rewrite usefulness.
+Freeze further ecosystem, workflow, adaptive-routing, analytics and platform
+expansion while preserving existing services and necessary maintenance.
+Technical acceptance does not establish human value or activate the full backlog.
+
 Until that loop has sufficient real evidence:
 
 - keep broad governance and alert-ranking expansion bounded to actual evidence;

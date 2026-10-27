@@ -194,3 +194,15 @@ export function runStatusLabel(status: string, t: TranslationFn): string {
   if (status.toLowerCase() === 'failed') return t('admin.troubleshooting.run_failed');
   return status;
 }
+
+export function providerEvidenceLabel(state: string | undefined, t: TranslationFn): string {
+  const labels: Record<string, string> = {
+    recorded: 'admin.troubleshooting.evidence_recorded',
+    pending: 'admin.troubleshooting.evidence_pending',
+    failed_without_call: 'admin.troubleshooting.evidence_failed_without_call',
+    canceled_without_call: 'admin.troubleshooting.evidence_canceled_without_call',
+    missing: 'admin.troubleshooting.evidence_missing',
+    not_required: 'admin.troubleshooting.evidence_not_required',
+  };
+  return t(labels[state || ''] || 'admin.troubleshooting.evidence_unverified');
+}

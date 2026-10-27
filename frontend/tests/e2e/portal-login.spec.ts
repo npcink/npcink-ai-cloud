@@ -407,6 +407,18 @@ test('an authenticated user is redirected from the login page to the Portal defa
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
+for (const entry of ['login', 'register', 'second-factor']) {
+  test(`authenticated ${entry} retains an exit when the next page stalls`, async ({ page }) => {
+    await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+    await page.route(url => url.pathname === '/portal' && url.searchParams.has('_rsc'), () => {});
+    await page.goto(`/portal/${entry}`);
+    const continueLink = page.getByRole('link', { name: /^Continue$|^继续$/ });
+    await expect(continueLink).toHaveAttribute('href', entry === 'register' ? '/portal#sites' : '/portal');
+    await continueLink.click();
+    await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
+  });
+}
+
 test('an authenticated user is redirected from registration to the Portal connection guide', async ({ page }) => {
   await installLoginFlowMocks(page, { initiallyLoggedIn: true });
 

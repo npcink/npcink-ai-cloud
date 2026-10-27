@@ -18,6 +18,7 @@ from app.core.models import (
     CREDIT_LEDGER_EVENT_GRANT,
     PLAN_STATUS_ACTIVE,
     PLAN_VERSION_STATUS_PUBLISHED,
+    SITE_STATUS_ARCHIVED,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_PAST_DUE,
     SUBSCRIPTION_STATUS_SUSPENDED,
@@ -1052,7 +1053,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             subscription = item.get("subscription")
             subscription_mapping = subscription if isinstance(subscription, dict) else {}
             account_id_value = str(subscription_mapping.get("account_id") or "")
-            customer_value = str(account_mapping.get("name") or account_id_value)
+            metadata = account_mapping.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+            customer_value = str(
+                metadata.get("operator_display_name")
+                or account_mapping.get("name")
+                or account_id_value
+            )
             return customer_value.casefold(), account_id_value.casefold()
 
         def _sort_key(
@@ -3246,6 +3253,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         missing_site_count = 0
 
         for site in sites:
+            if site.status == SITE_STATUS_ARCHIVED or site.ownership_released_at is not None:
+                continue
             site_id = str(site.site_id or "").strip()
             if not site_id:
                 continue
@@ -3344,6 +3353,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             )
             for site in covered_sites
             if str(site.site_id or "").strip()
+            and site.status != SITE_STATUS_ARCHIVED
+            and site.ownership_released_at is None
         ]
         if refreshed_billing_snapshots:
             status = "refreshed"

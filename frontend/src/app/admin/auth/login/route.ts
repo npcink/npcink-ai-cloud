@@ -150,20 +150,23 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(payload),
       redirect: 'manual',
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]),
     });
-  } catch {
+  } catch (error) {
+    const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+    const errorCode = timedOut ? 'auth.admin_login_timeout' : 'auth.admin_login_unreachable';
     if (!wantsJson) {
-      return redirectToLogin(request, 'auth.admin_login_unreachable', {}, {}, redirect);
+      return redirectToLogin(request, errorCode, {}, {}, redirect);
     }
     return NextResponse.json(
       {
         status: 'error',
-        error_code: 'auth.admin_login_unreachable',
+        error_code: errorCode,
         message: 'failed to reach admin login endpoint',
         data: {},
         meta: { trace_id: '', revision: 'admin-login-bff-v1' },
       },
-      { status: 502 }
+      { status: timedOut ? 504 : 502 }
     );
   }
 

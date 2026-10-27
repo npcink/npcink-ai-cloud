@@ -143,7 +143,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');
-  await expect(coverageQueueItems.nth(0).getByRole('link', { name: /MVP Account/i })).toHaveAttribute(
+  await expect(coverageQueueItems.nth(0).getByRole('link', { name: 'Npcink AI Demo', exact: true })).toHaveAttribute(
     'href',
     `/admin/accounts/${LONG_ACCOUNT_ID}`
   );
@@ -204,7 +204,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('#site-footprint')).toBeVisible();
 
   await page.goto('/admin/accounts', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Customers|客户|客戶)( · [\d,]+)?$/i }).first()).toBeVisible();
 
   await page.goto('/admin/sites/site_mvp');
   await expect(page.getByRole('heading', { name: /MVP Site|site_mvp/i }).first()).toBeVisible();
@@ -302,7 +302,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await expect(page.getByText(/Pilot customer\. Confirm package before public release\./i).first()).toBeVisible();
   await expect(page.getByText(/Free Account|免费客户|免費客戶/i)).toBeVisible();
   await expect(page.getByText(/Uncovered Account|未覆盖客户|未覆蓋客戶/i)).toBeVisible();
-  await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Customers|客户|客戶)( · [\d,]+)?$/i }).first()).toBeVisible();
   await expect(page.locator('table')).toHaveCount(1);
   await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(3);
   await expect(page.locator('#account-inspector')).toHaveCount(0);
@@ -504,14 +504,11 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await expect(workspaceTabs.getByRole('link')).toHaveCount(2);
   await expect(workspaceTabs.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
   await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toBeVisible();
-  const breadcrumb = page.locator('[data-ui="admin-route-breadcrumb"]');
-  await expect(breadcrumb.getByText(/^Customers$|^客户$/i)).toHaveCount(1);
+  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
 
   await page.goto('/admin/support-requests');
   await expect(adminPrimaryNav.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
   await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toHaveAttribute('aria-current', 'page');
-  await expect(breadcrumb).toContainText(/Customers|客户/i);
-  await expect(breadcrumb).toContainText(/Tickets|工单/i);
 
   await page.goto('/admin/subscriptions');
   const main = page.locator('main');
@@ -521,8 +518,6 @@ test('admin navigation stays customer-first', async ({ page }) => {
     '/admin/coverage', '/admin/subscriptions', '/admin/plans', '/admin/credit-packs', '/admin/economics',
   ]);
   await expect(workspaceTabs.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
-  await expect(breadcrumb).toContainText(/Commercial records|商业记录/i);
-  await expect(breadcrumb).toContainText(/Subscriptions|订阅/i);
   await expect(main.getByRole('link', { name: /^Customer register$|^客户目录$|^客戶目錄$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Registered users$|^注册用户$|^註冊使用者$/i })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /^Service follow-up$|^服务跟进$|^服務跟進$/i })).toHaveCount(0);

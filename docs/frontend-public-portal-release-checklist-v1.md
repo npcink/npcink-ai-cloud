@@ -2,6 +2,11 @@
 
 Status: active.
 
+Current frontend development and UI acceptance follow
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md)
+(operator decision 2026-10-26). Mobile/tablet adaptation and acceptance are out
+of scope; existing code, historical evidence and required CI are retained.
+
 ## Purpose
 
 This checklist governs the customer-visible Cloud website, Portal
@@ -179,8 +184,8 @@ pnpm --dir frontend run build
 
 Run the focused Playwright paths for public, authentication, and Portal
 commercial behavior. For Cloud source changes, dispatch the coherent candidate
-to M4 with `pnpm run m4:preview:sync`, verify the relevant desktop and 390 px
-mobile paths through the local preview tunnel, and inspect
+to M4 with `pnpm run m4:preview:sync`, verify the relevant PC paths and affected
+desktop window widths through the local preview tunnel, and inspect
 `pnpm run m4:preview:status`.
 
 GitHub required checks remain the merge authority. M4 candidate validation does
@@ -189,7 +194,10 @@ clean `master`.
 
 ## Code closeout state
 
-The 2026-07-26 public-frontend code closeout adds browser evidence for:
+The 2026-07-26 public-frontend code closeout recorded browser evidence. This
+is historical coverage; its mobile evidence does not impose a current
+mobile/tablet acceptance requirement under the PC scope standard. Evidence
+included:
 
 - a failed public plan catalog without stale prices or active Free, Plus, or
   Pro package actions;

@@ -62,7 +62,8 @@ def build_provider_model_allowlist(
         ):
             continue
         model_ids = connection_model_ids(config, metadata)
-        if not model_ids:
+        # An explicit empty choice must deny this provider, not fall through to defaults.
+        if not model_ids and "model_ids" not in config:
             continue
         model_ids = _effective_connection_model_ids(
             provider_id=provider_id,
@@ -130,10 +131,9 @@ def connection_model_ids(
     Callers can preserve their existing normalization rules (including the
     service projection's 128-character limit) while sharing source selection.
     """
-    model_ids = normalize_ids(config.get("model_ids"))
-    if not model_ids:
-        model_ids = normalize_ids(metadata.get("model_ids"))
-    return model_ids
+    if "model_ids" in config:
+        return normalize_ids(config.get("model_ids"))
+    return normalize_ids(metadata.get("model_ids"))
 
 
 def _effective_connection_model_ids(

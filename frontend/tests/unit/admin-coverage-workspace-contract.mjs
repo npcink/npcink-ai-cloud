@@ -78,11 +78,15 @@ assert.match(
   'Coverage must search customer login identity and route identity problems to customer access'
 );
 
-assert.match(
-  serviceSource,
-  /missing_package_coverage[\s\S]*#coverage-actions[\s\S]*subscription_lifecycle_risk[\s\S]*\/admin\/subscriptions\/[\s\S]*billing_snapshot_follow_up[\s\S]*\/admin\/subscriptions\/[\s\S]*site_status_follow_up[\s\S]*#site-footprint/,
-  'Coverage actions must route package, subscription, billing, and site problems to their owning work surfaces'
-);
+for (const [reason, destination] of [
+  ['missing_package_coverage', '#coverage-actions'],
+  ['subscription_lifecycle_risk', '/admin/subscriptions/'],
+  ['billing_snapshot_follow_up', '/admin/subscriptions/'],
+  ['site_status_follow_up', '#site-footprint'],
+]) {
+  const reasonBlock = serviceSource.split(`reason_code = "${reason}"`)[1]?.split('elif ')[0] || '';
+  assert.ok(reasonBlock.includes(destination), `${reason} must route to its owning work surface`);
+}
 
 assert.doesNotMatch(
   coverageSource,

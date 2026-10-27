@@ -67,7 +67,7 @@ export function PublicComplianceDetails({
     const controller = new AbortController();
     void fetch('/open/compliance', {
       cache: 'no-store',
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]),
       headers: { accept: 'application/json' },
     })
       .then(async (response) => {

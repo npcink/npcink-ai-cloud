@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -55,6 +56,8 @@ type CustomerAccessPanelProps = {
   accountId: string;
   identity: CustomerPrimaryIdentity | null;
   relationshipState: CustomerIdentityRelationshipState;
+  receipt: AdminMutationReceiptPayload | null;
+  onReceipt: (receipt: AdminMutationReceiptPayload | null) => void;
   onAccessChanged: () => Promise<void>;
 };
 
@@ -64,6 +67,8 @@ export function CustomerAccessPanel({
   accountId,
   identity,
   relationshipState,
+  receipt,
+  onReceipt,
   onAccessChanged,
 }: CustomerAccessPanelProps) {
   const { t } = useLocale();
@@ -76,7 +81,6 @@ export function CustomerAccessPanel({
   const [disableReason, setDisableReason] = useState('');
   const [disableError, setDisableError] = useState('');
   const [isDisabling, setIsDisabling] = useState(false);
-  const [receipt, setReceipt] = useState<AdminMutationReceiptPayload | null>(null);
 
   const loadAudit = async () => {
     if (!identity?.principal_id) return;
@@ -118,10 +122,10 @@ export function CustomerAccessPanel({
           }
         )
       ).data;
-      setReceipt(payload.receipt || null);
+      onReceipt(payload.receipt || null);
       setDisableOpen(false);
       setDisableReason('');
-      toast.success(
+      if (!payload.receipt) toast.success(
         t(
           'admin.accounts.identity_disabled_notice',
           { user: identity.email || identity.principal_id },
@@ -139,6 +143,20 @@ export function CustomerAccessPanel({
       );
     } finally {
       setIsDisabling(false);
+    }
+  };
+
+  const [isRechecking, setIsRechecking] = useState(false);
+  const [recheckError, setRecheckError] = useState('');
+  const recheckAccess = async () => {
+    setIsRechecking(true);
+    setRecheckError('');
+    try {
+      await onAccessChanged();
+    } catch (error) {
+      setRecheckError(resolveUiErrorMessage(error, t('error.failed_load')));
+    } finally {
+      setIsRechecking(false);
     }
   };
 
@@ -264,6 +282,22 @@ export function CustomerAccessPanel({
           </div>
         )}
 
+        {relationshipState !== 'healthy' ? (
+          <div className="space-y-3" data-ui="customer-access-follow-up">
+            <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700 dark:text-slate-300">
+              <li>{t('admin.customer_ops.access_step_owner', {}, 'Confirm the intended owner and login email. A technical test account may not need a customer login.')}</li>
+              <li>{t('admin.customer_ops.access_step_repair', {}, 'Have the authorized maintainer reconcile the existing identity and owner membership. This page cannot bind or restore an owner; do not create a replacement customer.')}</li>
+              <li>{t('admin.customer_ops.access_step_verify', {}, 'Refresh this record, confirm an active owner, then have the customer verify Portal login. Return to Service status to recheck the issue.')}</li>
+            </ol>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn btn-secondary" disabled={isRechecking} onClick={() => void recheckAccess()}>
+                {isRechecking ? t('common.loading') : t('admin.customer_ops.recheck_access', {}, 'Refresh access evidence')}
+              </button>
+              <Link href="/admin/coverage" className="btn btn-secondary">{t('admin.customer_ops.recheck_service', {}, 'Recheck Service status')}</Link>
+            </div>
+            {recheckError ? <p role="alert" className="text-sm text-red-700">{recheckError}</p> : null}
+          </div>
+        ) : null}
         <AdminMutationReceipt receipt={receipt} />
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {t(

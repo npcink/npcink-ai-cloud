@@ -51,8 +51,26 @@ node scripts/test-cloud-isolated-channel-guard.cjs
 
 ## Admin UI (only when Admin surfaces change)
 
+Apply [PC scope and selective verification](../frontend-pc-scope-and-selective-verification-v1.md)
+before choosing browser coverage. Current development/acceptance is PC only;
+theme and interaction checks follow impact. These commands have different scopes:
+
+Focused target-route browser check (customer-directory example):
+
+```bash
+pnpm --dir frontend run test:e2e tests/e2e/admin-accounts-queue-v2.spec.ts
+```
+
+Governed structural/type/lint gate (including the existing publish requirement):
+
 ```bash
 pnpm run check:admin-ui
+```
+
+Complete registered cross-route visual matrix, when shared impact or the
+stage/PR policy requires it; not a per-edit default:
+
+```bash
 pnpm run check:admin-ui:visual
 ```
 

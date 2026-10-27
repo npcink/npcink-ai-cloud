@@ -174,6 +174,7 @@ export async function GET(request: NextRequest) {
       }),
       redirect: 'manual',
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildDeniedRedirect(request, 'auth.dev_entry_unreachable');

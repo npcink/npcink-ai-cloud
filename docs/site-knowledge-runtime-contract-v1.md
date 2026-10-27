@@ -629,7 +629,12 @@ Supported first workflows:
   does not echo those passages.
   When a vector candidate and a source passage share a specific exact phrase,
   the result adds `anchor_or_context` plus bounded `anchor_evidence`; generic
-  phrases and the complete target title are rejected. Results continue to
+  phrases and the complete target title are rejected. Recognized URL, fenced/inline
+  code, pre/code/script/style block, CSS rule/comment and shortcode spans are
+  blanked before exact matching, preserving passage indices. This conservative
+  text guard is not a complete Markdown/HTML parser. Re-enrichment clears stale
+  anchor hints before recomputing them; WordPress editor range checks remain
+  mandatory. Results continue to
   include `anchor_text_candidates`, `link_target`, `suggested_action`, and
   `insert_mode=wordpress_local_only`.
   Cloud ranks this intent with vector retrieval, optional provider reranking,

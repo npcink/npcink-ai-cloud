@@ -153,8 +153,8 @@ assert.match(
 
 assert.match(
   source,
-  /methods: \['POST'\],[\s\S]*?pattern: \/\^provider-connections\\\/\[\^\/\]\+\\\/image-delivery-probes\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
-  'provider image delivery probes must require the catalog-management capability'
+  /methods: \['POST'\],[\s\S]*?pattern: \/\^provider-connections\\\/\[\^\/\]\+\\\/\(\?:image-delivery-probes\|model-tests\)\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
+  'provider image delivery probes and bounded model tests must require the catalog-management capability'
 );
 
 assert.match(
