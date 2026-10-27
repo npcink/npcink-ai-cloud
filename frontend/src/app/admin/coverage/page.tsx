@@ -731,7 +731,7 @@ function AdminCoverageContent() {
                       );
                     } else if (item.reason_code === 'billing_snapshot_follow_up') {
                       impactLabel = t('admin.customer_ops.statistics_impact', {}, 'Statistics only; access failure not established');
-                    } else if (daysUntilEnd != null) {
+                    } else if (item.reason_code === 'subscription_expiring_soon' && daysUntilEnd != null) {
                       impactLabel = t(
                         'admin.coverage.days_remaining',
                         { count: formatInteger(daysUntilEnd) },
