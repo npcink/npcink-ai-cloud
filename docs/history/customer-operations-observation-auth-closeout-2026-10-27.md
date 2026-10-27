@@ -46,6 +46,11 @@ were corrected without retrying writes or consumed verification codes.
 - Changed Python quality, frontend types, scoped ESLint, Admin structural gate
   and relevant i18n/window/login contracts passed at the implementation
   checkpoints. Final label-only change has separate type/lint checks.
+- Affected Admin visual gate: 152 tests passed initially; two service-queue
+  assertions still expected the raw customer name instead of the fixture's
+  operator label. Those assertions were corrected, the raw-name exclusion
+  retained explicitly, and both failed scenarios then passed. No product source
+  changed for this test correction; the other 152 checks were not repeated.
 - Review covered correctness, readability, ownership boundaries, authorization,
   bounded reads and absence of new dependencies or per-row network requests.
 
