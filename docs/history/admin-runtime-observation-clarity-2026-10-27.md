@@ -26,7 +26,9 @@ Contract: [runtime-observation-diagnostics-v1.md](../runtime-observation-diagnos
 - Full frontend unit suite: 657 passed, 1 existing failure before the additional
   telemetry test. `i18n-retired-dead-keys` rejects `active_sites_label`, already
   present in HEAD and used by the preceding customer-operations module. That
-  unrelated contract was not changed by this module.
+  contract was not changed by this module. The combined-task closeout later
+  renamed the preceding customer module's label key without weakening the
+  retirement test; all 671 frontend unit tests then passed.
 - M4 candidate: dirty development source based on `96f3f7530e93`; all 20 targeted
   API/domain tests passed. API/frontend/proxy healthy. PC 1440×1050 manual checks
   confirmed zero-call affected records, positive-call comparison records, detail

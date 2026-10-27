@@ -40,7 +40,8 @@ were inspected and retained.
   auth entry surfaces.
 - Local source gates: TypeScript, targeted ESLint, Admin UI gate and login error
   contract passed. The unrelated full-unit-suite baseline failure documented in
-  the runtime-observation receipt remains separate.
+  the runtime-observation receipt was subsequently resolved during combined-task
+  closeout; the final frontend unit suite passed all 671 tests.
 - No real Provider calls, production operations, notification expansion or
   authentication bypass were used for verification.
 

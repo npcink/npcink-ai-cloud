@@ -124,7 +124,7 @@ export function quotaMetricLabel(
 ): string {
   const labels: Record<string, string> = {
     ai_credits: t('admin.account_detail.ai_credits_label', undefined, 'AI credits'),
-    active_sites: t('admin.account_detail.active_sites_label', undefined, 'Active sites'),
+    active_sites: t('admin.account_detail.active_sites_quota_label', undefined, 'Active sites'),
     media_images: t('admin.account_detail.media_images_label', undefined, 'Media images'),
     bound_sites: t('admin.account_detail.bound_sites_label', undefined, 'Bound sites'),
     active_api_key_sites: t('admin.account_detail.active_api_keys_label', undefined, 'Active API keys'),
