@@ -15,6 +15,9 @@ Purpose: reduce the change risk and maintenance cost of
 information architecture, visual language, product boundary, or operator
 workflow.
 
+Request deadlines, form recovery and authentication navigation follow the
+[frontend request recovery contract](frontend-request-recovery-v1.md).
+
 This document is the engineering companion to:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);

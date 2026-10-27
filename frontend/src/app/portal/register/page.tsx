@@ -7,6 +7,7 @@ import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { NavigationHandoff } from '@/components/ui/NavigationHandoff';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown';
@@ -49,6 +50,7 @@ function RegisterFormContent() {
     status: 'idle',
     message: '',
   });
+  const [handoffHref, setHandoffHref] = useState('');
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -58,8 +60,8 @@ function RegisterFormContent() {
 
   // Keep account creation available while the cookie-backed session probe is
   // still resolving. A confirmed authenticated session still redirects away.
-  if (isAuthenticated) {
-    return <LoadingFallback />;
+  if (isAuthenticated || handoffHref) {
+    return <NavigationHandoff href={handoffHref || postRegistrationTarget} />;
   }
 
   const setField = (key: keyof RegisterFormState, value: string) => {
@@ -142,10 +144,13 @@ function RegisterFormContent() {
       const response = await portalClient.verifyRegistration({ email, code });
       const result = await verifyRegistrationResult(response.data);
       if (isPortalSecondFactorRequired(result)) {
-        router.push(`/portal/second-factor?redirect=${encodeURIComponent(postRegistrationTarget)}`);
+        const destination = `/portal/second-factor?redirect=${encodeURIComponent(postRegistrationTarget)}`;
+        setHandoffHref(destination);
+        router.push(destination);
         return;
       }
       await refresh();
+      setHandoffHref(postRegistrationTarget);
       window.location.replace(postRegistrationTarget);
     } catch (error) {
       setForm((prev) => ({
