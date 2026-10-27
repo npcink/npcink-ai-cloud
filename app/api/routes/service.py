@@ -1584,13 +1584,20 @@ def _build_hosted_runtime_profile_projection(
                     "provider_id": read_only_instance.provider_id,
                     "provider_display_name": (
                         providers_by_id[read_only_instance.provider_id].display_name
-                        if read_only_instance.provider_id in providers_by_id else read_only_instance.provider_id
+                        if read_only_instance.provider_id in providers_by_id
+                        else read_only_instance.provider_id
                     ),
                     "model_id": read_only_instance.model_id,
-                    "upstream_model_id": str(
-                        (models_by_id[read_only_instance.model_id].raw_json or {}).get("upstream_model_id")
-                        or read_only_instance.model_id
-                    ) if read_only_instance.model_id in models_by_id else read_only_instance.model_id,
+                    "upstream_model_id": (
+                        str(
+                            (models_by_id[read_only_instance.model_id].raw_json or {}).get(
+                                "upstream_model_id"
+                            )
+                            or read_only_instance.model_id
+                        )
+                        if read_only_instance.model_id in models_by_id
+                        else read_only_instance.model_id
+                    ),
                 }
                 for instance_id in (text_binding.candidate_instance_ids if text_binding else [])
                 if (read_only_instance := instances_by_id.get(instance_id)) is not None
