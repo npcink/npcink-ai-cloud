@@ -2212,7 +2212,7 @@ function AccountDetailContent() {
                 : t('admin.account_detail.credit_operations_label', undefined, 'Credit operations')}
             </p>
             {quotaNeedsAttention ? (
-              <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
                 {creditNeedsAttention
                   ? t('admin.customer_ops.credit_follow_up', {}, 'AI credits are low. Compare a top-up or package change.')
                   : t('admin.customer_ops.resource_follow_up', {}, 'Resource capacity or site access needs review. Open quota details; credit top-ups do not repair these issues.')}
