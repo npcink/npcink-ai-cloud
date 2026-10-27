@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from app.domain.site_knowledge.anchor_context import (
@@ -86,3 +88,32 @@ def test_only_reserved_uuid_smoke_namespace_is_suppressed_from_recommendations()
     )
     assert [row["post_id"] for row in rows] == [2]
     assert receipt["reserved_test_documents_suppressed"] == 1
+
+
+def test_long_unclosed_css_selector_is_bounded():
+    # Full source-passage budget: repeated colon terms formerly permitted many
+    # backtracking partitions when no opening brace was found.
+    source = ".selector " + "a:" * 590
+    started = time.monotonic()
+    assert source_prose_for_anchor(source) == source
+    assert time.monotonic() - started < 1.0
+
+
+def test_batch_masks_once_per_passage_not_once_per_candidate(monkeypatch):
+    from app.domain.site_knowledge import service
+
+    calls = []
+    original = service.source_prose_for_anchor
+
+    def count_mask(value):
+        calls.append(value)
+        return original(value)
+
+    monkeypatch.setattr(service, "source_prose_for_anchor", count_mask)
+    source = "先检查插件兼容性后再继续。"
+    service._attach_source_anchor_evidence(
+        [dict(title="插件兼容性检查", chunk="") for _ in range(8)],
+        intent="internal_links",
+        source_passages=[source],
+    )
+    assert calls == [source]

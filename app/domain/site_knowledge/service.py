@@ -2920,7 +2920,8 @@ def _source_anchor_evidence(
     chunk_text: str,
     source_prefixes: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
-    source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
+    if source_prefixes is None:
+        source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
     candidates: list[tuple[int, int, int, str, str]] = []
     normalized_title = _normalize_anchor_comparison(title)
     if source_prefixes is None:

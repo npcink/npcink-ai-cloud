@@ -61,7 +61,7 @@ policy; retained documents, vectors and WordPress content need no rollback.
 The bounded source-text guard and reserved-test qualification are correctness
 maintenance, not a new recall/ranking strategy. A process-local M4 domain replay
 used the frozen 20-source/120-candidate pool from Eval Lab's rejected extra-query
-experiment. Seventy focused tests passed; shared source hashes stayed unchanged,
+experiment. Seventy-two focused tests passed; shared source hashes stayed unchanged,
 temporary tests were removed, and no index or WordPress state was written.
 Four anchor relationships changed (URL/CSS evidence rejected), including a
 Contact Form 7 anchor moving from a demo URL to body prose. Candidate ranking

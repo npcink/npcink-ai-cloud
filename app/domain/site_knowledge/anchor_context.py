@@ -4,10 +4,12 @@ import re
 
 # Preserve the prose after a URL delimiter, including Chinese punctuation.
 _URL = re.compile(r"(?:https?\s*:\s*//|www\.)[^\s<>\"'，。；！？）]+", re.IGNORECASE)
+# Possessive CSS quantifiers prevent repartitioning long failing selectors
+# (Python >=3.12 is the runtime floor).
 _CODE = re.compile(
     r"```[\s\S]*?(?:```|$)|`[^`\n]*`|<(?P<tag>pre|code|script|style)\b[^>]*>"
     r"[\s\S]*?(?:</(?P=tag)\s*>|$)|/\*[\s\S]*?\*/"
-    r"|[.#][\w-]+(?:\s+[.#]?[\w:-]+|:[\w-]+)*\s*\{[^{}]*\}",
+    r"|[.#][\w-]++(?:\s++[.#]?[\w:-]++|:[\w-]++)*+\s*+\{[^{}]*+\}",
     re.IGNORECASE,
 )
 _SHORTCODE = re.compile(r"\[(?:/?[a-z][\w-]*)(?:\s[^\]]*)?\]", re.IGNORECASE)
