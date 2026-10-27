@@ -313,6 +313,11 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         "result_json" not in item and "input_json" not in item
         for item in run_evidence["items"]
     )
+    for item in run_evidence["items"]:
+        with get_session(database_url) as session:
+            recorded = session.get(RunRecord, item["run_id"])
+            assert item["selected_provider_id"] == (recorded.selected_provider_id or None)
+            assert item["selected_model_id"] == (recorded.selected_model_id or None)
     provider_run_ids = {
         item["run_id"]
         for item in provider_run_evidence_response.json()["data"]["items"]

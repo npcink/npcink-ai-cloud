@@ -60,7 +60,7 @@ assert.match(
 
 assert.match(
   receiptSource,
-  /auditUnavailable[\s\S]*auditTrailAvailable[\s\S]*auditTrailHref[\s\S]*receipt_audit_unavailable[\s\S]*auditTrailHref/,
+  /auditTrailAvailable = receipt\.audit_state !== 'unavailable'[\s\S]*auditTrailHref = auditTrailAvailable \? buildAdminAuditTrailHref\(receipt\) : null/,
   'an unavailable audit must stay distinct from operation success and must not expose a misleading audit link'
 );
 
@@ -108,7 +108,7 @@ assert.match(
 
 assert.match(
   customerAccessSource,
-  /setReceipt\(payload\.receipt \|\| null\)/,
+  /onReceipt\(payload\.receipt \|\| null\)/,
   'Customer identity disable writes must store the customer-detail backend receipt instead of only showing a toast'
 );
 
@@ -206,6 +206,7 @@ assert.match(
 );
 
 const requiredKeys = [
+  'admin.receipt_details',
   'admin.receipt_latest',
   'admin.receipt_copy',
   'admin.receipt_copied',

@@ -7,6 +7,7 @@ import {
   AdminConfigurationTable,
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
@@ -287,7 +288,7 @@ export default function ExternalServicesPage() {
               </details>
             )}
           >
-            <table data-ui="external-service-table" className="w-full min-w-[58rem] table-fixed text-left text-sm">
+            <table data-ui="external-service-table" className="w-full table-fixed text-left text-sm">
               <thead className="border-b border-slate-200 bg-white text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                 <tr>
                   <th className="w-[22%] px-4 py-2.5">{copy('admin.external_services.column_service', '服务', 'Service')}</th>
@@ -311,7 +312,10 @@ export default function ExternalServicesPage() {
                           <button type="button" className="font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300" onClick={() => openEditor(option)}>
                             {option.label}
                           </button>
-                          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{option.baseUrl}</p>
+                          <AdminHelpTip label={copy('admin.external_services.service_details', '服务详情', 'Service details')}>
+                            <span className="block break-all">{option.baseUrl}</span>
+                            <span className="mt-1 block">{zh ? option.descriptionZh : option.description}</span>
+                          </AdminHelpTip>
                         </td>
                         <td className="px-3 py-3 align-top">
                           <span className="font-medium text-slate-800 dark:text-slate-200">
@@ -321,7 +325,6 @@ export default function ExternalServicesPage() {
                                 ? copy('admin.external_services.role_enhancer', 'Reader 增强', 'Reader enhancement')
                                 : copy('admin.external_services.role_parallel', '并行来源', 'Parallel source')}
                           </span>
-                          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{zh ? option.descriptionZh : option.description}</p>
                         </td>
                         <td className="px-3 py-3 align-top">
                           <BackofficeStatusBadge
@@ -357,7 +360,7 @@ export default function ExternalServicesPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             {connection?.configured || option.secretless ? (
                               <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== '' || !connection} onClick={() => void testOption(option)}>
                                 {busy === `test:${option.id}` ? copy('common.testing', '测试中…', 'Testing…') : copy('common.test_connection', '测试', 'Test')}

@@ -438,6 +438,8 @@ export default function AdminTroubleshootingPage() {
             <div><dt className="text-slate-500">{t('admin.troubleshooting.site_filter')}</dt><dd>{detailRecord.run?.site_id || detailRecord.failures[0]?.siteId}</dd></div>
             <div><dt className="text-slate-500">{t('admin.troubleshooting.record_time')}</dt><dd>{detailRecord.run?.started_at || detailRecord.failures[0]?.occurredAt ? formatDate(detailRecord.run?.started_at || detailRecord.failures[0].occurredAt) : '—'}</dd></div>
             <div><dt className="text-slate-500">{t('admin.troubleshooting.run_profile')}</dt><dd>{detailRecord.run?.profile_id || detailRecord.failures[0]?.profileId}</dd></div>
+            <div><dt className="text-slate-500">{t('admin.troubleshooting.actual_provider', {}, 'Actual supplier')}</dt><dd>{detailRecord.run?.selected_provider_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
+            <div><dt className="text-slate-500">{t('admin.troubleshooting.actual_model', {}, 'Actual model')}</dt><dd>{detailRecord.run?.selected_model_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
             {detailRecord.run ? <>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_record')}</dt><dd>{runStatusLabel(detailRecord.run.status, t)} · {detailRecord.run.ability_name} · {scopeLabel([detailRecord.run.ability_family], t)}</dd></div>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_duration')}</dt><dd>{detailRecord.run.duration_ms == null ? '—' : `${detailRecord.run.duration_ms} ms`}</dd></div>

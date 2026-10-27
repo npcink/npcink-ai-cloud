@@ -271,7 +271,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['POST'],
-    pattern: /^provider-connections\/[^/]+\/image-delivery-probes$/,
+    pattern: /^provider-connections\/[^/]+\/(?:image-delivery-probes|model-tests)$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },

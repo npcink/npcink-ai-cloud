@@ -4,6 +4,13 @@ Status: merged to `master`; M4 development preview accepted, 2026-10-19; cross-r
 
 ## Policy
 
+The operator-approved
+[2026-10-27 development freeze](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)
+also stops expansion of premature product/platform work. That is a development
+priority rule; this document continues to own runtime availability pauses.
+Do not use the freeze to disable existing services, remove historical data,
+alter the sales/trial exception, or claim that production loaded a pause.
+
 Pause availability and remove product entrypoints while retaining implementation,
 saved configuration, usage/billing evidence and historical results. Do not add
 database deletion migrations, a feature-control console, or a second registry.

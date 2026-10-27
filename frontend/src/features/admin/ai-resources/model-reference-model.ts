@@ -6,7 +6,7 @@ import type {
   ProviderCatalogPreviewModel,
 } from './provider-workbench-state';
 import type { SupplierConnection } from './types';
-import { modelIdentityKeys } from './model-reference-identity';
+import { modelIdentityKeys, upstreamModelId } from './model-reference-identity';
 
 export type ModelReferenceEntry = {
   source_id: string;
@@ -69,12 +69,30 @@ export const MODEL_VISIBILITY_PAGE_SIZE = 25;
 
 export function modelReferenceSourceNeedsSync(
   source: ModelReferenceSourceSummary | null,
-  total: number
+  now = Date.now(),
 ): boolean {
-  if (total > 0) return false;
-  if (!source) return true;
-  if (source.last_synced_at) return false;
-  return source.status !== 'active';
+  if (!source || source.status !== 'active') return true;
+  const syncedAt = Date.parse(source.last_synced_at);
+  return !Number.isFinite(syncedAt) || syncedAt > now || now - syncedAt >= 24 * 60 * 60 * 1000;
+}
+
+export type ModelReferenceFreshness = 'current' | 'expired' | 'superseded' | 'unconfirmed';
+
+export function modelReferenceFreshness(
+  reference: ModelReferenceEntry,
+  source: ModelReferenceSourceSummary | null,
+  now = Date.now(),
+): ModelReferenceFreshness {
+  const recordedAt = Date.parse(reference.synced_at);
+  const sourceCheckedAt = Date.parse(source?.last_synced_at || '');
+  if (!source || source.source_id !== reference.source_id || source.status !== 'active'
+    || !Number.isFinite(recordedAt) || recordedAt > now
+    || !Number.isFinite(sourceCheckedAt) || sourceCheckedAt > now) return 'unconfirmed';
+  // Sync is an upsert: rows absent from the latest source response retain an older timestamp.
+  if (recordedAt < sourceCheckedAt) return 'superseded';
+  if (recordedAt > sourceCheckedAt) return 'unconfirmed';
+  if (modelReferenceSourceNeedsSync(source, now) || now - recordedAt >= 24 * 60 * 60 * 1000) return 'expired';
+  return 'current';
 }
 
 export function formatReferenceContext(
@@ -125,7 +143,7 @@ export function normalizeModelReferenceFeature(feature: string): ModelReferenceF
   if (normalized.includes('audio')) return 'audio';
   if (normalized.includes('video')) return 'video';
   if (normalized.includes('embedding') || normalized.includes('vector')) return 'embedding';
-  if (normalized.includes('text')) return 'text';
+  if (normalized.includes('text') || normalized === 'vision') return 'text';
   return 'all';
 }
 
@@ -149,6 +167,7 @@ export function normalizeProviderCatalogPreview(value: unknown): ProviderCatalog
         const item = model && typeof model === 'object' ? model as Record<string, unknown> : {};
         return {
           model_id: String(item.model_id ?? ''),
+          upstream_model_id: String(item.upstream_model_id ?? ''),
           family: String(item.family ?? ''),
           feature: String(item.feature ?? ''),
           status: String(item.status ?? ''),
@@ -165,6 +184,7 @@ export function normalizeProviderCatalogPreview(value: unknown): ProviderCatalog
     : models.map((model) => model.model_id);
   if (!modelIds.length && !models.length) return null;
   return {
+    model_namespace_prefix: typeof record.model_namespace_prefix === 'string' ? record.model_namespace_prefix : undefined,
     provider_id: String(record.provider_id ?? ''),
     display_name: String(record.display_name ?? ''),
     adapter_type: String(record.adapter_type ?? ''),
@@ -210,6 +230,8 @@ export function buildModelVisibilityRows({
   upstreamLabel,
   manualLabel,
   enabledOnlyLabel,
+  sourceScope = 'all',
+  namespacePrefix = providerId,
 }: {
   references: ModelReferenceEntry[];
   catalogPreview: ProviderCatalogPreview | null;
@@ -223,15 +245,17 @@ export function buildModelVisibilityRows({
   upstreamLabel: string;
   manualLabel: string;
   enabledOnlyLabel: string;
+  sourceScope?: 'all' | 'account' | 'reference';
+  namespacePrefix?: string;
 }): ModelVisibilityRow[] {
   const selectedLookup = new Map<string, string>();
   for (const modelId of selectedModelIds) {
-    for (const key of modelIdentityKeys(modelId, providerId)) {
+    for (const key of modelIdentityKeys(modelId, namespacePrefix)) {
       if (!selectedLookup.has(key)) selectedLookup.set(key, modelId);
     }
   }
   const selectedModelIdFor = (modelId: string, identityProviderId: string): string => {
-    for (const key of modelIdentityKeys(modelId, identityProviderId)) {
+    for (const key of modelIdentityKeys(upstreamModelId(modelId, identityProviderId), namespacePrefix)) {
       const selectedModelId = selectedLookup.get(key);
       if (selectedModelId) return selectedModelId;
     }
@@ -257,15 +281,23 @@ export function buildModelVisibilityRows({
     });
   }
   for (const model of catalogPreview?.models || []) {
-    const selectedModelId = selectedModelIdFor(model.model_id, providerId);
+    const selectedModelId = selectedModelIdFor(model.upstream_model_id || model.model_id, model.upstream_model_id ? '' : namespacePrefix);
     const rowModelId = selectedModelId || model.model_id;
-    const existing = rows.get(rowModelId);
+    const catalogKeys = modelIdentityKeys(rowModelId, namespacePrefix);
+    const existingKey = Array.from(rows.entries()).find(([key, row]) => {
+      const id = row.reference
+        ? upstreamModelId(row.reference.model_id, row.reference.provider_id || providerId)
+        : key;
+      return Array.from(modelIdentityKeys(id, namespacePrefix)).some((identity) => catalogKeys.has(identity));
+    })?.[0];
+    const existing = existingKey ? rows.get(existingKey) : undefined;
+    if (existingKey && existingKey !== rowModelId) rows.delete(existingKey);
     rows.set(rowModelId, {
       modelId: rowModelId,
       family: existing?.family || model.family,
-      feature: existing?.feature || catalogDisplayFeature(model.model_id, model.feature),
-      sourceLabel: existing?.sourceLabel || upstreamLabel,
-      sourceKind: existing?.sourceKind || 'catalog',
+      feature: catalogDisplayFeature(model.model_id, model.feature) || existing?.feature || '',
+      sourceLabel: upstreamLabel,
+      sourceKind: 'catalog',
       selected: Boolean(selectedModelId),
       verified: model.verified || existing?.verified || false,
       deprecated: model.is_deprecated || existing?.deprecated || false,
@@ -290,7 +322,9 @@ export function buildModelVisibilityRows({
   const normalizedSearch = search.trim().toLowerCase();
   return Array.from(rows.values())
     .filter((row) => {
-      if (!showDeprecated && row.deprecated && !row.selected) return false;
+      if (sourceScope === 'account' && !row.catalog && !row.selected) return false;
+      if (sourceScope === 'reference' && !row.reference) return false;
+      if (sourceScope !== 'account' && !showDeprecated && row.deprecated && !row.selected) return false;
       if (visibilityFilter === 'enabled' && !row.selected) return false;
       if (visibilityFilter === 'disabled' && row.selected) return false;
       if (intelligenceFilter === 'missing' && row.reference) return false;

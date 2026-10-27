@@ -13,6 +13,9 @@ as current truth.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
+| 判断是否走偏、哪些开发应暂停、何时恢复 | [Phase 1 编辑价值优先决定（2026-10-27）](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27) — 当前问题、继续维护、新增开发冻结清单与恢复条件；保留既有销售/试用例外，不改变运行可用性 |
+| 查白天模型接入优化的历史处置、真实编辑器证据与经验 | [模型接入与编辑器闭环收尾 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 目录/参考来源、保存反馈、真实 Ollama 与 WordPress、费用和选择检查；保留中文质量及人类价值缺口，不代表生产或全历史清零 |
+| 确认当前设备范围、选择前端检查，避免每次改外观跑全量 | [前端 PC 范围与选择检查](frontend-pc-scope-and-selective-verification-v1.md) — 当前仅 PC；移动/平板暂不适配验收；按改动选择页面、宽度、主题与交互，保留强制 CI 门禁 |
 | 接续 10-23 规划讨论收口与发布前联调待办 | [规划讨论会话收口 — 2026-10-23](history/engineering/2026/planning-discussion-session-closeout-2026-10-23.md) — 已合 #1163/#1164、AGENTS；未完成 Deploy/自动验收/真生成/编辑器收据；含执行任务书摘要与 IT-* 用例表；关规划会话≠第一阶段完成 |
 | 跑通第一阶段编辑器闭环（Deploy/smoke/真写作验收单） | [Phase 1 closed-loop runbook — 2026-10-19](engineering/phase-1-closed-loop-runbook-2026-10-19.md) — 逐步命令与人工点击；不授权 Deploy；联调详情见上条收口文 |
 | 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史；第11节列完整未完事项，区分当前试用、推荐优化暂缓、工具小修、商业候选及已完成旧项 |
@@ -128,6 +131,7 @@ deleting the old decision history.
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
 - [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
+- [Internal-link Context Preview](internal-link-context-preview-v1.md) — development-only source/target evidence projection and frozen replay; [October 27 results](internal-link-context-preview-2026-10-27.md). Not a runtime filter or Apply authority.
 - [Site Knowledge Recommendation History Synthesis — 2026-08-26](history/engineering/2026/site-knowledge-recommendation-history-synthesis-2026-08-26.md) — dated plain-language summary of the internal-link/related-content distinction, UI simplification lessons, bounded vector-quality improvements, phased evidence gates, and deferred model expansion; not runtime or release authority.
 - [WordPress AI Recommendation Development Standard](wordpress-ai-recommendation-development-standard-v1.md) — consolidated WordPress-first product boundary, phased delivery, editor UX, validation, observation, and single-operator rules.
 - [WordPress Editor Readiness Runbook](wordpress-editor-readiness-runbook-v1.md) — read-only prerequisites for local editor acceptance; Cloud-unavailable results are blocked, not recommendation evidence.
@@ -263,6 +267,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Cloud personal data copy v1](portal-personal-data-copy-v1.md) — bounded own-profile/support/notification JSON download with dedicated email reauthentication; excludes commercial and WordPress data
 - [主 checkout 九篇历史文档对账与开发经验 — 2026-10-25](history/engineering/2026/primary-checkout-intent-reconciliation-2026-10-25.md) — 旧意图的现行承接、纠偏与未完成边界，不是发布授权
 - [Provider-model 历史方案原件与当前处置 — 2026-10-26](history/engineering/2026/provider-model-management-plan-disposition-2026-10-26.md) — 原始 plan 按字节保留，P0 已由 #1206 承接；§6 后续建议不因归档而自动实施。
+- [模型接入与编辑器闭环：历史处置与开发经验 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 白天开发问题处置、#1293 合并与 M4/WordPress 证据、质量限制及现行规范索引。
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
 - [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则

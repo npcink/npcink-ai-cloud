@@ -138,6 +138,16 @@ describe('AI resources provider model health normalization', () => {
     });
   });
 
+  it.each([undefined, -1, Number.NaN])('keeps missing or invalid cost %s unknown', cost => {
+    const health = normalizeProviderModelHealth({ windows: [{ window_id: 'last_24h', rows: [{ provider_id: 'local', model_id: 'model', cost }] }] });
+    expect(health?.windows[0].rows[0].cost).toBeNull();
+  });
+
+  it('does not mistake a partial total for a complete cost', () => {
+    const health = normalizeProviderModelHealth({ windows: [{ window_id: 'last_24h', rows: [{ provider_id: 'local', model_id: 'model', cost: 0.000004, cost_known: false }] }] });
+    expect(health?.windows[0].rows[0].cost).toBeNull();
+  });
+
   it('keeps an unknown default window id on the first window', () => {
     const health = normalizeProviderModelHealth({
       ...healthPayload,
