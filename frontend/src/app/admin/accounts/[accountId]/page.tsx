@@ -309,6 +309,7 @@ function AccountDetailContent() {
   const [accountStatusNotice, setAccountStatusNotice] = useState<string | null>(null);
   const [accountStatusError, setAccountStatusError] = useState<string | null>(null);
   const [accountStatusReceipt, setAccountStatusReceipt] = useState<AdminMutationReceiptPayload | null>(null);
+  const [accessReceipt, setAccessReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [accountStatusPending, setAccountStatusPending] = useState<'suspend' | 'restore' | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
   const [packageForm, setPackageForm] = useState({
@@ -2708,6 +2709,8 @@ function AccountDetailContent() {
           accountId={account.account_id}
           identity={account.primary_identity}
           relationshipState={account.identity_relationship_state}
+          receipt={accessReceipt}
+          onReceipt={setAccessReceipt}
           onAccessChanged={() => loadAccount(selectedSiteId, true)}
         />
       ) : null}

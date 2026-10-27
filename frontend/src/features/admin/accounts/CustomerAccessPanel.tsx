@@ -55,6 +55,8 @@ type CustomerAccessPanelProps = {
   accountId: string;
   identity: CustomerPrimaryIdentity | null;
   relationshipState: CustomerIdentityRelationshipState;
+  receipt: AdminMutationReceiptPayload | null;
+  onReceipt: (receipt: AdminMutationReceiptPayload | null) => void;
   onAccessChanged: () => Promise<void>;
 };
 
@@ -64,6 +66,8 @@ export function CustomerAccessPanel({
   accountId,
   identity,
   relationshipState,
+  receipt,
+  onReceipt,
   onAccessChanged,
 }: CustomerAccessPanelProps) {
   const { t } = useLocale();
@@ -76,7 +80,6 @@ export function CustomerAccessPanel({
   const [disableReason, setDisableReason] = useState('');
   const [disableError, setDisableError] = useState('');
   const [isDisabling, setIsDisabling] = useState(false);
-  const [receipt, setReceipt] = useState<AdminMutationReceiptPayload | null>(null);
 
   const loadAudit = async () => {
     if (!identity?.principal_id) return;
@@ -118,10 +121,10 @@ export function CustomerAccessPanel({
           }
         )
       ).data;
-      setReceipt(payload.receipt || null);
+      onReceipt(payload.receipt || null);
       setDisableOpen(false);
       setDisableReason('');
-      toast.success(
+      if (!payload.receipt) toast.success(
         t(
           'admin.accounts.identity_disabled_notice',
           { user: identity.email || identity.principal_id },

@@ -1288,7 +1288,7 @@ class SiteKnowledgeService:
             self.budget_guard.reconcile(
                 session=self.repository.session,
                 claim_ids=budget_claim_ids,
-                actual_cost_usd=result.cost,
+                actual_cost_usd=result.budget_cost_usd(),
             )
         self._record_embedding_usage(provider_request, provider_result=result)
 

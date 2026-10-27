@@ -14,6 +14,7 @@ import {
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -537,7 +538,7 @@ export default function VectorSettingsPage() {
 
       <BackofficeSectionPanel data-vector-section="configuration">
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="flex items-center gap-1">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               {copy(
                 'admin.vector_settings.configuration_title',
@@ -545,13 +546,13 @@ export default function VectorSettingsPage() {
                 'Vector configuration'
               )}
             </h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <AdminHelpTip label={copy('admin.vector_settings.configuration_scope', '配置范围', 'Configuration scope')}>
               {copy(
                 'admin.vector_settings.configuration_desc',
                 '固定档案由平台维护；只填写连接凭据并保存。',
                 'The platform owns the fixed profile; only connection values can be saved here.'
               )}
-            </p>
+            </AdminHelpTip>
           </div>
           <BackofficeStatusBadge label={status.label} status={status.tone} />
         </div>

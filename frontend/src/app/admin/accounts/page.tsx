@@ -58,7 +58,6 @@ interface Account {
   status: string;
   created_at?: string;
   site_count: number;
-  subscription_count: number;
   display_package_label: string;
   primary_identity: PrimaryIdentity | null;
   identity_relationship_state: IdentityRelationshipState;
@@ -73,7 +72,6 @@ interface AccountsApiItem {
     metadata?: Record<string, unknown>;
   };
   site_count?: number;
-  active_subscription_count?: number;
   top_plan_id?: string;
   display_package_label?: string;
   package_alias?: string;
@@ -108,25 +106,6 @@ function isMalformedAccountText(value?: string): boolean {
   return MALFORMED_ACCOUNT_TEXT_RE.test(String(value || ''));
 }
 
-function prettifyAccountId(accountId: string): string {
-  if (isMalformedAccountText(accountId)) return '';
-  const stripped = accountId
-    .replace(/^acct[_-]?/i, '')
-    .replace(/^site[_-]?/i, '')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  if (!stripped) return accountId;
-  return stripped
-    .split(/\s+/)
-    .map((word) => {
-      const lower = word.toLowerCase();
-      if (lower === 'ai') return 'AI';
-      if (lower === 'api') return 'API';
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
-}
-
 function normalizeAccount(
   item: AccountsApiItem,
   t: (key: string, params?: Record<string, string>, fallback?: string) => string
@@ -137,7 +116,9 @@ function normalizeAccount(
   const operatorDisplayName = String(metadata.operator_display_name || '').trim();
   const rawName = String(account.name || '').trim();
   const safeName =
-    rawName && rawName !== account.account_id && !isMalformedAccountText(rawName) ? rawName : '';
+    rawName && rawName !== account.account_id &&
+    !/^(?:acct[_-]?)?(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(rawName) &&
+    !isMalformedAccountText(rawName) ? rawName : '';
   const packageDisplay = resolveCustomerPackageDisplay(t, {
     planId: item.top_plan_id,
     packageAlias: item.package_alias,
@@ -160,13 +141,11 @@ function normalizeAccount(
     display_name:
       operatorDisplayName ||
       safeName ||
-      prettifyAccountId(account.account_id) ||
-      t('admin.accounts.malformed_account_label', {}, 'Malformed account record'),
+      t('admin.accounts.unnamed_customer', {}, 'Unnamed customer'),
     operator_note: String(metadata.operator_note || '').trim(),
     status: String(account.status || 'inactive'),
     created_at: account.created_at,
     site_count: Number(item.site_count || 0),
-    subscription_count: Number(item.active_subscription_count || 0),
     display_package_label:
       String(item.display_package_label || '') || packageDisplay.display_package_label,
     primary_identity: primaryIdentity,
@@ -448,11 +427,11 @@ function AccountsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        title={t('admin.accounts.list_title', {}, 'Customers')}
+        title={`${t('admin.accounts.list_title', {}, 'Customers')}${hasLoaded ? ` · ${formatInteger(total)}` : ''}`}
         description={t(
-          'admin.accounts.list_desc',
+          'admin.accounts.directory_boundary',
           {},
-          'Find a customer, create a customer, or open the customer record. Service problems are handled in Service status.'
+          'This page is the customer directory. Open Service status for cross-customer problems, then resolve customer-specific work in the customer record.'
         )}
         primaryAction={(
           <button
@@ -477,12 +456,6 @@ function AccountsContent() {
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
-        summaryItems={[
-          {
-            label: t('admin.accounts.summary_customers', {}, 'Customers'),
-            value: formatInteger(total),
-          },
-        ]}
       />
 
       <AdminWorkbenchDialog
@@ -539,30 +512,12 @@ function AccountsContent() {
           data-ui="customer-directory-toolbar"
           className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800"
         >
-          <div role="group" aria-label={t('common.status', {}, 'Status')} className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500 dark:text-slate-400">{t('common.status', {}, 'Status')}</span>
-            {[
-              { value: '', label: t('admin.accounts.all_statuses', {}, 'All account states') },
-              { value: 'active', label: t('status.active', {}, 'Active') },
-              { value: 'inactive', label: t('status.inactive', {}, 'Inactive') },
-              { value: 'suspended', label: t('status.suspended', {}, 'Suspended') },
-            ].map(({ value, label }) => (
-              <BackofficeFilterPill
-                key={value}
-                active={appliedStatus === value}
-                aria-pressed={appliedStatus === value}
-                onClick={() => updateDirectoryUrl({ status: value || null, offset: null })}
-              >
-                {label}
-              </BackofficeFilterPill>
-            ))}
-          </div>
           <form
             data-ui="customer-directory-search"
-            className="flex flex-col gap-2 lg:flex-row lg:items-end"
+            className="flex flex-wrap items-center gap-3"
             onSubmit={applySearch}
           >
-            <label className="min-w-0 flex-1 lg:max-w-2xl">
+            <label className="min-w-0 basis-full xl:basis-64 xl:flex-1">
               <span className="sr-only">{t('common.search', {}, 'Search')}</span>
               <input
                 type="search"
@@ -579,7 +534,25 @@ function AccountsContent() {
             <button type="submit" className="sr-only">
               {t('common.search', {}, 'Search')}
             </button>
-            <label className="shrink-0 lg:w-48">
+            <div role="group" aria-label={t('common.status', {}, 'Status')} className="flex flex-wrap items-center gap-2">
+              <span className="sr-only">{t('common.status', {}, 'Status')}</span>
+              {[
+                { value: '', label: t('admin.accounts.all_statuses', {}, 'All account states') },
+                { value: 'active', label: t('status.active', {}, 'Active') },
+                { value: 'inactive', label: t('status.inactive', {}, 'Inactive') },
+                { value: 'suspended', label: t('status.suspended', {}, 'Suspended') },
+              ].map(({ value, label }) => (
+                <BackofficeFilterPill
+                  key={value}
+                  active={appliedStatus === value}
+                  aria-pressed={appliedStatus === value}
+                  onClick={() => updateDirectoryUrl({ status: value || null, offset: null })}
+                >
+                  {label}
+                </BackofficeFilterPill>
+              ))}
+            </div>
+            <label className="w-full shrink-0 sm:w-48">
               <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
               <select
                 className="input w-full"
@@ -599,16 +572,17 @@ function AccountsContent() {
                 </option>
               </select>
             </label>
-            <div className="flex items-center justify-end whitespace-nowrap lg:ml-auto">
-              <button
-                type="button"
-                className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline dark:text-slate-400 dark:hover:text-slate-200"
-                disabled={!hasFilters && !draftQuery}
-                onClick={clearFilters}
-              >
-                {t('common.clear_filters', {}, 'Clear filters')}
-              </button>
-            </div>
+            {hasFilters || draftQuery ? (
+              <div className="flex items-center justify-end whitespace-nowrap">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+                  onClick={clearFilters}
+                >
+                  {t('common.clear_filters', {}, 'Clear filters')}
+                </button>
+              </div>
+            ) : null}
           </form>
         </div>
 
@@ -656,21 +630,21 @@ function AccountsContent() {
             footer={directoryPagination}
           >
             <table
-              className="w-full min-w-[60rem] table-fixed border-collapse text-left text-sm"
+              className="w-full min-w-[44rem] table-fixed border-collapse text-left text-sm"
               aria-label={t('admin.accounts.table_region_label', {}, 'Customer directory')}
             >
               <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                 <tr>
-                  <th className="w-[22%] px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
-                  <th className="w-[24%] px-4 py-3">
+                  <th className="px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
+                  <th className="w-[30%] px-4 py-3">
                     {t('admin.accounts.login_email_label', {}, 'Login email')}
                   </th>
-                  <th className="w-[14%] px-4 py-3">{t('common.status', {}, 'Status')}</th>
-                  <th className="w-[10%] px-4 py-3">{t('common.package', {}, 'Package')}</th>
-                  <th className="w-[16%] px-4 py-3">
-                    {t('admin.accounts.service_footprint_label', {}, 'Service footprint')}
+                  <th className="w-32 px-4 py-3">{t('admin.accounts.account_status_label', {}, 'Account status')}</th>
+                  <th className="w-24 px-4 py-3">{t('common.package', {}, 'Package')}</th>
+                  <th className="w-16 px-4 py-3">
+                    {t('admin.accounts.sites_label', {}, 'Sites')}
                   </th>
-                  <th className="w-[14%] px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
+                  <th className="w-20 px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -683,74 +657,59 @@ function AccountsContent() {
                     <td className="px-4 py-3">
                       <Link
                         href={accountDetailHref(account.account_id)}
-                        className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                        title={account.display_name}
+                        className="block truncate font-semibold text-blue-700 hover:underline dark:text-blue-300"
                       >
                         {account.display_name}
                       </Link>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        <BackofficeIdentifier value={account.account_id} />
+                        <BackofficeIdentifier value={account.account_id} className="block text-xs" />
                       </div>
                       {account.operator_note ? (
-                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                        <p title={account.operator_note} className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                           {account.operator_note}
                         </p>
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">
-                        {account.primary_identity?.email ||
-                          t('admin.accounts.identity_missing_label', {}, 'Login identity missing')}
+                      <p title={account.primary_identity?.email} className="truncate font-medium text-slate-900 dark:text-slate-100">
+                        {account.primary_identity?.email || (account.identity_relationship_state === 'missing'
+                          ? t('admin.accounts.identity_missing_label', {}, 'Login identity missing')
+                          : '—')}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {account.primary_identity?.last_login_at
-                          ? t(
-                              'admin.accounts.last_login_value',
-                              { date: formatDate(account.primary_identity.last_login_at) },
-                              `Last login ${formatDate(account.primary_identity.last_login_at)}`
-                            )
-                          : t('admin.accounts.never_logged_in', {}, 'No recorded login')}
-                      </p>
+                      {account.identity_relationship_state !== 'healthy' && (account.identity_relationship_state !== 'missing' || account.primary_identity?.email) ? (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                          {account.identity_relationship_state === 'missing'
+                            ? t('admin.accounts.identity_missing_label', {}, 'Login identity missing')
+                            : t(`admin.accounts.directory_identity_${account.identity_relationship_state}`)}
+                        </p>
+                      ) : null}
+                      {account.primary_identity && account.identity_relationship_state !== 'missing' ? (
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {account.primary_identity.last_login_at
+                            ? t('admin.accounts.last_login_value', { date: formatDate(account.primary_identity.last_login_at) })
+                            : t('admin.accounts.never_logged_in', {}, 'No recorded login')}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1.5">
-                        <BackofficeStatusBadge
-                          status={account.status}
-                          label={t(`status.${account.status}`, {}, account.status)}
-                        />
-                        {account.identity_relationship_state !== 'healthy' ? (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {t(
-                              `admin.accounts.identity_${account.identity_relationship_state}`,
-                              {},
-                              account.identity_relationship_state
-                            )}
-                          </span>
-                        ) : null}
-                      </div>
+                      <BackofficeStatusBadge
+                        status={account.status}
+                        label={t(`status.${account.status}`, {}, account.status)}
+                      />
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
                       {account.display_package_label}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-900 dark:text-slate-100">
-                        {t(
-                          'admin.accounts.site_count_value',
-                          { count: formatInteger(account.site_count) },
-                          `${formatInteger(account.site_count)} sites`
-                        )}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {t(
-                          'admin.accounts.subscription_count_value',
-                          { count: formatInteger(account.subscription_count) },
-                          `${formatInteger(account.subscription_count)} subscriptions`
-                        )}
+                        {formatInteger(account.site_count)}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={accountDetailHref(account.account_id)}
-                        className="btn btn-primary btn-sm whitespace-nowrap"
+                        className="inline-flex min-h-9 items-center whitespace-nowrap font-medium text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
                       >
                         {t('common.details', {}, 'Details')}
                       </Link>
@@ -793,16 +752,11 @@ function AccountsContent() {
         )}
       </BackofficeSectionPanel>
 
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        {t(
-          'admin.accounts.directory_boundary',
-          {},
-          'This page is the customer directory. Open Service status for cross-customer problems, then resolve customer-specific work in the customer record.'
-        )}
-        {loadedAt
-          ? ` · ${t('common.updated_at', {}, 'Updated')} ${formatDate(loadedAt.toISOString())}`
-          : ''}
-      </p>
+      {loadedAt ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t('common.updated_at', {}, 'Updated')} {formatDate(loadedAt.toISOString())}
+        </p>
+      ) : null}
     </BackofficePageStack>
   );
 }

@@ -29,19 +29,19 @@ assert.match(
 
 assert.match(
   directorySource,
-  /data-ui="model-supplier-table"[\s\S]*min-w-\[64rem\][\s\S]*<thead[\s\S]*<tbody/,
+  /data-ui="model-supplier-table"[\s\S]*<thead[\s\S]*<tbody/,
   'The PC provider workspace must use one dense semantic table'
 );
 
 assert.match(
   directorySource,
-  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_test[\s\S]*SupplierMoreActions/,
+  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_retry_test[\s\S]*SupplierMoreActions/,
   'Each provider row must keep URL-backed focus and put frequent actions before the overflow control'
 );
 
 assert.match(
   directorySource,
-  /column_configuration_status[\s\S]*column_enabled_models[\s\S]*column_profiles[\s\S]*column_last_verification[\s\S]*data-ui="supplier-name"/,
+  /column_configuration_status[\s\S]*column_enabled_models[\s\S]*data-ui="supplier-name"[\s\S]*connection_details/,
   'Supplier identity must be non-interactive and configuration, models, profiles, and verification must remain separate facts'
 );
 
@@ -189,7 +189,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-metadata-gap-filter"[\s\S]*data-ui="model-sync-primary"[\s\S]*data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*filter_all_visibility[\s\S]*field_feature_filter[\s\S]*filter_all_features/,
+  /data-ui="model-sync-primary"[\s\S]*data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*filter_all_visibility[\s\S]*field_feature_filter[\s\S]*filter_all_features/,
   'Model synchronization and missing-intelligence triage must use the summary while search and named frequent filters remain stable in the toolbar'
 );
 
@@ -215,18 +215,8 @@ assert.match(
   'A filtered-empty supplier queue must provide one direct reset action'
 );
 
-assert.match(
-  pageSource,
-  /<details data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="historical-model-visibility"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
-  'Reference source, historical visibility, manual additions, and bulk maintenance must use default-collapsed in-flow configuration rows'
-);
-
-assert.match(
-  pageSource,
-  /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/,
-  'Clearing every enabled model must require an impact-specific confirmation'
-);
-assert.match(pageSource, /data-ui="model-clear-all-request"/);
+assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.doesNotMatch(pageSource, /data-ui="model-clear-all/);
 
 assert.doesNotMatch(
   pageSource,

@@ -76,6 +76,7 @@ def _execute_probe(
         )
         if claim is not None:
             claim_ids = claim.claim_ids
+        session.commit()
         try:
             result = provider.execute(request)
         except ProviderExecutionError:
@@ -91,7 +92,7 @@ def _execute_probe(
             budget_guard.reconcile(
                 session=session,
                 claim_ids=claim_ids,
-                actual_cost_usd=result.cost,
+                actual_cost_usd=result.budget_cost_usd(),
             )
             session.commit()
         return result
@@ -116,11 +117,15 @@ def probe_vision(
     encoded = base64.b64encode(_PROBE_IMAGE).decode("ascii")
     image_url = f"data:image/png;base64,{encoded}"
     content = (
-        [{"type": "input_text", "text": "Reply with the word OK."},
-         {"type": "input_image", "image_url": image_url}]
+        [
+            {"type": "input_text", "text": "Reply with the word OK."},
+            {"type": "input_image", "image_url": image_url},
+        ]
         if endpoint_variant == "responses"
-        else [{"type": "text", "text": "Reply with the word OK."},
-              {"type": "image_url", "image_url": {"url": image_url}}]
+        else [
+            {"type": "text", "text": "Reply with the word OK."},
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ]
     )
     request = ProviderExecutionRequest(
         run_id=run_id,

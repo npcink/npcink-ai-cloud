@@ -57,6 +57,8 @@ type ErrorTranslator = (
 const PROVIDER_ERROR_KEYS: Record<string, string> = {
   'client.network_error': 'error.client_network_error',
   'client.request_timeout': 'error.client_request_timeout',
+  'provider_connection.already_exists': 'error.provider_connection_exists',
+  'provider_connection.not_found': 'error.provider_connection_not_found',
   'provider_connection.auth_failed': 'error.provider_auth_failed',
   'provider.auth_invalid': 'error.provider_auth_failed',
   'provider_connection.network_error': 'error.provider_network_error',
@@ -74,6 +76,7 @@ const PROVIDER_ERROR_KEYS: Record<string, string> = {
   'provider_connection.disabled': 'error.provider_disabled',
   'provider_connection.missing_secret': 'error.provider_missing_secret',
   'provider_connection.saved_credential_unreadable': 'error.provider_credential_unreadable',
+  'provider_connection.account_model_required': 'error.provider_account_model_required',
   'provider_connection.preview_credential_required': 'error.provider_missing_secret',
   'provider_connection.catalog_empty': 'error.provider_catalog_empty',
   'provider_connection.catalog_sync_failed': 'error.provider_catalog_sync_failed',

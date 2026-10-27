@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -126,6 +127,9 @@ class ProviderExecutionResult:
     cost_estimate_mode: str = ""
     cache_affinity_applied: bool | None = None
 
+    def budget_cost_usd(self) -> float | None:
+        return known_provider_cost_usd(self.cost, self.cost_estimate_mode)
+
     def usage_context(self) -> dict[str, object]:
         total_input_tokens = max(0, int(self.tokens_in or 0))
         cache_read_tokens = max(0, int(self.cache_read_tokens or 0))
@@ -158,6 +162,15 @@ class ProviderExecutionResult:
         if self.cache_affinity_applied is not None:
             context["cache_affinity_applied"] = self.cache_affinity_applied
         return context
+
+
+def known_provider_cost_usd(cost: float, mode: str) -> float | None:
+    """An unpriced/partial estimate is not proof that a dispatch was free."""
+    if not math.isfinite(cost) or cost < 0:
+        return None
+    if mode in {"unpriced", "partial_rates"} or (not mode and cost == 0):
+        return None
+    return cost
 
 
 class ProviderExecutionError(Exception):

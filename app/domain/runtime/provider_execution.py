@@ -14,6 +14,7 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
     ProviderMediaCandidate,
+    known_provider_cost_usd,
 )
 from app.adapters.providers.compatibility import assess_context_budget
 from app.adapters.repositories.runtime_repository import RuntimeRepository
@@ -233,7 +234,7 @@ class RuntimeProviderExecutionService:
             self.budget_guard.reconcile(
                 session=session,
                 claim_ids=claim_ids,
-                actual_cost_usd=result.cost,
+                actual_cost_usd=result.budget_cost_usd(),
             )
         return result
 
@@ -296,7 +297,11 @@ class RuntimeProviderExecutionService:
             self.budget_guard.reconcile(
                 session=repository.session,
                 claim_ids=command.budget_claim_ids,
-                actual_cost_usd=None if unknown_cost else command.cost,
+                actual_cost_usd=None
+                if unknown_cost
+                else known_provider_cost_usd(
+                    command.cost, str((usage_context or {}).get("cost_estimate_mode") or "")
+                ),
             )
         return provider_call
 

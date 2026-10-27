@@ -357,7 +357,7 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
       generated_at: '2026-09-10T10:00:00Z', sampled: false, truncated: false,
-      items: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
+      items: [{ selected_provider_id: 'historical-provider', selected_model_id: 'historical-model', run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
     })) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
@@ -371,6 +371,8 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await trigger.click();
   const drawer = page.getByRole('dialog');
   await expect(drawer.getByText('run-schema-rejected', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-provider', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-model', { exact: true })).toBeVisible();
   await expect(drawer.locator('details')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
@@ -406,6 +408,7 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   const trigger = evidence.getByRole('button', { name: /View detail|查看详情/ });
   await trigger.click();
   await expect(page.getByRole('dialog').getByText('run-success-with-evidence-gap', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(/No recorded call evidence|暂无调用证据/);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(628);

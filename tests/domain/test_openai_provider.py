@@ -317,6 +317,64 @@ def test_openai_adapter_classifies_qwen_vl_catalog_models_as_vision() -> None:
     assert model.instances[0].capability_tags[0] == "vision"
 
 
+@pytest.mark.parametrize("declared", [True, False])
+def test_ollama_native_catalog_route_requires_operator_evidence_and_survives_refresh(
+    declared: bool,
+) -> None:
+    override = {"endpoint_variant": "ollama_chat"}
+    if declared:
+        override.update(source="m4_preview_operator_config", revision="native-chat-v1")
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_metadata_overrides={"qwen3.5:9b": override},
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={
+            "data": [{"id": "qwen3.5:9b", "endpoint_variant": "ollama_chat"}],
+        })),
+    )
+    for _ in range(2):
+        model = adapter.fetch_catalog().models[0]
+        assert model.instances[0].endpoint_variant == (
+            "ollama_chat" if declared else "chat_completions"
+        )
+
+
+@pytest.mark.parametrize("response_format,expected", [
+    ({"type": "json_object"}, "json"),
+    ({"type": "json_schema", "json_schema": {"schema": {"type": "object"}}},
+     {"type": "object"}),
+])
+def test_ollama_native_text_disables_thinking_and_preserves_structured_output(
+    response_format: dict[str, object], expected: object,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        payload = json.loads(request.content)
+        assert payload["think"] is False
+        assert payload["format"] == expected
+        assert payload["options"]["num_predict"] == 512
+        assert "reasoning_effort" not in payload
+        return httpx.Response(200, json={
+            "model": "qwen3.5:9b", "done": True, "done_reason": "stop",
+            "message": {"role": "assistant", "content": '{"title":"clear"}'},
+            "prompt_eval_count": 20, "eval_count": 8,
+        })
+    adapter = OpenAIProviderAdapter(
+        base_url="http://ollama.example/v1", api_key="test-api-key",
+        default_reasoning_effort="none", transport=httpx.MockTransport(handler),
+    )
+    result = adapter.execute(ProviderExecutionRequest(
+        run_id="native-text", site_id="local", ability_name="rewrite",
+        profile_id="wp-ai.editorial", execution_kind="text", model_id="qwen3.5:9b",
+        instance_id="local-qwen", endpoint_variant="ollama_chat", trace_id="native-text",
+        input_payload={"messages": [{"role": "user", "content": "Rewrite clearly"}],
+                       "params": {"max_tokens": 512, "response_format": response_format}},
+        policy={}, timeout_ms=60000,
+    ))
+    assert result.output["output_text"] == '{"title":"clear"}'
+    assert result.tokens_in == 20 and result.tokens_out == 8
+    assert result.finish_reason == "stop"
+
+
 def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/models")

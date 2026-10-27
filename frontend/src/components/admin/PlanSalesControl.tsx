@@ -12,13 +12,11 @@ const copy = {
     title: '套餐销售', active: '正在销售', retired: '已下架', publish: '上架',
     withdraw: '下架', saving: '保存中…', failed: '销售状态保存失败，请重试。',
     description: '下架后停止新购买和新试用，已创建订单及现有订阅继续有效。',
-    changed: '销售状态已保存。',
   },
   en: {
     title: 'Package sales', active: 'On sale', retired: 'Withdrawn', publish: 'Put on sale',
     withdraw: 'Withdraw', saving: 'Saving…', failed: 'Could not save sales status. Retry.',
     description: 'Withdrawal stops new purchases and trials. Existing orders and subscriptions remain valid.',
-    changed: 'Sales status saved.',
   },
 };
 
@@ -67,7 +65,6 @@ export function PlanSalesControl({ planId, status, disabled, onSaved, onSavingCh
       </div>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{text.description}</p>
       {error ? <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-      {receipt ? <p role="status" className="mt-2 text-sm">{text.changed}</p> : null}
       <AdminMutationReceipt receipt={receipt} />
     </section>
   );
