@@ -65,6 +65,24 @@ The WordPress consumer must still reject generic, missing, stale, or
 non-matching phrases. A candidate without a safe exact `source_match` remains a
 valid copy/open result but cannot become an editor Apply action.
 
+The 2026-10-27 short-title correction preserves one narrow form of literal
+evidence: a 4–5 character uppercase ASCII alphanumeric identifier leading a
+descriptive title, separated by a spaced `-`, `–` or `—`. When the complete
+identifier occurs in masked source prose, prefer that source spelling over a
+longer platform overlap. Existing generic exclusions plus resource labels
+`demo/docs/code/guide/theme` cannot use this short-identifier exception.
+Plain short titles, partial identifiers, URLs and code remain outside it.
+This is not an entity-identity verdict or a general short-anchor relaxation.
+
+In the frozen twenty-source / 120-candidate local domain replay, only
+`6624→5131` changed: source passage 0 now supplies `VOID` instead of `Typecho`.
+Hints remain 112/120; rerunning the existing ranker on both enriched lists
+preserves every order. CF7 and `style.css` arm controls remain unchanged.
+This does not establish fresh retrieval, editor Apply, M4 or production quality.
+No ranking coefficients change; on other inputs a newly available exact hint
+can still receive the existing bounded anchor bonus. The failed semantic-prompt
+comparison is a separate Eval Lab negative result, not an accepted filter.
+
 ### 2.6 Recommendation observation is session metadata
 
 One random, site-scoped `recommendation_session` correlates a result-set

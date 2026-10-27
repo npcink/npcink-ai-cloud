@@ -2922,6 +2922,27 @@ def _source_anchor_evidence(
 ) -> dict[str, object]:
     if source_prefixes is None:
         source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
+    # A short uppercase identifier explicitly leading a descriptive title can
+    # be more useful than a longer shared platform name. This remains literal
+    # evidence, not a claim that two documents describe the same resource.
+    subject = re.match(r"^([A-Z][A-Z0-9]{3,4})\s+[–—-]\s+\S", title.strip())
+    if subject and subject[1].lower() not in (
+        GENERIC_INTERNAL_LINK_ANCHORS | {"demo", "docs", "code", "guide", "theme"}
+    ):
+        pattern = re.compile(
+            r"(?<![A-Za-z0-9_])" + re.escape(subject[1]) + r"(?![A-Za-z0-9_])",
+            re.IGNORECASE | re.ASCII,
+        )
+        for passage_index, passage in enumerate(source_passages):
+            match = pattern.search(passage)
+            if match:
+                return {
+                    "anchor_or_context": match[0],
+                    "basis": "exact_source_target_phrase",
+                    "source_passage_index": passage_index,
+                    "target_field": "title",
+                    "exact_source_passage_match": True,
+                }
     candidates: list[tuple[int, int, int, str, str]] = []
     normalized_title = _normalize_anchor_comparison(title)
     if source_prefixes is None:

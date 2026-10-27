@@ -54,6 +54,70 @@ def test_function_and_file_identifiers_in_prose_are_not_blanket_rejected():
     )
 
 
+def test_short_title_identifier_precedes_longer_platform_overlap():
+    evidence = _source_anchor_evidence(
+        ["先阅读其他内容。", "AERO 这个Typecho主题有完整的使用文档。"],
+        title="AERO – 简洁的Typecho主题",
+        chunk_text="unrelated chunk",
+    )
+    assert evidence == {
+        "anchor_or_context": "AERO",
+        "basis": "exact_source_target_phrase",
+        "source_passage_index": 1,
+        "target_field": "title",
+        "exact_source_passage_match": True,
+    }
+
+
+@pytest.mark.parametrize("source", ["使用 aero 完成设置。", "İstanbul，使用 aero 完成设置。"])
+def test_short_title_identifier_keeps_source_case_and_unicode_offsets(source):
+    evidence = _source_anchor_evidence([source], title="AERO — 主题使用文档", chunk_text="")
+    assert evidence["anchor_or_context"] == "aero"
+
+
+def test_five_character_title_identifier_is_also_bounded_to_exact_source():
+    evidence = _source_anchor_evidence(
+        ["了解 AEROS 的设置。"], title="AEROS - 设置说明", chunk_text=""
+    )
+    assert evidence["anchor_or_context"] == "AEROS"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "AEROS 主题介绍。",
+        "myAERO 主题介绍。",
+        "AERO_plugin 主题介绍。",
+        "https://example.invalid/AERO/",
+        "`AERO`",
+        "<code>AERO</code>",
+        '[download name="AERO"]',
+    ],
+)
+def test_short_title_identifier_needs_whole_identifier_in_prose(source):
+    assert _source_anchor_evidence([source], title="AERO – 布局介绍", chunk_text="") == {}
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["AERO", "AERO-布局介绍", "AERO 布局介绍", "Demo – 布局介绍", "DEMO – 布局介绍",
+     "DOCS – 布局介绍", "CODE – 布局介绍", "GUIDE – 布局介绍", "CLOUD – 布局介绍",
+     "THEME – 布局介绍", "POST – 布局介绍"],
+)
+def test_short_title_exception_does_not_admit_plain_titles_or_resource_labels(title):
+    # Matching a bare four-letter title or a generic caption remains insufficient.
+    assert _source_anchor_evidence([title.split()[0]], title=title, chunk_text="") == {}
+
+
+def test_short_title_identifier_batch_clears_stale_hint_and_keeps_input():
+    original = dict(title="AERO – 简洁的Typecho主题", chunk="", anchor_or_context="Typecho")
+    result = _attach_source_anchor_evidence(
+        [original], intent="internal_links", source_passages=["AERO 这个Typecho主题。"]
+    )
+    assert result[0]["anchor_or_context"] == "AERO"
+    assert original["anchor_or_context"] == "Typecho"
+
+
 def test_reenrichment_clears_stale_hint_without_mutating_input():
     candidate = dict(
         title="contact guide",
