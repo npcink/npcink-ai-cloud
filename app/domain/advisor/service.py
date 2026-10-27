@@ -845,6 +845,7 @@ class InternalAIAdvisorService:
                     model_id=model_id,
                     request=request,
                 )
+                session.commit()
                 try:
                     llm_result = provider.execute(request)
                 except ProviderExecutionError:
@@ -860,7 +861,7 @@ class InternalAIAdvisorService:
                     budget_guard.reconcile(
                         session=session,
                         claim_ids=budget_claim.claim_ids,
-                        actual_cost_usd=llm_result.cost,
+                        actual_cost_usd=llm_result.budget_cost_usd(),
                     )
                 session.commit()
         except ProviderExecutionError as error:
@@ -2212,15 +2213,13 @@ def _site_diagnostic_likely_cause(*, source: str, code: str) -> str:
         return "Cloud API key state can block telemetry, runtime requests, or diagnostics."
     if source == "plugins":
         return (
-            "Plugin telemetry reports active errors, stale reporting, or missing expected "
-            "plugins."
+            "Plugin telemetry reports active errors, stale reporting, or missing expected plugins."
         )
     if source == "media":
         return "Cloud media processing is failing or receiving unsupported source assets."
     if source == "vector":
         return (
-            "Site Knowledge index coverage may be empty, stale, or missing matching public "
-            "content."
+            "Site Knowledge index coverage may be empty, stale, or missing matching public content."
         )
     if source == "runtime":
         return "Hosted runtime runs are failing or experiencing provider/runtime pressure."
