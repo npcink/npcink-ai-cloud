@@ -55,6 +55,21 @@ describe('normalizeRuntimeTelemetry alert ordering', () => {
     expect(summary.alertSummary.status).toBe('inactive');
     expect(summary.totals.runs).toBe(0);
   });
+
+  it('keeps missing counts unavailable on older payloads and discloses capped evidence', () => {
+    const legacy = normalizeRuntimeTelemetry({ capability_groups: [{ group_id: 'text' }] });
+    expect(legacy.capabilityGroups[0].providerGapRuns).toBeNull();
+    expect(legacy.totals.providerEvidenceRequiredRuns).toBeNull();
+    const current = normalizeRuntimeTelemetry({
+      evidence_limits: { provider_calls_truncated: true },
+      totals: { provider_evidence_required_runs: 0, provider_evidence_pending_runs: 3 },
+      capability_groups: [{ group_id: 'text', provider_call_gap_runs: 0 }],
+    });
+    expect(current.sampleLimited).toBe(true);
+    expect(current.capabilityGroups[0].providerGapRuns).toBe(0);
+    expect(current.totals.providerEvidenceRequiredRuns).toBe(0);
+    expect(current.totals.providerEvidencePendingRuns).toBe(3);
+  });
 });
 
 describe('runtime issue catalog copy mappings', () => {

@@ -14,27 +14,31 @@ type EvidenceSnapshot = {
   failedScopes: number;
 };
 
-export function useRuntimeRunEvidence({ issueCode, capabilities, site, capability, windowHours, refreshSignal }: {
+export function useRuntimeRunEvidence({ issueCode, capabilities, site, capability, windowHours, refreshSignal, since = '', evidenceScope = 'affected' }: {
   issueCode: string;
   capabilities: string[];
   site: string;
   capability: string;
   windowHours: number;
   refreshSignal: number;
+  since?: string;
+  evidenceScope?: 'affected' | 'context';
 }) {
   const [attempt, setAttempt] = useState(0);
   const [snapshot, setSnapshot] = useState<EvidenceSnapshot | null>(null);
   // A key also prevents a prior scope's rows from appearing during the render
   // before effect cleanup, or after a delayed response from a cancelled request.
-  const key = JSON.stringify({ issueCode, scopes: capability ? [capability] : [...new Set(capabilities)].sort(), site, windowHours, refreshSignal, attempt });
+  const key = JSON.stringify({ issueCode, scopes: capability ? [capability] : [...new Set(capabilities)].sort(), site, windowHours, refreshSignal, attempt, since, evidenceScope });
 
   useEffect(() => {
-    const query = JSON.parse(key) as { issueCode: string; scopes: string[]; site: string; windowHours: number };
+    const query = JSON.parse(key) as { issueCode: string; scopes: string[]; site: string; windowHours: number; since: string; evidenceScope: string };
     if (!query.issueCode) return;
     const controller = new AbortController();
     const scopes = query.scopes.length ? query.scopes : [''];
     void Promise.allSettled(scopes.map(async (scope) => {
       const params = new URLSearchParams({ issue_code: query.issueCode, recent_minutes: String(query.windowHours * 60), limit: String(sampleLimit) });
+      if (query.since) params.set('since', query.since);
+      params.set('evidence_scope', query.evidenceScope);
       if (query.site) params.set('site_id', query.site);
       if (scope) params.set('capability', scope);
       const response = await client.request<{ items: RuntimeRunEvidence[]; sampled?: boolean; truncated?: boolean }>(
