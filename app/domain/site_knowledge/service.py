@@ -21,6 +21,7 @@ from app.domain.agent_workflow_metadata import (
     SITE_KNOWLEDGE_SUGGESTION_AGENT_ID,
     get_agent_handoff_metadata,
 )
+from app.domain.site_knowledge.anchor_context import source_prose_for_anchor
 from app.domain.site_knowledge.backends import (
     SiteKnowledgeBackendError,
     SiteKnowledgeVectorBackend,
@@ -2892,10 +2893,13 @@ def _attach_source_anchor_evidence(
 ) -> list[dict[str, object]]:
     if intent != "internal_links" or not source_passages:
         return results
+    source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
     source_prefixes = _anchor_source_prefixes(source_passages)
     projected: list[dict[str, object]] = []
     for item in results:
         result = dict(item)
+        result.pop("anchor_evidence", None)
+        result.pop("anchor_or_context", None)
         anchor_evidence = _source_anchor_evidence(
             source_passages,
             title=str(result.get("title") or ""),
@@ -2916,6 +2920,8 @@ def _source_anchor_evidence(
     chunk_text: str,
     source_prefixes: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
+    if source_prefixes is None:
+        source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
     candidates: list[tuple[int, int, int, str, str]] = []
     normalized_title = _normalize_anchor_comparison(title)
     if source_prefixes is None:
