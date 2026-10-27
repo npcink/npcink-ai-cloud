@@ -22,7 +22,7 @@ const matchesRoute = (href: string, pathname: string) => {
 /** One shell-owned secondary navigation for every Admin family. */
 export function AdminWorkspaceNavigation() {
   const pathname = usePathname();
-  const params = useObservationScope(false);
+  const params = useObservationScope();
   const { t, locale } = useLocale();
   const observation = observationNavigation.some(item => matchesRoute(item.href, pathname));
   const diagnostic = diagnosticNavigation.some(item => matchesRoute(item.href, pathname));
