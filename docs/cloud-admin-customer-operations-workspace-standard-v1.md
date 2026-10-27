@@ -177,7 +177,31 @@ but they must not dominate the default work queue. The backend must keep the
 global sort bounded and fail closed when the supported queue population is
 exceeded instead of performing unbounded enrichment.
 
-### 3.2 Commercial catalogs
+### 3.2 Customer evidence and follow-up rules
+
+- Customer labels use a valid `metadata.operator_display_name`, then the customer
+  name, then a localized unnamed label. Opaque Account IDs remain supporting
+  evidence. Directory, service queue, subscription queue, and details share this
+  rule; operational searches include the operator label.
+- Statistics maintenance covers currently owned, non-archived sites. Historical
+  site associations remain readable, but do not create current missing-statistics
+  or missing-key work. Current site and key issues take priority over statistics.
+- A missing or stale usage snapshot is a statistics task, not evidence of payment
+  failure or denied access. Free accounts also have subscription records; a
+  period end alone is not proof of a payment obligation. Subscription coverage
+  conclusions do not certify login, resource capacity, or runtime health.
+- Low AI credits can lead to existing top-up options. Resource limits or missing
+  site access lead to quota and site evidence; adding credits does not repair
+  those conditions. Missing evidence remains unknown rather than a healthy zero.
+- Missing or conflicting owner identity follows this sequence: confirm the
+  intended owner and login email; have an authorized maintainer reconcile the
+  existing Principal and owner Membership using the identity authority's
+  procedures; refresh customer access evidence; ask the customer to verify Portal
+  login; return to Service status. This guidance grants no ownership or restore
+  authority and does not authorize creating a replacement customer. Technical
+  accounts may intentionally have no customer login.
+
+### 3.3 Commercial catalogs
 
 `/admin/plans` owns package definitions, package limits, release state, and
 package-scoped subscription follow-up. `/admin/credit-packs` owns purchasable

@@ -2,6 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -28,6 +29,7 @@ type CoverageQueueItem = {
     account_id: string;
     name?: string;
     status?: string;
+    metadata?: Record<string, unknown>;
   };
   primary_subscription?: {
     subscription_id?: string;
@@ -126,11 +128,6 @@ function normalizeQueueLimit(value: string | null): number {
 
 function queueItemKey(item: CoverageQueueItem): string {
   return `${item.account.account_id}:${item.reason_code}`;
-}
-
-function customerDisplayName(name: string | undefined, accountId: string, unnamedLabel: string): string {
-  const normalizedName = name?.trim();
-  return normalizedName && normalizedName !== accountId ? normalizedName : unnamedLabel;
 }
 
 async function readJsonData<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -377,9 +374,8 @@ function AdminCoverageContent() {
     const groups = new Map<string, CoverageQueueItem[]>();
     const labels = new Map<string, string>();
     for (const item of visibleItems) {
-      const label = customerDisplayName(
-        item.account.name,
-        item.account.account_id,
+      const label = customerLabel(
+        item.account,
         t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
       );
       groups.set(label, [...(groups.get(label) || []), item]);
@@ -733,6 +729,8 @@ function AdminCoverageContent() {
                         {},
                         'Customer service is suspended'
                       );
+                    } else if (item.reason_code === 'billing_snapshot_follow_up') {
+                      impactLabel = t('admin.customer_ops.statistics_impact', {}, 'Statistics only; access failure not established');
                     } else if (daysUntilEnd != null) {
                       impactLabel = t(
                         'admin.coverage.days_remaining',

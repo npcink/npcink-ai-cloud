@@ -2,6 +2,7 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -74,6 +75,7 @@ interface SubscriptionApiItem {
   account?: {
     account_id?: string;
     name?: string;
+    metadata?: Record<string, unknown>;
   };
   covered_sites?: Array<{
     site_id?: string;
@@ -138,7 +140,7 @@ function normalizeSubscription(item: SubscriptionApiItem): Subscription {
   return {
     subscription_id: subscription.subscription_id || '',
     account_id: subscription.account_id || account.account_id || '',
-    account_name: account.name || '',
+    account_name: customerLabel(account, ''),
     site_count: Number(item.coverage?.site_count || sites.length || 0),
     covered_sites: sites
       .map((site) => ({
@@ -733,7 +735,9 @@ function SubscriptionsContent() {
 
                     <div className={riskLevel === 'stable' ? 'hidden' : 'min-w-0'}>
                       <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(riskLevel))}>
-                        {t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
+                        {subscription.operator_risk.reason_code.startsWith('snapshot_')
+                          ? t('admin.customer_ops.statistics_maintenance', {}, 'Statistics maintenance')
+                          : t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
                       </span>
                       <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{riskReason}</p>
                     </div>
