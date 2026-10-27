@@ -64,6 +64,33 @@ seventh acceptance condition.
 Do not deploy production merely because a Dependabot PR merged. Production
 promotion remains governed by `docs/cloud-production-release-policy-v1.md`.
 
+## Coupled packages and inherited failures
+
+Review the resolved consumers together: React and React DOM need matching
+renderer versions; Vitest and its coverage provider need compatible exact
+peers. A frozen install and ordinary test run can both pass without exercising
+the coverage plugin. Run the actual coverage path when that peer changes, and
+check installed container versions after the dependency-aware M4 deployment.
+
+Serialize updates that overlap a manifest or lockfile. Refresh each on current
+master and inspect its final diff so it preserves previously integrated source
+and dependencies. For major updates, check the release's runtime floors,
+removed APIs/options and changed assertion/mock behavior against actual usage.
+Do not change tests merely to make a new runner green.
+
+When full CI exposes an application or test-contract regression inherited from
+master, preserve and reproduce the failure before classifying it. Repair source
+or test files in a separate focused human PR, then refresh the dependency PR on
+that merged fix. Do not skip the failed check, weaken the assertion, or put
+application/test source into the trusted-bot lane. A test-only correction can
+retain an exact dictionary assertion while adding newly contracted fields.
+
+Editing a PR body can retrigger its required contract check. Re-read checks for
+the current head and body before merging; an earlier green result is not a
+reason to bypass a newly expected check. Aggregate merged dependencies into one
+clean-master M4 acceptance checkpoint when their independent candidate evidence
+is already complete and no changed risk requires another broad run.
+
 ## Verification
 
 Run:
