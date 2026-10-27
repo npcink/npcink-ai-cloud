@@ -29,7 +29,7 @@ Do not reopen superseded CVE failures or extend an exception to obtain green CI.
 | --- | --- | --- |
 | [#1290 React](https://github.com/npcink/npcink-ai-cloud/pull/1290) | Original update paired React 19.3.1 with React DOM 19.2.5; align both to 19.3.1, preserve types 19.3.0 and current master | Frozen install, 671 tests, type-check, actual server render; M4 production-mode build and login/anonymous redirect smoke; six required checks passed at `778158ed`; merged `9f19f225` |
 | [#1289 Vitest](https://github.com/npcink/npcink-ai-cloud/pull/1289) | Original major update retained coverage-v8 4.1.12; align engine and exact peer to 5.0.5 | Major release and Node 22/Vite 7 floor review; all 671 tests in 60 files with V8 coverage enabled, type-check, M4 dependency build and actual container versions at `3a609bea` |
-| [#1291 Alembic](https://github.com/npcink/npcink-ai-cloud/pull/1291) | Patch 1.20.0 to 1.20.1; retain application and migration source; refresh obsolete baseline | Official patch release reviewed; full backend CI exposed the separate stale assertion below, rather than an Alembic regression |
+| [#1291 Alembic](https://github.com/npcink/npcink-ai-cloud/pull/1291) | Patch 1.20.0 to 1.20.1; retain application and migration source; refresh obsolete baseline | Official patch release reviewed; full backend CI exposed the separate stale assertion below; after #1299, all required and full backend checks passed at `0ee8685b`; merged `d7766e20` |
 | [#1299 telemetry contract](https://github.com/npcink/npcink-ai-cloud/pull/1299) | #1297 added provider-required/pending counters, but one non-AI upload test expected the older exact dictionary; add both zero values | Original failure reproduced on M4; corrected upload/diagnostic/classification selection passed 15 tests; Ruff subset passed; required CI passed at `01b0410e`; merged `b5bc1b36` |
 
 The test repair stays outside the bot PR: the trusted-bot lane permits manifests
@@ -37,6 +37,13 @@ and locks, not test source. No assertion was removed, loosened to a subset or
 skipped. Frontend manifest/lock updates were serialized so the second preserved
 the already merged React graph. Coverage percentages describe that execution;
 they are not a new target, proof of production coverage or human-use evidence.
+
+The combined `d78880eb` candidate then built on M4 with Alembic 1.20.1 and both
+frontend package pairs at the intended versions. The same 15-case runtime seam
+passed against this changed Python dependency. This re-run answers a different
+risk from the earlier old-runtime test correction; it is not a repeated full
+suite. Final merged-master acceptance is recorded separately in the successor
+ledger rather than inferred from a candidate.
 
 ## Resource and evidence disposition
 
