@@ -2586,6 +2586,8 @@ def test_successful_upload_is_visible_as_non_ai_zero_credit_telemetry(
         assert data["totals"] == {
             "runs": 1,
             "ai_evidence_required_runs": 0,
+            "provider_evidence_required_runs": 0,
+            "provider_evidence_pending_runs": 0,
             "non_ai_zero_credit_runs": 1,
             "provider_calls": 0,
             "usage_meter_events": 0,
