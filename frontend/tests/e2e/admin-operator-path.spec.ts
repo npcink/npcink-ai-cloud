@@ -143,7 +143,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');
-  await expect(coverageQueueItems.nth(0).getByRole('link', { name: /MVP Account/i })).toHaveAttribute(
+  await expect(coverageQueueItems.nth(0).getByRole('link', { name: 'Npcink AI Demo', exact: true })).toHaveAttribute(
     'href',
     `/admin/accounts/${LONG_ACCOUNT_ID}`
   );
