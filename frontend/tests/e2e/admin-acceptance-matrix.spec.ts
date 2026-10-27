@@ -7,6 +7,8 @@ type RouteAcceptance = (typeof acceptanceMatrix.routes)[number];
 
 function installBrowserFailureCapture(page: Page) {
   const failures: string[] = [];
+  const canceledReads: Array<{ url: string; failure: string }> = [];
+  const successfulReads = new Set<string>();
 
   page.on('pageerror', (error) => failures.push(`pageerror: ${error.message}`));
   page.on('console', (message: ConsoleMessage) => {
@@ -18,13 +20,19 @@ function installBrowserFailureCapture(page: Page) {
     const isExpectedAbort = reason === 'net::ERR_ABORTED' && (
       request.resourceType() === 'document' || requestUrl.searchParams.has('_rsc')
     );
-    if (!isExpectedAbort) failures.push(`requestfailed: ${request.method()} ${request.url()} (${reason})`);
+    const failure = `requestfailed: ${request.method()} ${request.url()} (${reason})`;
+    if (reason === 'net::ERR_ABORTED' && request.method() === 'GET' && requestUrl.pathname.startsWith('/api/admin/')) {
+      // React development remounts cancel obsolete query reads. Require a
+      // successful replacement of the exact URL; an unrecovered abort still fails.
+      canceledReads.push({ url: request.url(), failure });
+    } else if (!isExpectedAbort) failures.push(failure);
   });
   page.on('response', (response: Response) => {
     if (response.status() >= 500) failures.push(`response: ${response.status()} ${response.url()}`);
+    if (response.ok() && response.request().method() === 'GET') successfulReads.add(response.url());
   });
 
-  return failures;
+  return () => [...failures, ...canceledReads.filter(read => !successfulReads.has(read.url)).map(read => read.failure)];
 }
 
 
@@ -73,7 +81,7 @@ async function expectDesktopRouteBaseline(page: Page, route: RouteAcceptance) {
   const activeNav = page.locator('[data-ui="admin-primary-nav"] a[aria-current="page"]');
   await expect(activeNav).toHaveCount(1);
   await expect(activeNav).toHaveAttribute('href', parent);
-  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toContainText((await activeNav.innerText()).trim());
+  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
 
   if (!route.routePattern.includes('[') && route.routePattern !== '/admin/login') {
     // Active pages are discoverable; a paused bookmark must stay withdrawn.
@@ -103,7 +111,7 @@ test.describe('current-master Admin route acceptance matrix', () => {
       await page.waitForLoadState('networkidle');
       await expectDesktopRouteBaseline(page, route);
 
-      expect(browserFailures, `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
+      expect(browserFailures(), `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
       expect(unhandledAdminRequests, `${route.routePattern} made unhandled Admin API requests`).toEqual([]);
     });
   }

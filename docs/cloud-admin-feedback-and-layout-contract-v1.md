@@ -47,7 +47,7 @@ help entry. It should not interrupt the primary task on every visit.
 - Short non-interactive explanations use the shared `AdminHelpTip`, available
   through hover, keyboard focus, and click. Interactive or long content uses an
   explicit disclosure, dialog, or drawer.
-- Put manual model entry, batch maintenance, reference preferences, historical
+- Put batch maintenance, reference preferences, historical
   evidence, and other infrequent operations behind clearly named disclosures
   or More menus. Preserve recovery functionality and confirmation safeguards;
   low frequency alone does not justify deleting a capability.
@@ -163,7 +163,10 @@ The receipt is durable follow-up evidence, not a second success banner.
 
 The supplier workspace is the first implementation of this contract:
 
-- save, delete, and standalone connection-test outcomes use global Toast;
+- supplier save and delete outcomes use global Toast; standalone connection
+  checks use one row-level result naming the completed stage;
+- automatic catalog refresh after save does not create another row success;
+  next-step content offers an action, and partial catalog failure stays with retry;
 - form-specific guidance and failures stay in the provider dialog;
 - the latest backend receipt remains stored;
 - a compact `Latest operation` toolbar action opens receipt detail;

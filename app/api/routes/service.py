@@ -17,6 +17,7 @@ from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.api.routes.admin_model_tests import router as admin_model_tests_router
 from app.api.routes.commercial_subscriptions_admin import (
     router as commercial_subscriptions_admin_router,
 )
@@ -103,6 +104,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
 from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
+router.include_router(admin_model_tests_router)
 router.include_router(site_compliance_admin_router)
 router.include_router(commercial_subscriptions_admin_router)
 logger = get_logger(__name__)
@@ -693,7 +695,7 @@ class ProviderConnectionPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     credential: str | None = None
     secret: str | None = None
-    secretless: bool = False
+    secretless: bool | None = None
 
 
 class ProviderConnectionDeletePayload(BaseModel):
@@ -1360,7 +1362,9 @@ def _serialize_hosted_runtime_instance(
         "capability_tags": list(instance.capability_tags or []),
         "model_status": str(model.status or ""),
         "model_feature": str(model.feature or ""),
-        "upstream_model_id": str(model_metadata.get("upstream_model_id") or instance.model_id or ""),
+        "upstream_model_id": str(
+            model_metadata.get("upstream_model_id") or instance.model_id or ""
+        ),
         "catalog_source": str(model_metadata.get("catalog_source") or ""),
         "upstream_status": str(model_metadata.get("upstream_status") or "current"),
         "price_input": model.price_input,
@@ -1554,7 +1558,7 @@ def _build_hosted_runtime_profile_projection(
                     "timeout_ms": int(policy.get("timeout_ms") or spec.timeout_ms),
                     "max_timeout_ms": spec.max_timeout_ms,
                     "allow_fallback": bool(policy.get("allow_fallback", spec.allow_fallback)),
-                    "max_retries": int(policy.get("max_retries") or spec.max_retries),
+                    "max_retries": int(policy.get("max_retries", spec.max_retries)),
                     "note": note,
                     "revision": str(binding.revision if binding is not None else ""),
                     "updated_at": (
@@ -1679,7 +1683,9 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
-                feature_compatible = model_supports_execution_kind(model.feature, spec.execution_kind)
+                feature_compatible = model_supports_execution_kind(
+                    model.feature, spec.execution_kind
+                )
                 if not feature_compatible:
                     return [], (
                         f"profile {profile_id} may only use {spec.execution_kind} instances"

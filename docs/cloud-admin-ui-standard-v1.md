@@ -33,20 +33,67 @@ accessibility, preserve the stronger boundary first.
 3. search, status filter, latest operation, and one create action;
 4. one semantic comparison table;
 5. Configure beside each supplier; normal connection tests in More, with failed-test retry kept visible;
-6. a wide edit workbench with one dense connection table above model
-   visibility;
+6. a wide edit workbench with separate connection, account-model, and read-only
+   reference tabs;
 7. explicit credential replacement instead of a prefilled secret field;
 8. enabled/account counts, account fetch, and search remain visible, with a
-   visible unconfirmed-count filter. Optional filters and reference browsing
-   start collapsed; reference source/history/timestamps live inside reference
-   browsing and never inflate account counts;
-9. More operations groups manual model entry and confirmed batch mutations
-   in flow, without another configuration table or floating panel. Pending IDs
-   participate in save. Model switches stay visible; context, price, and
-   capability detail expand per row. Hide pagination for a single page.
+   visible unconfirmed-count filter. Optional filters start collapsed. Reference
+   browsing never changes account rows or counts; source/history/timestamps
+   belong in the reference tab. Account fetch independently checks source
+   freshness and refreshes references after 24 hours, with separate failure and
+   retry (see [model reference contract](model-reference-metadata-v1.md));
+9. More operations appears only for account directories larger than one page
+   and groups confirmed filtered batch mutations in flow. No manual model-add
+   or disable-all shortcut. Model switches stay visible; context, price,
+   source/date, and capability detail expand per row. Missing exact-ID metadata
+   is explained. Hide pagination for a single page.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
+
+### Bounded model test
+
+Supplier model rows may open **Model test / 模型测试** for a saved, enabled
+text/vision model. This is an Admin integration diagnostic, not a chat,
+benchmark, batch evaluation, or WordPress editor surface. The shared workbench
+shows editable input, a few examples, optional image input, actual output,
+dispatched provider/model, latency, input/output tokens, and a server test ID.
+Return restores the supplier draft; testing never saves it. One primary action
+starts the test. Failure keeps input and allows explicit retry; no duplicate toast.
+
+The additive `POST /api/admin/provider-connections/{id}/model-tests` proxy requires
+`can_manage_catalog`, with the internal route requiring token authentication,
+idempotency/replay protection, and the existing Provider spend guard. It accepts
+only `model_id`, `capability` (`text`/`vision`), `prompt` (1–4000 characters), and
+optional `image_data_url`. There is no arbitrary endpoint, API key, routing
+override, fallback, system prompt, tools, or advanced generation parameter.
+The exact saved model must exist in the account catalog. A test uses the saved
+connection, 60-second timeout and 2,048 output-token limit (including reasoning where supplied). Vision defaults to a
+256×256 red square; uploads are PNG/JPEG/WebP up to 512 KB / 4 MP, decoded,
+sanitized and resized on the server. Remote image URLs are rejected.
+
+Output is transient Markdown rendered without raw HTML, embedded images, or
+active controls. External links permit only HTTP(S) and open with isolation.
+The result includes a read-only USD cost projection: supplier-reported amount
+when available, otherwise tokens × complete catalog rates, or fresh exact
+provider/model reference rates (same snapshot as an active source, <24 hours).
+No aliases, cross-provider reference guesses, external refresh on dispatch, or
+missing-price-as-zero. Cache rates are used when present; falling back to the
+input rate is explicitly conservative. Missing usage or required rates means
+“unable to estimate”. Details disclose per-million rates, source and timestamp;
+estimates are not supplier bills, and reference rates never affect budgets,
+routing or customer billing. Tiny positive amounts must not display as zero.
+Only diagnostic metadata enters the existing
+service audit (test ID, model/provider, kind, latency, tokens, outcome/error);
+prompts, images and outputs are not persisted. Test IDs are distinct from
+business `run_id`s, and tests create no customer usage or business run rows.
+Provider budget claims still account for dispatch. Successful custom tests mean
+**this call succeeded**, and never update capability evidence or runtime profiles.
+Keep the existing explicit capability-verification path separate. Development
+acceptance uses available M4 Ollama models; no paid calls solely for evidence.
+Saved local connections retain their server-side `secretless` flag when preview
+or edit omits it. The redacted browser projection need not expose this flag;
+an explicit `false` still replaces the saved value.
 
 The customer operations workspace provides two bounded references:
 
@@ -722,3 +769,14 @@ Reject a change when:
 4. Keep legacy exceptions explicit and reduce them; never grow them silently.
 5. Use GitHub required checks for merge authority and M4 promotion for accepted
    development-runtime evidence.
+
+### 保存反馈与候选分层
+
+供应商保存只弹出一次简短成功提示；自动获取目录不再追加行内测试成功。
+后续引导只说明下一步操作，目录同步失败则在重试按钮旁说明，不冒充保存失败。
+手动检查仅说明已经验证的阶段，不笼统称模型“就绪”。
+用途候选默认显示当前目录型号；未选中的目录未确认、不可用型号折叠保留，
+当前用途已选中的异常主模型和兜底保持可见并说明原因。展示分组不改变选模资格、
+能力验证要求或已保存配置，不自动删除历史选择。
+
+Model tests distinguish the requested model from the supplier-reported model; a missing report stays unknown. A token-limit response retains usage evidence even when no visible text was produced. Health cost totals expose `cost_known` and `unpriced_call_count`; missing/partial prices are not a free call, and tiny positive USD amounts remain visible.

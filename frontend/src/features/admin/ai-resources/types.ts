@@ -188,7 +188,7 @@ export type ProviderModelHealthRow = {
   p95_latency_ms: number | null;
   tokens_in: number;
   tokens_out: number;
-  cost: number;
+  cost: number | null;
   retry_count: number;
   fallback_count: number;
   last_error_code: string;

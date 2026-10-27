@@ -778,7 +778,7 @@ test('editing a provider separates dense connection settings from model manageme
   await expect(dialog.getByText(/Include historical\/deprecated|含历史\/废弃/i)).toBeHidden();
   await expect(dialog.getByRole('button', { name: /More filters|更多筛选/i })).toHaveCount(0);
   const maintenanceDisclosure = dialog.locator('[data-ui="model-maintenance-table"]');
-  await expect(maintenanceDisclosure).not.toHaveAttribute('open', '');
+  await expect(maintenanceDisclosure).toHaveCount(0);
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -786,15 +786,10 @@ test('editing a provider separates dense connection settings from model manageme
     maxDiffPixelRatio: 0.015,
   });
 
-  await maintenanceDisclosure.locator('summary').click();
-  await expect(maintenanceDisclosure.getByRole('table')).toHaveCount(0);
-  await expect(maintenanceDisclosure.locator('[data-ui="manual-model-add"]')).toHaveCount(0);
-  await expect(dialog.getByText(/Show historical\/deprecated|显示历史\/废弃/i)).toBeHidden();
-  await dialog.locator('[data-ui="model-clear-all-request"]').click();
-  await expect(dialog.locator('[data-ui="model-clear-all-confirm"]')).toBeVisible();
-  await expect(dialog.getByText(/Disable all 2 currently enabled models|取消启用当前 2 个模型/i)).toBeVisible();
-  await maintenanceDisclosure.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
-  await expect(dialog.locator('[data-ui="model-clear-all-request"]')).toBeVisible();
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
+  await expect(dialog.locator('[data-ui="model-reference-panel"]')).toBeVisible();
+  await expect(dialog.getByRole('switch')).toHaveCount(0);
+  await expect(dialog.locator('[data-ui="model-clear-all-request"]')).toHaveCount(0);
 
   await dialog.getByRole('tab', { name: /Connection settings|连接设置/i }).click();
   const replaceCredentialButton = dialog.getByRole('button', { name: /Replace credential|替换凭据/i });
@@ -813,6 +808,7 @@ test('large model directories render one bounded page and reset pagination when 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installProviderDirectoryHarness(page);
+  const referenceCheckedAt = new Date().toISOString();
   const referenceItems = Array.from({ length: 60 }, (_, index) => ({
     source_id: 'models.dev',
     source_label: 'models.dev',
@@ -829,7 +825,7 @@ test('large model directories render one bounded page and reset pagination when 
     output_limit: 8192,
     price: { input: 1, output: 2, unit: 'USD', billing_truth: false },
     source_updated_at: '2026-07-12T00:00:00Z',
-    synced_at: '2026-07-12T00:00:00Z',
+    synced_at: referenceCheckedAt,
     is_deprecated: false,
     override_present: false,
   }));
@@ -845,7 +841,7 @@ test('large model directories render one bounded page and reset pagination when 
           display_name: 'models.dev',
           source_url: 'https://models.dev',
           status: 'active',
-          last_synced_at: '2026-07-12T00:00:00Z',
+          last_synced_at: referenceCheckedAt,
           last_error_code: '',
           last_error_message: '',
         }],
@@ -859,36 +855,22 @@ test('large model directories render one bounded page and reset pagination when 
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
   await expect(dialog.locator('[data-content-mode="contained"]')).toBeVisible();
-  await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
-  await expect(directory.locator('tbody tr')).toHaveCount(25);
-  const verticalScrollOwners = await dialog.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
-    .filter((candidate) => {
-      const style = window.getComputedStyle(candidate);
-      return /(auto|scroll)/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
-    })
-    .map((candidate) => candidate.dataset.ui || candidate.tagName.toLowerCase()));
-  expect(verticalScrollOwners).toEqual(['model-visibility-scroll']);
-  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/25.*60|60.*25/);
-  const intelligenceDetails = directory.locator('details[data-ui="model-reference-details"]');
-  expect(await intelligenceDetails.count()).toBeGreaterThan(0);
-  await intelligenceDetails.first().locator('summary').click();
-  await expect(intelligenceDetails.first()).toHaveAttribute('open', '');
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
-  await dialog.locator('[data-ui="model-metadata-gap-filter"]').click();
   await expect(directory.locator('tbody tr')).toHaveCount(2);
-  await dialog.locator('[data-ui="model-metadata-gap-filter"]').click();
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
-  await expect(directory.locator('tbody tr')).toHaveCount(25);
-  await dialog.getByRole('button', { name: /^Next$|^下一页$/i }).click();
-  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/2 \/ 3|第 2 \/ 3 页/);
-
-  await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
-  await expect(directory.locator('tbody tr')).toHaveCount(1);
-  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toHaveCount(0);
-
-  if (await dialog.locator('[data-ui="model-maintenance-table"]').getAttribute('open') === null) await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
-  await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeDisabled();
+  const otherReferences = dialog.locator('[data-ui="model-reference-browse"]');
+  await expect(otherReferences.locator('[data-ui="reference-record"]')).toHaveCount(25);
+  await expect(otherReferences.locator('[data-ui="reference-pagination"]')).toContainText('1 / 3');
+  await otherReferences.getByRole('button', { name: /^Next$|^下一页$/i }).click();
+  await expect(otherReferences.locator('[data-ui="reference-pagination"]')).toContainText('2 / 3');
+  await otherReferences.getByRole('textbox').fill('catalog-model-60');
+  await expect(otherReferences.locator('[data-ui="reference-record"]')).toHaveCount(1);
+  await expect(otherReferences.locator('[data-ui="reference-pagination"]')).toHaveCount(0);
+  await expect(otherReferences.getByRole('switch')).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  await expect(directory.locator('tbody tr')).toHaveCount(2);
   await page.route('**/api/admin/provider-connections/preview-catalog', async (route) => {
     await route.fulfill({
       status: 200,
@@ -905,7 +887,17 @@ test('large model directories render one bounded page and reset pagination when 
     });
   });
   await dialog.locator('[data-ui="model-sync-primary"]').click();
+  await expect(directory.locator('tbody tr')).toHaveCount(25);
+  const verticalScrollOwners = await dialog.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
+    .filter(candidate => /(auto|scroll)/.test(window.getComputedStyle(candidate).overflowY) && candidate.scrollHeight > candidate.clientHeight + 1)
+    .map(candidate => candidate.dataset.ui || candidate.tagName.toLowerCase()));
+  expect(verticalScrollOwners).toEqual(['model-visibility-scroll']);
+  await dialog.getByRole('button', { name: /^Next$|^下一页$/i }).click();
+  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/2 \/ 3|第 2 \/ 3 页/);
+  await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toHaveCount(0);
+  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
   await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeEnabled();
   await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
   await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
@@ -920,6 +912,7 @@ test('large model directories render one bounded page and reset pagination when 
 
 test('model reference loading continues past the API page limit', async ({ page }) => {
   await installProviderDirectoryHarness(page);
+  const referenceCheckedAt = new Date().toISOString();
   const referenceItems = Array.from({ length: 1001 }, (_, index) => ({
     source_id: 'models.dev',
     source_label: 'models.dev',
@@ -936,7 +929,7 @@ test('model reference loading continues past the API page limit', async ({ page 
     output_limit: 8192,
     price: { input: 1, output: 2, unit: 'USD', billing_truth: false },
     source_updated_at: '2026-07-12T00:00:00Z',
-    synced_at: '2026-07-12T00:00:00Z',
+    synced_at: referenceCheckedAt,
     is_deprecated: false,
     override_present: false,
   }));
@@ -952,7 +945,7 @@ test('model reference loading continues past the API page limit', async ({ page 
       body: JSON.stringify(buildAdminApiEnvelope({
         items: referenceItems.slice(offset, offset + limit),
         total: referenceItems.length,
-        source_summary: [],
+        source_summary: [{ source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'active', last_synced_at: referenceCheckedAt, last_error_code: '', last_error_message: '' }],
       })),
     });
   });
@@ -961,17 +954,17 @@ test('model reference loading continues past the API page limit', async ({ page 
   const supplierRow = page.locator('[data-connection-id="model_ready"]');
   await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
-  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(25);
+  await expect(dialog.locator('[data-ui="model-reference-browse"] [data-ui="reference-record"]')).toHaveCount(25);
   await expect.poll(() => requestedOffsets).toEqual([0, 500, 1000]);
 
   await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-1001');
-  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(1);
-  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toContainText('catalog-model-1001');
+  await expect(dialog.locator('[data-ui="model-reference-browse"] [data-ui="reference-record"]')).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-reference-browse"] [data-ui="reference-record"]')).toContainText('catalog-model-1001');
 });
 
-test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
+test('save uses one compact toast, actionable next step, and no automatic test success row', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installProviderDirectoryHarness(page);
@@ -983,14 +976,20 @@ test('save and test closes the dialog, uses a compact toast, and keeps the recei
   await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).click();
 
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('[data-ui="supplier-next-step"]')).toContainText(/Connection saved|连接已保存/i);
+  await expect(page.getByRole('status').filter({ hasText: /Supplier saved\.|供应商已保存。/ })).toHaveCount(1);
+  await expect(page.locator('[data-ui="supplier-next-step"]')).toContainText(/Enable an account model|先启用账户模型/i);
+  await expect(page.locator('[data-ui="supplier-next-step"]')).not.toContainText(/Connection saved|连接已保存/i);
+  await expect(page.locator('[data-feedback-for] [role="status"]')).toHaveCount(0);
   await expect(page.locator('[data-ui="supplier-next-step"]')).toBeVisible();
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
 });
 
 test('save and test clears the transient testing message when the test fails', async ({ page }) => {
   await installProviderDirectoryHarness(page);
+  let catalogAttempts = 0;
   await page.route('**/api/admin/provider-connections/*/test', async (route) => {
+    catalogAttempts += 1;
+    if (catalogAttempts > 1) { await route.fallback(); return; }
     await route.fulfill({
       status: 502,
       contentType: 'application/json',
@@ -1023,6 +1022,12 @@ test('save and test clears the transient testing message when the test fails', a
   await expect(page.locator('[data-ui="supplier-next-step"]')).toContainText(/Connection saved; catalog sync failed|连接已保存；目录同步失败/i);
   await expect(page.getByText(/Provider connection saved\. Running connection test now\.|Provider 连接已保存，正在运行连接测试/i)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Retry catalog sync|重试目录同步/i })).toBeEnabled();
+  await expect(page.getByRole('alert').filter({ hasText: /catalog sync failed|目录同步失败/ })).toHaveCount(1);
+  await page.getByRole('button', { name: /Retry catalog sync|重试目录同步/i }).click();
+  await expect(page.locator('[data-ui="supplier-next-step"]')).not.toContainText(/catalog sync failed|目录同步失败/);
+  await expect(page.getByRole('button', { name: /Retry catalog sync|重试目录同步/i })).toHaveCount(0);
+  await expect(page.locator('[data-feedback-for] [role="status"]')).toHaveCount(0);
+  expect(catalogAttempts).toBe(2);
 });
 
 test('catalog sync reaches a terminal state and can run again', async ({ page }) => {
@@ -1074,11 +1079,14 @@ test('catalog success with reference failure remains retryable', async ({ page }
   await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
   const sync = dialog.locator('[data-ui="model-sync-primary"]');
   await sync.click();
-  await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
+  await expect(dialog.locator('[data-ui="account-reference-status"]')).toContainText(/failed|失败/i);
+  await expect(sync).toBeEnabled();
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   const reference = dialog.locator('[data-ui="model-reference-retry"]');
   await reference.click();
-  await expect(dialog.locator('[data-ui="model-visibility-status"]').locator('..')).toContainText(/reference|情报/i);
+  await expect(dialog.locator('[data-ui="model-reference-panel"]')).toContainText(/reference|参考/i);
   await expect(reference).toBeEnabled();
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
   await expect(sync).toBeEnabled();
   await expect(sync).not.toContainText(/Syncing|同步中/i);
 });
@@ -1268,10 +1276,10 @@ test('reference models are separate from account models and catalog fetch preser
     source_id: 'models.dev', source_label: 'models.dev', provider_id: 'openai', provider_label: 'OpenAI',
     model_id: 'reference-only', display_name: 'Reference only', family: 'reference', feature: 'text', status: 'active',
     modalities: { input: ['text'], output: ['text'] }, capability_flags: {}, price: { unit: 'USD', billing_truth: false },
-    source_updated_at: '', synced_at: '', is_deprecated: false, override_present: false,
+    source_updated_at: '', synced_at: new Date().toISOString(), is_deprecated: false, override_present: false,
   };
   await page.route('**/api/admin/model-references?**', async (route) => {
-    await route.fulfill({ json: buildAdminApiEnvelope({ items: [reference], total: 1, source_summary: [] }) });
+    await route.fulfill({ json: buildAdminApiEnvelope({ items: [reference], total: 1, source_summary: [{ source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'error', last_synced_at: reference.synced_at, last_error_code: '', last_error_message: '' }] }) });
   });
   let previews = 0;
   let referenceRefreshes = 0;
@@ -1298,18 +1306,19 @@ test('reference models are separate from account models and catalog fetch preser
   await modelsTab.click();
   await expect(dialog).toContainText(/Account catalog 0|账户目录 0/);
   await expect(dialog.getByRole('row').filter({ hasText: 'reference-only' })).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
   await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
-  const referenceRow = dialog.getByRole('row').filter({ hasText: 'reference-only' });
-  await expect(referenceRow).toContainText(/Reference only|参考资料/);
+  await dialog.getByRole('checkbox', { name: /Show historical|显示历史/ }).check();
+  const referenceRow = dialog.locator('[data-ui="reference-record"]').filter({ hasText: 'reference-only' });
+  await expect(referenceRow).toBeVisible();
+  await expect(referenceRow.getByRole('switch')).toHaveCount(0);
+  await modelsTab.click();
   const catalog = dialog.locator('[data-ui="model-sync-primary"]');
   await expect(catalog).toHaveText(/Enter API Key first|先填写 API Key/);
   await catalog.click();
   await expect(dialog.getByRole('tab', { name: /Connection settings|连接设置/ })).toHaveAttribute('aria-selected', 'true');
   expect(previews).toBe(0);
   await modelsTab.click();
-  await expect(referenceRow.getByRole('switch')).toHaveCount(0);
-  await expect(referenceRow).toContainText(/Read only|只读/);
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
   await expect(dialog.locator('[data-ui="manual-model-add"]')).toHaveCount(0);
   await dialog.getByRole('tab', { name: /Connection settings|连接设置/ }).click();
   await dialog.getByLabel(/API Key|Credential|凭据/).fill('fixture-account-key');
@@ -1318,17 +1327,120 @@ test('reference models are separate from account models and catalog fetch preser
   await expect(dialog).toContainText(/Enabled 0 · Account catalog 2|已启用 0 · 账户目录 2/);
   await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(2);
   await expect(page.getByRole('status').filter({ hasText: /Fetched 2 account models|已获取 2 个账户型号/ })).toHaveCount(1);
-  expect(referenceRefreshes).toBe(0);
+  await expect.poll(() => referenceRefreshes).toBe(1);
+  await expect(dialog.locator('[data-ui="account-reference-status"]')).toContainText(/failed|失败/i);
   await dialog.getByRole('switch', { name: /account-one/ }).check();
-  await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
   await dialog.locator('[data-ui="model-reference-retry"]').click();
+  await expect.poll(() => referenceRefreshes).toBe(2);
+  await expect(dialog.getByRole('alert')).toContainText(/failed|失败/i);
+  await modelsTab.click();
   await expect(catalog).toBeEnabled();
   await expect(dialog).toContainText(/Account catalog 2|账户目录 2/);
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
-  await expect(dialog.getByRole('textbox', { name: /Add model ID manually|手动添加模型/ })).toHaveCount(0);
+  await expect(dialog.getByRole('switch', { checked: true })).toHaveCount(1);
   await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
   await expect(dialog).toHaveCount(0);
   expect((submitted?.config as Record<string, unknown>).model_ids).toEqual(['account-one']);
+});
+
+for (const recent of [true, false]) {
+  test(`account catalog ${recent ? 'reuses recent reference data' : 'refreshes stale reference data once'}`, async ({ page }) => {
+    await installProviderDirectoryHarness(page);
+    let referenceRefreshes = 0;
+    const source = () => ({ source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'active',
+      last_synced_at: recent || referenceRefreshes ? new Date().toISOString() : '2026-01-01T00:00:00Z', last_error_code: '', last_error_message: '' });
+    await page.route('**/api/admin/model-references?**', route => route.fulfill({ json: buildAdminApiEnvelope({ items: [], total: 0, source_summary: [source()] }) }));
+    await page.route('**/api/admin/model-references/sync', route => {
+      referenceRefreshes += 1;
+      return route.fulfill({ json: buildAdminApiEnvelope({ model_count: 0 }) });
+    });
+    await page.route('**/api/admin/provider-connections/preview-catalog', route => route.fulfill({ json: buildAdminApiEnvelope({
+      model_count: 1, model_ids: ['exact-model'], models: [{ model_id: 'exact-model', feature: 'text', runtime_supported: true }],
+    }) }));
+    await page.goto('/admin/ai-resources');
+    await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(3);
+    await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
+    await expect(dialog.locator('[data-ui="model-reference-panel"]')).toContainText(/within 24 hours|24 小时内/);
+    expect(referenceRefreshes).toBe(recent ? 0 : 1);
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeEnabled();
+    await dialog.locator('[data-ui="model-reference-details"] > summary').first().click();
+    await expect(dialog.locator('[data-ui="model-reference-details"]').first()).toContainText(/unavailable|暂无可用的最新参考资料/);
+    expect(referenceRefreshes).toBe(recent ? 0 : 1);
+  });
+}
+
+test('a fresh source cannot make a retained old record current again', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  const checkedAt = new Date().toISOString();
+  const records = ['current-account-model', 'old-account-model'].map((model_id, index) => ({
+    source_id: 'models.dev', source_label: 'models.dev', provider_id: 'openai', provider_label: 'OpenAI', model_id,
+    display_name: model_id, family: 'text', feature: 'text', status: 'reference', modalities: {}, capability_flags: {},
+    context_window: 128000, output_limit: 8192, price: { input: index ? 999 : 1, output: 2, unit: 'usd_per_1m_tokens', billing_truth: false },
+    synced_at: index ? '2000-01-01T00:00:00Z' : checkedAt, source_updated_at: '', is_deprecated: false, override_present: false,
+  }));
+  await page.route('**/api/admin/model-references?**', route => route.fulfill({ json: buildAdminApiEnvelope({ items: records, total: 2,
+    source_summary: [{ source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'active', last_synced_at: checkedAt, last_error_code: '', last_error_message: '' }],
+  }) }));
+  await page.route('**/api/admin/provider-connections/preview-catalog', route => route.fulfill({ json: buildAdminApiEnvelope({
+    model_count: 2, model_ids: records.map(record => record.model_id), models: records.map(record => ({ model_id: record.model_id, feature: 'text', runtime_supported: true })),
+  }) }));
+  await page.clock.install({ time: new Date(checkedAt) });
+  await page.goto('/admin/ai-resources');
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+  await dialog.locator('[data-ui="model-sync-primary"]').click();
+  const oldModel = dialog.getByRole('row').filter({ hasText: 'old-account-model' });
+  await oldModel.locator('summary').click();
+  await expect(oldModel).toContainText(/unavailable|暂无可用的最新参考资料/);
+  await expect(oldModel).not.toContainText('$999');
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
+  await expect(dialog.locator('[data-ui="account-model-references"] [data-ui="reference-record"]')).toHaveCount(1);
+  await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
+  await expect(dialog.locator('[data-ui="model-reference-browse"] [data-ui="reference-record"]')).toHaveCount(0);
+  await dialog.getByRole('checkbox', { name: /Show historical|显示历史/ }).check();
+  const historical = dialog.locator('[data-ui="model-reference-browse"] [data-ui="reference-record"]');
+  await expect(historical).toContainText(/Absent from the latest|最新来源未再返回/);
+  await expect(historical).toContainText('$999');
+  await expect(historical.getByRole('switch')).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+  const currentModel = dialog.getByRole('row').filter({ hasText: 'current-account-model' });
+  await currentModel.locator('summary').click();
+  await expect(currentModel).toContainText('$1 / $2');
+  await page.clock.fastForward(24 * 60 * 60 * 1000 + 60_000);
+  await expect(currentModel).toContainText(/unavailable|暂无可用的最新参考资料/);
+  await expect(currentModel).not.toContainText('$1 / $2');
+});
+
+test('a delayed reference failure does not leak into another supplier workbench', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  let finish: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  let syncing = false;
+  await page.route('**/api/admin/model-references/sync', async route => {
+    syncing = true;
+    await gate;
+    await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('old supplier reference failed') });
+  });
+  await page.route('**/api/admin/provider-connections/preview-catalog', route => route.fulfill({ json: buildAdminApiEnvelope({ models: [], model_count: 0 }) }));
+  await page.goto('/admin/ai-resources');
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+  await dialog.locator('[data-ui="model-sync-primary"]').click();
+  await expect.poll(() => syncing).toBe(true);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-connection-id="model_attention"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
+  finish!();
+  await expect(dialog.locator('[data-ui="model-reference-retry"]')).toBeEnabled();
+  await expect(dialog.locator('[data-ui="model-reference-panel"]')).not.toContainText('old supplier reference failed');
 });
 
 test('existing supplier uses PATCH without replacing the Key and keeps the next action visible at 1056px', async ({ page }) => {
@@ -1346,12 +1458,18 @@ test('existing supplier uses PATCH without replacing the Key and keeps the next 
   const box = await action.boundingBox();
   expect(box).not.toBeNull();
   expect(box!.x + box!.width).toBeLessThanOrEqual(1056);
+  await row.getByRole('button', { name: /More actions|更多操作/ }).click();
+  await page.getByRole('menuitem', { name: /^Test$|^测试$/ }).click();
+  const feedback = page.locator('[data-feedback-for="model_ready"]');
+  await expect(feedback).toContainText(/no model request was sent|未发起模型调用/);
   await action.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel(/API Key|Credential|凭据/)).toHaveCount(0);
   await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
   await expect(dialog).toHaveCount(0);
   expect(submitted).not.toHaveProperty('credential');
+  await expect(feedback).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: /Supplier saved\.|供应商已保存。/ })).toHaveCount(1);
   await expect(page.getByRole('link', { name: /Configure usage|配置用途/ })).toHaveAttribute('href', '/admin/runtime-profiles?provider=openai');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
 });
@@ -1414,7 +1532,7 @@ test('historical model visibility is a browser preference and survives reopening
   const openReferences = async () => {
     await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
     await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
     return dialog;
   };
@@ -1422,6 +1540,14 @@ test('historical model visibility is a browser preference and survives reopening
   const preference = () => page.getByRole('checkbox', { name: /Show historical|显示历史/ });
   await expect(preference()).not.toBeChecked();
   await preference().check();
+  await expect(dialog.getByRole('button', { name: /Save supplier|保存供应商/ })).toHaveCount(0);
+  await dialog.locator('[data-ui="model-reference-browse"]').getByRole('textbox').press('Enter');
+  await expect(dialog).toBeVisible();
+  expect(writes).toBe(0);
+  await dialog.getByRole('button', { name: /^Manage models$|^管理模型$/ }).click();
+  await expect(dialog.getByRole('button', { name: /Save supplier|保存供应商/ })).toBeEnabled();
+  expect(writes).toBe(0);
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/ }).click();
   await dialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
   dialog = await openReferences();
   await expect(preference()).toBeChecked();
@@ -1457,10 +1583,11 @@ test('model switches and collapsed tools fit the narrow PC preview in dark mode'
   const save = await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).boundingBox();
   expect(save!.y + save!.height).toBeLessThanOrEqual(733);
   await page.screenshot({ path: testInfo.outputPath('models-dark-1056.png'), animations: 'disabled' });
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
-  await expect(dialog.locator('[data-ui="manual-model-add"]')).toHaveCount(0);
-  expect((await directory.boundingBox())!.height).toBeGreaterThan(100);
-  await page.screenshot({ path: testInfo.outputPath('models-dark-expanded-1056.png'), animations: 'disabled' });
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
+  await expect(dialog.locator('[data-ui="model-reference-panel"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
+  await page.screenshot({ path: testInfo.outputPath('references-dark-1056.png'), animations: 'disabled' });
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });
@@ -1522,3 +1649,79 @@ test('supplier presets never preselect model IDs', async ({ page }) => {
     await expect(dialog.locator('[data-ui="manual-model-add"]')).toHaveCount(0);
   }
 });
+
+for (const width of [1056, 1440]) {
+  test(`exact-model test preserves supplier draft and supports failure retry at PC ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: width === 1440 ? 1050 : 733 });
+    await installProviderDirectoryHarness(page);
+    let patches = 0;
+    const calls: Array<Record<string, unknown>> = [];
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      if (route.request().method() === 'PATCH') patches += 1;
+      await route.fallback();
+    });
+    await page.route('**/api/admin/provider-connections/preview-catalog', route => route.fulfill({ json: buildAdminApiEnvelope({
+      provider_id: 'openai', model_count: 2, model_ids: ['gpt-5.5', 'new-unsaved'],
+      models: ['gpt-5.5', 'new-unsaved'].map(model_id => ({ model_id, feature: 'text', capability_tags: model_id === 'gpt-5.5' ? ['text', 'vision'] : ['text'], status: 'available', runtime_supported: true, is_deprecated: false })),
+    }) }));
+    await page.route('**/api/admin/provider-connections/model_ready/model-tests', async route => {
+      calls.push(route.request().postDataJSON());
+      if (calls.length === 1) return route.fulfill({ status: 502, json: buildAdminApiErrorEnvelope('private upstream details', 'model_test.failed') });
+      await route.fulfill({ json: buildAdminApiEnvelope({ test_id: 'model_test_browser', provider_id: 'openai', model_id: 'gpt-5.5', output_text: '**A clear model answer**\n\n- First\n- Second\n\n```js\nconst answer = 42;\n```\n\n| Input | Output |\n| - | - |\n| 18 | 8 |\n\n![tracking](https://tracker.invalid/pixel)\n\n[unsafe](javascript:alert%281%29)\n\n<script>window.injected = true</script>', latency_ms: 1234, tokens_in: 18, tokens_out: 8, finish_reason: 'stop', cost: width === 1056 ? { amount_usd: 0.000068, basis: 'reference', rates: { input: 2, output: 4, cache_read: null, cache_write: null }, source: 'models.dev', price_checked_at: new Date().toISOString() } : { amount_usd: null, basis: 'unavailable' } }) });
+    });
+    await page.goto('/admin/ai-resources');
+    await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/^Display name$|^显示名称$/).fill('Retained draft');
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    const unsaved = dialog.getByRole('row').filter({ hasText: 'new-unsaved' });
+    await unsaved.getByRole('switch').click();
+    await expect(unsaved.getByRole('button', { name: /^Test |^测试 / })).toHaveCount(0);
+    await dialog.getByRole('button', { name: /^Test gpt-5.5$|^测试 gpt-5.5$/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expect(dialog.getByRole('heading', { name: /^Model test$|^模型测试$/ })).toBeVisible();
+    await expect(dialog.getByLabel(/^Test type$|^测试类型$/)).toHaveValue('vision');
+    await dialog.getByLabel(/^Test type$|^测试类型$/).selectOption('text');
+    await dialog.getByLabel(/^Test input$|^测试输入$/).fill('Keep my input after failure');
+    const run = dialog.getByRole('button', { name: /^Run test$|^开始测试$/ });
+    await expect(run).toBeInViewport();
+    await run.click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await expect(dialog.getByRole('alert')).not.toContainText('private upstream details');
+    await expect(dialog.getByLabel(/^Test input$|^测试输入$/)).toHaveValue('Keep my input after failure');
+    await dialog.getByLabel(/^Test type$|^测试类型$/).selectOption('vision');
+    await expect(dialog.getByRole('img', { name: /Default image|默认图片/ })).toBeVisible();
+    await run.click();
+    const output = dialog.locator('[data-ui="model-test-output"]');
+    await expect(output.locator('strong')).toHaveText('A clear model answer');
+    await expect(output.locator('li')).toHaveCount(2);
+    await expect(output.locator('pre code')).toContainText('const answer = 42');
+    await expect(output.locator('table')).toBeVisible();
+    await expect(output.locator('img, script, a')).toHaveCount(0);
+    await expect(dialog.locator('[data-ui="model-test-cost"]')).toContainText(width === 1056 ? '≈ $0.000068 USD' : /Unable to estimate|暂无法估算/);
+    await dialog.locator('summary').filter({ hasText: /Cost basis|费用依据/ }).click();
+    await expect(dialog).toContainText(width === 1056 ? /supplier’s bill|供应商账单/ : /does not mean|不代表/);
+    if (width === 1056) await expect(dialog).toContainText('models.dev');
+    expect(await output.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    await expect(dialog).toContainText('model_test_browser');
+    await expect(run).toBeInViewport();
+    expect(calls[1]).toMatchObject({ model_id: 'gpt-5.5', capability: 'vision' });
+    expect(calls[1]).not.toHaveProperty('image_data_url');
+    expect(patches).toBe(0);
+    const rect = await dialog.boundingBox();
+    expect(rect?.x).toBeGreaterThanOrEqual(0);
+    expect((rect?.x || 0) + (rect?.width || 0)).toBeLessThanOrEqual(width);
+    const screenshotPath = testInfo.outputPath(`model-test-PC-${width}.png`);
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach(`model-test-PC-${width}`, { path: screenshotPath, contentType: 'image/png' });
+    await dialog.getByLabel(/Use your image|使用自己的图片/).setInputFiles({ name: 'bad.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') });
+    await expect(dialog.getByRole('alert')).toContainText(/PNG/);
+    await expect(dialog.locator('[data-ui="model-test-output"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(dialog.getByRole('tab', { name: /Model management|模型管理/ })).toBeVisible();
+    await dialog.getByRole('tab', { name: /Connection settings|连接设置/ }).click();
+    await expect(dialog.getByLabel(/^Display name$|^显示名称$/)).toHaveValue('Retained draft');
+    expect(patches).toBe(0);
+  });
+}

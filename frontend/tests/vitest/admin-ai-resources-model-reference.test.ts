@@ -5,6 +5,7 @@ import {
   formatReferenceContext,
   formatReferencePrice,
   modelReferenceSourceNeedsSync,
+  modelReferenceFreshness,
   normalizeProviderCatalogPreview,
   type ModelReferenceEntry,
 } from '@/features/admin/ai-resources/model-reference-model';
@@ -162,8 +163,35 @@ describe('AI resources model reference projection', () => {
     expect(buildModelVisibilityRows({ ...historicalAccount, sourceScope: 'reference' })).toHaveLength(0);
   });
 
+  it('refreshes missing, failed, invalid or day-old sources but reuses a recent successful check', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z');
+    const source = { source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'active', last_synced_at: '2026-10-27T11:00:00Z', last_error_code: '', last_error_message: '' };
+    expect(modelReferenceSourceNeedsSync(source, now)).toBe(false);
+    expect(modelReferenceSourceNeedsSync({ ...source, last_synced_at: '2026-10-26T12:00:01Z' }, now)).toBe(false);
+    for (const last_synced_at of ['', 'invalid', '2026-10-26T12:00:00Z', '2026-10-25T12:00:00Z', '2026-10-27T13:00:00Z']) {
+      expect(modelReferenceSourceNeedsSync({ ...source, last_synced_at }, now)).toBe(true);
+    }
+    expect(modelReferenceSourceNeedsSync({ ...source, status: 'error' }, now)).toBe(true);
+    expect(modelReferenceSourceNeedsSync(null, now)).toBe(true);
+  });
+
+  it('never treats a retained old record as current just because its source was refreshed', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z');
+    const source = { source_id: 'models.dev', display_name: 'models.dev', source_url: 'https://models.dev', status: 'active', last_synced_at: '2026-10-27T11:00:00Z', last_error_code: '', last_error_message: '' };
+    expect(modelReferenceFreshness(reference, source, now)).toBe('superseded');
+    const current = { ...reference, synced_at: source.last_synced_at };
+    expect(modelReferenceFreshness(current, source, now)).toBe('current');
+    expect(modelReferenceFreshness(current, source, Date.parse('2026-10-28T11:00:00Z'))).toBe('expired');
+    expect(modelReferenceFreshness(current, { ...source, status: 'error' }, now)).toBe('unconfirmed');
+    expect(modelReferenceFreshness(current, null, now)).toBe('unconfirmed');
+    expect(modelReferenceFreshness({ ...current, synced_at: '2026-10-27T11:01:00Z' }, source, now)).toBe('unconfirmed');
+    expect(modelReferenceFreshness({ ...current, synced_at: 'invalid' }, source, now)).toBe('unconfirmed');
+    expect(modelReferenceFreshness({ ...current, synced_at: '2026-10-28T00:00:00Z' }, source, now)).toBe('unconfirmed');
+    expect(modelReferenceFreshness(current, { ...source, source_id: 'another-source' }, now)).toBe('unconfirmed');
+  });
+
   it('preserves accepted sync, context, price, and missing-intelligence semantics', () => {
-    expect(modelReferenceSourceNeedsSync(null, 0)).toBe(true);
+    expect(modelReferenceSourceNeedsSync(null, Date.parse('2026-08-15T01:00:00Z'))).toBe(true);
     expect(modelReferenceSourceNeedsSync({
       source_id: 'models.dev',
       display_name: 'Models.dev',
@@ -172,7 +200,7 @@ describe('AI resources model reference projection', () => {
       last_synced_at: '2026-08-15T00:00:00Z',
       last_error_code: '',
       last_error_message: '',
-    }, 0)).toBe(false);
+    }, Date.parse('2026-08-15T01:00:00Z'))).toBe(false);
     expect(formatReferenceContext(reference, 'Missing')).not.toBe('Missing');
     expect(formatReferencePrice(reference, 'cache', 'Missing')).toBe('$1.25 / $10 · cache $0.125 / -');
     expect(buildModelVisibilityRows({

@@ -632,7 +632,7 @@ class ProviderConnectionAdminService:
                     budget_guard.reconcile(
                         session=session,
                         claim_ids=budget_claim_ids,
-                        actual_cost_usd=execution_result.cost,
+                        actual_cost_usd=execution_result.budget_cost_usd(),
                     )
                 probe_result = _inspect_image_delivery_probe_candidate(
                     execution_result.media_candidates,
@@ -1220,7 +1220,26 @@ class ProviderConnectionAdminService:
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
-        secretless = bool(payload.get("secretless") or config.get("secretless"))
+        # This boolean is deliberately absent from the credential-redacted public
+        # config. Editing/previewing a saved local connection must retain it.
+        raw_config = _dict(payload.get("config"))
+        explicit_secretless = payload.get("secretless")
+        secretless = (
+            bool(raw_config.get("secretless"))
+            if explicit_secretless is None else bool(explicit_secretless)
+        )
+        if payload.get("secretless") is None and "secretless" not in raw_config:
+            with get_session(self.database_url) as session:
+                existing = session.get(ProviderConnection, normalized_connection_id)
+                if existing is not None:
+                    existing_config = _dict(existing.config_json)
+                    same_provider = (
+                        _string(existing_config.get("provider_id") or existing.connection_id)
+                        == normalized_provider_id
+                        and existing.provider_type == normalized_provider_type
+                    )
+                    if same_provider:
+                        secretless = bool(existing_config.get("secretless"))
         if (
             normalized_provider_type == "web_search_provider"
             and normalized_provider_id == "jina_reader"

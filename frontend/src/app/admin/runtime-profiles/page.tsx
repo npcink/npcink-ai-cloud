@@ -772,8 +772,24 @@ export default function RuntimeProfilesPage() {
         instance.region,
         ...instance.capability_tags,
       ].join(' ').toLowerCase().includes(query);
-    }).slice(0, MAX_VISIBLE_CANDIDATES);
+    });
   }, [candidatePool, modelSearch, providerFilter]);
+  // Retained provider selections stay recoverable without crowding the current catalog.
+  // Selecting one promotes it into the main list; eligibility and probe rules are unchanged.
+  const candidateGroups = useMemo(() => {
+    const current: RuntimeInstance[] = [];
+    const other: RuntimeInstance[] = [];
+    candidates.forEach((instance) => {
+      const selected = editingProfile?.candidate_instance_ids.includes(instance.instance_id);
+      const needsAttention = instance.upstream_status === 'missing_from_latest_catalog'
+        || instanceTone(instance, editingProfile?.execution_kind || 'text') === 'error';
+      (selected || !needsAttention ? current : other).push(instance);
+    });
+    return [
+      { key: 'current', candidates: current.slice(0, MAX_VISIBLE_CANDIDATES), total: current.length },
+      { key: 'other', candidates: other.slice(0, MAX_VISIBLE_CANDIDATES), total: other.length },
+    ];
+  }, [candidates, editingProfile]);
   const providers = useMemo(() => {
     const values = new Map<string, string>();
     candidatePool.forEach((instance) => values.set(
@@ -1450,6 +1466,8 @@ export default function RuntimeProfilesPage() {
               ) : null}
               {candidates.length ? (
                 <div data-ui="runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+                  {candidateGroups.map((group) => {
+                    const table = (
                   <table className="w-full min-w-[760px] table-auto text-left text-sm">
                     <colgroup>
                       <col className="w-[18%]" />
@@ -1470,7 +1488,7 @@ export default function RuntimeProfilesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                      {candidates.map((instance) => {
+                      {group.candidates.map((instance) => {
                         const primary = editingProfile.candidate_instance_ids[0] === instance.instance_id;
                         const fallback = editingProfile.candidate_instance_ids[1] === instance.instance_id;
                         const evidence = capabilityEvidence(instance, editingProfile.execution_kind);
@@ -1558,6 +1576,22 @@ export default function RuntimeProfilesPage() {
                       })}
                     </tbody>
                   </table>
+                    );
+                    const limitNotice = group.total > MAX_VISIBLE_CANDIDATES ? <p className="py-2 text-xs text-slate-500">{copy('candidate_limit', 'Showing {{count}} of {{total}} models. Narrow the search to see others.', { count: String(MAX_VISIBLE_CANDIDATES), total: String(group.total) })}</p> : null;
+                    return group.key === 'other' ? group.total > 0 ? (
+                      <details key={`${editingProfile.profile_id}-other`} data-ui="runtime-profile-other-candidates" className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-800">
+                        <summary className="cursor-pointer py-1 text-sm font-medium">{copy('other_candidates', 'Unconfirmed or unavailable models · {{count}}', { count: String(group.total) })}</summary>
+                        <p className="py-2 text-xs text-slate-500">{copy('other_candidates_help', 'Unselected models needing attention. Check the account catalog in Model suppliers.')} <Link className="font-semibold underline" href="/admin/ai-resources">{copy('manage_suppliers', 'Manage suppliers')}</Link></p>
+                        {table}{limitNotice}
+                      </details>
+                    ) : null : (
+                      <div key="current" data-ui="runtime-profile-current-candidates">
+                        {group.total ? table : <p className="py-3 text-sm text-slate-500">{copy('current_candidates_empty', 'No current catalog models match. Check the retained models below or fetch the supplier catalog.')}</p>}
+                        {limitNotice}
+                      </div>
+                    );
+                  })}
+
                 </div>
               ) : (
                 <BackofficeEmptyState title={copy('models_empty_title', 'No matching models')} description={copy('models_empty_description', 'Enable a compatible model in Model suppliers or clear the current filters.')} />

@@ -215,18 +215,8 @@ assert.match(
   'A filtered-empty supplier queue must provide one direct reset action'
 );
 
-assert.match(
-  pageSource,
-  /<details data-ui="model-maintenance-table"[\s\S]*data-ui="model-clear-all-request"/,
-  'Confirmed batch controls must remain in the collapsed operations disclosure'
-);
-
-assert.match(
-  pageSource,
-  /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/,
-  'Clearing every enabled model must require an impact-specific confirmation'
-);
-assert.match(pageSource, /data-ui="model-clear-all-request"/);
+assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.doesNotMatch(pageSource, /data-ui="model-clear-all/);
 
 assert.doesNotMatch(
   pageSource,

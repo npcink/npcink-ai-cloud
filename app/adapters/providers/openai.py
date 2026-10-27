@@ -941,6 +941,8 @@ class OpenAIProviderAdapter:
                 "embedding": embedding if isinstance(embedding, list) else [],
                 "dimensions": len(embedding) if isinstance(embedding, list) else 0,
                 "model_id": response_json.get("model", request.model_id),
+                "requested_model_id": request.model_id,
+                "reported_model_id": self._optional_string(response_json.get("model")),
                 "usage": usage if isinstance(usage, dict) else {},
             }
             return ProviderExecutionResult(
@@ -1027,6 +1029,8 @@ class OpenAIProviderAdapter:
                     "output_text": output_text,
                     "messages": [message] if isinstance(message, dict) else [],
                     "model_id": response_json.get("model", request.model_id),
+                    "requested_model_id": request.model_id,
+                    "reported_model_id": self._optional_string(response_json.get("model")),
                     "usage": usage,
                 },
                 latency_ms=latency_ms,
@@ -1104,6 +1108,8 @@ class OpenAIProviderAdapter:
             "output_text": output_text,
             "messages": [message] if isinstance(message, dict) else [],
             "model_id": response_json.get("model", request.model_id),
+            "requested_model_id": request.model_id,
+            "reported_model_id": self._optional_string(response_json.get("model")),
             "usage": usage if isinstance(usage, dict) else {},
         }
         normalized_usage = normalize_openai_usage(

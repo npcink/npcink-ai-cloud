@@ -5,10 +5,10 @@ from typing import Any, cast
 
 from sqlalchemy import select
 
-from app.adapters.providers.base import ProviderAdapter
+from app.adapters.providers.base import ProviderAdapter, known_provider_cost_usd
 from app.core.config import Settings
 from app.core.db import get_session
-from app.core.models import ProviderCallRecord, RunRecord
+from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 from app.domain.hosted_model_defaults import (
     AUDIO_NARRATION_MODEL_ID,
     AUDIO_NARRATION_PROFILE_ID,
@@ -679,6 +679,7 @@ def _build_provider_model_health_window(
     now: datetime,
 ) -> dict[str, Any]:
     rows: list[ProviderCallRecord] = []
+    cost_modes: dict[int | None, str] = {}
     since = now - timedelta(hours=hours)
     if database_url:
         with get_session(database_url) as session:
@@ -689,6 +690,21 @@ def _build_provider_model_health_window(
                 .limit(recent_call_limit)
             )
             rows = list(session.scalars(statement))
+            cost_modes = (
+                {
+                    event.provider_call_id: str(
+                        (event.payload_json or {}).get("cost_estimate_mode") or ""
+                    )
+                    for event in session.scalars(
+                        select(UsageMeterEvent).where(
+                            UsageMeterEvent.provider_call_id.in_([row.id for row in rows]),
+                            UsageMeterEvent.meter_key == "provider_calls",
+                        )
+                    )
+                }
+                if rows
+                else {}
+            )
 
     grouped: dict[tuple[str, str], list[ProviderCallRecord]] = {}
     for row in rows:
@@ -704,6 +720,7 @@ def _build_provider_model_health_window(
             model_id,
             records,
             recent_call_limit=recent_call_limit,
+            cost_modes=cost_modes,
         )
         for (provider_id, model_id), records in grouped.items()
     ]
@@ -740,6 +757,7 @@ def _provider_model_health_row(
     records: list[ProviderCallRecord],
     *,
     recent_call_limit: int,
+    cost_modes: dict[int | None, str] | None = None,
 ) -> dict[str, Any]:
     call_count = len(records)
     success_count = sum(1 for record in records if not record.error_code)
@@ -757,6 +775,11 @@ def _provider_model_health_row(
     )
     last_observed = max((_iso(record.created_at) for record in records), default="")
     last_error = next((record.error_code for record in records if record.error_code), "")
+    unpriced_call_count = sum(
+        known_provider_cost_usd(float(record.cost or 0), (cost_modes or {}).get(record.id, ""))
+        is None
+        for record in records
+    )
     return {
         "provider_id": provider_id,
         "model_id": model_id,
@@ -769,7 +792,9 @@ def _provider_model_health_row(
         "p95_latency_ms": p95_latency_ms,
         "tokens_in": sum(int(record.tokens_in or 0) for record in records),
         "tokens_out": sum(int(record.tokens_out or 0) for record in records),
-        "cost": round(sum(float(record.cost or 0.0) for record in records), 6),
+        "cost": sum(float(record.cost or 0.0) for record in records),
+        "cost_known": unpriced_call_count == 0,
+        "unpriced_call_count": unpriced_call_count,
         "retry_count": sum(int(record.retry_count or 0) for record in records),
         "fallback_count": sum(1 for record in records if bool(record.fallback_used)),
         "last_error_code": str(last_error or ""),

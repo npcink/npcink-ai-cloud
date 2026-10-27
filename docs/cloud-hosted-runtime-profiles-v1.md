@@ -169,8 +169,8 @@ sync; directory failure offers a retry and cannot be reported as save failure.
 The preview fetch is not a stored runtime catalog. Saving therefore performs a
 second account catalog fetch to update runtime instances; explain this before
 submission rather than trusting a browser-supplied catalog as runtime truth.
-Missing credentials direct the operator back to Key entry; manual model entry
-remains discoverable in collapsed More operations. Duplicate-create errors name
+Missing credentials direct the operator back to Key entry. New model selections
+come from the account catalog; there is no manual model-add entry. Duplicate-create errors name
 an actionable recovery, and changing a new supplier's display name updates its
 generated ID. Capability verification identifies its target capability and
 states that it sends a real, potentially billable Provider request.
@@ -181,9 +181,23 @@ qualified/bare forms of the same ID; do not guess aliases between different
 IDs. Reference timestamps identify reference updates, not account fetches.
 Historical-model visibility is a browser-persisted list preference; reference
 source selection is explicitly view-only. Neither is supplier configuration or
-a reason to require saving. More operations groups manual model entry and confirmed enabled-model
-mutations; view preferences remain in reference browsing. Pending manually typed model IDs are included when saving even if
-the operator did not click Add.
+a reason to require saving. More operations groups confirmed enabled-model
+mutations; view preferences remain in reference browsing.
+A supplier save has one short success toast. Automatic directory refresh does
+not also emit a row-level test success; catalog failure stays beside its retry,
+independent of the saved connection. Manual checks describe the stage proved,
+without implying verified model generation. Persistent next-step content offers
+an action rather than repeating the save receipt.
+
+Usage candidate tables default to current compatible catalog models. Unselected
+catalog-missing or unavailable models are retained under a closed “Unconfirmed
+or unavailable models” disclosure, with counts and a supplier-management link.
+Selected problematic primary/fallback models remain in the main table with
+reasons so they can be replaced. Filters apply to both groups, with a separate
+bounded visible count per group. This changes visibility only: text models with
+missing catalog evidence retain their existing selection eligibility, and media
+capability verification requirements remain unchanged.
+
 The next action configures usages with a supplier filter, or enables models
 first when none are selected.
 

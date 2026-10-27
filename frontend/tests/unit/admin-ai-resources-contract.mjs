@@ -123,7 +123,8 @@ assert.match(
   'Switching away from model references must clear the prior loading operation'
 );
 const catalogFetch = pageSource.slice(pageSource.indexOf('  async function fetchProviderCatalogPreview()'), pageSource.indexOf('  async function syncModelReferences()'));
-assert.doesNotMatch(catalogFetch, /syncModelReferencesForProvider|setProviderModelIds/, 'directory fetch neither refreshes references nor auto-enables models');
+assert.doesNotMatch(catalogFetch, /setProviderModelIds/, 'directory fetch never auto-enables models');
+assert.match(catalogFetch, /ensureFreshModelReferences\(referenceProviderId\)/, 'catalog fetch checks reference freshness independently');
 assert.match(catalogFetch, /setFetchingProviderCatalog\(succeedAsyncOperation\(\)\)/, 'catalog success must settle independently');
 assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
 assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
@@ -147,11 +148,10 @@ assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url'[
 assert.doesNotMatch(pageSource, /modelMoreFiltersOpen|action_more_filters/);
 assert.match(pageSource, /field_visibility_filter[\s\S]*filter_all_visibility/);
 assert.match(pageSource, /field_feature_filter[\s\S]*filter_all_features/);
-assert.match(pageSource, /data-ui="model-metadata-gap-filter"[\s\S]*set_reference_intelligence_filter/);
-assert.match(pageSource, /<details data-ui="model-maintenance-table"/);
-assert.match(pageSource, /data-ui="model-list-scope"[\s\S]*history_view_preference[\s\S]*data-ui="model-maintenance-table"/);
-assert.match(pageSource, /data-ui="model-clear-all-request"/);
-assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
+assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.match(pageSource, /sourceScope: 'account'/);
+assert.match(pageSource, /<ModelReferencePanel/);
+assert.doesNotMatch(pageSource, /data-ui="model-(?:clear-all|metadata-gap-filter|list-scope)/);
 assert.match(pageSource, /data-ui="model-filtered-enable-request"/);
 assert.match(pageSource, /data-ui="model-filtered-disable-request"/);
 assert.match(pageSource, /filtered_models_batch_confirmation[\s\S]*data-ui="model-filtered-batch-confirm"/);

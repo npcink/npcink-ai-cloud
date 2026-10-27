@@ -5487,6 +5487,7 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
         item for item in profiles if item["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
     )
     selected["note"] = "text change only"
+    selected["max_retries"] = 0
     response = client.patch(
         "/internal/service/admin/runtime-profiles",
         headers=merge_json_headers(build_internal_headers(idempotency_key="isolated-text-patch")),
@@ -5500,6 +5501,10 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
     )
     assert response.status_code == 200, response.text
     after = response.json()["data"]["profiles"]
+    reloaded = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]["profiles"]
+    assert next(item for item in reloaded if item["profile_id"] == selected["profile_id"])["max_retries"] == 0
     for profile in before["profiles"]:
         current = next(item for item in after if item["profile_id"] == profile["profile_id"])
         if profile["profile_id"] != WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID:

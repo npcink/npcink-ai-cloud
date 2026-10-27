@@ -19,7 +19,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionRequest
+from app.adapters.providers.base import (
+    ProviderExecutionError,
+    ProviderExecutionRequest,
+    ProviderExecutionResult,
+)
 from app.core.models import RunRecord
 from app.domain.runtime.provider_budget import ProviderBudgetClaimReceipt
 from app.domain.runtime.provider_execution import RuntimeProviderExecutionService
@@ -39,6 +43,9 @@ CLAIMED_DISPATCH_FILES: dict[str, str] = {
     ),
     "app/domain/model_capabilities/probes.py": (
         "capability probes claim through _execute_probe before dispatch"
+    ),
+    "app/domain/provider_connections/model_tests.py": (
+        "exact-model diagnostics commit budget claims before dispatch; API regression inspects durability"
     ),
     "app/domain/provider_connections/service.py": (
         "image delivery probe and web search connection test claim before dispatch"
@@ -91,13 +98,15 @@ class _RecordingProvider:
         self.events = events
         self.calls: list[str] = []
 
-    def execute(self, _request: ProviderExecutionRequest) -> SimpleNamespace:
+    def execute(self, _request: ProviderExecutionRequest) -> ProviderExecutionResult:
         self.calls.append("execute")
         if self.events is not None:
             self.events.append("execute")
         if self.fail:
             raise ProviderExecutionError("provider.timeout", "boom")
-        return SimpleNamespace(cost=0.02)
+        return ProviderExecutionResult(
+            output={}, latency_ms=1, tokens_in=1, tokens_out=1, cost=0.02
+        )
 
 
 def _budget_request() -> ProviderExecutionRequest:

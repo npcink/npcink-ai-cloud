@@ -69,12 +69,30 @@ export const MODEL_VISIBILITY_PAGE_SIZE = 25;
 
 export function modelReferenceSourceNeedsSync(
   source: ModelReferenceSourceSummary | null,
-  total: number
+  now = Date.now(),
 ): boolean {
-  if (total > 0) return false;
-  if (!source) return true;
-  if (source.last_synced_at) return false;
-  return source.status !== 'active';
+  if (!source || source.status !== 'active') return true;
+  const syncedAt = Date.parse(source.last_synced_at);
+  return !Number.isFinite(syncedAt) || syncedAt > now || now - syncedAt >= 24 * 60 * 60 * 1000;
+}
+
+export type ModelReferenceFreshness = 'current' | 'expired' | 'superseded' | 'unconfirmed';
+
+export function modelReferenceFreshness(
+  reference: ModelReferenceEntry,
+  source: ModelReferenceSourceSummary | null,
+  now = Date.now(),
+): ModelReferenceFreshness {
+  const recordedAt = Date.parse(reference.synced_at);
+  const sourceCheckedAt = Date.parse(source?.last_synced_at || '');
+  if (!source || source.source_id !== reference.source_id || source.status !== 'active'
+    || !Number.isFinite(recordedAt) || recordedAt > now
+    || !Number.isFinite(sourceCheckedAt) || sourceCheckedAt > now) return 'unconfirmed';
+  // Sync is an upsert: rows absent from the latest source response retain an older timestamp.
+  if (recordedAt < sourceCheckedAt) return 'superseded';
+  if (recordedAt > sourceCheckedAt) return 'unconfirmed';
+  if (modelReferenceSourceNeedsSync(source, now) || now - recordedAt >= 24 * 60 * 60 * 1000) return 'expired';
+  return 'current';
 }
 
 export function formatReferenceContext(
