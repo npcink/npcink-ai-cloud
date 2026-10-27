@@ -44,6 +44,18 @@ is included in this rollout.
 
 ## Deferred follow-on order (not implementation authorization)
 
+The [2026-10-27 value-first decision](phase-1-scope.md#value-first-development-decision-2026-10-27)
+keeps new commercial/notification/analytics expansion frozen. The list below
+retains follow-on context, not an instruction to expand after a technical pass.
+Maintain existing purchase, shared-trial, settlement, refund, entitlement and
+support integrity. The approved normal-account eligibility above is unchanged.
+
+Historical Free-cohort H3 discussion used a CNY 50–70 monthly price assumption;
+current Plus/Pro defaults are CNY 15/29. Reconcile the cost interpretation with
+current prices and actual supplier evidence before claiming viable margins.
+This discrepancy alone proves neither profit nor loss. Do not silently revise
+operator-owned H1/H2/H3, prices, trial limits or the production authorization gate.
+
 1. Admin sales status → Portal catalog → checkout/trial eligibility.
 2. Payment confirmation, credit delivery, closing and refunds, including recovery.
 3. Support, payment/refund, trial/expiry and quota notifications, with deduplication.

@@ -18,6 +18,68 @@ async function selectPanel(page: import('@playwright/test').Page, name: 'records
   await expect(page.locator(`#diagnostic-panel-${name}`)).toBeVisible();
 }
 
+test('missing-call investigation separates comparison records and retains recovery scope', async ({ page }, testInfo) => {
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const issueCode = 'hosted_model.provider_call_gap';
+  const requests: URL[] = [];
+  await page.route(/\/api\/admin\/runtime-telemetry(?:\/runs)?\?/, async route => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    const review = Boolean(url.searchParams.get('since'));
+    const context = url.searchParams.get('evidence_scope') === 'context';
+    const data = url.pathname.endsWith('/runs') ? {
+      items: review ? [] : [{
+        run_id: context ? 'recorded-comparison' : 'failed-unverified', site_id: 'site-alpha',
+        ability_name: 'test/inspect', ability_family: 'text', profile_id: 'text.ai',
+        status: context ? 'succeeded' : 'failed', error_code: context ? null : 'runtime.rejected',
+        started_at: '2026-10-27T10:00:00Z', duration_ms: 100,
+        provider_call_count: context ? 2 : 0, has_meter_event: true,
+        provider_evidence_state: context ? 'recorded' : 'failed_without_call',
+      }],
+    } : {
+      generated_at: '2026-10-27T12:00:00Z',
+      totals: { runs: review ? 0 : 2, provider_call_run_coverage_rate: 0.5,
+        provider_evidence_required_runs: review ? 0 : 2, metered_run_coverage_rate: 1 },
+      capability_groups: [{ group_id: 'text', runs_total: 2, provider_call_run_coverage_rate: 0.5, provider_call_gap_runs: 1 }],
+      alert_summary: { status: review ? 'inactive' : 'warning', alerts: review ? [] : [
+        { code: issueCode, severity: 'warning', count: 1, capabilities: ['text'] },
+      ] },
+    };
+    await route.fulfill({ json: buildAdminApiEnvelope(data) });
+  });
+  await page.goto(`/admin/troubleshooting?focus=${issueCode}&site=site-alpha`);
+  await page.getByRole('button', { name: /Inspect missing-call runs|查看缺失调用的运行/, exact: true }).click();
+  const evidence = page.locator('[data-ui="runtime-run-evidence"]');
+  await expect(evidence).toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await evidence.getByRole('button', { name: /View detail|查看详情/, exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('failed-unverified');
+  await expect(page.getByRole('dialog')).toContainText(/stopped before a call|是否在调用前终止/);
+  await page.keyboard.press('Escape');
+  await evidence.getByRole('button', { name: /Runs with call evidence|有调用记录的对照/, exact: true }).click();
+  await expect(evidence).toContainText(/Call recorded|已有调用记录/);
+  await expect(evidence).not.toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await expect(page).toHaveURL(/evidence=context/);
+  await evidence.getByRole('button', { name: /Missing-call runs|缺失调用的运行/, exact: true }).click();
+  await expect(evidence).toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await page.getByRole('button', { name: /Review runs from now|从现在开始复核/, exact: true }).click();
+  const absent = page.locator('[data-ui="runtime-focus-absent"]');
+  await expect(absent).toContainText(/cannot|不能/);
+  await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
+  await expect(page).toHaveURL(/since=/);
+  await expect(page.getByRole('main')).toContainText(/no requests|没有运行|暂无请求|尚无请求|没有请求|未发现运行/i);
+  await page.reload();
+  await expect(absent).toBeVisible();
+  await expect(page.getByRole('link', { name: /Usage statistics|使用统计/, exact: true })).toHaveAttribute('href', /since=/);
+  await page.getByRole('button', { name: /Return to full period|返回完整时段/, exact: true }).click();
+  await expect(page).not.toHaveURL(/since=/);
+  await expect(page.locator('#runtime-diagnostic-inspector')).toBeVisible();
+  expect(requests.some(url => url.pathname.endsWith('/runs') && url.searchParams.get('evidence_scope') === 'context')).toBe(true);
+  expect(requests.filter(url => url.searchParams.has('since')).every(url => url.searchParams.get('since') === '2026-10-27T12:00:00Z')).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+  await page.screenshot({ path: testInfo.outputPath('missing-call-closure-1440.png'), fullPage: true });
+});
+
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
   return panel.locator('canvas').evaluate((canvas) => {
     const context = canvas.getContext('2d');
@@ -357,7 +419,7 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
       generated_at: '2026-09-10T10:00:00Z', sampled: false, truncated: false,
-      items: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
+      items: [{ selected_provider_id: 'historical-provider', selected_model_id: 'historical-model', run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
     })) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
@@ -371,6 +433,8 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await trigger.click();
   const drawer = page.getByRole('dialog');
   await expect(drawer.getByText('run-schema-rejected', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-provider', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-model', { exact: true })).toBeVisible();
   await expect(drawer.locator('details')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
@@ -406,6 +470,7 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   const trigger = evidence.getByRole('button', { name: /View detail|查看详情/ });
   await trigger.click();
   await expect(page.getByRole('dialog').getByText('run-success-with-evidence-gap', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(/No recorded call evidence|暂无调用证据/);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(628);
@@ -609,8 +674,10 @@ test('task tabs support keyboard, help is optional, and navigation retains suppo
   await installAdminMocks(page);
   await page.goto('/admin/troubleshooting?site=site-alpha&function=knowledge&focus=unknown');
   const issue = page.locator('[data-ui="runtime-diagnostic-issue"]').first();
+  await expect(page.locator('[data-ui="runtime-focus-absent"]')).toBeVisible();
+  await expect(page).toHaveURL(/focus=unknown/);
+  await issue.click();
   await expect(issue).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).not.toHaveURL(/focus=unknown/);
   const overview = page.locator('#diagnostic-tab-overview');
   const records = page.locator('#diagnostic-tab-records');
   await overview.focus();
@@ -682,12 +749,13 @@ for (const width of [1280, 1440, 1920]) {
 test('diagnostic help remains inside a short viewport and flips above its trigger', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 300 });
   await installAdminMocks(page);
-  await page.goto('/admin/troubleshooting');
+  // Finish the initial default-focus URL selection before positioning the anchor.
+  await page.goto('/admin/troubleshooting?focus=hosted_model.provider_call_gap');
   const trigger = page.locator('[data-ui="runtime-issue-evidence"] thead button');
+  // The document uses smooth scrolling. Finish positioning before opening help
+  // so intermediate offscreen frames cannot dismiss the focused tooltip.
+  await trigger.evaluate(element => element.scrollIntoView({ block: 'end', behavior: 'instant' }));
   await trigger.focus();
-  // Put the trigger at the bottom explicitly: native focus scrolling differs
-  // across browser platforms and may leave enough room below for the help.
-  await trigger.evaluate(element => element.scrollIntoView({ block: 'end' }));
   await expect(page.getByRole('tooltip')).toBeVisible();
   await expect.poll(async () => {
     const tip = (await page.getByRole('tooltip').boundingBox())!;

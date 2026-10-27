@@ -1,11 +1,15 @@
 'use client';
 
+import { formatUsdAmount } from '@/lib/format-usd';
+
 import Link from 'next/link';
+import { modelIdentityKeys, upstreamModelId } from '@/features/admin/ai-resources/model-reference-identity';
 import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
+  BackofficeDisclosure,
   BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
@@ -18,8 +22,10 @@ import {
   AdminConfigurationTable,
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
+import { ModelTestDialog, type ModelTestTarget } from '@/features/admin/ai-resources/ModelTestDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
   ModelSupplierTable,
@@ -87,13 +93,14 @@ import {
   formatReferenceContextTitle,
   formatReferencePrice,
   hasReferencePrice,
-  hasModelMetadataFor,
-  modelReferenceCapabilityTags,
   modelReferenceSourceNeedsSync,
+  modelReferenceFreshness,
+  modelReferenceCapabilityTags,
   normalizeProviderCatalogPreview,
   type ModelReferenceEntry,
   type ModelReferenceSourceSummary,
 } from '@/features/admin/ai-resources/model-reference-model';
+import { ModelReferencePanel } from '@/features/admin/ai-resources/ModelReferencePanel';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
@@ -160,6 +167,16 @@ function slugifyProviderValue(value: string): string {
   return slug || 'provider';
 }
 
+function providerConnectionIdFromName(value: string): string {
+  const name = value.trim().toLowerCase();
+  const slug = slugifyProviderValue(name);
+  if (!/[^\u0000-\u007f]/.test(name)) return slug;
+  // Keep Chinese names distinct instead of collapsing every name to "provider".
+  let hash = 2166136261;
+  for (const character of name) hash = Math.imul(hash ^ character.codePointAt(0)!, 16777619) >>> 0;
+  return `${slug.slice(0, 80)}_${hash.toString(36)}`;
+}
+
 function providerConnectionTestResultFromError(error: unknown): ProviderConnectionTestResponse | undefined {
   if (!(error instanceof ApiError) || !error.details || typeof error.details !== 'object' || Array.isArray(error.details)) {
     return undefined;
@@ -191,9 +208,6 @@ function formatProviderModelLatency(value: number | null): string {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
 }
 
-function formatProviderModelCost(value: number): string {
-  return `$${value >= 0.01 ? value.toFixed(2) : value.toFixed(4)}`;
-}
 
 type ProviderModelHealthPanelProps = {
   health: ProviderModelHealth;
@@ -307,7 +321,7 @@ function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPane
                         {formatProviderModelLatency(row.p95_latency_ms)}
                       </td>
                       <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">
-                        {formatProviderModelCost(row.cost)}
+                        {formatUsdAmount(row.cost)}
                       </td>
                       <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">{row.fallback_count}</td>
                       <td className="border-b border-slate-100 px-2 py-2 text-right text-xs dark:border-slate-800/60">
@@ -355,6 +369,7 @@ function AiResourcesContent() {
     : '';
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
+  const [modelTestTarget, setModelTestTarget] = useState<ModelTestTarget | null>(null);
   const [savingConnection, setSavingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [testingConnection, setTestingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [probingImageDelivery, setProbingImageDelivery] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
@@ -367,12 +382,11 @@ function AiResourcesContent() {
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [loadingModelReferences, setLoadingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [syncingModelReferences, setSyncingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [autoSyncingModelReferences, setAutoSyncingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [modelReferenceAutoSyncError, setModelReferenceAutoSyncError] = useState('');
+  const [savedSupplier, setSavedSupplier] = useState<{ connectionId: string; providerId: string; hasModels: boolean; directoryError: string } | null>(null);
+  const [modelReferenceError, setModelReferenceError] = useState('');
   const [modelReferences, setModelReferences] = useState<ModelReferenceEntry[]>([]);
   const [modelReferenceTotal, setModelReferenceTotal] = useState(0);
   const [modelReferenceSources, setModelReferenceSources] = useState<ModelReferenceSourceSummary[]>([]);
-  const [loadedModelReferenceProviderId, setLoadedModelReferenceProviderId] = useState('');
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
   const [providerWorkbench, dispatchProviderWorkbench] = useReducer(
     providerWorkbenchReducer,
@@ -391,17 +405,28 @@ function AiResourcesContent() {
     modelReferenceIntelligenceFilter,
     modelReferenceShowDeprecated,
     modelReferencePage,
-    confirmingClearModels,
     confirmingModelBatch,
-    customModelInput,
   } = providerWorkbench;
+  const savedProviderConnection = data?.connections.find((connection) => connection.connection_id === providerConnectionForm.connectionId);
+  const catalogCredentialMissing = !providerConnectionForm.credential.trim()
+    && !(providerFormMode === 'edit' && (savedProviderConnection?.configured || savedProviderConnection?.config?.secretless));
   const providerDraftDirty = hasProviderWorkbenchDraftChanges(providerWorkbench);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [showUnconfirmedModels, setShowUnconfirmedModels] = useState(false);
+  useEffect(() => {
+    try {
+      dispatchProviderWorkbench({ type: 'set_show_deprecated', show: localStorage.getItem('admin.model-list.show-deprecated') === 'true' });
+    } catch { /* Browser preferences are optional. */ }
+  }, []);
+
+  function changeHistoricalModelVisibility(show: boolean) {
+    dispatchProviderWorkbench({ type: 'set_show_deprecated', show });
+    try { localStorage.setItem('admin.model-list.show-deprecated', String(show)); } catch { /* Keep the current view usable without storage. */ }
+  }
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
-  const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
-  const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
+  const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models' | 'references'>('connection');
   const deletePreflightRequestRevision = useRef(0);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -443,18 +468,32 @@ function AiResourcesContent() {
     }
   }, [aiText, providerErrorMessage, refetchResources]);
 
+  const [referenceNow, setReferenceNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!providerFormOpen) return;
+    setReferenceNow(Date.now());
+    const timer = window.setInterval(() => setReferenceNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [providerFormOpen]);
+
+  const referenceReadRevision = useRef(0);
+  const referenceRefreshInFlight = useRef<Promise<void> | null>(null);
+  const referenceView = useRef({ open: providerFormOpen, providerId: modelReferenceProviderId, connectionId: providerConnectionForm.connectionId });
+  useEffect(() => {
+    referenceView.current = { open: providerFormOpen, providerId: modelReferenceProviderId, connectionId: providerConnectionForm.connectionId };
+  }, [providerFormOpen, modelReferenceProviderId, providerConnectionForm.connectionId]);
   const loadModelReferences = useCallback(async (providerId: string) => {
+    const revision = ++referenceReadRevision.current;
     const normalizedProviderId = providerId.trim().toLowerCase();
     if (!normalizedProviderId || normalizedProviderId === 'custom') {
       setLoadingModelReferences(IDLE_ASYNC_OPERATION);
       setModelReferences([]);
       setModelReferenceTotal(0);
       setModelReferenceSources([]);
-      setLoadedModelReferenceProviderId(normalizedProviderId);
       return;
     }
     setLoadingModelReferences(startAsyncOperation(normalizedProviderId));
-    setLoadedModelReferenceProviderId('');
+    setModelReferenceError('');
     try {
       const pageSize = 500;
       const references: ModelReferenceEntry[] = [];
@@ -497,25 +536,30 @@ function AiResourcesContent() {
         offset += pageItems.length;
       }
 
+      const result = { source: sourceSummary.find(source => source.source_id === 'models.dev') || null };
+      if (revision !== referenceReadRevision.current) return result;
+      setReferenceNow(Date.now());
       setModelReferences(references);
       setModelReferenceTotal(total || references.length);
       setModelReferenceSources(sourceSummary);
-      setLoadedModelReferenceProviderId(normalizedProviderId);
       setLoadingModelReferences(succeedAsyncOperation(normalizedProviderId));
+      return result;
     } catch (referenceError) {
-      setModelReferences([]);
-      setModelReferenceTotal(0);
-      setModelReferenceSources([]);
-      setLoadedModelReferenceProviderId('');
+      if (revision !== referenceReadRevision.current) return null;
       const referenceMessage = providerErrorMessage(referenceError, aiText('error_load_model_references', 'Failed to load model reference data.'));
       setLoadingModelReferences(failAsyncOperation(referenceMessage, normalizedProviderId));
-      setError(referenceMessage);
+      setModelReferenceError(referenceMessage);
+      return { source: null };
     }
   }, [aiText, providerErrorMessage]);
 
   useEffect(() => {
     if (!providerFormOpen) return;
+    setModelReferences([]);
+    setModelReferenceSources([]);
+    setSyncingModelReferences(IDLE_ASYNC_OPERATION);
     void loadModelReferences(modelReferenceProviderId);
+    return () => { referenceReadRevision.current += 1; };
   }, [loadModelReferences, modelReferenceProviderId, providerFormOpen]);
 
   useEffect(() => {
@@ -531,7 +575,7 @@ function AiResourcesContent() {
   async function saveProviderConnection() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
-    const modelIds = splitList(providerConnectionForm.modelIds);
+    const modelIds = uniqueList(splitList(providerConnectionForm.modelIds));
     const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
     if (!imageOutputHostsAreExact(imageOutputHosts)) {
       setError(aiText(
@@ -541,11 +585,10 @@ function AiResourcesContent() {
       return;
     }
     const modelConfig = {
-      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
-      ...(providerConnectionForm.imageResponseFormat
-        ? { image_response_format: providerConnectionForm.imageResponseFormat }
-        : {}),
-      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+      ...data?.connections.find((item) => item.connection_id === providerConnectionForm.connectionId)?.config,
+      model_ids: modelIds, model_id: modelIds[0] || '',
+      image_response_format: providerConnectionForm.imageResponseFormat,
+      image_output_hosts: imageOutputHosts,
     };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
@@ -558,8 +601,8 @@ function AiResourcesContent() {
       const response = await aiResourcesClient.request<{
         connection_id?: string;
         receipt?: AdminMutationReceiptPayload | null;
-      }>('/api/admin/provider-connections', {
-        method: 'POST',
+      }>(providerFormMode === 'edit' ? `/api/admin/provider-connections/${encodeURIComponent(normalizedConnectionId)}` : '/api/admin/provider-connections', {
+        method: providerFormMode === 'edit' ? 'PATCH' : 'POST',
         body: {
           connection_id: normalizedConnectionId,
           provider_id: normalizedProviderId,
@@ -588,12 +631,9 @@ function AiResourcesContent() {
       setLastReceipt(response.data.receipt || null);
       let testFailed = false;
       let testErrorMessage = '';
-      let successMessage = '';
       setMessage(aiText('message_connection_saved_testing', 'Provider connection saved. Running connection test now.'));
       try {
-        await runProviderConnectionTest(savedConnectionId, { announce: false, reload: false });
-        successMessage = aiText('message_connection_saved_and_tested', 'Provider connection saved and tested. Credential status is masked in this page.');
-        setMessage(successMessage);
+        await runProviderConnectionTest(savedConnectionId, { announce: false, reload: false, recordResult: false });
       } catch (testError) {
         testFailed = true;
         setMessage('');
@@ -606,13 +646,11 @@ function AiResourcesContent() {
         );
       }
       await loadResources();
-      if (testFailed) {
-        setError(testErrorMessage);
-      } else {
-        dispatchProviderWorkbench({ type: 'reset_after_save' });
-        setMessage('');
-        toast.success(successMessage, t('common.success'));
-      }
+      dispatchProviderWorkbench({ type: 'reset_after_save' });
+      setSavedSupplier({ connectionId: savedConnectionId, providerId: normalizedProviderId, hasModels: modelIds.length > 0, directoryError: testFailed ? testErrorMessage : '' });
+      setError('');
+      setMessage('');
+      toast.success(aiText('message_supplier_saved', 'Supplier saved.'), t('common.success'));
       setSavingConnection(succeedAsyncOperation(normalizedConnectionId));
     } catch (saveError) {
       const saveMessage = providerErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.'));
@@ -638,7 +676,6 @@ function AiResourcesContent() {
       setProviderWorkbenchSection('connection');
       dispatchProviderWorkbench({ type: 'reopen_draft' });
       setError(draftMessage);
-      toast.error(draftMessage, t('common.error'));
       return;
     }
 
@@ -670,6 +707,7 @@ function AiResourcesContent() {
       setPreflightingDelete(failAsyncOperation(preflightMessage, connection.connection_id));
       setError(preflightMessage);
       toast.error(preflightMessage, t('common.error'));
+
     }
   }
 
@@ -695,7 +733,6 @@ function AiResourcesContent() {
         'Save or discard the unsaved provider draft before deleting this connection.'
       );
       setError(draftMessage);
-      toast.error(draftMessage, t('common.error'));
       return;
     }
     setDeletingConnection(startAsyncOperation(connection.connection_id));
@@ -742,6 +779,7 @@ function AiResourcesContent() {
       setError(deleteMessage);
       setDeletingConnection(failAsyncOperation(deleteMessage, connection.connection_id));
       toast.error(deleteMessage, t('common.error'));
+
     }
   }
 
@@ -792,7 +830,6 @@ function AiResourcesContent() {
       );
       setError(approvalMessage);
       setApprovingImageHost(failAsyncOperation(approvalMessage, connection.connection_id));
-      toast.error(approvalMessage, t('common.error'));
     }
   }
 
@@ -832,7 +869,7 @@ function AiResourcesContent() {
       );
       setError(probeMessage);
       setProbingImageDelivery(failAsyncOperation(probeMessage, connectionId));
-      toast.error(probeMessage, t('common.error'));
+
     }
   }
 
@@ -842,23 +879,32 @@ function AiResourcesContent() {
   ): Promise<void> {
     const normalizedProviderId = providerId.trim().toLowerCase();
     if (!normalizedProviderId || normalizedProviderId === 'custom') return;
+    const connectionId = referenceView.current.connectionId;
+    const stillCurrent = () => referenceView.current.open && referenceView.current.providerId === normalizedProviderId
+      && referenceView.current.connectionId === connectionId;
     setSyncingModelReferences(startAsyncOperation(normalizedProviderId));
-    setModelReferenceAutoSyncError('');
+    setModelReferenceError('');
     try {
       await aiResourcesClient.request<unknown>('/api/admin/model-references/sync', {
         method: 'POST',
         body: {},
       });
-      await loadModelReferences(normalizedProviderId);
+      if (!stillCurrent()) return;
+      const result = await loadModelReferences(normalizedProviderId);
+      if (!stillCurrent()) return;
+      if (!result?.source || result.source.status !== 'active') {
+        throw new Error(result?.source?.last_error_message || aiText('error_load_model_references', 'Failed to load model reference data.'));
+      }
       if (options.announce) {
         const successMessage = aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.');
-        setMessage('');
         toast.success(successMessage, t('common.success'));
       }
       setSyncingModelReferences(succeedAsyncOperation(normalizedProviderId));
     } catch (syncError) {
-      setSyncingModelReferences(failAsyncOperation(providerErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')), normalizedProviderId));
-      throw syncError;
+      if (!stillCurrent()) return;
+      const message = providerErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
+      setSyncingModelReferences(failAsyncOperation(message, normalizedProviderId));
+      setModelReferenceError(message);
     }
   }
 
@@ -875,17 +921,16 @@ function AiResourcesContent() {
       return;
     }
     const modelConfig = {
-      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
-      ...(providerConnectionForm.imageResponseFormat
-        ? { image_response_format: providerConnectionForm.imageResponseFormat }
-        : {}),
-      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+      ...data?.connections.find((item) => item.connection_id === providerConnectionForm.connectionId)?.config,
+      model_ids: modelIds, model_id: modelIds[0] || '',
+      image_response_format: providerConnectionForm.imageResponseFormat,
+      image_output_hosts: imageOutputHosts,
     };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
     const docsUrl = externalUrlValue(referenceLinks.docsUrl);
-    if (!providerConnectionForm.credential.trim() && providerFormMode === 'create') {
+    if (catalogCredentialMissing) {
       setError(aiText('error_fetch_catalog_credential_required', 'Enter an API key before fetching upstream models. Existing saved credentials are not returned to the browser.'));
       return;
     }
@@ -923,9 +968,6 @@ function AiResourcesContent() {
       const verifiedModelIds = (preview.models || [])
         .filter((model) => !model.is_deprecated && (model.verified || model.runtime_supported))
         .map((model) => model.model_id);
-      if (!splitList(providerConnectionForm.modelIds).length && verifiedModelIds.length) {
-        setProviderModelIds(verifiedModelIds);
-      }
       const referenceProviderId = inferReferenceProviderFromModelIds(
         verifiedModelIds.length ? verifiedModelIds : (preview.model_ids || []),
         defaultReferenceProviderId(normalizedProviderId, providerConnectionForm.providerPreset)
@@ -936,34 +978,11 @@ function AiResourcesContent() {
           providerId: referenceProviderId,
         });
       }
-      let referenceSyncFailed = '';
-      try {
-        await syncModelReferencesForProvider(referenceProviderId);
-      } catch (syncError) {
-        referenceSyncFailed = providerErrorMessage(
-          syncError,
-          aiText('error_sync_model_references', 'Failed to sync model reference data.')
-        );
-        setModelReferenceAutoSyncError(referenceSyncFailed);
-        await loadModelReferences(referenceProviderId);
-      }
-      const catalogMessage = aiText(
-        referenceSyncFailed ? 'message_catalog_fetched_reference_failed' : 'message_catalog_and_references_synced',
-        referenceSyncFailed
-          ? 'Fetched {{count}} upstream models. Reference intelligence refresh failed; saved models and runtime calls are not affected.'
-          : 'Fetched {{count}} upstream models and refreshed reference intelligence.',
-        {
-          count: String(preview.model_count || preview.model_ids?.length || 0),
-        }
-      );
-      setMessage('');
-      if (referenceSyncFailed) {
-        toast.error(catalogMessage, t('common.error'));
-        setFetchingProviderCatalog(failAsyncOperation(referenceSyncFailed));
-      } else {
-        toast.success(catalogMessage, t('common.success'));
-        setFetchingProviderCatalog(succeedAsyncOperation());
-      }
+      const catalogMessage = aiText('message_account_catalog_fetched', 'Fetched {{count}} account models. Existing enabled choices were kept; choose models and save the supplier.', { count: String(preview.model_count || preview.model_ids?.length || 0) });
+      setMessage(catalogMessage);
+      setShowUnconfirmedModels(false);
+      setFetchingProviderCatalog(succeedAsyncOperation());
+      void ensureFreshModelReferences(referenceProviderId);
     } catch (catalogError) {
       const catalogMessage = providerErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
       setFetchingProviderCatalog(failAsyncOperation(catalogMessage));
@@ -971,61 +990,49 @@ function AiResourcesContent() {
     }
   }
 
-  async function syncModelReferences() {
-    setError('');
-    setMessage('');
-    try {
-      const effectiveReferenceProviderId = inferReferenceProviderFromModelIds(
-        splitList(providerConnectionForm.modelIds),
-        modelReferenceProviderId
-      );
-      if (effectiveReferenceProviderId !== modelReferenceProviderId) {
-        dispatchProviderWorkbench({
-          type: 'set_reference_provider',
-          providerId: effectiveReferenceProviderId,
-        });
-      }
-      await syncModelReferencesForProvider(effectiveReferenceProviderId, {
-        announce: true,
-      });
-    } catch (syncError) {
-      const effectiveReferenceProviderId = inferReferenceProviderFromModelIds(
-        splitList(providerConnectionForm.modelIds),
-        modelReferenceProviderId
-      );
-      await loadModelReferences(effectiveReferenceProviderId);
-      const syncMessage = providerErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
-      setModelReferenceAutoSyncError(syncMessage);
-      toast.error(syncMessage, t('common.error'));
+  async function ensureFreshModelReferences(providerId: string): Promise<void> {
+    if (!providerId || providerId === 'custom') return;
+    const connectionId = providerConnectionForm.connectionId;
+    const stillCurrent = () => referenceView.current.open && referenceView.current.providerId === providerId
+      && referenceView.current.connectionId === connectionId;
+    // One external source sync at a time; a later supplier checks again after it finishes.
+    if (referenceRefreshInFlight.current) {
+      await referenceRefreshInFlight.current;
+      if (!stillCurrent()) return;
+      return ensureFreshModelReferences(providerId);
+    }
+    const pending = (async () => {
+      const result = await loadModelReferences(providerId);
+      if (!stillCurrent() || !result || !modelReferenceSourceNeedsSync(result.source)) return;
+      await syncModelReferencesForProvider(providerId);
+    })();
+    referenceRefreshInFlight.current = pending;
+    try { await pending; } finally {
+      if (referenceRefreshInFlight.current === pending) referenceRefreshInFlight.current = null;
     }
   }
 
-  const autoSyncModelReferences = useCallback(async (providerId: string) => {
-    setAutoSyncingModelReferences(startAsyncOperation(providerId));
-    setModelReferenceAutoSyncError('');
-    try {
-      await aiResourcesClient.request<unknown>('/api/admin/model-references/sync', {
-        method: 'POST',
-        body: {},
-      });
-      await loadModelReferences(providerId);
-      setAutoSyncingModelReferences(succeedAsyncOperation(providerId));
-    } catch (syncError) {
-      const syncMessage = providerErrorMessage(syncError, aiText('model_reference_status_auto_sync_failed', 'Reference intelligence auto sync failed. Saved models and runtime calls are not affected.'));
-      setAutoSyncingModelReferences(failAsyncOperation(syncMessage, providerId));
-      await loadModelReferences(providerId);
-      setModelReferenceAutoSyncError(
-        syncMessage
-      );
+  async function syncModelReferences() {
+    if (referenceRefreshInFlight.current) return;
+    const pending = syncModelReferencesForProvider(modelReferenceProviderId, { announce: true });
+    referenceRefreshInFlight.current = pending;
+    try { await pending; } finally {
+      if (referenceRefreshInFlight.current === pending) referenceRefreshInFlight.current = null;
     }
-  }, [aiText, loadModelReferences, providerErrorMessage]);
+  }
 
   async function runProviderConnectionTest(
     connectionId: string,
-    options: { announce?: boolean; reload?: boolean } = {}
+    options: { announce?: boolean; reload?: boolean; recordResult?: boolean } = {}
   ) {
     const announce = options.announce !== false;
     const reload = options.reload !== false;
+    const recordResult = options.recordResult !== false;
+    setConnectionTestResults((current) => {
+      const next = { ...current };
+      delete next[connectionId];
+      return next;
+    });
     setTestingConnection(startAsyncOperation(connectionId));
     setError('');
     if (announce) {
@@ -1037,7 +1044,7 @@ function AiResourcesContent() {
         { method: 'POST' }
       );
       const result = response.data;
-      if (result?.connection_id) {
+      if (recordResult && result?.connection_id) {
         setConnectionTestResults((current) => ({
           ...current,
           [result.connection_id]: result,
@@ -1045,9 +1052,7 @@ function AiResourcesContent() {
       }
       if (announce) {
         setLastReceipt(result.receipt || null);
-        const successMessage = result ? providerTestMessage(result) : aiText('message_connection_tested', 'Provider connection tested.');
         setMessage('');
-        toast.success(successMessage, t('common.success'));
       }
       if (reload) {
         await loadResources();
@@ -1056,7 +1061,7 @@ function AiResourcesContent() {
       return result;
     } catch (testError) {
       const result = providerConnectionTestResultFromError(testError);
-      if (result?.connection_id) {
+      if (recordResult && result?.connection_id) {
         setConnectionTestResults((current) => ({
           ...current,
           [result.connection_id]: result,
@@ -1069,10 +1074,24 @@ function AiResourcesContent() {
           aiText('error_test_connection', 'Provider connection test failed.')
         );
         setError(testMessage);
-        toast.error(testMessage, t('common.error'));
+
       }
       setTestingConnection(failAsyncOperation(providerErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')), connectionId));
       throw testError;
+    }
+  }
+
+  async function retrySavedSupplierCatalog() {
+    if (!savedSupplier) return;
+    const connectionId = savedSupplier.connectionId;
+    try {
+      await runProviderConnectionTest(connectionId, { announce: false, recordResult: false });
+      setSavedSupplier((current) => current?.connectionId === connectionId ? { ...current, directoryError: '' } : current);
+    } catch (cause) {
+      const directoryError = aiText('message_connection_saved_test_failed', 'Connection saved; catalog sync failed: {{message}}', {
+        message: providerErrorMessage(cause, aiText('error_test_connection', 'Catalog sync failed.')),
+      });
+      setSavedSupplier((current) => current?.connectionId === connectionId ? { ...current, directoryError } : current);
     }
   }
 
@@ -1080,6 +1099,7 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     setImageDeliveryProbeResult(null);
     setProviderWorkbenchSection('connection');
+    setShowUnconfirmedModels(false);
     dispatchProviderWorkbench({
       type: 'open_create',
       referenceProviderId: defaultReferenceProviderId(
@@ -1095,6 +1115,7 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     setImageDeliveryProbeResult(null);
     setProviderWorkbenchSection('connection');
+    setShowUnconfirmedModels(false);
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
     setMessage('');
@@ -1139,19 +1160,8 @@ function AiResourcesContent() {
     });
   }
 
-  function addProviderModelIds(modelIds: string[]) {
-    setProviderModelIds([...splitList(providerConnectionForm.modelIds), ...modelIds]);
-  }
-
   function removeProviderModelId(modelId: string) {
     setProviderModelIds(splitList(providerConnectionForm.modelIds).filter((item) => item !== modelId));
-  }
-
-  function addCustomProviderModels() {
-    const modelIds = splitList(customModelInput);
-    if (!modelIds.length) return;
-    addProviderModelIds(modelIds);
-    dispatchProviderWorkbench({ type: 'set_custom_model_input', value: '' });
   }
 
   function applyProviderPreset(presetId: string) {
@@ -1171,7 +1181,7 @@ function AiResourcesContent() {
         baseUrl: preset.baseUrl,
         capabilityIds: preset.capabilityIds,
         runtimeProfileIds: preset.runtimeProfileIds,
-        modelIds: preset.modelIds,
+        modelIds: '',
         connectionId:
           providerConnectionForm.connectionId ||
           slugifyProviderValue(displayName || preset.providerId),
@@ -1211,13 +1221,13 @@ function AiResourcesContent() {
     const messages: Record<string, string> = {
       'provider connection is disabled': aiText('test_message_disabled', 'Provider connection is disabled.'),
       'provider credential is missing': aiText('test_message_missing_secret', 'Provider credential is missing.'),
-      'provider runtime configuration is present': aiText('test_message_runtime_config_ready', 'Provider runtime configuration is ready.'),
+      'provider runtime configuration is present': aiText('test_message_runtime_config_ready', 'Runtime configuration check passed; no model request was sent.'),
       'provider kind is not supported by the runtime adapter registry': aiText(
         'test_message_unsupported_kind',
         'This provider kind is not supported by the runtime adapter registry.'
       ),
       'provider catalog returned no usable models': aiText('test_message_catalog_empty', 'Provider catalog returned no usable models.'),
-      'provider connection is ready': aiText('test_message_ready', 'Provider connection is ready.'),
+      'provider connection is ready': aiText('test_message_ready', 'Account catalog fetched; model capability is not verified by this check.'),
       'web search reader returned no readable content': aiText('test_message_web_search_reader_empty', 'Reader provider returned no readable content.'),
       'web search reader base URL is missing': aiText('test_message_web_search_reader_missing_base_url', 'Reader provider base URL is missing.'),
     };
@@ -1273,7 +1283,8 @@ function AiResourcesContent() {
       const matchesFilter =
         connectionStatusFilter === 'all'
         || (connectionStatusFilter === 'ready' && connection.status === 'ready' && !connection.attention_required)
-        || (connectionStatusFilter === 'attention' && (connection.attention_required ?? connection.status !== 'ready'))
+        || (connectionStatusFilter === 'attention' && connection.enabled
+          && (connection.attention_required ?? connection.status !== 'ready'))
         || (connectionStatusFilter === 'missing_secret' && (connection.status === 'missing_secret' || !connection.configured))
         || (connectionStatusFilter === 'disabled' && (!connection.enabled || connection.status === 'disabled'));
       if (!matchesFilter) return false;
@@ -1310,6 +1321,7 @@ function AiResourcesContent() {
     if (normalized === 'video_generation' || normalized === 'video_generations' || normalized === 'video') {
       return aiText('model_feature_video_generation', 'Video generation');
     }
+    if (normalized === 'vision') return aiText('model_feature_text_vision', 'Text · Image input');
     if (normalized === 'embedding' || normalized === 'embeddings') {
       return aiText('model_feature_embedding', 'Embedding');
     }
@@ -1352,6 +1364,23 @@ function AiResourcesContent() {
   const activeProviderConnection = data?.connections.find(
     (connection) => connection.connection_id === providerConnectionForm.connectionId
   );
+  const modelNamespacePrefix = providerCatalogPreview?.model_namespace_prefix ?? activeProviderConnection?.model_namespace_prefix ?? (activeProviderConnection?.config && 'model_namespace_prefix' in activeProviderConnection.config
+    ? String(activeProviderConnection.config.model_namespace_prefix || '')
+    : ['openai', 'openai_compatible', 'openai-compatible'].includes(providerConnectionForm.kind) && providerConnectionForm.providerId !== 'openai'
+      ? providerConnectionForm.providerId : '');
+  const modelUsages = activeProviderConnection?.model_usage_references || [];
+  const usageLabelKeys: Record<string, string> = {
+      'wp-ai.short-text': 'profile_short_text', 'wp-ai.editorial': 'profile_editorial',
+      'wp-ai.classification': 'profile_classification', 'vision.ai': 'profile_vision_understanding',
+      'wp-ai.image-generation': 'profile_image_generation', 'wp-ai.audio-generation': 'profile_audio_generation',
+      'text.ai': 'automatic_title',
+  };
+  const usageName = (profileId: string) => usageLabelKeys[profileId]
+    ? t('admin.runtime_profiles.' + usageLabelKeys[profileId]) : aiText('model_internal_route', 'Internal runtime route');
+  const disabledModelUsages = modelUsages.filter((usage) => {
+    const matches = (id: string) => [...modelIdentityKeys(id, modelNamespacePrefix)].some((key) => modelIdentityKeys(usage.model_id, modelNamespacePrefix).has(key));
+    return (activeProviderConnection?.model_ids || []).some(matches) && !selectedProviderModelIds.some(matches);
+  });
   const activeImageDeliveryProbe = imageDeliveryProbeResult
     || activeProviderConnection?.image_delivery_probe
     || null;
@@ -1360,55 +1389,24 @@ function AiResourcesContent() {
   const isProbingImageDelivery = asyncOperationRunning(probingImageDelivery, providerConnectionForm.connectionId);
   const isLoadingModelReferences = asyncOperationRunning(loadingModelReferences);
   const isSyncingModelReferences = asyncOperationRunning(syncingModelReferences);
-  const isAutoSyncingModelReferences = asyncOperationRunning(autoSyncingModelReferences);
   const isFetchingProviderCatalog = asyncOperationRunning(fetchingProviderCatalog);
   const providerFormExternalLinkItems = providerExternalLinkItems(
     providerReferenceLinksForForm(providerConnectionForm)
   );
 
-  const selectedModelMetadataGapCount = useMemo(
-    () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
-      modelId,
-      modelReferenceProviderId,
-      modelReferences
-    )).length,
-    [modelReferenceProviderId, modelReferences, selectedProviderModelIds]
-  );
   const modelsDevReferenceSource = useMemo(
     () => modelReferenceSources.find((source) => source.source_id === 'models.dev') || null,
     [modelReferenceSources]
   );
 
-  useEffect(() => {
-    const normalizedProviderId = modelReferenceProviderId.trim().toLowerCase();
-    if (!providerFormOpen) return;
-    if (!normalizedProviderId || normalizedProviderId === 'custom') return;
-    if (loadedModelReferenceProviderId !== normalizedProviderId) return;
-    if (isLoadingModelReferences || isSyncingModelReferences || isAutoSyncingModelReferences) return;
-    if (!modelReferenceSourceNeedsSync(modelsDevReferenceSource, modelReferenceTotal)) return;
-    if (autoSyncedReferenceProviders.current.has(normalizedProviderId)) return;
-    autoSyncedReferenceProviders.current.add(normalizedProviderId);
-    void autoSyncModelReferences(normalizedProviderId);
-  }, [
-    autoSyncModelReferences,
-    isAutoSyncingModelReferences,
-    loadedModelReferenceProviderId,
-    isLoadingModelReferences,
-    modelReferenceProviderId,
-    modelReferenceTotal,
-    modelsDevReferenceSource,
-    providerFormOpen,
-    isSyncingModelReferences,
-  ]);
-
   const modelReferenceCompactStatusText = useMemo(() => {
-    if (isAutoSyncingModelReferences) {
+    if (isSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
     }
     if (isLoadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
-    if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
+    if (modelsDevReferenceSource?.status === 'error' || modelReferenceError) {
       return aiText('model_reference_compact_failed', 'reference sync failed');
     }
     if (modelsDevReferenceSource?.last_synced_at || modelReferenceTotal > 0) {
@@ -1417,18 +1415,19 @@ function AiResourcesContent() {
     return aiText('model_reference_compact_not_synced', 'reference not synced');
   }, [
     aiText,
-    isAutoSyncingModelReferences,
+    isSyncingModelReferences,
     isLoadingModelReferences,
-    modelReferenceAutoSyncError,
+    modelReferenceError,
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
   const modelReferenceHasSyncError = Boolean(
-    modelReferenceAutoSyncError || modelsDevReferenceSource?.status === 'error'
+    modelReferenceError || modelsDevReferenceSource?.status === 'error'
   );
 
   const modelVisibilityRows = useMemo(() => buildModelVisibilityRows({
-    references: modelReferences,
+    references: modelReferenceError ? [] : modelReferences.filter(reference => modelReferenceFreshness(reference,
+      modelReferenceSources.find(source => source.source_id === reference.source_id) || null, referenceNow) === 'current'),
     catalogPreview: providerCatalogPreview,
     selectedModelIds: selectedProviderModelIds,
     providerId: modelReferenceProviderId,
@@ -1438,9 +1437,12 @@ function AiResourcesContent() {
     intelligenceFilter: modelReferenceIntelligenceFilter,
     showDeprecated: modelReferenceShowDeprecated,
     upstreamLabel: aiText('model_source_upstream', 'Upstream catalog'),
-    manualLabel: aiText('model_source_manual', 'Manually added'),
+    manualLabel: aiText('model_source_manual', 'Previously saved'),
+    sourceScope: 'account',
+    namespacePrefix: modelNamespacePrefix,
     enabledOnlyLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
-  }), [
+  }).filter((row) => !showUnconfirmedModels || (row.selected && !row.catalog)), [
+    showUnconfirmedModels,
     aiText,
     modelReferenceFeatureFilter,
     modelReferenceIntelligenceFilter,
@@ -1448,17 +1450,22 @@ function AiResourcesContent() {
     modelReferenceSearch,
     modelReferenceShowDeprecated,
     modelReferenceVisibilityFilter,
+    modelNamespacePrefix,
     modelReferences,
+    modelReferenceSources,
+    modelReferenceError,
+    referenceNow,
     providerCatalogPreview,
     selectedProviderModelIds,
   ]);
 
-  const availableModelCount = Math.max(
-    modelReferenceTotal,
-    Number(providerCatalogPreview?.model_count ?? 0) || 0,
-    modelVisibilityRows.length,
-    selectedProviderModelIds.length
-  );
+  const accountModelCount = Number(providerCatalogPreview?.model_count ?? 0);
+  const catalogIdentityKeys = new Set((providerCatalogPreview?.models || []).flatMap((model) =>
+    Array.from(modelIdentityKeys(model.model_id, modelNamespacePrefix))
+  ));
+  const unconfirmedSelectedCount = selectedProviderModelIds.filter((modelId) =>
+    !Array.from(modelIdentityKeys(modelId, modelNamespacePrefix)).some((key) => catalogIdentityKeys.has(key))
+  ).length;
   const modelVisibilityPageCount = Math.max(
     1,
     Math.ceil(modelVisibilityRows.length / MODEL_VISIBILITY_PAGE_SIZE)
@@ -1472,7 +1479,7 @@ function AiResourcesContent() {
     visibleModelReferencePage * MODEL_VISIBILITY_PAGE_SIZE
   );
   const filteredEnableModelIds = modelVisibilityRows
-    .filter((row) => !row.selected && !row.deprecated)
+    .filter((row) => !row.selected && !row.deprecated && Boolean(row.catalog))
     .map((row) => row.modelId);
   const filteredDisableModelIds = modelVisibilityRows
     .filter((row) => row.selected)
@@ -1526,29 +1533,14 @@ function AiResourcesContent() {
   ).length;
   const attentionSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
+      && connection.enabled
       && (connection.attention_required ?? connection.status !== 'ready')
   ).length;
-  const latestModelSupplierTestAt = data.connections
-    .filter(
-      (connection) =>
-        supplierCategory(connection) === 'ai' &&
-        connection.last_tested_at &&
-        !Number.isNaN(Date.parse(connection.last_tested_at))
-    )
-    .sort(
-      (left, right) =>
-        Date.parse(String(right.last_tested_at)) - Date.parse(String(left.last_tested_at))
-    )[0]?.last_tested_at;
   return (
     <BackofficePageStack>
       <BackofficePageHeader
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
-        secondaryAction={(
-          <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
-            {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
-          </Link>
-        )}
         primaryAction={(
           <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
             {aiText('action_add_model_supplier', 'Add model supplier')}
@@ -1556,8 +1548,8 @@ function AiResourcesContent() {
         )}
         summaryItems={[
           {
-            label: aiText('overview_model_suppliers', 'Model suppliers'),
-            value: `${readyModelSupplierCount}/${modelSupplierCount}`,
+            label: aiText('overview_configured_suppliers', 'Configured'),
+            value: readyModelSupplierCount,
           },
           {
             label: aiText('overview_attention_suppliers', 'Needs attention'),
@@ -1567,8 +1559,8 @@ function AiResourcesContent() {
               : 'text-emerald-600 dark:text-emerald-400',
           },
           {
-            label: aiText('last_test', 'Last test'),
-            value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
+            label: aiText('overview_supplier_total', 'Total suppliers'),
+            value: modelSupplierCount,
           },
         ]}
         summaryAside={(
@@ -1581,8 +1573,16 @@ function AiResourcesContent() {
         )}
       />
 
+      {savedSupplier ? <section data-ui="supplier-next-step" className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 px-4 py-3 dark:border-slate-800">
+        <div className="min-w-0 text-sm">{savedSupplier.directoryError ? <p role="alert">{savedSupplier.directoryError}</p> : <p>{savedSupplier.hasModels ? aiText('next_configure_usage', 'Choose where to use the enabled models.') : aiText('next_enable_models', 'Enable an account model before configuring usage.')}</p>}</div>
+        <div className="flex shrink-0 gap-2">
+          {savedSupplier.directoryError ? <button type="button" className="btn btn-secondary btn-sm" disabled={asyncOperationRunning(testingConnection, savedSupplier.connectionId)} onClick={() => void retrySavedSupplierCatalog()}>{aiText('action_retry_catalog', 'Retry catalog sync')}</button> : null}
+          {savedSupplier.hasModels ? <Link className="btn btn-primary btn-sm" href={`/admin/runtime-profiles?provider=${encodeURIComponent(savedSupplier.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link> : <button type="button" className="btn btn-primary btn-sm" onClick={() => { const connection = data.connections.find((item) => item.connection_id === savedSupplier.connectionId); if (connection) { editProviderConnection(connection); setProviderWorkbenchSection('models'); } }}>{aiText('action_enable_models', 'Enable models first')}</button>}
+        </div>
+      </section> : null}
+
         <ProviderConnectionDialog
-          open={providerFormOpen}
+          open={providerFormOpen && !modelTestTarget}
           title={providerDialogTitle}
           titleId="provider-channel-dialog-title"
           message={message}
@@ -1590,14 +1590,20 @@ function AiResourcesContent() {
           saving={isSavingConnection}
           closeLabel={aiText('action_close_dialog', 'Close')}
           cancelLabel={aiText('action_cancel', 'Cancel')}
-          saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
+          saveLabel={aiText('action_save_supplier', 'Save supplier')}
           savingLabel={aiText('saving', 'Saving...')}
-          footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
+          headerAccessory={<AdminHelpTip label={aiText('save_help', 'About saving')}>{aiText('save_supplier_notice', 'Saves the connection and enabled models, then fetches the account catalog again to update runtime models. Capability verification is separate.')}</AdminHelpTip>}
+          footerNotice={providerWorkbenchSection === 'references' ? aiText('reference_panel_note', 'Reference information is read-only; it does not change enabled models or routing.') : aiText('save_supplier_short', 'Save connection and enabled models')}
+          footerActions={providerWorkbenchSection === 'references' ? <div key="reference-actions" className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-secondary" disabled={isSavingConnection} onClick={closeProviderForm}>{aiText('action_cancel', 'Cancel')}</button>
+            <button type="button" className="btn btn-secondary" onClick={(event) => { event.preventDefault(); setProviderWorkbenchSection('models'); }}>{aiText('action_manage_models', 'Manage models')}</button>
+          </div> : undefined}
           density="compact"
           contentMode={providerWorkbenchSection === 'models' ? 'contained' : 'scroll'}
           onClose={closeProviderForm}
-          onSubmit={() => void saveProviderConnection()}
+          onSubmit={() => { if (providerWorkbenchSection !== 'references') void saveProviderConnection(); }}
         >
+                {disabledModelUsages.length ? <div role="alert" className="mb-2 text-sm text-amber-800 dark:text-amber-200">{aiText('model_disable_impact', 'Saving will make models unavailable to: {{profiles}}. Update these usages to avoid interruption.', { profiles: [...new Set(disabledModelUsages.map((usage) => usageName(usage.profile_id)))].join(', ') })} <Link className="font-semibold underline" href={`/admin/runtime-profiles?provider=${encodeURIComponent(providerConnectionForm.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link></div> : null}
                 <div
                   role="tablist"
                   aria-label={aiText('provider_workbench_sections', 'Provider workspace sections')}
@@ -1632,8 +1638,36 @@ function AiResourcesContent() {
                       {selectedProviderModelIds.length}
                     </span>
                   </button>
+                  <button type="button" role="tab" aria-selected={providerWorkbenchSection === 'references'}
+                    className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${providerWorkbenchSection === 'references'
+                      ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                      : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'}`}
+                    onClick={() => setProviderWorkbenchSection('references')}>
+                    {aiText('reference_browse_title', 'Reference information')}
+                  </button>
                 </div>
+                <p data-ui="supplier-onboarding-step" className={providerFormMode === 'edit' ? 'sr-only' : 'text-xs text-slate-500 dark:text-slate-400'}>
+                  {providerFormMode === 'edit'
+                    ? aiText('editing_supplier_hint', 'Connection settings and enabled models are saved together. List filters only change the view.')
+                    : providerWorkbenchSection === 'connection'
+                    ? aiText('onboarding_connection', '1. Enter the supplier address and API Key, then open model management.')
+                    : aiText('onboarding_models', '2. Get account models and enable the ones you need. Save the supplier, then configure usage.')}
+                </p>
+                {providerWorkbenchSection === 'references' ? (
+                  <ModelReferencePanel key={modelReferenceProviderId} references={modelReferences}
+                    catalogPreview={providerCatalogPreview} selectedModelIds={selectedProviderModelIds}
+                    providerId={modelReferenceProviderId} namespacePrefix={modelNamespacePrefix}
+                    source={modelsDevReferenceSource} now={referenceNow} loading={isLoadingModelReferences}
+                    refreshing={isSyncingModelReferences} error={modelReferenceError}
+                    statusText={modelReferenceHasSyncError ? modelReferenceCompactStatusText : ''}
+                    showDeprecated={modelReferenceShowDeprecated} onShowDeprecated={changeHistoricalModelVisibility}
+                    onRefresh={() => void syncModelReferences()}
+                    providerOptions={referenceProviderCanBeChanged ? modelReferenceProviderOptions : []}
+                    onProviderChange={(providerId) => dispatchProviderWorkbench({ type: 'set_reference_provider', providerId })}
+                  />
+                ) : null}
                 {providerWorkbenchSection === 'connection' ? (
+                <>
                 <AdminConfigurationTable
                   ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
                   itemHeading={aiText('configuration_item_heading', 'Setting')}
@@ -1676,7 +1710,7 @@ function AiResourcesContent() {
                           const displayName = event.target.value;
                           updateProviderConnectionForm({
                             displayName,
-                            connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
+                            connectionId: providerFormMode === 'create' ? providerConnectionIdFromName(displayName) : providerConnectionForm.connectionId,
                           });
                         }}
                         placeholder="GPT-5.5 via NewAPI"
@@ -1765,12 +1799,14 @@ function AiResourcesContent() {
                         className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
                         onClick={() => setProviderWorkbenchSection('models')}
                       >
-                        {aiText('action_manage_models', 'Manage models')}
+                        {providerFormMode === 'create' ? aiText('action_next_models', 'Next: get and enable models') : aiText('action_manage_models', 'Manage models')}
                       </button>
                     )}
                   />
-                  {providerUsesImageGeneration ? (
-                    <>
+                </AdminConfigurationTable>
+                {providerUsesImageGeneration ? (
+                  <BackofficeDisclosure summary={aiText('image_advanced_settings', 'Image delivery · Advanced settings')}>
+                  <AdminConfigurationTable ariaLabel={aiText('image_advanced_settings', 'Image delivery · Advanced settings')} itemHeading={aiText('configuration_item_heading', 'Setting')} valueHeading={aiText('configuration_value_heading', 'Current value')} detailHeading={aiText('configuration_detail_heading', 'Action / note')} density="compact">
                       <AdminConfigurationRow
                         rowId="image-response-format"
                         label={aiText('image_delivery_row_label', 'Image delivery')}
@@ -1875,93 +1911,51 @@ function AiResourcesContent() {
                           )}
                         />
                       ) : null}
-                    </>
-                  ) : null}
-                </AdminConfigurationTable>
+                  </AdminConfigurationTable>
+                  </BackofficeDisclosure>
+                ) : null}
+                </>
                 ) : null}
 
                 {providerWorkbenchSection === 'models' ? (
                 <section className="flex min-h-0 flex-1 flex-col">
                   <div className="flex min-h-0 flex-1 flex-col gap-3">
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
-                        <p className="sr-only">
-                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          <span>{aiText('model_visibility_enabled_available', 'Enabled {{enabled}} / available {{available}}', {
-                            enabled: String(selectedProviderModelIds.length),
-                            available: String(availableModelCount),
-                          })}</span>
-                          {selectedModelMetadataGapCount ? (
-                            <button
-                              type="button"
-                              data-ui="model-metadata-gap-filter"
-                              aria-pressed={modelReferenceIntelligenceFilter === 'missing'}
-                              className={`rounded-full px-2 py-1 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
-                                modelReferenceIntelligenceFilter === 'missing'
-                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                  : 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/60'
-                              }`}
-                              onClick={() => dispatchProviderWorkbench({
-                                type: 'set_reference_intelligence_filter',
-                                filter: modelReferenceIntelligenceFilter === 'missing' ? 'all' : 'missing',
-                              })}
-                            >
-                              {modelReferenceIntelligenceFilter === 'missing'
-                                ? aiText('action_show_all_models', 'Show all models')
-                                : aiText('model_metadata_gap_action', '{{count}} need intelligence →', {
-                                  count: String(selectedModelMetadataGapCount),
-                                })}
-                            </button>
-                          ) : null}
-                        </div>
+                    <div className="flex shrink-0 items-center justify-between gap-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('workbench_models_tab', 'Model management')}</h3>
+                        <span>{aiText('account_model_counts', 'Enabled {{enabled}} · Account catalog {{account}}', { enabled: String(selectedProviderModelIds.length), account: String(accountModelCount) })}</span>
+                        {unconfirmedSelectedCount ? <button type="button" data-ui="model-unconfirmed-filter" aria-pressed={showUnconfirmedModels}
+                          className="font-semibold text-amber-700 underline-offset-2 hover:underline dark:text-amber-300"
+                          onClick={() => setShowUnconfirmedModels(!showUnconfirmedModels)}>
+                          {aiText('unconfirmed_model_count', 'Catalog unconfirmed {{count}}', { count: String(unconfirmedSelectedCount) })}
+                        </button> : null}
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                        <div className="text-right text-xs text-slate-500 dark:text-slate-400">
-                          <div data-ui="model-visibility-status">
-                            {aiText('model_reference_last_synced', 'Last synced {{time}}', {
-                              time: modelsDevReferenceSource?.last_synced_at
-                                ? formatDate(modelsDevReferenceSource.last_synced_at)
-                                : aiText('status_not_synced', 'Not synced'),
-                            })}
-                          </div>
-                          {isLoadingModelReferences || isAutoSyncingModelReferences || modelReferenceHasSyncError ? (
-                            <div className={`mt-0.5 ${modelReferenceHasSyncError ? 'text-amber-700 dark:text-amber-300' : ''}`}>
-                              {modelReferenceCompactStatusText}
-                            </div>
-                          ) : null}
-                          {modelReferenceHasSyncError ? (
-                            <button
-                              type="button"
-                              data-ui="model-reference-retry"
-                              className="mt-0.5 font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
-                              disabled={isSyncingModelReferences || isAutoSyncingModelReferences || isLoadingModelReferences || isSavingConnection}
-                              onClick={() => void syncModelReferences()}
-                            >
-                              {isSyncingModelReferences || isAutoSyncingModelReferences
-                                ? aiText('action_syncing_model_references', 'Syncing...')
-                                : aiText('action_sync_model_references', 'Retry intelligence only')}
-                            </button>
-                          ) : null}
-                        </div>
                         <button
                           type="button"
                           data-ui="model-sync-primary"
                           className="btn btn-secondary h-10 shrink-0 px-3"
-                          disabled={isFetchingProviderCatalog || isSyncingModelReferences || isAutoSyncingModelReferences || isSavingConnection}
-                          onClick={() => void fetchProviderCatalogPreview()}
+                          disabled={isFetchingProviderCatalog || isSavingConnection}
+                          onClick={() => {
+                            if (catalogCredentialMissing) {
+                              if (providerFormMode === 'edit') dispatchProviderWorkbench({ type: 'set_credential_edit_open', open: true });
+                              setProviderWorkbenchSection('connection');
+                            } else void fetchProviderCatalogPreview();
+                          }}
                         >
-                          {isFetchingProviderCatalog || isSyncingModelReferences
+                          {isFetchingProviderCatalog
                             ? aiText('action_fetching_upstream_models', 'Syncing...')
-                            : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                            : catalogCredentialMissing
+                              ? aiText('action_enter_key_first', 'Enter API Key first')
+                              : aiText('action_fetch_upstream_models', 'Get account models')}
                         </button>
-                      </div>
                     </div>
-
-                    <div data-ui="model-visibility-toolbar" className="flex flex-wrap items-center gap-2">
+                    {isSyncingModelReferences || modelReferenceError ? (
+                      <p data-ui="account-reference-status" className="shrink-0 text-xs text-slate-500 dark:text-slate-400" role={modelReferenceError ? 'alert' : 'status'}>
+                        {modelReferenceError ? aiText('reference_refresh_failed_note', 'Account models are available. Reference information could not be updated; existing configuration is unaffected.') : aiText('reference_refreshing_note', 'Account models fetched. Updating reference information…')}
+                        {modelReferenceError ? <button type="button" className="ml-2 font-semibold underline" onClick={() => setProviderWorkbenchSection('references')}>{aiText('reference_browse_title', 'Reference information')}</button> : null}
+                      </p>
+                    ) : null}
+                    <div data-ui="model-visibility-toolbar" className="flex shrink-0 flex-wrap items-start gap-2">
                       <label className="w-full sm:w-[22rem] lg:w-[24rem]">
                         <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
                         <input
@@ -1974,6 +1968,12 @@ function AiResourcesContent() {
                           placeholder={aiText('placeholder_search_models', 'model, family, provider')}
                         />
                       </label>
+                      <details data-ui="model-filters" className="text-xs text-slate-600 dark:text-slate-300">
+                        <summary className="cursor-pointer rounded-md border border-slate-200 px-3 py-3 font-semibold dark:border-slate-700">
+                          {aiText('model_filters', 'Filters')}{modelReferenceVisibilityFilter !== 'all' || modelReferenceFeatureFilter !== 'all' ? ' •' : ''}
+                        </summary>
+                        <div className="mt-2 flex flex-wrap gap-2">
+
                       <select
                         className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceVisibilityFilter}
@@ -2003,103 +2003,15 @@ function AiResourcesContent() {
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
+                        </div>
+                      </details>
                     </div>
-
-                    <details data-ui="model-maintenance-table" className="border-t border-slate-200 pt-2 dark:border-slate-800">
-                      <summary className="cursor-pointer py-1 text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
-                        {aiText('model_maintenance_disclosure', 'Manual and batch operations')}
-                      </summary>
-                      <div className="mt-2">
-                        <AdminConfigurationTable
-                        ariaLabel={aiText('model_maintenance_table_label', 'Model maintenance')}
-                        itemHeading={aiText('configuration_item_heading', 'Setting')}
-                        valueHeading={aiText('configuration_value_heading', 'Current setting')}
-                        detailHeading={aiText('configuration_detail_heading', 'Action / note')}
-                      >
-                        {referenceProviderCanBeChanged ? (
-                          <AdminConfigurationRow
-                            rowId="model-reference-provider"
-                            label={aiText('field_reference_provider', 'Reference source')}
-                            value={(
-                              <select
-                                className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                value={modelReferenceProviderId}
-                                onChange={(event) => dispatchProviderWorkbench({
-                                  type: 'set_reference_provider',
-                                  providerId: event.target.value,
-                                })}
-                                aria-label={aiText('field_reference_provider', 'Reference source')}
-                              >
-                                {modelReferenceProviderOptions.map((providerId) => (
-                                  <option key={providerId} value={providerId}>
-                                    {referenceProviderLabel(providerId)}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                            detail={aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
-                          />
-                        ) : null}
-                        <AdminConfigurationRow
-                          rowId="historical-model-visibility"
-                          label={aiText('historical_models_label', 'Historical models')}
-                          value={modelReferenceShowDeprecated
-                            ? aiText('status_included', 'Included')
-                            : aiText('status_hidden', 'Hidden')}
-                          detail={(
-                            <label className="inline-flex min-h-8 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                checked={modelReferenceShowDeprecated}
-                                onChange={(event) => dispatchProviderWorkbench({
-                                  type: 'set_show_deprecated',
-                                  show: event.target.checked,
-                                })}
-                              />
-                              {aiText('field_show_deprecated_models_compact', 'Include historical/deprecated')}
-                            </label>
-                          )}
-                        />
-                        <AdminConfigurationRow
-                          rowId="manual-model-add"
-                          label={aiText('manual_model_add_title', 'Add model ID manually')}
-                          value={(
-                            <div className="flex items-center gap-2">
-                              <input
-                                className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                value={customModelInput}
-                                onChange={(event) => dispatchProviderWorkbench({
-                                  type: 'set_custom_model_input',
-                                  value: event.target.value,
-                                })}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    addCustomProviderModels();
-                                  }
-                                }}
-                                placeholder={aiText('placeholder_add_custom_models', 'Add specified models, separated by commas')}
-                                aria-label={aiText('manual_model_add_title', 'Add model ID manually')}
-                              />
-                              <button
-                                type="button"
-                                className="btn btn-secondary h-9 shrink-0 px-3"
-                                disabled={!customModelInput.trim()}
-                                onClick={addCustomProviderModels}
-                              >
-                                {aiText('action_add_model', 'Add')}
-                              </button>
-                            </div>
-                          )}
-                          detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
-                        />
-                        <AdminConfigurationRow
-                          rowId="filtered-model-batch"
-                          label={aiText('filtered_models_batch_label', 'Filtered results')}
-                          value={aiText('filtered_models_batch_count', '{{count}} matching models', {
-                            count: String(modelVisibilityRows.length),
-                          })}
-                          detail={confirmingModelBatch ? (
+                    <div className="flex shrink-0 flex-col gap-2 text-xs">
+                      {accountModelCount > MODEL_VISIBILITY_PAGE_SIZE ? (
+                      <details data-ui="model-maintenance-table">
+                        <summary className="w-fit cursor-pointer font-semibold text-slate-600 dark:text-slate-300">{aiText('model_more_operations', 'More operations')}</summary>
+                        <div className="mt-2 grid gap-3 border-l border-slate-200 pl-3 dark:border-slate-800">
+                          <div className="flex flex-wrap items-center gap-3">{confirmingModelBatch ? (
                             <span className="grid gap-2">
                               <span className="text-amber-700 dark:text-amber-300">
                                 {aiText(
@@ -2153,69 +2065,13 @@ function AiResourcesContent() {
                                 {aiText('action_disable_filtered_models', 'Disable matching')}
                               </button>
                             </span>
-                          )}
-                        />
-                        <AdminConfigurationRow
-                          rowId="enabled-model-bulk-maintenance"
-                          label={aiText('enabled_models_maintenance_label', 'Enabled models')}
-                          value={aiText('model_catalog_enabled_count_short', '{{count}} models', {
-                            count: String(selectedProviderModelIds.length),
-                          })}
-                          detail={confirmingClearModels ? (
-                            <span className="grid gap-2">
-                              <span className="text-rose-700 dark:text-rose-300">
-                                {aiText('clear_all_models_confirmation', 'Disable all {{count}} currently enabled models?', {
-                                  count: String(selectedProviderModelIds.length),
-                                })}
-                              </span>
-                              <span className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  data-ui="model-clear-all-confirm"
-                                  className="font-semibold text-rose-700 hover:underline dark:text-rose-300"
-                                  onClick={() => setProviderModelIds([])}
-                                >
-                                  {aiText('action_confirm_clear_all_models', 'Confirm clear')}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
-                                  onClick={() => dispatchProviderWorkbench({
-                                    type: 'set_confirming_clear_models',
-                                    confirming: false,
-                                  })}
-                                >
-                                  {aiText('action_cancel', 'Cancel')}
-                                </button>
-                              </span>
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              data-ui="model-clear-all-request"
-                              className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
-                              disabled={!selectedProviderModelIds.length || isSavingConnection}
-                              onClick={() => dispatchProviderWorkbench({
-                                type: 'set_confirming_clear_models',
-                                confirming: true,
-                              })}
-                            >
-                              {aiText('action_clear_all_models', 'Clear all')}
-                            </button>
-                          )}
-                        />
-                        </AdminConfigurationTable>
-                      </div>
-                    </details>
-
-                    {isLoadingModelReferences ? (
-                        <div
-                          data-surface-state="loading"
-                          className="border-y border-slate-200 bg-slate-50/60 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900/30 dark:text-slate-400"
-                        >
-                          {aiText('loading_model_references', 'Loading model reference data...')}
+                          )}</div>
                         </div>
-                      ) : modelVisibilityRows.length ? (
+                      </details>
+                      ) : null}
+                    </div>
+
+                    {modelVisibilityRows.length ? (
                         <div data-ui="model-visibility-directory" className="flex min-h-0 flex-1 flex-col border-t border-slate-200 dark:border-slate-800">
                           <div data-ui="model-visibility-scroll" className="relative min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
                             <table className="w-full min-w-[44rem] table-fixed text-left text-xs">
@@ -2230,16 +2086,18 @@ function AiResourcesContent() {
                                 <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_model', 'Model')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_feature', 'Feature')}</th>
-                                <th className="px-3 py-2 font-semibold">{aiText('column_model_intelligence', 'Intelligence')}</th>
+                                <th className="px-3 py-2 font-semibold">{aiText('model_details', 'Details')}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {modelVisibilityPageRows.map((row) => {
+                                const displayModelId = row.catalog?.upstream_model_id || upstreamModelId(row.modelId, row.sourceKind === 'reference' && !row.selected ? row.reference?.provider_id || '' : modelNamespacePrefix);
+                                const rowUsages = modelUsages.filter((usage) => [...modelIdentityKeys(usage.model_id, modelNamespacePrefix)].some((key) => modelIdentityKeys(row.modelId, modelNamespacePrefix).has(key)));
+                                const visibleUsageNames = [...new Set(rowUsages.filter((usage) => usageLabelKeys[usage.profile_id]).map((usage) => usageName(usage.profile_id)))];
                                 const tags = row.reference ? modelReferenceCapabilityTags(row.reference) : [];
                                 const tagLabels = tags.map(modelReferenceCapabilityLabel);
-                                const visibleTagLabels = tagLabels.slice(0, 3);
                                 const canRemoveManualModel = row.sourceKind === 'manual' && row.selected;
-                                const deprecatedEnableBlocked = row.deprecated && !row.selected;
+                                const enableBlocked = !row.selected && (row.deprecated || !row.catalog);
                                 const referenceContext = row.reference
                                   ? formatReferenceContext(row.reference, aiText('model_reference_missing_context', 'No context data'))
                                   : '';
@@ -2250,27 +2108,24 @@ function AiResourcesContent() {
                                     aiText('model_reference_missing_price', 'No reference price')
                                   )
                                   : '';
-                                const referenceHasContext = Boolean(
-                                  row.reference
-                                  && (typeof row.reference.context_window === 'number' || typeof row.reference.output_limit === 'number')
-                                );
-                                const referenceHasPriceValue = Boolean(row.reference && hasReferencePrice(row.reference));
                                 return (
                                   <tr key={row.modelId} className="group">
                                     <td className="px-3 py-2">
                                       <div className="flex flex-col gap-1">
-                                        <button
+                                        {row.sourceKind === 'reference' && !row.selected ? <span className="text-xs text-slate-500 dark:text-slate-400">{aiText('model_reference_readonly', 'Read only')}</span> : <button
                                           type="button"
-                                          className={`inline-flex w-fit rounded-full px-2 py-1 text-[11px] font-semibold transition ${
+                                          role="switch"
+                                          aria-label={aiText('toggle_model_named', 'Enable model {{name}}', { name: displayModelId })}
+                                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ${
                                           row.selected
-                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
+                                            ? 'bg-blue-600'
+                                            : 'bg-slate-300 dark:bg-slate-700'
                                         } hover:ring-2 hover:ring-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:ring-slate-700`}
-                                          aria-pressed={row.selected}
-                                          disabled={deprecatedEnableBlocked}
+                                          aria-checked={row.selected}
+                                          disabled={enableBlocked}
                                           title={
-                                            deprecatedEnableBlocked
-                                              ? aiText('action_enable_deprecated_model_blocked', 'Deprecated models cannot be newly enabled')
+                                            enableBlocked
+                                              ? aiText('model_account_selection_required', 'Only current account models can be newly enabled')
                                               : row.selected
                                                 ? aiText('action_disable_catalog_model', 'Disable')
                                                 : aiText('action_enable_catalog_model', 'Enable')
@@ -2278,17 +2133,14 @@ function AiResourcesContent() {
                                           onClick={() => {
                                             if (row.selected) {
                                               removeProviderModelId(row.modelId);
-                                            } else if (!row.deprecated) {
+                                            } else if (!enableBlocked) {
                                               setProviderModelIds([...selectedProviderModelIds, row.modelId]);
                                             }
                                           }}
                                         >
-                                          {row.selected
-                                            ? aiText('status_model_enabled', 'Enabled')
-                                            : deprecatedEnableBlocked
-                                              ? aiText('status_model_deprecated_disabled', 'Deprecated')
-                                              : aiText('status_model_disabled', 'Not enabled')}
-                                        </button>
+                                          <span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${row.selected ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                                          <span className="sr-only">{row.selected ? aiText('status_model_enabled', 'Enabled') : aiText('status_model_disabled', 'Not enabled')}</span>
+                                        </button>}
                                         {row.deprecated ? (
                                           <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
                                             {aiText('catalog_model_deprecated', 'deprecated')}
@@ -2297,13 +2149,12 @@ function AiResourcesContent() {
                                       </div>
                                     </td>
                                     <td className="px-3 py-2">
-                                      <div className="font-semibold text-slate-900 dark:text-white">{row.modelId}</div>
-                                      <div className="text-slate-500 dark:text-slate-400">
-                                        {row.family}
-                                        {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Seen in last upstream catalog')}` : ''}
+                                      <div className="font-semibold text-slate-900 dark:text-white">{displayModelId}</div>
+                                      <div className={row.selected && !row.catalog && providerCatalogPreview ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}>
+                                        {row.selected && !row.catalog && providerCatalogPreview ? aiText('model_saved_not_returned', 'Saved; not returned in current catalog') : row.sourceKind === 'catalog' ? aiText('model_source_account', 'Account returned') : row.selected ? aiText('model_source_enabled_only', 'Saved model ID only') : aiText('model_source_reference', 'Reference only')}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
+                                      {visibleUsageNames.length ? <Link className="block text-xs text-blue-700 underline dark:text-blue-300" href={`/admin/runtime-profiles?provider=${encodeURIComponent(providerConnectionForm.providerId)}`}>{aiText('model_used_by', 'Candidate for {{profiles}}', { profiles: visibleUsageNames.join(', ') })}</Link> : null}
                                       {row.deprecated && row.selected ? (
                                         <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                           {aiText('deprecated_selected_model_hint', 'Deprecated model is kept only because it is already saved. Remove it before saving new model visibility choices.')}
@@ -2313,7 +2164,7 @@ function AiResourcesContent() {
                                         <button
                                           type="button"
                                           className="mt-1 text-xs font-semibold text-slate-500 opacity-0 underline-offset-2 transition hover:text-rose-700 hover:underline focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 dark:text-slate-400 dark:hover:text-rose-300"
-                                          aria-label={aiText('action_remove_model_named', 'Remove {{name}}', { name: row.modelId })}
+                                          aria-label={aiText('action_remove_model_named', 'Remove {{name}}', { name: displayModelId })}
                                           onClick={() => removeProviderModelId(row.modelId)}
                                         >
                                           {aiText('action_remove_manual_model_short', 'Remove')}
@@ -2324,45 +2175,36 @@ function AiResourcesContent() {
                                       {row.feature ? modelFeatureLabel(row.feature) : (
                                         <span className="text-slate-400" title={aiText('model_feature_unknown', 'Unknown')}>—</span>
                                       )}
-                                      {tagLabels.length ? (
-                                        <div
-                                          className="mt-1 max-w-[16rem] truncate text-slate-500 dark:text-slate-400"
-                                          title={tagLabels.join(' · ')}
-                                        >
-                                          {visibleTagLabels.join(' · ')}
-                                          {tagLabels.length > visibleTagLabels.length ? ` · +${tagLabels.length - visibleTagLabels.length}` : ''}
-                                        </div>
-                                      ) : null}
+
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {row.reference ? (
-                                        <details data-ui="model-reference-details">
+                                      {activeProviderConnection?.enabled && activeProviderConnection.configured && row.selected && row.catalog && ['text', 'vision'].includes(row.feature || '') && (activeProviderConnection.model_ids || []).some(id => [...modelIdentityKeys(id, modelNamespacePrefix)].some(key => modelIdentityKeys(row.modelId, modelNamespacePrefix).has(key))) ? <button
+                                        type="button" className="mb-2 block text-xs font-semibold text-blue-700 underline dark:text-blue-300"
+                                        aria-label={t('admin.model_test.named', { name: displayModelId })}
+                                        onClick={() => setModelTestTarget({ connectionId: activeProviderConnection.connection_id, supplierName: activeProviderConnection.display_name, modelId: row.catalog!.model_id, displayModelId, namespacePrefix: modelNamespacePrefix, capability: row.feature === 'vision' || row.catalog?.capability_tags?.includes('vision') ? 'vision' : 'text' })}
+                                      >{t('admin.model_test.title')}</button> : null}
+                                      <details data-ui="model-reference-details">
                                           <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
-                                            {referenceHasContext
-                                              ? referenceContext
-                                              : aiText('model_reference_recorded', 'Reference available')}
-                                            <span className="ml-1.5 font-normal text-slate-400 dark:text-slate-500">
-                                              · {referenceHasPriceValue
-                                                ? aiText('model_reference_price_available', 'priced')
-                                                : aiText('model_reference_price_missing_compact', 'no price')}
-                                            </span>
+                                            {aiText('model_details', 'Details')}
                                           </summary>
                                           <div className="mt-2 grid gap-1 border-l border-slate-200 pl-3 text-[11px] leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                            {row.reference ? <p>{row.reference.source_label} · {aiText('reference_updated', 'Updated')}: {formatDate(row.reference.synced_at)}</p> : null}
+                                            {!row.reference ? <p>{aiText('reference_missing_note', 'Reference data is unavailable; enabling and calling this model is unaffected.')}</p> : null}
+                                            <div className="break-all">{aiText('model_internal_id', 'Internal ID')}: {row.catalog?.model_id || row.modelId}</div>
+                                            {rowUsages.length ? <div className="break-all">{rowUsages.map((usage) => usage.profile_id).join(', ')}</div> : null}
+                                            {row.catalog ? <div>{aiText('model_catalog_declaration', 'Capabilities declared by the account catalog; verification is separate.')}</div> : null}
+                                            <button type="button" className="w-fit font-semibold underline" onClick={() => { void navigator.clipboard.writeText(displayModelId).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('admin.troubleshooting.copy_failed'))); }}>{aiText('copy_request_model_id', 'Copy request model ID')}</button>
+                                            {tagLabels.length ? <div>{tagLabels.join(' · ')}</div> : null}
                                             <div>
                                               <span className="font-semibold">{aiText('column_context_output', 'Context / output')}：</span>
-                                              <span title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}>{referenceContext}</span>
+                                              <span title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}>{referenceContext || aiText('reference_exact_model_missing', 'No reference data for this exact model ID')}</span>
                                             </div>
                                             <div>
                                               <span className="font-semibold">{aiText('column_reference_price', 'Reference price')}：</span>
-                                              <span>{referencePrice}</span>
+                                              <span>{referencePrice || aiText('model_reference_missing_price', 'No reference price')}{row.reference && hasReferencePrice(row.reference) ? ` · ${aiText('reference_price_unit', 'USD / 1M tokens (input / output)')}` : ''}</span>
                                             </div>
                                           </div>
                                         </details>
-                                      ) : (
-                                        <span className="font-medium text-amber-700 dark:text-amber-300">
-                                          {aiText('model_reference_needs_intelligence', 'Needs intelligence')}
-                                        </span>
-                                      )}
                                     </td>
                                   </tr>
                                 );
@@ -2370,21 +2212,12 @@ function AiResourcesContent() {
                             </tbody>
                             </table>
                           </div>
+                          {modelVisibilityPageCount > 1 ? (
                           <div
                             data-ui="model-visibility-pagination"
                             className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
                           >
-                            <span>
-                              {aiText(
-                                'model_visibility_page_summary',
-                                'Showing {{shown}} of {{total}} matching models · {{enabled}} enabled',
-                                {
-                                  shown: String(modelVisibilityPageRows.length),
-                                  total: String(modelVisibilityRows.length),
-                                  enabled: String(selectedProviderModelIds.length),
-                                }
-                              )}
-                            </span>
+                            <span>{aiText('model_page_count', '{{shown}} / {{total}} models', { shown: String(modelVisibilityPageRows.length), total: String(modelVisibilityRows.length) })}</span>
                             <span className="flex items-center gap-2">
                               <button
                                 type="button"
@@ -2416,10 +2249,13 @@ function AiResourcesContent() {
                               </button>
                             </span>
                           </div>
+                          ) : null}
                         </div>
                       ) : (
                         <AdminEmptyState>
-                          {aiText('model_visibility_empty', 'No models match the current filters. Sync a catalog, sync reference intelligence, or add a model manually.')}
+                          {true
+                            ? aiText('account_scope_empty', 'No account or selected models match. Fetch account models or clear the filters.')
+                            : aiText('model_visibility_empty', 'No reference models match the current filters.')}
                         </AdminEmptyState>
                     )}
                   </div>
@@ -2566,6 +2402,8 @@ function AiResourcesContent() {
       >
         <AdminMutationReceipt receipt={lastReceipt} title={aiText('latest_operation_receipt', 'Operation receipt')} />
       </Modal>
+
+      {modelTestTarget ? <ModelTestDialog target={modelTestTarget} onClose={() => setModelTestTarget(null)} /> : null}
 
       </BackofficePageStack>
   );

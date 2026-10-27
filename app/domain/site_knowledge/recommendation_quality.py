@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from app.domain.site_knowledge.anchor_context import is_reserved_smoke_document
 from app.domain.site_knowledge.recommendation_task_match import reading_task_evidence
 from app.domain.site_knowledge.text_evidence import coerce_float, semantic_score
 
@@ -21,8 +22,11 @@ def apply_recommendation_quality_controls_v2(
     v2 is a stable subsequence of the existing scorer, with no weight changes.
     """
     eligible: list[dict[str, object]] = []
-    rejected_score = rejected_task = 0
+    rejected_score = rejected_task = rejected_test = 0
     for result in results:
+        if is_reserved_smoke_document(str(result.get("title") or "")):
+            rejected_test += 1
+            continue
         raw_score = coerce_float(
             result.get("rerank_score") if result.get("reranked") is True else result.get("score")
         )
@@ -39,6 +43,7 @@ def apply_recommendation_quality_controls_v2(
     return selected, {
         **metrics,
         "policy_version": RECOMMENDATION_POLICY_VERSION,
+        "reserved_test_documents_suppressed": rejected_test,
         "below_evidence_floor": rejected_score,
         "insufficient_task_evidence": rejected_task,
         "abstained": not selected,

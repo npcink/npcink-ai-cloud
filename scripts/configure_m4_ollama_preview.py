@@ -70,8 +70,14 @@ def _connection_payload() -> dict[str, object]:
         "config": {
             "model_ids": [MODEL_ID, VISION_MODEL_ID],
             "model_metadata_overrides": {
+                MODEL_ID: {
+                    "endpoint_variant": "ollama_chat",
+                    "source": "m4_preview_operator_config",
+                    "revision": "ollama-native-chat-v1",
+                },
                 VISION_MODEL_ID: {
                     "feature": "vision",
+                    "endpoint_variant": "ollama_chat",
                     # Ollama receives the bounded image as a data URI. The
                     # runtime budget is measured before Provider execution, so
                     # leave enough room for the encoded media plus prompt.
@@ -278,7 +284,12 @@ def configure(settings: Settings) -> dict[str, object]:
         # Qwen-VL's native Ollama API returns the visible answer reliably for
         # this bounded vision prompt and accepts the provider's think=false
         # control directly.
-        vision_instance.endpoint_variant = "ollama_chat"
+        # Persistent operator metadata selects native transport on every
+        # catalog refresh; do not rely on an in-memory one-off override.
+        if any(instance.endpoint_variant != "ollama_chat" for instance in (
+            text_instance, vision_instance,
+        )):
+            raise RuntimeError("M4 Ollama catalog did not preserve native chat transport")
         session.flush()
         _probe_vision(settings, vision_instance)
         # _probe_vision persists its evidence in a short-lived session.  The

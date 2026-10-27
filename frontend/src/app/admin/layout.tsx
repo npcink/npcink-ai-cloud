@@ -12,9 +12,9 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
-import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
+import { AdminHeaderLayout } from '@/components/admin/AdminHeaderLayout';
 import { AdminWorkspaceNavigation } from '@/components/admin/AdminWorkspaceNavigation';
-import { adminSecondaryParentHref, adminWorkspaceTabForPath } from '@/features/admin/navigation';
+import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
@@ -304,12 +304,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
     return (item.activePrefixes || [href]).some(isPathMatch);
   };
-  const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
-  const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
-  const activeWorkspaceTab = adminWorkspaceTabForPath(pathname);
-  const activeWorkspaceTabLabel = activeWorkspaceTab
-    ? t(activeWorkspaceTab.labelKey, {}, activeWorkspaceTab.fallback)
-    : '';
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -522,7 +516,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">
         <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
-          <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
+          <AdminHeaderLayout left={(<>
             <Link
               href="/admin"
               className="flex items-center gap-3 lg:hidden"
@@ -542,7 +536,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-sidebar-control" className="hidden lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -562,22 +556,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   <path d="M15 6 9 12l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                {t('admin.operator_surface', {}, 'Operator surface')}
-              </span>
-              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-              {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
-                <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
-              </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
-              {activeWorkspaceTabLabel && activeWorkspaceTabLabel !== activeNavLabel ? (
-                <>
-                  <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-                  <span className="truncate text-slate-600 dark:text-slate-300">{activeWorkspaceTabLabel}</span>
-                </>
-              ) : null}
             </div>
 
-            <div className="flex items-center gap-2">
+          </>)} navigation={(
+            <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
+          )} utilities={(
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 className="hidden h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 text-sm text-slate-500 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white sm:inline-flex"
@@ -599,15 +583,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <Link
                 href="/admin/logout"
                 prefetch={false}
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
+                aria-label={t('portal.logout')}
+                title={t('portal.logout')}
+                className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
               >
-                {t('portal.logout')}
-              </Link>
-              <Link
-                href="/portal"
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
-              >
-                {t('nav.portal')} →
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <path d="m16 17 5-5-5-5M21 12H9" />
+                </svg>
               </Link>
               <button
                 type="button"
@@ -628,7 +611,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 )}
               </button>
             </div>
-          </div>
+          )} />
 
         <div
           id="admin-mobile-nav"
@@ -643,14 +626,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <ThemeToggle />
             </div>
             {renderNavGroups('mobile')}
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/portal"
-                className="btn btn-secondary justify-center"
-                onClick={() => setMobileNavOpen(false)}
-              >
-                {t('nav.portal')}
-              </Link>
+            <div className="grid gap-2">
               <Link
                 href="/admin/logout"
                 prefetch={false}
@@ -726,8 +702,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
-              <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
-              <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>
           </AdminQueryProvider>

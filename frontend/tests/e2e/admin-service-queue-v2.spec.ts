@@ -44,6 +44,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await expect(page.locator('#coverage-inspector')).toHaveCount(0);
   await expect(initialRows.nth(0)).not.toContainText(/Account ID|账户 ID/i);
   await expect(initialRows.nth(0)).not.toContainText('acct_');
+  await expect(initialRows.nth(0)).not.toContainText('MVP Account');
   await expect(initialRows.nth(0).locator('td')).toHaveCount(6);
   await expect(initialRows.nth(0).locator('td').nth(2)).toContainText('Pro');
   await expect(initialRows.nth(0).locator('td').nth(3)).toHaveText('1');
@@ -51,7 +52,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
     'href',
     '/admin/subscriptions/sub_mvp'
   );
-  await expect(initialRows.nth(0).getByRole('link', { name: 'MVP Account' })).toHaveAttribute(
+  await expect(initialRows.nth(0).getByRole('link', { name: 'Npcink AI Demo' })).toHaveAttribute(
     'href',
     `/admin/accounts/${encodeURIComponent(LONG_ACCOUNT_ID)}`
   );
@@ -73,7 +74,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await initialRows.nth(0).getByRole('button', { name: /Inspect evidence|查看证据/i }).click();
   const evidenceDrawer = page.locator('[data-ui="admin-inspector-drawer"]');
   await expect(evidenceDrawer).toBeVisible();
-  await expect(evidenceDrawer).toContainText('MVP Account');
+  await expect(evidenceDrawer).toContainText('Npcink AI Demo');
   await expect(page).toHaveURL(/focus=/);
   await page.keyboard.press('Escape');
   await expect(evidenceDrawer).toHaveCount(0);
@@ -132,7 +133,7 @@ test('service status pagination is server-backed and preserved in the URL', asyn
   const rows = page.locator('[data-ui="coverage-queue-item"]');
   const pagination = page.locator('[data-ui="coverage-pagination"]');
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('MVP Account');
+  await expect(rows.first()).toContainText('Npcink AI Demo');
   await expect(pagination).toContainText(/1.*1.*2/);
 
   await pagination.getByRole('button', { name: /Next|下一步/i }).click();
@@ -147,7 +148,7 @@ test('service status pagination is server-backed and preserved in the URL', asyn
   await expect(rows.first()).toContainText('Uncovered Account');
   await pagination.getByRole('button', { name: /Previous|上一页/i }).click();
   await expect(page).not.toHaveURL(/offset=/);
-  await expect(rows.first()).toContainText('MVP Account');
+  await expect(rows.first()).toContainText('Npcink AI Demo');
 });
 
 test('service status pilot emits the risk-tiered Admin visual receipt', async ({ page }, testInfo) => {

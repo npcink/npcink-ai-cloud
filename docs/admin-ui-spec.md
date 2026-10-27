@@ -1,6 +1,6 @@
 # Admin Quiet 队列契约索引
 
-Status: current contract index; no new UI mandate.
+Status: current contract index; shell workspace-tab density + accounts Quiet polish authorized this session (PR pending).
 
 2026-10-25 对账基线：`3b920f25025b165ac387595ec34309d7f0cac2f4`。
 本文补齐旧 #1215 的文档入口，记录已合入的路由契约与旧提案处置；
@@ -22,7 +22,7 @@ Status: current contract index; no new UI mandate.
 | 路由及契约 | 分页 | 搜索与操作 |
 | --- | --- | --- |
 | [Support](../frontend/tests/unit/admin-support-requests-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 单一互斥 view-pills；显式 Apply（Enter 提交表单）；Inspect 为可见行操作 |
-| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 客户目录筛选及返回上下文按本路由契约；不承接服务风险队列职责 |
+| [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 客户总数并入标题，边界说明收进标题帮助；搜索/状态/排序宽屏同行、窄屏换行；账户状态与登录身份分列；目录保留站点数，订阅数留在详情；详情为文字链接；搜索 250ms debounce + Enter；大蓝「搜索」降为 sr-only；清除筛选用文字链；不承接服务风险队列职责 |
 | [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 响应式任务 list；独立命名的风险/生命周期等筛选、drawer 与 URL focus |
 | [Coverage](../frontend/tests/unit/admin-coverage-workspace-contract.mjs) | 默认 10；保留 URL `limit` 的 `1..500` | 保留状态 pills、250ms 搜索 debounce 与服务端排序/分页 |
 | [Audit](../frontend/tests/unit/admin-audit-workspace-contract.mjs) | 固定 10；不读取 URL `limit` | 只读 diagnostic 证据；11 个 URL 筛选与语义表同一工作区，显式 Apply；范围来自成功响应，深页恢复遵循服务端 `last_offset` |
@@ -33,12 +33,20 @@ URL 筛选、offset、focus、返回上下文及请求失败后的展示范围�
 
 保留旧稿有用的不变量，并继续由上列权威与契约维护：
 
-- Admin 保持宽桌面工作区与面包屑，不复制 Portal 56rem 壳层、IA、组件套件或聊天形态。
+- Admin 保持宽桌面工作区；顶栏不重复面包屑，详情保留自身返回上下文，不复制 Portal 56rem 壳层、IA、组件套件或聊天形态。
 - 工具条位于主工作表面上方；一个页面标题，事实摘要帮助判断当前处理对象，避免装饰指标墙。
 - 可见范围/总数如实对应已加载结果；单页/空页策略与共享分页器边界按路由实现，不复制分页器。
 - 服务端先做全局筛选/排序再分页；浏览器不得对单页重排冒充全局风险顺序。
 - drawer、键盘导航、焦点恢复与等待对象等既有操作契约不得因密度调整回退。
 - Portal 未发送的草稿附件与 Admin 隔离；队列展示不改变附件 API 或 WordPress 最终写入权。
+
+## 2.1 壳层二级导航（2026-10-26 操作者授权）
+
+- 移除顶栏「运营工作台 / 当前栏目」重复定位文字，保留可折叠侧栏按钮和各详情页自己的返回操作。
+- 客户、商业记录、外部能力、服务设置、观测、诊断六组二级导航由壳层同一组件承载，内容区不再重复渲染隐藏菜单。
+- 按内容区整体中心对齐，不随左侧按钮和右侧工具宽度偏移。空间足够时放顶栏首行；不足时整组在顶栏下一行居中，依据实际菜单与工具宽度判断，不硬编码设备断点。
+- 保留每组原有路由、唯一选中项和观测/诊断跳转时的有效时间窗与站点上下文；观测页时间筛选继续由页面拥有，商业冻结说明保留原有所有权。
+- 本规则针对 PC；不扩展到 Portal 导航，不恢复已暂停入口。
 
 ## 3. 旧提案与后续实现
 
@@ -47,11 +55,12 @@ Support 由 #1235/#1237、Accounts 由 #1239、Subscriptions 由 #1240、Coverag
 的 exact heads 原样合入，或每项旧视觉提案均已实现。
 
 本轮保持当前已合入契约：不采纳旧 #1215 的跨路由统一 URL page-size override；
-不采纳旧 #1223 的独立 attention/status 双组、自动 debounce/Enter immediate、
-移除 Apply、hover-only Inspect 及弱化 status 的组合改版。
-当前互斥 view 保持队列语义，显式 Apply 保持请求提交边界，可见 Inspect 和 status
-保留操作可发现性与状态可读性。没有当前使用证据要求再次更换这套操作模型；
-这些旧提案不作为本轮未交付功能重开，也不冒称已实现。
+不采纳旧 #1223 对 **support-requests** 的独立 attention/status 双组、hover-only Inspect
+及弱化 status 的组合改版。Support 互斥 view / 显式 Apply / 可见 Inspect 仍按已合入契约。
+
+**本会话授权例外（Accounts + 壳层）**：账号目录允许总数并入标题、筛选区响应式同行、明确账户/登录状态、未命名客户回退、窄操作列与文字详情链、边界说明收进标题帮助、搜索 debounce+Enter、
+降级蓝「搜索」、清除筛选用文字链；workspace tab 允许上移顶栏（见 §2.1）。
+不因此重开 support #1223 全量视觉提案，也不冒称旧 closed PR heads 已合入。
 
 旧 #1215 的逐批点头流程不替代操作者当前授权；是否可自动合入按会话有效授权
 及现行 review/CI 规则执行。本文合入不授权任何新的 UI、共享组件或生产改动。

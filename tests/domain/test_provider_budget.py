@@ -573,3 +573,24 @@ def test_budget_projection_uses_runtime_provider_id_for_connection_aliases(tmp_p
             "second-gateway",
         }
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "cost,mode,expected",
+    [
+        (0, "unpriced", None),
+        (0.01, "partial_rates", None),
+        (0, "", None),
+        (0, "standard_rates", 0),
+        (0, "provider_reported", 0),
+        (0.00001, "", 0.00001),
+        (float("nan"), "provider_reported", None),
+        (-1, "standard_rates", None),
+    ],
+)
+def test_cost_evidence_controls_budget_reconciliation(
+    cost: float, mode: str, expected: float | None
+) -> None:
+    from app.adapters.providers.base import known_provider_cost_usd
+
+    assert known_provider_cost_usd(cost, mode) == expected

@@ -104,3 +104,7 @@ Rollback is a reviewed revert of the focused implementation commit followed by
 normal M4 acceptance. There is no schema or secret rollback. Do not delete or
 replay runs/claims already checkpointed by this revision. Production deployment
 requires its separate authorization.
+
+## Other budgeted dispatches and cost evidence
+
+Admin exact-model diagnostics, explicit capability probes and the retained Advisor dispatch also commit spend claims before Provider I/O. They do not enable paused entrypoints. Unknown or partial-rate costs keep the conservative reservation; a zero placeholder without pricing evidence must not release it. Complete-rate or provider-reported zero remains a known zero. Health projections retain legacy numeric totals and add cost completeness flags rather than invent historical prices.

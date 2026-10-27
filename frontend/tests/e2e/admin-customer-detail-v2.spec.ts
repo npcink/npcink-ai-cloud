@@ -44,7 +44,11 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await expect(page.locator('[data-ui="account-package-collapsed"]')).toContainText(/Free/i);
 
   await page.getByRole('tab', { name: /Audit|审计|稽核/i }).click();
-  await expect(page.getByText('account.subscription.change')).toBeVisible();
+  const packageReceipt = page.locator('[data-ui="admin-mutation-receipt"]').filter({ hasText: 'account.subscription.change' });
+  await expect(packageReceipt.getByText('account.subscription.change', { exact: true })).toBeHidden();
+  await packageReceipt.locator('summary').click();
+  await expect(packageReceipt.getByText('account.subscription.change', { exact: true })).toBeVisible();
+  await packageReceipt.locator('summary').click();
 
   await page.getByRole('tab', { name: /Credits and usage|积分与用量|積分與用量/i }).click();
   await expect(page.locator('[data-ui="account-credit-usage-summary"]')).toBeVisible();
@@ -62,7 +66,7 @@ test('customer detail v2 keeps governed commercial and audited credit operations
       element.style.display = 'none';
     });
   }
-  await expect(page).toHaveScreenshot(
+  await expect.soft(page).toHaveScreenshot(
     'admin-customer-detail-credits-pc.png',
     { animations: 'disabled' }
   );
@@ -91,7 +95,10 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.getByRole('tab', { name: /Audit|审计|稽核/i }).click();
-  await expect(page.getByText('account.credit.adjustment')).toBeVisible();
+  const creditReceipt = page.locator('[data-ui="admin-mutation-receipt"]').filter({ hasText: 'account.credit.adjustment' });
+  await expect(creditReceipt.getByText('account.credit.adjustment', { exact: true })).toBeHidden();
+  await creditReceipt.locator('summary').click();
+  await expect(creditReceipt.getByText('account.credit.adjustment', { exact: true })).toBeVisible();
 });
 
 test('customer and Site details preserve one filtered Accounts return context across refresh and browser history', async ({ page }) => {

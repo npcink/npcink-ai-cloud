@@ -54,6 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       headers,
       body: JSON.stringify(reviewBody),
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildErrorResponse(

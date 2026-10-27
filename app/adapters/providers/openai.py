@@ -72,6 +72,7 @@ ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS = frozenset(
     {
         "context_window",
         "feature",
+        "endpoint_variant",
         "price_input",
         "price_output",
         "price_cache_read",
@@ -145,15 +146,20 @@ def _normalize_model_metadata_overrides(
                 if feature in {"embedding", "text", "vision", "image_generation"}:
                     override[key] = feature
                 continue
+            if key == "endpoint_variant":
+                if raw_value == "ollama_chat":
+                    override[key] = raw_value
+                continue
             text = str(raw_value or "").strip()
             if text:
                 override[key] = text[:191]
-        if "feature" in override and not all(
+        if not all(
             isinstance(override.get(evidence_key), str)
             and bool(str(override[evidence_key]).strip())
             for evidence_key in ("source", "revision")
         ):
             override.pop("feature", None)
+            override.pop("endpoint_variant", None)
         if override:
             normalized[model_id] = override
     return normalized
@@ -810,13 +816,22 @@ class OpenAIProviderAdapter:
             native_options: dict[str, Any] = {"num_predict": int(options.get("max_tokens", 512))}
             if isinstance(options.get("temperature"), (int, float)):
                 native_options["temperature"] = options["temperature"]
-            return "/api/chat", {
+            native_payload: dict[str, Any] = {
                 "model": runtime_model_id,
                 "messages": self._resolve_ollama_messages(options),
                 "stream": False,
                 "think": False,
                 "options": native_options,
             }
+            response_format = options.get("response_format")
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_object":
+                    native_payload["format"] = "json"
+                elif response_format.get("type") == "json_schema":
+                    schema = response_format.get("json_schema")
+                    if isinstance(schema, dict) and isinstance(schema.get("schema"), dict):
+                        native_payload["format"] = schema["schema"]
+            return "/api/chat", native_payload
 
         if request.endpoint_variant == "responses":
             responses_payload: dict[str, Any] = {
@@ -941,6 +956,8 @@ class OpenAIProviderAdapter:
                 "embedding": embedding if isinstance(embedding, list) else [],
                 "dimensions": len(embedding) if isinstance(embedding, list) else 0,
                 "model_id": response_json.get("model", request.model_id),
+                "requested_model_id": request.model_id,
+                "reported_model_id": self._optional_string(response_json.get("model")),
                 "usage": usage if isinstance(usage, dict) else {},
             }
             return ProviderExecutionResult(
@@ -1027,6 +1044,8 @@ class OpenAIProviderAdapter:
                     "output_text": output_text,
                     "messages": [message] if isinstance(message, dict) else [],
                     "model_id": response_json.get("model", request.model_id),
+                    "requested_model_id": request.model_id,
+                    "reported_model_id": self._optional_string(response_json.get("model")),
                     "usage": usage,
                 },
                 latency_ms=latency_ms,
@@ -1104,6 +1123,8 @@ class OpenAIProviderAdapter:
             "output_text": output_text,
             "messages": [message] if isinstance(message, dict) else [],
             "model_id": response_json.get("model", request.model_id),
+            "requested_model_id": request.model_id,
+            "reported_model_id": self._optional_string(response_json.get("model")),
             "usage": usage if isinstance(usage, dict) else {},
         }
         normalized_usage = normalize_openai_usage(
@@ -1721,6 +1742,12 @@ class OpenAIProviderAdapter:
         endpoint_variant = self._select_catalog_endpoint_variant(feature, tier)
         if feature == "vision" and "qwen3-vl" in model_id.lower():
             endpoint_variant = "chat_completions"
+        # Native Ollama transport is an explicit operator declaration, never
+        # inferred from a model name or an untrusted upstream catalog field.
+        if feature in {"text", "vision"} and metadata_override.get(
+            "endpoint_variant"
+        ) == "ollama_chat":
+            endpoint_variant = "ollama_chat"
         runtime_pricing = self._runtime_cache_pricing(effective_payload)
         override_evidence = {
             key: metadata_override[key]

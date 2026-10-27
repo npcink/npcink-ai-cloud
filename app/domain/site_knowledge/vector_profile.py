@@ -672,7 +672,7 @@ class SiteKnowledgeVectorProfileAdminService:
                     budget_guard.reconcile(
                         session=session,
                         claim_ids=budget_claim_ids,
-                        actual_cost_usd=result.cost,
+                        actual_cost_usd=result.budget_cost_usd(),
                     )
                 session.commit()
         except ProviderExecutionError as error:

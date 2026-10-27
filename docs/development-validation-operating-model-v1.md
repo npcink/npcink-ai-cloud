@@ -201,6 +201,14 @@ declared risk requires M4.
 
 ### Appearance-only preview-first lane
 
+Current frontend development and UI acceptance are PC only. Select local
+pages, PC widths, themes and interactions by actual impact under
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md).
+Mobile/tablet adaptation is out of scope; required CI remains authoritative.
+Pure appearance edits do not automatically require every theme or a full
+cross-route visual run. Gather focused feedback during iteration and perform
+the applicable closeout checks once per coherent change.
+
 The authoritative L0/L1/L2 classification, upward-reclassification triggers,
 and preview-versus-closeout receipts are defined in
 [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md).

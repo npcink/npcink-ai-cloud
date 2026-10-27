@@ -5,10 +5,18 @@ Status: active engineering standard; Stages 1 through 3 and one bounded Stage
 
 Date: 2026-07-29.
 
+Current device scope and local verification dimensions follow
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md)
+(operator decision 2026-10-26): PC only; select pages, themes, widths and
+behavior checks by impact. Existing required CI and risk gates remain in force.
+
 Purpose: reduce the change risk and maintenance cost of
 `frontend/src/app/admin/**` without replacing the accepted Cloud Admin
 information architecture, visual language, product boundary, or operator
 workflow.
+
+Request deadlines, form recovery and authentication navigation follow the
+[frontend request recovery contract](frontend-request-recovery-v1.md).
 
 This document is the engineering companion to:
 
