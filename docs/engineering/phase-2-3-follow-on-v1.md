@@ -5,6 +5,17 @@ Does **not** replace [phase-1-scope.md](phase-1-scope.md). Production Deploy and
 `production` promotion remain **human-gated** per [AGENTS.md](../../AGENTS.md)
 and [cloud-production-release-policy-v1.md](../cloud-production-release-policy-v1.md).
 
+## Scheduling rule (2026-10-27)
+
+The operator-approved
+[value-first decision](phase-1-scope.md#value-first-development-decision-2026-10-27)
+governs which follow-on work starts. A technical editor-loop pass does not
+activate this entire queue. Fix security, correctness, core-path failures and
+required checks; schedule remaining triage or busy-state work against a named
+repeated problem or measured reliability gap. Cosmetic debt and speculative
+root-cause work stay lower priority or trigger-gated. Preserve dated failure
+counts below; re-scan only when that evidence is needed for the selected task.
+
 ## Phase 2 — Master quality debt (current)
 
 Goal: make `master` e2e and long-lived M4 preview trustworthy enough that a
