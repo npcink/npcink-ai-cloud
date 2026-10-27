@@ -8,6 +8,12 @@ Purpose: provide one maintained entry point for current Cloud authority while
 preserving dated implementation and validation evidence without presenting it
 as current truth.
 
+For an explicitly authorized multi-repository closeout, use the
+[Zero-Backlog Closeout Efficiency Standard](engineering/zero-backlog-closeout-efficiency-standard-v1.md)
+to separate engineering, evidence and authority tracks, bound historical
+searches and maintain one successor ledger. This does not activate deferred
+product work or override the current Phase 1 expansion freeze.
+
 ## 按当前任务找文档
 
 | 现在要做什么 | 从这里开始 |
@@ -15,6 +21,7 @@ as current truth.
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
 | 判断是否走偏、哪些开发应暂停、何时恢复 | [Phase 1 编辑价值优先决定（2026-10-27）](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27) — 当前问题、继续维护、新增开发冻结清单与恢复条件；保留既有销售/试用例外，不改变运行可用性 |
 | 查白天模型接入优化的历史处置、真实编辑器证据与经验 | [模型接入与编辑器闭环收尾 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 目录/参考来源、保存反馈、真实 Ollama 与 WordPress、费用和选择检查；保留中文质量及人类价值缺口，不代表生产或全历史清零 |
+| 接续资源及总规划的有界收尾 | [资源与总规划收尾 — 2026-10-27](history/repository-hygiene/2026/resource-and-planning-closeout-2026-10-27.md) — 两个依赖 PR、冻结规范交付、资源保留/退休条件与外部缺证；不是全仓清空或生产验收 |
 | 确认当前设备范围、选择前端检查，避免每次改外观跑全量 | [前端 PC 范围与选择检查](frontend-pc-scope-and-selective-verification-v1.md) — 当前仅 PC；移动/平板暂不适配验收；按改动选择页面、宽度、主题与交互，保留强制 CI 门禁 |
 | 接续 10-23 规划讨论收口与发布前联调待办 | [规划讨论会话收口 — 2026-10-23](history/engineering/2026/planning-discussion-session-closeout-2026-10-23.md) — 已合 #1163/#1164、AGENTS；未完成 Deploy/自动验收/真生成/编辑器收据；含执行任务书摘要与 IT-* 用例表；关规划会话≠第一阶段完成 |
 | 跑通第一阶段编辑器闭环（Deploy/smoke/真写作验收单） | [Phase 1 closed-loop runbook — 2026-10-19](engineering/phase-1-closed-loop-runbook-2026-10-19.md) — 逐步命令与人工点击；不授权 Deploy；联调详情见上条收口文 |
