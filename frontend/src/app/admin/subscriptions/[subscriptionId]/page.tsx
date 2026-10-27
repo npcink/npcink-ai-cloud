@@ -2,6 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { useParams, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
@@ -48,6 +49,7 @@ type SubscriptionDetailPayload = {
     account_id?: string;
     name?: string;
     status?: string;
+    metadata?: Record<string, unknown>;
   };
   covered_sites?: Array<{
     site_id?: string;
@@ -201,7 +203,7 @@ function SubscriptionDetailContent() {
       subscriptionId: String(subscription.subscription_id || subscriptionId),
       status: normalizeStatusToken(String(subscription.status || grace.subscription_status || 'unknown')),
       accountId: String(account.account_id || subscription.account_id || ''),
-      accountName: String(account.name || ''),
+      accountName: customerLabel(account, ''),
       planId: String(plan.plan_id || subscription.plan_id || ''),
       planName: String(plan.display_name || plan.plan_id || subscription.plan_id || ''),
       planVersionId: String(planVersion.plan_version_id || subscription.plan_version_id || ''),
@@ -276,7 +278,7 @@ function SubscriptionDetailContent() {
         {},
         'Budget pressure is visible. Confirm the customer coverage first, then inspect a covered site only if runtime service is affected.'
       )
-    : normalized.status === 'past_due' || normalized.status === 'expired'
+    : ['past_due', 'expired', 'suspended'].includes(normalized.status)
       ? t(
           'admin.subscription_detail.next_step_status',
           {},
@@ -322,16 +324,16 @@ function SubscriptionDetailContent() {
   const localizedSnapshotActionDetail = localizeAdminCommercialCopy(normalized.billingSnapshotNextAction.detail, t);
   const hasSnapshotFollowUp = ['missing', 'stale'].includes(normalized.billingSnapshotStatus);
   const needsCustomerCoverage = normalized.hasBudgetPressure || ['past_due', 'expired', 'suspended'].includes(normalized.status);
-  const conclusionTitle = hasSnapshotFollowUp
-    ? t('admin.subscription_detail.conclusion_snapshot_title', {}, 'Billing statistics need reconciliation')
-    : normalized.hasBudgetPressure
-      ? t('admin.subscription_detail.conclusion_budget_title', {}, 'Budget pressure needs customer follow-up')
-      : needsCustomerCoverage
-        ? t('admin.subscription_detail.conclusion_coverage_title', {}, 'Customer coverage needs follow-up')
-        : t('admin.subscription_detail.conclusion_stable_title', {}, 'Subscription coverage is stable');
-  const conclusionDescription = hasSnapshotFollowUp
-    ? t('admin.subscription_detail.current_conclusion_snapshot', {}, 'This period billing statistics need follow-up before treating this customer service state as reconciled.')
-    : nextStepCopy;
+  const conclusionTitle = needsCustomerCoverage
+    ? t('admin.subscription_detail.conclusion_coverage_title', {}, 'Customer coverage needs follow-up')
+    : hasSnapshotFollowUp
+      ? t('admin.subscription_detail.conclusion_snapshot_title', {}, 'Usage statistics need maintenance')
+      : t('admin.subscription_detail.conclusion_stable_title', {}, 'Subscription coverage is stable');
+  const conclusionDescription = needsCustomerCoverage
+    ? nextStepCopy
+    : hasSnapshotFollowUp
+      ? t('admin.subscription_detail.current_conclusion_snapshot', {}, 'Refresh usage statistics. This status alone does not mean payment failure or blocked Cloud access.')
+      : nextStepCopy;
   const accountCoverageHref = detail?.related_surfaces?.account_href || normalized.accountId
     ? `${detail?.related_surfaces?.account_href || `/admin/accounts/${encodeURIComponent(normalized.accountId)}`}#coverage-actions`
     : '';
@@ -396,12 +398,13 @@ function SubscriptionDetailContent() {
         summaryItems={[
           { label: t('common.status', {}, 'Status'), value: <BackofficeStatusBadge status={normalized.status} label={statusValue} /> },
           { label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'), value: <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} /> },
-          { label: t('common.account', {}, 'Customer'), value: normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer') },
+          { label: t('common.account', {}, 'Customer'), value: normalized.accountName || t('admin.accounts.unnamed_customer', {}, 'Unnamed customer') },
           { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: formatInteger(normalized.relatedSites.length) },
         ]}
       />
 
       <BackofficeSectionPanel>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.customer_ops.subscription_scope', {}, 'Free also has a subscription record. Period end is not payment evidence. Removed sites remain in history but do not require current statistics maintenance.')}</p>
         <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
           <div className="flex min-w-0 flex-col justify-between gap-4">
             <div>
@@ -412,10 +415,15 @@ function SubscriptionDetailContent() {
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{conclusionDescription}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              {needsCustomerCoverage && accountCoverageHref ? (
+                <Link href={accountCoverageHref} className="btn btn-primary">
+                  {t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')}
+                </Link>
+              ) : null}
               {hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className={needsCustomerCoverage ? 'btn btn-secondary' : 'btn btn-primary'}
                   onClick={() => void handleBillingSnapshotRefresh()}
                   disabled={isSnapshotRefreshSaving}
                 >
@@ -424,12 +432,6 @@ function SubscriptionDetailContent() {
                     : localizedSnapshotActionLabel ||
                       t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
                 </button>
-              ) : accountCoverageHref ? (
-                needsCustomerCoverage ? (
-                  <Link href={accountCoverageHref} className="btn btn-primary">
-                    {t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')}
-                  </Link>
-                ) : null
               ) : null}
             {snapshotRefreshError ? (
               <BackofficeDiagnosticNotice message={snapshotRefreshError} />
@@ -452,7 +454,7 @@ function SubscriptionDetailContent() {
               <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
                 <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('common.account', {}, 'Customer')}</dt>
                 <dd className="mt-1 text-sm font-medium text-slate-950 dark:text-white">
-                  {normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer')}
+                  {normalized.accountName || t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')}
                   {normalized.accountId ? (
                     <Link href={`/admin/accounts/${normalized.accountId}`} className="ml-2 text-blue-600 hover:underline dark:text-blue-300">
                       {t('admin.subscription_detail.open_customer_action', {}, 'Open customer')}

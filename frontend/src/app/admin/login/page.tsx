@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale } from '@/contexts/LocaleContext';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
+import { ApiError } from '@/lib/errors';
 
 const adminLoginSessionClient = createApiClient({ idempotencyPrefix: 'admin_login_session' });
 
@@ -29,8 +30,10 @@ function AdminLoginPageContent() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const error = searchParams.get('error');
-  const traceId = searchParams.get('trace_id');
+  const [loginSucceeded, setLoginSucceeded] = useState(false);
+  const [submissionError, setSubmissionError] = useState<{ code: string; traceId: string } | null>(null);
+  const error = isSubmitting || loginSucceeded ? null : submissionError?.code || searchParams.get('error');
+  const traceId = submissionError?.traceId || searchParams.get('trace_id');
   const redirectTo = resolveAdminLoginRedirect(searchParams.get('redirect'));
   const errorMessage = (() => {
     switch (error) {
@@ -45,8 +48,13 @@ function AdminLoginPageContent() {
         return t('admin.login_error_origin');
       case 'auth.dev_entry_unreachable':
       case 'auth.admin_login_unreachable':
+      case 'client.network_error':
         return t('admin.login_error_unreachable');
+      case 'auth.admin_login_timeout':
+      case 'client.request_timeout':
+        return t('admin.login_error_timeout');
       case 'proxy.admin_login_invalid_response':
+      case 'client.non_json_response':
         return t('admin.login_error_upstream');
       default:
         return error || '';
@@ -62,6 +70,8 @@ function AdminLoginPageContent() {
           return;
         }
         router.replace(redirectTo);
+        setLoginSucceeded(true);
+        setIsCheckingSession(false);
       })
       .catch(() => {
         if (!cancelled) {
@@ -73,6 +83,31 @@ function AdminLoginPageContent() {
       cancelled = true;
     };
   }, [redirectTo, router]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+    const fields = new FormData(event.currentTarget);
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    try {
+      await adminLoginSessionClient.request('/admin/auth/login', {
+        method: 'POST',
+        body: { admin_key: String(fields.get('admin_key') || ''), redirect: redirectTo },
+      });
+      setLoginSucceeded(true);
+      // A document navigation reads the newly issued HttpOnly session cookie.
+      // Keep a visible link if the destination navigation cannot complete.
+      window.location.assign(redirectTo);
+    } catch (caught) {
+      setSubmissionError({
+        code: caught instanceof ApiError ? caught.errorCode : 'auth.admin_login_unreachable',
+        traceId: caught instanceof ApiError ? caught.traceId || '' : '',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (isCheckingSession) {
     return <LoadingFallback />;
@@ -112,7 +147,9 @@ function AdminLoginPageContent() {
             </div>
           ) : null}
 
-          <form action="/admin/auth/login" method="post" className="space-y-5" onSubmit={() => setIsSubmitting(true)}>
+          {loginSucceeded ? <p role="status" className="text-sm leading-6">
+            {t('admin.login_success_opening')} <a className="font-semibold text-blue-700 underline dark:text-blue-300" href={redirectTo}>{t('admin.open_admin_with_key')}</a>
+          </p> : <form action="/admin/auth/login" method="post" className="space-y-5" onSubmit={handleSubmit}>
             <input type="hidden" name="redirect" value={redirectTo} />
 
             <div>
@@ -156,7 +193,7 @@ function AdminLoginPageContent() {
             >
               {isSubmitting ? t('admin.login_submitting') : t('admin.open_admin_with_key')}
             </button>
-          </form>
+          </form>}
 
           <p className="border-t border-slate-200 pt-5 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
             {t('admin.login_portal_prompt')}{' '}

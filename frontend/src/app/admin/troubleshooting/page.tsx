@@ -38,6 +38,7 @@ import {
   runStatusLabel,
   scopeLabel,
   severityLabel,
+  providerEvidenceLabel,
 } from '@/features/admin/observability/runtimeIssueCatalog';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -53,14 +54,17 @@ export default function AdminTroubleshootingPage() {
   const windowHours = normalizeObservationWindow(searchParams.get('window'), 336);
   const requestedPanel = searchParams.get('panel');
   const activePanel = requestedPanel === 'records' || requestedPanel === 'trend' ? requestedPanel : 'overview';
+  const since = searchParams.get('since') || '';
+  const evidenceScope = searchParams.get('evidence') === 'context' ? 'context' : 'affected';
   const focusedIssueCode = searchParams.get('focus') || '';
   const siteFilter = searchParams.get('site') || '';
   const capabilityFilter = searchParams.get('function') || '';
   const usageParams = new URLSearchParams({ window: String(windowHours), from: 'troubleshooting' });
+  if (since) usageParams.set('since', since);
   if (siteFilter) { usageParams.set('group', 'sites'); usageParams.set('site', siteFilter); }
   if (capabilityFilter) { if (!siteFilter) usageParams.set('group', 'functions'); usageParams.set('function', capabilityFilter); }
   const usageStatisticsHref = `/admin/usage-statistics?${usageParams}`;
-  const telemetryScope = JSON.stringify([windowHours, siteFilter, capabilityFilter]);
+  const telemetryScope = JSON.stringify([windowHours, siteFilter, capabilityFilter, since]);
   const [snapshot, setSnapshot] = useState<{ scope: string; data: RuntimeTelemetrySummary } | null>(null);
   const data = snapshot?.scope === telemetryScope ? snapshot.data : null;
   const [sourceError, setSourceError] = useState<{ scope: string; message: string } | null>(null);
@@ -77,10 +81,10 @@ export default function AdminTroubleshootingPage() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const loadedScopeRef = useRef('');
 
-  const updateUrl = useCallback((updates: { window?: number | null; focus?: string | null; site?: string | null; function?: string | null; panel?: string | null }) => {
+  const updateUrl = useCallback((updates: { window?: number | null; focus?: string | null; site?: string | null; function?: string | null; panel?: string | null; since?: string | null; evidence?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
-      if (value && !(key === 'window' && value === 24)) params.set(key, String(value));
+      if (value) params.set(key, String(value));
       else params.delete(key);
     });
     const query = params.toString();
@@ -89,49 +93,51 @@ export default function AdminTroubleshootingPage() {
     window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
   }, [pathname, searchParams]);
 
-  const loadTelemetry = useCallback(async (refresh = false) => {
-    requestAbortRef.current?.abort();
-    const sequence = ++requestSequenceRef.current;
-    const controller = new AbortController();
-    requestAbortRef.current = controller;
-    if (refresh || loadedScopeRef.current === telemetryScope) setRefreshing(true);
-    else setLoading(true);
-    setSourceError(null);
-    try {
-      const params = new URLSearchParams({ recent_minutes: String(windowHours * 60), limit: '25' });
-      if (siteFilter) params.set('site_id', siteFilter);
-      if (capabilityFilter) params.set('capability', capabilityFilter);
-      const response = await runtimeTelemetryClient.request<unknown>(
-        `/api/admin/runtime-telemetry?${params.toString()}`,
-        { signal: controller.signal }
-      );
-      if (sequence !== requestSequenceRef.current) return;
-      setSnapshot({ scope: telemetryScope, data: normalizeRuntimeTelemetry(response.data) });
-      loadedScopeRef.current = telemetryScope;
-    } catch (loadError) {
-      if (sequence !== requestSequenceRef.current) return;
-      setSourceError({ scope: telemetryScope, message: resolveUiErrorMessage(loadError, t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.')) });
-    } finally {
-      if (sequence === requestSequenceRef.current) {
-        requestAbortRef.current = null;
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [t, windowHours, siteFilter, capabilityFilter, telemetryScope]);
-
   useEffect(() => {
+    const loadTelemetry = async () => {
+      const [windowHours, siteFilter, capabilityFilter, since] = JSON.parse(telemetryScope) as [number, string, string, string];
+      requestAbortRef.current?.abort();
+      const sequence = ++requestSequenceRef.current;
+      const controller = new AbortController();
+      requestAbortRef.current = controller;
+      if (loadedScopeRef.current === telemetryScope) setRefreshing(true);
+      else setLoading(true);
+      setSourceError(null);
+      try {
+        const params = new URLSearchParams({ recent_minutes: String(windowHours * 60), limit: '25' });
+        if (since) params.set('since', since);
+        if (siteFilter) params.set('site_id', siteFilter);
+        if (capabilityFilter) params.set('capability', capabilityFilter);
+        const response = await runtimeTelemetryClient.request<unknown>(
+          `/api/admin/runtime-telemetry?${params.toString()}`,
+          { signal: controller.signal }
+        );
+        if (sequence !== requestSequenceRef.current) return;
+        setSnapshot({ scope: telemetryScope, data: normalizeRuntimeTelemetry(response.data) });
+        loadedScopeRef.current = telemetryScope;
+      } catch (loadError) {
+        if (sequence !== requestSequenceRef.current) return;
+        setSourceError({ scope: telemetryScope, message: resolveUiErrorMessage(loadError, t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.')) });
+      } finally {
+        if (sequence === requestSequenceRef.current) {
+          requestAbortRef.current = null;
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
     void loadTelemetry();
     return () => {
       requestSequenceRef.current += 1;
       requestAbortRef.current?.abort();
     };
-  }, [loadTelemetry]);
+  }, [t, telemetryScope, refreshSignal]);
 
   const issues = data?.alertSummary.alerts || [];
-  const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || issues[0] || null;
+  const selectedIssue = focusedIssueCode ? issues.find((issue) => issue.code === focusedIssueCode) || null : issues[0] || null;
+  const absentFocus = Boolean(data && focusedIssueCode && !selectedIssue);
   useEffect(() => {
-    if (selectedIssue && selectedIssue.code !== focusedIssueCode) updateUrl({ focus: selectedIssue.code, panel: null });
+    if (selectedIssue && !focusedIssueCode) updateUrl({ focus: selectedIssue.code, panel: null });
   }, [selectedIssue, focusedIssueCode, updateUrl]);
   const panelTabs = [
     { id: 'overview', label: t('admin.troubleshooting.tab_overview') },
@@ -152,7 +158,7 @@ export default function AdminTroubleshootingPage() {
     : selectedGroups;
   const runEvidenceState = useRuntimeRunEvidence({
     issueCode: selectedIssue?.code ?? '', capabilities: selectedIssue?.capabilities ?? [],
-    site: siteFilter, capability: capabilityFilter, windowHours, refreshSignal,
+    site: siteFilter, capability: capabilityFilter, windowHours, refreshSignal, since, evidenceScope,
   });
   const runEvidence = runEvidenceState.items;
   const runEvidenceLoading = runEvidenceState.loading;
@@ -179,7 +185,7 @@ export default function AdminTroubleshootingPage() {
     </div>
   );
 
-  const evidenceContext = JSON.stringify([telemetryScope, selectedIssue?.code, refreshSignal]);
+  const evidenceContext = JSON.stringify([telemetryScope, selectedIssue?.code, refreshSignal, evidenceScope]);
   const failures = selectedIssue?.code === 'hosted_model.provider_errors' ? data?.providerFailures ?? [] : [];
   // Join by run id: a failed call is context for a run, not proof that the run failed.
   const records = [
@@ -232,7 +238,7 @@ export default function AdminTroubleshootingPage() {
         toolbarControls={<AdminObservationWindow defaultHours={336} />}
         secondaryAction={<div className="flex items-center gap-3">
           <Link className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
-          <button className="btn btn-secondary btn-sm h-[var(--admin-compact-control-height)] min-h-0 py-1" disabled={refreshInProgress} onClick={() => { setRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
+          <button className="btn btn-secondary btn-sm h-[var(--admin-compact-control-height)] min-h-0 py-1" disabled={refreshInProgress} onClick={() => { setRefreshSignal((current) => current + 1); }}>
             {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
           </button>
         </div>}
@@ -263,6 +269,14 @@ export default function AdminTroubleshootingPage() {
             </div>
           ) : null}
 
+      <div data-ui="runtime-recovery-review" className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
+        <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
+        {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
+      </div>
+      {data?.sampleLimited ? <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.sample_limited')}</p> : null}
+      {data?.totals.providerEvidencePendingRuns ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.pending_evidence_note', { count: String(data.totals.providerEvidencePendingRuns) })}</p> : null}
+      {since && data ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.review_scope_note')}</p> : null}
       {data ? (
         <div data-ui="runtime-diagnostic-summary" className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 text-xs dark:border-slate-800">
         <dl data-ui="runtime-diagnostic-metrics" className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -272,7 +286,7 @@ export default function AdminTroubleshootingPage() {
             { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate },
           ].map((metric) => <div key={metric.key} data-ui="runtime-data-integrity" className="flex items-center gap-2">
             <dt className="inline-flex items-center text-slate-500 dark:text-slate-400">{metric.label}<AdminHelpTip label={metric.label}>{t('admin.troubleshooting.integrity_note')}</AdminHelpTip></dt>
-            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{formatRate(metric.value)}</Link></dd>
+            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{metric.key === 'provider_coverage' && data.totals.providerEvidenceRequiredRuns === 0 ? '\u2014' : formatRate(metric.value)}</Link></dd>
           </div>)}
         </dl>
         <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
@@ -315,7 +329,7 @@ export default function AdminTroubleshootingPage() {
                     return <button key={issue.code} type="button" data-ui="runtime-diagnostic-issue"
                       aria-pressed={selected} aria-controls={selectedIssue ? 'runtime-diagnostic-inspector' : undefined}
                       className={`block w-full cursor-pointer border-l-2 px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${selected ? 'border-blue-500 bg-blue-50/60 dark:border-blue-400 dark:bg-blue-950/25' : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-900/60'}`}
-                      onClick={() => updateUrl({ focus: issue.code, panel: null })}>
+                      onClick={() => updateUrl({ focus: issue.code, panel: null, evidence: null })}>
                       <span className="flex items-start gap-2"><span className="min-w-0 flex-1 text-sm font-semibold">{issueTitle(issue, t)}</span><BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} /></span>
                       <span className="mt-1 block text-sm font-semibold">{issueCount(issue, t)}</span>
                       <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{scopeLabel(issue.capabilities, t)}</span>
@@ -327,6 +341,11 @@ export default function AdminTroubleshootingPage() {
                 />}
               </AdminDataTableFrame>
             </div>
+            {absentFocus ? <section data-ui="runtime-focus-absent" className="min-w-0 border border-slate-200 p-3 dark:border-slate-800">
+              <h2 className="text-sm font-semibold">{issueTitle({ code: focusedIssueCode, title: focusedIssueCode }, t)}</h2>
+              <p className="mt-2 text-sm">{t('admin.troubleshooting.focus_absent')}</p>
+              <p className="mt-2 text-xs text-slate-500">{data?.totals.runs === 0 ? t('admin.troubleshooting.no_requests') : t('admin.troubleshooting.review_scope_note')}</p>
+            </section> : null}
             {selectedIssue ? <section id="runtime-diagnostic-inspector" key={selectedIssue.code} data-ui="runtime-diagnostic-inspector" aria-label={issueTitle(selectedIssue, t)} className="admin-compact-surface min-w-0 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
               <div data-ui="runtime-inspector-header" className="flex min-h-[var(--admin-compact-row-height)] items-center justify-between gap-3 px-3 py-1.5">
                 <h2 className="flex min-w-0 items-center text-sm font-semibold">{issueTitle(selectedIssue, t)}<AdminHelpTip label={t('admin.troubleshooting.issue_meaning')}>{issueEvidenceGuidance(selectedIssue, t)}</AdminHelpTip></h2>
@@ -350,15 +369,17 @@ export default function AdminTroubleshootingPage() {
                 <section data-ui="runtime-issue-evidence" className="space-y-2">
                   <h3 className="text-sm font-semibold">{t('admin.troubleshooting.open_evidence')}</h3>
                   {sortedGroups.length ? <div className="overflow-x-auto"><table className="w-full min-w-[var(--admin-diagnostic-table-min-width)] table-fixed text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence')}>
-                    <colgroup><col /><col className="w-[var(--admin-diagnostic-number-column)]" />{breakdownMetric ? <col className="w-[var(--admin-diagnostic-number-column)]" /> : null}</colgroup>
+                    <colgroup><col /><col className="w-[var(--admin-diagnostic-number-column)]" />{breakdownMetric ? <col className="w-[var(--admin-diagnostic-number-column)]" /> : null}{selectedIssue.code === 'hosted_model.provider_call_gap' ? <col className="w-[var(--admin-diagnostic-number-column)]" /> : null}</colgroup>
                     <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
                       <th scope="col" className="px-2 py-2">{t('admin.troubleshooting.column_scope')}</th>
                       <th scope="col" className="px-2 py-2 text-right"><span className="inline-flex items-center gap-1"><AdminHelpTip label={t('admin.troubleshooting.function_total_runs')}>{t('admin.troubleshooting.group_scope_note')}</AdminHelpTip>{t('admin.troubleshooting.function_total_runs')}</span></th>
                       {breakdownMetric ? <th scope="col" className="px-2 py-2 text-right">{breakdownMetric.label}</th> : null}
+                      {selectedIssue.code === 'hosted_model.provider_call_gap' ? <th scope="col" className="px-2 py-2 text-right">{t('admin.troubleshooting.gap_runs')}</th> : null}
                     </tr></thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">{sortedGroups.map((group) => <tr key={group.id}>
                       <th scope="row" className="px-2 py-2 font-medium">{scopeLabel([group.id], t)}</th><td className="px-2 py-2 text-right tabular-nums">{formatNumber(group.runs)}</td>
                       {breakdownMetric ? <td className="px-2 py-2 text-right font-semibold tabular-nums">{breakdownMetric.metric.endsWith('Coverage') ? formatRate(group[breakdownMetric.metric]) : formatNumber(group[breakdownMetric.metric])}</td> : null}
+                      {selectedIssue.code === 'hosted_model.provider_call_gap' ? <td className="px-2 py-2 text-right tabular-nums">{group.providerGapRuns == null ? '\u2014' : formatNumber(group.providerGapRuns)}</td> : null}
                     </tr>)}</tbody>
                   </table></div> : <p className="text-xs text-slate-500">{t('admin.troubleshooting.groups_unavailable')}</p>}
                 </section>
@@ -368,8 +389,9 @@ export default function AdminTroubleshootingPage() {
                 <p className="text-sm leading-6">{firstFailure ? t(`admin.troubleshooting.failure_step_${failureReasonKey === 'output_schema_invalid' ? 'schema' : failureReasonKey === 'timeout' ? 'timeout' : 'unknown'}`) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}</p>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
-                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href={scopedHref('/admin/plugin-observability')} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors')}</Link>
+                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
                     : <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records' })}>{t('admin.troubleshooting.inspect_failures')}</button>}
+                  {selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href={scopedHref('/admin/plugin-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_plugin_errors')}</Link> : null}
                   {selectedIssue.capabilities.includes('knowledge') ? <Link href={scopedHref('/admin/vector-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_knowledge')}</Link> : null}
                   {selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.provider_errors' ? <Link href="/admin/ai-resources" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_suppliers')}</Link> : null}
                   <Link href="/admin/runtime-profiles" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
@@ -387,6 +409,11 @@ export default function AdminTroubleshootingPage() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.run_evidence_title')}<AdminHelpTip label={t('admin.troubleshooting.record_bounded')}>{t(selectedIssue.code === 'hosted_model.provider_call_gap' ? 'admin.troubleshooting.run_evidence_scope_note' : 'admin.troubleshooting.run_evidence_sample_note')}</AdminHelpTip></h3>
                   {records.length ? <span className="text-xs text-slate-500">{t('admin.troubleshooting.record_sample', { shown: String(Math.min(visibleCount, records.length)), count: String(records.length) })}{runEvidenceState.truncated ? ` · ${t('admin.troubleshooting.record_bounded')}` : ''}</span> : null}
                 </div>
+                {selectedIssue.code === 'hosted_model.provider_call_gap' ? <div className="flex flex-wrap items-center gap-2 text-xs" data-ui="runtime-evidence-scope">
+                  <button type="button" className="btn btn-secondary btn-sm" aria-pressed={evidenceScope === 'affected'} onClick={() => updateUrl({ evidence: null })}>{t('admin.troubleshooting.gap_records')}</button>
+                  <button type="button" className="btn btn-secondary btn-sm" aria-pressed={evidenceScope === 'context'} onClick={() => updateUrl({ evidence: 'context' })}>{t('admin.troubleshooting.context_records')}</button>
+                  <span className="text-slate-500">{t(evidenceScope === 'context' ? 'admin.troubleshooting.context_scope_note' : 'admin.troubleshooting.gap_scope_note')}</span>
+                </div> : null}
                 {runEvidenceState.failedScopes ? <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300"><p>{t(runEvidence.length ? 'admin.troubleshooting.run_evidence_partial_error' : 'admin.troubleshooting.run_evidence_error')}</p><button type="button" className="btn btn-secondary btn-sm" onClick={runEvidenceState.retry}>{t('admin.troubleshooting.retry_evidence')}</button></div> : null}
                 {runEvidenceLoading ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_loading')}</p> : null}
                 {records.length ? <div className="overflow-x-auto"><table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.run_evidence_title')}>
@@ -405,7 +432,7 @@ export default function AdminTroubleshootingPage() {
                         <div className="flex min-w-0 items-center gap-2"><span className="shrink-0 whitespace-nowrap"><BackofficeStatusBadge label={run ? runStatusLabel(run.status, t) : t('admin.troubleshooting.issue_provider_errors')} status={run ? statusTone(run.status) : 'error'} /></span><span className="truncate text-slate-600 dark:text-slate-300" title={`${run?.site_id || failure?.siteId} · ${run?.ability_name || failure?.profileId}`}>{run?.site_id || failure?.siteId} · {run?.ability_name || failure?.profileId}</span></div>
                       </td>
                       <td className="hidden whitespace-nowrap px-2 py-2 align-top text-slate-500 sm:table-cell">{run?.started_at || failure?.occurredAt ? formatDate(run?.started_at || failure!.occurredAt) : '—'}</td>
-                      <td className="px-2 py-2 text-right align-top tabular-nums">{run?.provider_call_count ?? '—'}</td>
+                      <td className="px-2 py-2 text-right align-top tabular-nums">{run?.provider_call_count ?? '—'}{run?.provider_evidence_state ? <p className="mt-1 text-xs font-normal text-slate-500">{providerEvidenceLabel(run.provider_evidence_state, t)}</p> : null}</td>
                       <td className="px-2 py-2 align-top">{run ? t(run.has_meter_event ? 'admin.troubleshooting.metered' : 'admin.troubleshooting.unmetered') : '—'}</td>
                       <td className="px-2 py-2 align-top"><button type="button" className="whitespace-nowrap text-blue-700 hover:underline dark:text-blue-300" onClick={() => openDetail('record', record.id)}>{t('admin.troubleshooting.view_record')}</button></td>
                     </tr>;
@@ -444,6 +471,8 @@ export default function AdminTroubleshootingPage() {
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_record')}</dt><dd>{runStatusLabel(detailRecord.run.status, t)} · {detailRecord.run.ability_name} · {scopeLabel([detailRecord.run.ability_family], t)}</dd></div>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_duration')}</dt><dd>{detailRecord.run.duration_ms == null ? '—' : `${detailRecord.run.duration_ms} ms`}</dd></div>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_error_code')}</dt><dd>{detailRecord.run.error_code || t('admin.troubleshooting.no_run_error_code')}</dd></div>
+              <div><dt className="text-slate-500">{t('admin.troubleshooting.call_evidence')}</dt><dd>{providerEvidenceLabel(detailRecord.run.provider_evidence_state, t)}</dd></div>
+              <p className="col-span-full text-slate-500">{t('admin.troubleshooting.call_evidence_note')}</p>
             </> : null}
           </dl>
           {detailRecord.failures.length ? <section className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.issue_provider_errors')}</h3><p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>{detailRecord.failures.map((failure, index) => <div key={index} className="space-y-1 break-all text-xs"><p>{formatDate(failure.occurredAt)} · {failure.providerId} / {failure.modelId}</p><p><code>{failure.errorCode}</code></p><p>{t(`admin.troubleshooting.failure_reason_${['output_schema_invalid', 'invalid_request', 'timeout'].includes(failure.reason) ? failure.reason : 'unknown'}`)}</p></div>)}</section> : null}

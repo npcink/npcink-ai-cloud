@@ -189,8 +189,9 @@ new candidate remains separate from this target contract:
    Scoped filters may occupy an additional row when present;
 2. the runtime conclusion shares the metric row rather than an empty banner;
 3. one bounded anomaly list carrying severity, count with its unit, and scope;
-4. one adjacent inspector that selects the first anomaly when no valid focus is
-   provided. Keep valid URL focus on refresh; selecting another anomaly opens
+4. one adjacent inspector that selects the first anomaly when no focus is
+   provided. Keep explicit URL focus on refresh, including an absent-issue
+   state when the returned evidence does not contain it; selecting another anomaly opens
    its overview. The inspector has one task tab row: Overview, Run records,
    and Daily trend. Overview includes function totals and the next action;
 5. Run records initially shows five returned records, loading, partial/total
@@ -219,6 +220,9 @@ new candidate remains separate from this target contract:
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
+
+Runtime observation, affected-versus-comparison evidence and recovery review
+follow [Runtime Observation and Diagnostic Closure](runtime-observation-diagnostics-v1.md).
 
 ### 1.1 Diagnostic Density Tier v2 (operator-authorized 2026-09-22)
 

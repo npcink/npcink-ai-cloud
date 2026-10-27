@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { NavigationHandoff } from '@/components/ui/NavigationHandoff';
 import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -67,7 +68,8 @@ function SecondFactorContent() {
     'We could not confirm whether this verification step is still available. Try again or reload the page; do not submit another code until the status is confirmed.'
   ), [t]);
 
-  if (isLoading || isAuthenticated) return <LoadingFallback />;
+  if (isAuthenticated) return <NavigationHandoff href={redirectTo} />;
+  if (isLoading) return <LoadingFallback />;
 
   if (!secondFactor) {
     const statusUnknown = secondFactorResolution === 'unknown';

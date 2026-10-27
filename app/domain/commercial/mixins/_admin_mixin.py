@@ -1699,7 +1699,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         now = self.now_factory()
         items: list[dict[str, object]] = []
         for account in accounts:
-            account_sites = sites_by_account.get(account.account_id, [])
+            account_sites = [
+                site
+                for site in sites_by_account.get(account.account_id, [])
+                if site.status != SITE_STATUS_ARCHIVED and site.ownership_released_at is None
+            ]
             account_subscriptions = subscriptions_by_account.get(account.account_id, [])
             primary_subscription = service._select_primary_subscription(account_subscriptions)
             package_summary = service._build_subscription_package_summary(
@@ -1814,17 +1818,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     if primary_subscription is not None
                     else f"/admin/accounts/{account.account_id}#coverage-actions"
                 )
-            elif str(billing_status.get("status") or "") in {"missing", "stale"} and site_count > 0:
-                severity = "warning"
-                reason_code = "billing_snapshot_follow_up"
-                reason_label = "Current-period billing snapshot needs follow-up."
-                recommended_action = "inspect_billing_snapshot"
-                action_label = "Inspect subscription"
-                action_href = (
-                    f"/admin/subscriptions/{primary_subscription.subscription_id}"
-                    if primary_subscription is not None
-                    else f"/admin/accounts/{account.account_id}#coverage-actions"
-                )
             elif days_until_end is not None and 0 <= days_until_end <= 14:
                 severity = "warning"
                 reason_code = "subscription_expiring_soon"
@@ -1850,6 +1843,20 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 recommended_action = "inspect_site_key_coverage"
                 action_label = "Open site footprint"
                 action_href = f"/admin/accounts/{account.account_id}#site-footprint"
+            elif str(billing_status.get("status") or "") in {"missing", "stale"} and site_count > 0:
+                severity = "warning"
+                reason_code = "billing_snapshot_follow_up"
+                reason_label = (
+                    "Usage statistics need maintenance; this is not evidence of payment failure "
+                    "or service denial."
+                )
+                recommended_action = "inspect_billing_snapshot"
+                action_label = "Inspect subscription"
+                action_href = (
+                    f"/admin/subscriptions/{primary_subscription.subscription_id}"
+                    if primary_subscription is not None
+                    else f"/admin/accounts/{account.account_id}#coverage-actions"
+                )
             elif site_count > 0:
                 severity = "ok"
                 reason_code = "service_coverage_aligned"
@@ -1930,8 +1937,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             account_payload: dict[str, object] = (
                 cast(dict[str, object], account) if isinstance(account, dict) else {}
             )
+            metadata = account_payload.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
             return (
-                str(account_payload.get("name") or account_payload.get("account_id") or "").lower(),
+                str(
+                    metadata.get("operator_display_name")
+                    or account_payload.get("name")
+                    or account_payload.get("account_id")
+                    or ""
+                ).lower(),
                 str(account_payload.get("account_id") or ""),
             )
 
@@ -1987,11 +2001,14 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 )
                 package_value = item.get("package")
                 package_payload = package_value if isinstance(package_value, dict) else {}
+                metadata_value = account_payload.get("metadata")
+                metadata_payload = metadata_value if isinstance(metadata_value, dict) else {}
                 searchable = " ".join(
                     str(value or "")
                     for value in (
                         account_payload.get("account_id"),
                         account_payload.get("name"),
+                        metadata_payload.get("operator_display_name"),
                         identity_payload.get("email"),
                         identity_payload.get("principal_id"),
                         subscription_payload.get("subscription_id"),

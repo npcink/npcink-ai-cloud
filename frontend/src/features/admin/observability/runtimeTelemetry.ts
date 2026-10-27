@@ -25,6 +25,7 @@ export type UsageTimelinePoint = {
 };
 
 export type RuntimeTelemetrySummary = {
+  sampleLimited: boolean;
   providerFailures: ProviderFailure[];
   generatedAt: string;
   usageTimeline: UsageTimelinePoint[];
@@ -34,6 +35,7 @@ export type RuntimeTelemetrySummary = {
     failed: number;
     providerErrors: number;
     providerCoverage: number;
+    providerGapRuns: number | null;
     meteringCoverage: number;
   }[];
   totals: {
@@ -41,6 +43,8 @@ export type RuntimeTelemetrySummary = {
     providerCalls: number;
     usageMeterEvents: number;
     providerCallRunCoverageRate: number;
+    providerEvidencePendingRuns: number;
+    providerEvidenceRequiredRuns: number | null;
     meteredRunCoverageRate: number;
   };
   governanceGaps: {
@@ -73,6 +77,7 @@ export type RuntimeRunEvidence = {
   selected_provider_id?: string | null;
   selected_model_id?: string | null;
   provider_call_count: number;
+  provider_evidence_state?: string;
   has_meter_event: boolean;
 };
 
@@ -107,6 +112,7 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
   const usageStatistics = raw?.usage_statistics ?? {};
   return {
     generatedAt: String(raw?.generated_at ?? ''),
+    sampleLimited: Boolean(raw?.evidence_limits?.runs_truncated || raw?.evidence_limits?.provider_calls_truncated || raw?.evidence_limits?.meter_events_truncated),
     usageTimeline: Array.isArray(usageStatistics?.timeline)
       ? usageStatistics.timeline.map((point: any) => ({
           day: String(point?.day ?? ''),
@@ -129,6 +135,7 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
       failed: asNumber(group.failed),
       providerErrors: asNumber(group.provider_errors),
       providerCoverage: asNumber(group.provider_call_run_coverage_rate),
+      providerGapRuns: group.provider_call_gap_runs == null ? null : asNumber(group.provider_call_gap_runs),
       meteringCoverage: asNumber(group.metered_run_coverage_rate),
     })) : [],
     totals: {
@@ -136,6 +143,8 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
       providerCalls: asNumber(totals.provider_calls),
       usageMeterEvents: asNumber(totals.usage_meter_events),
       providerCallRunCoverageRate: asNumber(totals.provider_call_run_coverage_rate),
+      providerEvidencePendingRuns: asNumber(totals.provider_evidence_pending_runs),
+      providerEvidenceRequiredRuns: totals.provider_evidence_required_runs == null ? null : asNumber(totals.provider_evidence_required_runs),
       meteredRunCoverageRate: asNumber(totals.metered_run_coverage_rate),
     },
     governanceGaps: {

@@ -2,6 +2,7 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
@@ -113,12 +114,6 @@ function normalizeAccount(
   const account = item.account;
   if (!account?.account_id) return null;
   const metadata = account.metadata || {};
-  const operatorDisplayName = String(metadata.operator_display_name || '').trim();
-  const rawName = String(account.name || '').trim();
-  const safeName =
-    rawName && rawName !== account.account_id &&
-    !/^(?:acct[_-]?)?(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(rawName) &&
-    !isMalformedAccountText(rawName) ? rawName : '';
   const packageDisplay = resolveCustomerPackageDisplay(t, {
     planId: item.top_plan_id,
     packageAlias: item.package_alias,
@@ -138,10 +133,7 @@ function normalizeAccount(
 
   return {
     account_id: account.account_id,
-    display_name:
-      operatorDisplayName ||
-      safeName ||
-      t('admin.accounts.unnamed_customer', {}, 'Unnamed customer'),
+    display_name: customerLabel(account, t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')),
     operator_note: String(metadata.operator_note || '').trim(),
     status: String(account.status || 'inactive'),
     created_at: account.created_at,

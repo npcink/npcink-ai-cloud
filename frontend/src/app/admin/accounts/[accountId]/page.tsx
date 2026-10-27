@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
@@ -46,6 +47,7 @@ import {
   formatUsageRatio,
   metricToBudgetSummary,
   quotaMetricLabel,
+  quotaMetricNeedsAttention,
   quotaMetricToneClass,
   quotaToneClass,
   summarizeBudget,
@@ -242,53 +244,6 @@ function selectPrimarySubscription(account: AccountDetail | null): AccountDetail
       ['active', 'trialing', 'past_due', 'suspended'].includes(subscription.status)
     ) || account.subscriptions[0]
   );
-}
-
-const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
-
-function prettifyAccountId(accountId: string): string {
-  if (MALFORMED_ACCOUNT_TEXT_RE.test(accountId)) {
-    return '';
-  }
-  const stripped = accountId
-    .replace(/^acct[_-]?/i, '')
-    .replace(/^site[_-]?/i, '')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  if (!stripped) {
-    return accountId;
-  }
-  return stripped
-    .split(/\s+/)
-    .map((word) => {
-      const lower = word.toLowerCase();
-      if (lower === 'ai') return 'AI';
-      if (lower === 'api') return 'API';
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
-}
-
-function resolveAccountTitle(
-  account: AccountDetail,
-  t: (key: string, vars?: Record<string, string>, fallback?: string) => string
-): string {
-  if (account.operator_display_name.trim()) {
-    return account.operator_display_name.trim();
-  }
-  const rawName = account.name.trim();
-  const isRawName =
-    !rawName ||
-    rawName === account.account_id ||
-    /^acct[_-]/i.test(rawName) ||
-    MALFORMED_ACCOUNT_TEXT_RE.test(rawName);
-  if (!isRawName) {
-    return rawName;
-  }
-  if (MALFORMED_ACCOUNT_TEXT_RE.test(`${account.account_id} ${rawName}`)) {
-    return t('admin.accounts.malformed_account_label', undefined, 'Malformed account record');
-  }
-  return prettifyAccountId(account.account_id) || account.account_id;
 }
 
 function AccountDetailContent() {
@@ -1041,11 +996,15 @@ function AccountDetailContent() {
     siteRuntimeEvidenceComplete &&
     account.site_count > 0 &&
     activeKeySiteCount < account.site_count;
+  const creditNeedsAttention = Boolean(creditEvidenceReady && creditMetric && quotaMetricNeedsAttention(creditMetric));
+  const resourceAlerts = creditEvidenceReady
+    ? (quotaSummary?.resource_limits || []).filter(quotaMetricNeedsAttention)
+    : [];
   const quotaNeedsAttention =
     quotaSummary?.status === 'limited' ||
     quotaSummary?.status === 'near_limit' ||
-    runBudgetSummary.overLimit ||
-    runBudgetSummary.usageRatio >= 0.8 ||
+    creditNeedsAttention ||
+    resourceAlerts.length > 0 ||
     hasSiteLimitPressure ||
     hasApiKeyGap;
 
@@ -1120,7 +1079,7 @@ function AccountDetailContent() {
       ? t('admin.account_detail.next_step_subscription_desc', undefined, 'Coverage posture still needs operator attention. Use the bounded actions on this page before opening any deeper commercial detail.')
       : hasUncoveredCommercialPosture
         ? t('admin.account_detail.open_subscription_queue_desc', undefined, 'This customer has site footprint without readable package coverage, so keep the next decision on customer coverage and site impact first.')
-        : t('admin.account_detail.open_primary_site_desc', undefined, 'The customer is stable; only open a site when you need lower-level runtime, key, or support detail.');
+        : t('admin.account_detail.open_primary_site_desc', undefined, 'Package coverage is active. Check Access, Credits and usage, and Sites separately for login, quota, and runtime health.');
   const watchItems = [
     {
       label: t('common.package', undefined, 'Package'),
@@ -1235,7 +1194,10 @@ function AccountDetailContent() {
       : primarySubscription?.package_alias === 'Agency' || primarySubscription?.plan_id === 'agency'
         ? 'agency'
         : 'pro';
-  const accountTitle = resolveAccountTitle(account, t);
+  const accountTitle = customerLabel(
+    { ...account, metadata: { ...account.metadata, operator_display_name: account.operator_display_name } },
+    t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')
+  );
   const hasAdvancedChecks = siteOptions.length > 0;
   const detailTabs: Array<{ id: AccountDetailTab; label: string; navLabel: string; detail: string; href: string }> = [
     {
@@ -2250,8 +2212,10 @@ function AccountDetailContent() {
                 : t('admin.account_detail.credit_operations_label', undefined, 'Credit operations')}
             </p>
             {quotaNeedsAttention ? (
-              <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">
-                {t('admin.account_detail.topup_attention_desc', undefined, 'Compare current-period top-up options before usage is blocked.')}
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                {creditNeedsAttention
+                  ? t('admin.customer_ops.credit_follow_up', {}, 'AI credits are low. Compare a top-up or package change.')
+                  : t('admin.customer_ops.resource_follow_up', {}, 'Resource capacity or site access needs review. Open quota details; credit top-ups do not repair these issues.')}
               </p>
             ) : null}
           </div>
@@ -2259,7 +2223,7 @@ function AccountDetailContent() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className={cn('btn whitespace-nowrap', quotaNeedsAttention ? 'btn-primary' : 'btn-secondary')}
+                className={cn('btn whitespace-nowrap', creditNeedsAttention ? 'btn-primary' : 'btn-secondary')}
                 onClick={openTopUpOptions}
               >
                 {t('admin.account_detail.open_topup_options_action', undefined, 'Open top-up options')}
@@ -2282,7 +2246,7 @@ function AccountDetailContent() {
               </button>
               <button
                 type="button"
-                className="btn btn-secondary whitespace-nowrap"
+                className={cn('btn whitespace-nowrap', quotaNeedsAttention && !creditNeedsAttention ? 'btn-primary' : 'btn-secondary')}
                 onClick={() => {
                   setQuotaDetailTab('resources');
                   setQuotaDetailsOpen(true);
@@ -2295,6 +2259,12 @@ function AccountDetailContent() {
         </div>
         {topUpDialog}
         {creditAdjustmentDialog}
+
+        {resourceAlerts.length > 0 ? (
+          <p className="text-sm text-amber-800 dark:text-amber-200" data-ui="account-resource-alerts">
+            {resourceAlerts.map((metric) => `${quotaMetricLabel(metric, t)}: ${formatInteger(metric.used)} / ${formatInteger(metric.limit)}`).join(' · ')}
+          </p>
+        ) : null}
 
         {creditEvidencePending ? (
           <LoadingFallback />
