@@ -11,6 +11,11 @@ Prove the WordPress editor loop with real evidence:
 `WordPress Ability → Cloud Addon → Cloud runtime → hosted model → reviewed editor adoption → bounded feedback`
 
 Keep only usage, error, provider, and quality evidence needed for that loop.
+The operator-approved 2026-10-27
+[value-first development decision](docs/engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)
+freezes further ecosystem, workflow, adaptive-routing, analytics and platform expansion.
+Prioritize title/summary/selected-text rewrite value; retain existing services,
+security/correctness maintenance and the approved sales/trial exception.
 Details: [phase-1-scope.md](docs/engineering/phase-1-scope.md),
 [README Current Focus](README.md#current-focus),
 [early-product-validation-and-minimal-telemetry-standard-v1.md](docs/early-product-validation-and-minimal-telemetry-standard-v1.md),
@@ -37,7 +42,10 @@ operations requiring explicit authorization.
 
 ## Follow-on (Phase 2–3)
 
-After Phase 1 loop evidence: continue Phase 2 portal e2e triage (assertion
+Select follow-on work under the value-first decision above; technical loop
+evidence alone does not activate the entire backlog. Maintain applicable gates
+and fix core-path, safety and correctness failures. Phase 2 includes portal e2e
+triage (assertion
 batches through #1196 merged; screenshot baseline + residual failures need a
 fresh master re-scan — see follow-on §2.1), watch the bounded auto-fail for
 orphan `running` inline runs (the lease prevents lockout; the worker fails a
