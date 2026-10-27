@@ -1372,7 +1372,10 @@ class RuntimeService:
             call_statement = (
                 select(ProviderCallRecord, RunRecord)
                 .join(RunRecord, ProviderCallRecord.run_id == RunRecord.run_id)
-                .where(ProviderCallRecord.created_at >= recent_since, RunRecord.started_at >= recent_since)
+                .where(
+                    ProviderCallRecord.created_at >= recent_since,
+                    RunRecord.started_at >= recent_since,
+                )
             )
             if site_id:
                 call_statement = call_statement.where(RunRecord.site_id == site_id)
@@ -1601,7 +1604,9 @@ class RuntimeService:
                 "runs": len(runs),
                 "ai_evidence_required_runs": len(ai_evidence_required_run_ids),
                 "provider_evidence_required_runs": len(provider_evidence_required_run_ids),
-                "provider_evidence_pending_runs": len(ai_evidence_required_run_ids - provider_evidence_required_run_ids),
+                "provider_evidence_pending_runs": len(
+                    ai_evidence_required_run_ids - provider_evidence_required_run_ids
+                ),
                 "non_ai_zero_credit_runs": len(runs) - len(ai_evidence_required_run_ids),
                 "provider_calls": len(provider_call_rows),
                 "usage_meter_events": len(meter_events),
@@ -1759,7 +1764,9 @@ class RuntimeService:
                     "finished_at": timestamp(run.finished_at),
                     "duration_ms": duration_ms,
                     "provider_call_count": calls_by_run.get(run.run_id, 0),
-                    "provider_evidence_state": provider_evidence_state(run, calls_by_run.get(run.run_id, 0)),
+                    "provider_evidence_state": provider_evidence_state(
+                        run, calls_by_run.get(run.run_id, 0)
+                    ),
                     "has_meter_event": run.run_id in metered_run_ids,
                     "selected_provider_id": run.selected_provider_id or None,
                     "selected_model_id": run.selected_model_id or None,
@@ -1931,7 +1938,9 @@ class RuntimeService:
             group["ai_evidence_required_runs"] = len(group_ai_evidence_required_run_ids)
             group_provider_evidence_ids = run_ids & provider_evidence_required_run_ids
             group["provider_evidence_required_runs"] = len(group_provider_evidence_ids)
-            group["provider_call_gap_runs"] = len(group_provider_evidence_ids - provider_call_run_ids)
+            group["provider_call_gap_runs"] = len(
+                group_provider_evidence_ids - provider_call_run_ids
+            )
             group["tokens_total"] = tokens_in + tokens_out
             group["avg_latency_ms"] = (
                 round(latency_total / provider_calls, 2) if provider_calls else 0.0

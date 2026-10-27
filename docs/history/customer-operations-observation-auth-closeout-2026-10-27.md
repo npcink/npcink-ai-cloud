@@ -5,6 +5,9 @@ eight runtime observation/diagnostic recommendations, and the subsequent
 stalled-login investigation. The operator explicitly authorized PR publication,
 merge into `master` and M4 acceptance; production is excluded.
 
+Implementation checkpoint receipts: [runtime observation](admin-runtime-observation-clarity-2026-10-27.md)
+and [authentication recovery](authentication-request-recovery-2026-10-27.md).
+
 ## Delivered scope
 
 Customer operations now use consistent operator names/search, current-site
@@ -53,6 +56,18 @@ were corrected without retrying writes or consumed verification codes.
   changed for this test correction; the other 152 checks were not repeated.
 - Review covered correctness, readability, ownership boundaries, authorization,
   bounded reads and absence of new dependencies or per-row network requests.
+
+### Merge-gate corrections
+
+The first PR run exposed strict Ruff checks beyond the narrower local quality
+subset, missing document-index links and stale source contracts. Query defaults
+and line wrapping were corrected, all receipts were linked from the document
+index, and the subscription refresh control was consolidated while keeping
+service remediation primary. Focused API and browser checks passed. Portal
+source contracts now require the usable authenticated handoff instead of the
+old indefinite loading fallback; safe target/package intent remains asserted.
+The external advisory code review returned HTTP 403 and produced no successful
+file reviews. No workflow/credential change or paid retry was used to mask it.
 
 ## Evidence states and handoff
 

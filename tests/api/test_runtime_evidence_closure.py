@@ -35,7 +35,9 @@ def test_gap_counts_records_and_review_share_the_same_cohort(
                 ability_family="text", channel="openapi", execution_kind=kind,
                 profile_id="text.ai", status=status, trace_id=run_id,
                 started_at=now - timedelta(minutes=minutes),
-                finished_at=None if status in {"queued", "running"} else now - timedelta(seconds=30),
+                finished_at=(
+                    None if status in {"queued", "running"} else now - timedelta(seconds=30)
+                ),
                 error_code="runtime.rejected" if status == "failed" else None,
             ))
         session.flush()
@@ -75,7 +77,9 @@ def test_gap_counts_records_and_review_share_the_same_cohort(
     assert alert["count"] == sum(p["count"] for p in alert["daily_counts"]) == 4
     assert summary["capability_groups"][0]["provider_call_gap_runs"] == 4
     affected = read("/runs", issue_code=issue)["items"]
-    assert {r["run_id"] for r in affected} == {"gap-success", "gap-failed", "gap-canceled", "old-gap"}
+    assert {r["run_id"] for r in affected} == {
+        "gap-success", "gap-failed", "gap-canceled", "old-gap"
+    }
     assert all(r["provider_call_count"] == 0 for r in affected)
     states = {r["run_id"]: r["provider_evidence_state"] for r in affected}
     assert states["gap-failed"] == "failed_without_call"

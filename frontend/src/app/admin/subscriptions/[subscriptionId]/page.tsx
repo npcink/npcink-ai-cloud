@@ -415,10 +415,15 @@ function SubscriptionDetailContent() {
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{conclusionDescription}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {!needsCustomerCoverage && hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
+              {needsCustomerCoverage && accountCoverageHref ? (
+                <Link href={accountCoverageHref} className="btn btn-primary">
+                  {t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')}
+                </Link>
+              ) : null}
+              {hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className={needsCustomerCoverage ? 'btn btn-secondary' : 'btn btn-primary'}
                   onClick={() => void handleBillingSnapshotRefresh()}
                   disabled={isSnapshotRefreshSaving}
                 >
@@ -427,18 +432,7 @@ function SubscriptionDetailContent() {
                     : localizedSnapshotActionLabel ||
                       t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
                 </button>
-              ) : accountCoverageHref ? (
-                needsCustomerCoverage ? (
-                  <Link href={accountCoverageHref} className="btn btn-primary">
-                    {t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')}
-                  </Link>
-                ) : null
               ) : null}
-            {needsCustomerCoverage && hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
-              <button type="button" className="btn btn-secondary" disabled={isSnapshotRefreshSaving} onClick={() => void handleBillingSnapshotRefresh()}>
-                {t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
-              </button>
-            ) : null}
             {snapshotRefreshError ? (
               <BackofficeDiagnosticNotice message={snapshotRefreshError} />
             ) : null}

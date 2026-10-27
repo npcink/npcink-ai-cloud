@@ -148,8 +148,8 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /if \(isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'the registration form must stay available during session discovery and hide only after authentication is confirmed'
+  /if \(isAuthenticated \|\| handoffHref\) \{[\s\S]*return <NavigationHandoff href=\{handoffHref \|\| postRegistrationTarget\} \/>;/,
+  'the registration form must stay available during session discovery and hand off only after authentication is confirmed, with a usable navigation exit'
 );
 assert.match(
   registerSource,

@@ -6766,7 +6766,7 @@ async def get_runtime_telemetry_diagnostics(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
-    since: datetime | None = Query(default=None),
+    since: datetime | None = None,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6798,7 +6798,7 @@ async def get_runtime_run_evidence(
     issue_code: str | None = Query(default=None, max_length=64),
     evidence_scope: Literal["affected", "context"] = Query(default="affected"),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
-    since: datetime | None = Query(default=None),
+    since: datetime | None = None,
     limit: int = Query(default=25, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)

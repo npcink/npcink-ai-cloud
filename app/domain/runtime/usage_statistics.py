@@ -31,8 +31,13 @@ def build_usage_statistics(
             "success_rate": succeeded / len(items) if items else None,
             "avg_latency_ms": sum(durations) / len(durations) if durations else None,
             "latency_samples": len(durations),
-            "succeeded_avg_latency_ms": sum(succeeded_durations) / len(succeeded_durations) if succeeded_durations else None,
-            "failed_avg_latency_ms": sum(failed_durations) / len(failed_durations) if failed_durations else None,
+            "succeeded_avg_latency_ms": (
+                sum(succeeded_durations) / len(succeeded_durations)
+                if succeeded_durations else None
+            ),
+            "failed_avg_latency_ms": (
+                sum(failed_durations) / len(failed_durations) if failed_durations else None
+            ),
         }
 
     def groups(attribute: str) -> list[dict[str, object]]:

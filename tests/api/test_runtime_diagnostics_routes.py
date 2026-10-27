@@ -330,7 +330,9 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert "site-knowledge.managed" in capability_by_id["knowledge"]["profile_ids"]
     assert capability_by_id["vision"]["provider_calls"] == 0
     assert data["governance_gaps"]["unmetered_capabilities"] == ["uncovered_text"]
-    assert data["governance_gaps"]["missing_provider_call_capabilities"] == ["uncovered_text", "vision"]
+    assert data["governance_gaps"]["missing_provider_call_capabilities"] == [
+        "uncovered_text", "vision"
+    ]
     assert data["governance_gaps"]["unmetered_run_count"] == 1
     missing = client.get(
         f"/internal/service/admin/runtime-telemetry/runs?site_id={site_id}"
