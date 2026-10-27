@@ -865,7 +865,10 @@ def test_provider_catalog_sync_keeps_enabled_models_missing_from_partial_upstrea
     with get_session(database_url) as session:
         row = session.get(ProviderConnection, "partial_gateway")
         assert row is not None
-        row.config_json = {**row.config_json, "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"]}
+        row.config_json = {
+            **row.config_json,
+            "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"],
+        }
         session.commit()
 
     test_response = client.post(
@@ -2208,7 +2211,9 @@ def test_admin_provider_connection_delete_rejects_stale_preflight(
     ] == ["Delete conflict updated"]
 
 
-def test_provider_create_conflict_and_edit_preserve_saved_credentials(tmp_path: Path, monkeypatch) -> None:
+def test_provider_create_conflict_and_edit_preserve_saved_credentials(
+    tmp_path: Path, monkeypatch
+) -> None:
     from sqlalchemy.orm import Session
 
     database_url, client = _build_client(tmp_path)
@@ -2226,7 +2231,11 @@ def test_provider_create_conflict_and_edit_preserve_saved_credentials(tmp_path: 
         return build_internal_headers(idempotency_key=key)
 
     assert client.post(path, headers=headers("create-original"), json=payload).status_code == 200
-    duplicate = {**payload, "display_name": "Overwrite attempt", "credential": "fixture-replacement"}
+    duplicate = {
+        **payload,
+        "display_name": "Overwrite attempt",
+        "credential": "fixture-replacement",
+    }
     response = client.post(path, headers=headers("duplicate-create"), json=duplicate)
     assert response.status_code == 409, response.text
     assert response.json()["error_code"] == "provider_connection.already_exists"
@@ -2250,17 +2259,29 @@ def test_provider_create_conflict_and_edit_preserve_saved_credentials(tmp_path: 
     with get_session(database_url) as session:
         row = session.get(ProviderConnection, payload["connection_id"])
         assert row is not None and row.display_name == "Original"
-        assert decrypt_provider_connection_secret(row.secret_ciphertext, settings=client.app.state.services.settings) == "fixture-original-credential"
+        assert (
+            decrypt_provider_connection_secret(
+                row.secret_ciphertext, settings=client.app.state.services.settings
+            )
+            == "fixture-original-credential"
+        )
 
     edit = {key: value for key, value in payload.items() if key != "credential"}
     edit["display_name"] = "Edited without replacing Key"
-    response = client.patch(path + "/" + payload["connection_id"], headers=headers("edit-no-key"), json=edit)
+    response = client.patch(
+        path + "/" + payload["connection_id"], headers=headers("edit-no-key"), json=edit
+    )
     assert response.status_code == 200, response.text
     assert "fixture-original-credential" not in response.text
     with get_session(database_url) as session:
         row = session.get(ProviderConnection, payload["connection_id"])
         assert row.display_name == edit["display_name"]
-        assert decrypt_provider_connection_secret(row.secret_ciphertext, settings=client.app.state.services.settings) == "fixture-original-credential"
+        assert (
+            decrypt_provider_connection_secret(
+                row.secret_ciphertext, settings=client.app.state.services.settings
+            )
+            == "fixture-original-credential"
+        )
     response = client.patch(path + "/missing-provider", headers=headers("edit-missing"), json=edit)
     assert response.status_code == 404, response.text
 
@@ -2356,7 +2377,11 @@ def test_admin_model_additions_require_live_account_directory(
     listing = client.get(
         "/internal/service/admin/provider-connections", headers=build_internal_headers(),
     )
-    saved = next(row for row in listing.json()["data"]["connections"] if row["connection_id"] == "account_guard")
+    saved = next(
+        row
+        for row in listing.json()["data"]["connections"]
+        if row["connection_id"] == "account_guard"
+    )
     assert saved["model_ids"] == []
     assert len(calls) == 3
 
@@ -2396,4 +2421,7 @@ def _mock_account_catalog(monkeypatch: pytest.MonkeyPatch, model_ids: list[str])
                 raw_json={"catalog_source": "provider_api"},
             ) for model_id in model_ids],
         )
-    monkeypatch.setattr("app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog", fetch_catalog)
+
+    monkeypatch.setattr(
+        "app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog", fetch_catalog
+    )

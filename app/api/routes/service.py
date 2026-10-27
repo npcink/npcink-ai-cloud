@@ -1580,20 +1580,20 @@ def _build_hosted_runtime_profile_projection(
             "selection_mode": "automatic",
             "candidates": [
                 {
-                    "instance_id": instance.instance_id,
-                    "provider_id": instance.provider_id,
+                    "instance_id": read_only_instance.instance_id,
+                    "provider_id": read_only_instance.provider_id,
                     "provider_display_name": (
-                        providers_by_id[instance.provider_id].display_name
-                        if instance.provider_id in providers_by_id else instance.provider_id
+                        providers_by_id[read_only_instance.provider_id].display_name
+                        if read_only_instance.provider_id in providers_by_id else read_only_instance.provider_id
                     ),
-                    "model_id": instance.model_id,
+                    "model_id": read_only_instance.model_id,
                     "upstream_model_id": str(
-                        (models_by_id[instance.model_id].raw_json or {}).get("upstream_model_id")
-                        or instance.model_id
-                    ) if instance.model_id in models_by_id else instance.model_id,
+                        (models_by_id[read_only_instance.model_id].raw_json or {}).get("upstream_model_id")
+                        or read_only_instance.model_id
+                    ) if read_only_instance.model_id in models_by_id else read_only_instance.model_id,
                 }
                 for instance_id in (text_binding.candidate_instance_ids if text_binding else [])
-                if (instance := instances_by_id.get(instance_id)) is not None
+                if (read_only_instance := instances_by_id.get(instance_id)) is not None
             ],
         }]
 

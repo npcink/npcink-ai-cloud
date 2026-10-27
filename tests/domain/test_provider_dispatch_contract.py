@@ -45,7 +45,8 @@ CLAIMED_DISPATCH_FILES: dict[str, str] = {
         "capability probes claim through _execute_probe before dispatch"
     ),
     "app/domain/provider_connections/model_tests.py": (
-        "exact-model diagnostics commit budget claims before dispatch; API regression inspects durability"
+        "exact-model diagnostics commit budget claims before dispatch; "
+        "API regression inspects durability"
     ),
     "app/domain/provider_connections/service.py": (
         "image delivery probe and web search connection test claim before dispatch"

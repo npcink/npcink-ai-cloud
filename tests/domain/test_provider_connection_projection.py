@@ -116,8 +116,13 @@ def test_model_identity_only_removes_configured_namespace() -> None:
     second = _provider_model_identity_keys("gateway/vendorB/foo", "gateway")
     assert not first.intersection(second)
     assert _provider_model_identity_keys("Qwen/Qwen3", "") == {"Qwen/Qwen3"}
-    assert _provider_model_identity_keys("gateway/Qwen/Qwen3", "gateway") == {"Qwen/Qwen3", "gateway/Qwen/Qwen3"}
-    assert not _provider_model_identity_keys("Foo", "gateway").intersection(_provider_model_identity_keys("foo", "gateway"))
+    assert _provider_model_identity_keys("gateway/Qwen/Qwen3", "gateway") == {
+        "Qwen/Qwen3",
+        "gateway/Qwen/Qwen3",
+    }
+    assert not _provider_model_identity_keys("Foo", "gateway").intersection(
+        _provider_model_identity_keys("foo", "gateway")
+    )
 
 
 def test_account_preview_excludes_sample_and_configured_model_seeds(

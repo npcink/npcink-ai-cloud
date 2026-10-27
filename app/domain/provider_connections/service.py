@@ -143,7 +143,9 @@ class ProviderConnectionAdminService:
                 )
             )
             # Resolve stored bindings once; do not infer usage from advertised profiles.
-            instances = {item.instance_id: item for item in session.scalars(select(CatalogInstance))}
+            instances = {
+                item.instance_id: item for item in session.scalars(select(CatalogInstance))
+            }
             usages: dict[str, list[dict[str, str]]] = {}
             for binding in session.scalars(select(RoutingBinding)):
                 for position, instance_id in enumerate(binding.candidate_instance_ids or []):
@@ -1543,7 +1545,9 @@ def _provider_model_identity_keys(model_id: str, namespace_prefix: str) -> set[s
     prefix = _string(namespace_prefix).strip("/")
     if not model_id:
         return set()
-    raw_id = model_id[len(prefix) + 1:] if prefix and model_id.startswith(f"{prefix}/") else model_id
+    raw_id = (
+        model_id[len(prefix) + 1 :] if prefix and model_id.startswith(f"{prefix}/") else model_id
+    )
     return {raw_id, f"{prefix}/{raw_id}"} if prefix else {raw_id}
 
 
@@ -1553,7 +1557,11 @@ def _configured_model_namespace(config: dict[str, Any], provider_id: str) -> str
     kind = _string(config.get("kind")).lower()
     if kind == "siliconflow":
         return "siliconflow"
-    return provider_id if kind in OPENAI_COMPATIBLE_CONNECTION_KINDS and provider_id != "openai" else ""
+    return (
+        provider_id
+        if kind in OPENAI_COMPATIBLE_CONNECTION_KINDS and provider_id != "openai"
+        else ""
+    )
 
 
 def _merge_configured_catalog_candidates(
@@ -1850,7 +1858,9 @@ def _catalog_preview_model(model: Any) -> dict[str, Any]:
         "is_deprecated": bool(getattr(model, "is_deprecated", False)),
         "runtime_supported": runtime_supported,
         "verified": False,
-        "upstream_model_id": str(_dict(getattr(model, "raw_json", {})).get("upstream_model_id") or ""),
+        "upstream_model_id": str(
+            _dict(getattr(model, "raw_json", {})).get("upstream_model_id") or ""
+        ),
         "capability_tags": capability_tags,
     }
 
