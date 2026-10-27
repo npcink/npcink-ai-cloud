@@ -113,6 +113,16 @@ for the edited media usage: explicit **Verify capability** supplies existing
 required evidence before saving. Media recognition policy saves independently.
 `read_only_profiles` is never accepted by the write interface; the six-profile
 whitelist and `text.ai` automatic selection rules are unchanged.
+
+For the development M4 Ollama connection, text and vision model declarations
+persist `endpoint_variant: ollama_chat` in the existing per-model operator
+metadata overrides, with a nonempty `source` and `revision`. Catalog refreshes
+must preserve that declared native transport. Upstream `/models` fields and
+model names cannot select it. The native request explicitly disables thinking
+and translates JSON object/schema output formats; the WordPress task and
+prompt ownership remain unchanged. This configuration is development evidence,
+not production model acceptance or proof of editorial quality.
+
 Candidate instances, when present, must be available, enabled by the provider
 model allowlist, compatible with the profile execution kind, and limited to a
 primary plus one fallback. An empty candidate chain is an explicit fail-closed `needs_candidates` state, so a

@@ -87,6 +87,8 @@ export const FAMILY_SOURCES = {
     'src/app/admin/runtime-profiles/page.tsx copy(); suffix-only literals plus profileLabelKey(profile.profile_id) over the bounded runtime profile map',
   'admin.ai_resources.':
     'src/app/admin/ai-resources/page.tsx aiText(); suffix-only literals plus directory query fields, prefix prepended inside the helper',
+  'admin.model_test.':
+    'src/features/admin/ai-resources/ModelTestDialog.tsx text(); bounded literal suffixes for model test labels and outcomes',
   'admin.coverage.reason.':
     'src/app/admin/coverage/page.tsx translateReasonCode; backend coverage reason codes (service_*)',
   'admin.coverage.action.':
@@ -193,7 +195,7 @@ assert.ok(enBlockStart > 0, 'i18n catalog must contain the en block');
 assert.ok(zhBlockStart > enBlockStart, 'i18n catalog must contain the zh-CN block');
 const enBlock = i18nSource.slice(enBlockStart, zhBlockStart);
 for (const prefix of FAMILY_PREFIXES) {
-  const keyPattern = new RegExp(`^\\s*'${escapeRegExp(prefix)}[^']*':`, 'm');
+  const keyPattern = new RegExp(`^\\s*['"]${escapeRegExp(prefix)}[^'"]*['"]:`, 'm');
   assert.ok(
     keyPattern.test(enBlock),
     `family prefix ${prefix} owns no catalog key in the en block; the family and the catalog have drifted apart`

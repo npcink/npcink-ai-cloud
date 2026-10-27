@@ -34,8 +34,14 @@ def test_m4_ollama_preview_connection_is_secretless_and_non_reasoning() -> None:
     assert payload["config"] == {
         "model_ids": [MODEL_ID, VISION_MODEL_ID],
         "model_metadata_overrides": {
+            MODEL_ID: {
+                "endpoint_variant": "ollama_chat",
+                "source": "m4_preview_operator_config",
+                "revision": "ollama-native-chat-v1",
+            },
             VISION_MODEL_ID: {
                 "feature": "vision",
+                "endpoint_variant": "ollama_chat",
                 "context_window": 262144,
                 "source": "m4_preview_operator_config",
                 "revision": "qwen3-vl-2b-context-v1",
