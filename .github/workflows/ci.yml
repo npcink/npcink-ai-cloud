@@ -1127,7 +1127,8 @@ jobs:
   frontend:
     needs: [classify]
     if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
-    runs-on: ubuntu-latest
+    # Playwright Chromium does not support the Ubuntu 26.04 latest runner yet.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
