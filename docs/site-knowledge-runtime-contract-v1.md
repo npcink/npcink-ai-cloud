@@ -151,16 +151,57 @@ be omitted; if supplied and nonempty, it must exactly match those attachment
 IDs to use this lane. Consumers need not add image IDs to `post_ids`.
 Existing rows with the same `content_hash` remain in place, require no new
 embedding, and are reported as `unchanged_documents`. Changed existing media
-rows are replaced with exact site/type/id cleanup in SQL and the active vector
-backend before upsert, including obsolete tail chunks after metadata shrinks.
-That cleanup also covers vector-only residue when the SQL root is absent; it
-runs only after normalization, chunk/embedding construction and the final
-quota recheck succeed. The existing unchanged-content shortcut remains unchanged.
+rows replace exact site/type/id SQL chunks only after normalization, embedding
+and quota checks. The vector backend upserts the prepared source before
+pruning obsolete tail chunk indices. That tail cleanup also covers vector-only
+residue when the SQL root is absent. A failed upsert never initiates deletion. The existing unchanged-content shortcut remains unchanged.
 This replacement is a correctness requirement, not merely an embedding
 optimization. Same-number post/page roots, other media and other sites remain
-untouched. `rebuild`, mixed document/comment delivery and nonmatching nonempty
-`post_ids` retain their existing behavior. This does not create another cache,
+untouched. `rebuild` retains its existing destructive behavior. All refresh replacements,
+including mixed document/comment delivery and nonmatching nonempty `post_ids`,
+follow the preserve-on-omission rule below. This does not create another cache,
 queue, registry, or vector store, or make SQL presence a vector-cleanliness proof.
+
+### Refresh safety and explicit withdrawal (2026-10-28 candidate)
+
+`refresh` replaces only delivered, normalized and prepared sources. `post_ids`
+selects delivery context and never implies that an omitted source was withdrawn.
+Empty/partial/invalid collections, document or chunk quota skips, failed
+embeddings and interruptions before a source upsert retain that source's old
+SQL rows. Account plan capacity and site capacity are independent checks;
+updating an existing source does not consume a new account document slot.
+Completed full-manifest pruning, explicit delete and explicit rebuild retain
+their separate semantics. Rebuild is still destructive, not an atomic refresh.
+
+`site_knowledge_sync.v1` additively accepts these optional refresh-only lists:
+
+- `withdrawn_post_ids`: at most 1,000 strict positive integer WordPress root IDs;
+  applies the existing legacy post-index deletion scope, including associated
+  comments (not an exact typed media selector).
+- `withdrawn_comment_ids`: at most 1,000 strict positive integer comment IDs;
+  deletes only that site's exact comment source, never a same-number post/media.
+
+Booleans, strings, null, non-positive values and oversized lists are rejected;
+duplicates are deduplicated. A source cannot be both delivered and withdrawn;
+a withdrawn parent cannot contain delivered comments in the same request.
+Validation completes before progress callbacks or index mutation. Explicit
+withdrawals may succeed while unrelated replacements hit quota or fail; they
+are intentional removals, not rollback-protected replacement attempts.
+
+For external vectors, complete prepared source chunks are upserted first, then
+only obsolete `chunk_index >= new_chunk_count` values at exact site/type/id are
+removed. SQL source upsert replaces its chunks without pre-deleting its root.
+There is no distributed SQL/vector transaction: partial external upserts,
+prune failure or a crash between stores remain failed-run reconciliation risks.
+Local fake-vector tests establish ordering and scope, not live Zilliz evidence.
+
+For this semantic change migrate Addon/other signed producers **before Cloud**:
+legitimate privacy/deletion withdrawals must use explicit delete or the new
+markers. Older omission-only producers remain update-compatible but cannot
+withdraw through omission. The Addon keeps legacy `post_ids` while adding
+markers, allowing migration from the older Cloud cleanup behavior. No runtime
+version check or new registry/queue is added. Candidate/merged/M4 evidence and
+production rollout must be reported separately.
 
 `site_knowledge_status.v1` additively accepts up to 20
 `media_attachment_ids`. Its `media_evidence_items` response returns existing

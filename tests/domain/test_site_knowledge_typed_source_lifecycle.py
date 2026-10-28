@@ -132,7 +132,7 @@ class LocalVectorClient:
     @staticmethod
     def matches(row, expression):
         for part in expression.split(" and "):
-            match = re.fullmatch(r"(\w+) (==|!=|in) (.+)", part)
+            match = re.fullmatch(r"(\w+) (==|!=|>=|in) (.+)", part)
             assert match is not None, expression
             field, operation, encoded = match.groups()
             value = json.loads(encoded)
@@ -141,6 +141,8 @@ class LocalVectorClient:
             if operation == "!=" and row[field] == value:
                 return False
             if operation == "in" and row[field] not in value:
+                return False
+            if operation == ">=" and row[field] < value:
                 return False
         return True
 
@@ -153,6 +155,7 @@ class LocalVectorClient:
 
     def upsert(self, *, collection_name, data):
         assert collection_name == "fixture"
+
         # Milvus replaces by primary key; absent tail indices are NOT removed.
         def identity(row):
             return tuple(row[key] for key in ("site_id", "source_type", "source_id", "chunk_index"))
@@ -914,7 +917,8 @@ def test_media_refresh_shorter_metadata_removes_tail_and_preserves_typed_sentine
             assert current[0]["chunk_index"] == 0
             assert current[0]["chunk_text"] == chunks[0].chunk_text
             assert service.vector_backend.client.filters == filters_before + [
-                'site_id == "alpha" and source_type == "media" and source_id == 42'
+                'site_id == "alpha" and source_type == "media" '
+                'and source_id == 42 and chunk_index >= 1'
             ]
 
 
@@ -969,6 +973,7 @@ def test_media_refresh_failure_does_not_predelete_old_vectors(
         elif failure == "quota":
             service.settings.site_knowledge_max_sync_documents_per_run = 0
         else:
+
             def failed_embed(*args, **kwargs):
                 raise SiteKnowledgeBackendError("fixture.embedding_failed", "Synthetic failure")
 

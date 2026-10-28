@@ -246,6 +246,32 @@ class SiteKnowledgeService:
         comments = comments if isinstance(comments, list) else []
         media_items = input_payload.get("media_items")
         media_items = media_items if isinstance(media_items, list) else []
+        withdrawn_post_ids = _refresh_withdrawal_ids(input_payload, "withdrawn_post_ids", sync_mode)
+        withdrawn_comment_ids = _refresh_withdrawal_ids(
+            input_payload, "withdrawn_comment_ids", sync_mode
+        )
+        delivered_post_ids = {
+            _coerce_int(item.get("post_id"), default=0)
+            for item in documents
+            if isinstance(item, dict)
+        }
+        delivered_comment_ids = {
+            _coerce_int(item.get("comment_id"), default=0)
+            for item in comments
+            if isinstance(item, dict)
+        }
+        comment_parent_ids = {
+            _coerce_int(item.get("post_id"), default=0)
+            for item in comments
+            if isinstance(item, dict)
+        }
+        if set(withdrawn_post_ids) & (delivered_post_ids | comment_parent_ids) or (
+            set(withdrawn_comment_ids) & delivered_comment_ids
+        ):
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.conflicting_withdrawal",
+                "a source cannot be delivered and withdrawn in the same refresh",
+            )
         incremental_media_refresh = _is_complete_media_refresh(
             sync_mode=sync_mode,
             post_ids=post_ids,
@@ -331,6 +357,19 @@ class SiteKnowledgeService:
                 ),
             )
 
+        # These IDs are explicit signed source-withdrawal evidence, never inferred
+        # from an empty/partial collection. They use the existing deletion scope.
+        if withdrawn_post_ids:
+            if self.vector_backend is not None:
+                self.vector_backend.delete_post_indexes(site_id, withdrawn_post_ids)
+            deleted_entries += self.repository.delete_post_indexes(site_id, withdrawn_post_ids)
+        for comment_id in withdrawn_comment_ids:
+            if self.vector_backend is not None:
+                self.vector_backend.delete_source_index(site_id, "comment", comment_id)
+            deleted_entries += self.repository.delete_source_index(
+                site_id=site_id, source_type="comment", source_id=comment_id
+            )
+
         if sync_mode == "rebuild":
             self._emit_sync_progress(
                 status="running",
@@ -349,17 +388,8 @@ class SiteKnowledgeService:
                 if post_ids
                 else self.repository.delete_site_index(site_id)
             )
-        elif sync_mode == "refresh" and post_ids and not incremental_media_refresh:
-            self._emit_sync_progress(
-                status="running",
-                stage="cleaning",
-                message="Clearing selected old index entries before refreshing.",
-                sync_mode=sync_mode,
-                total_documents=total_documents,
-            )
-            if self.vector_backend is not None:
-                self.vector_backend.delete_post_indexes(site_id, post_ids)
-            deleted_entries = self.repository.delete_post_indexes(site_id, post_ids)
+        # Refresh replaces only delivered, prepared sources. Omitted IDs are not
+        # withdrawal evidence; explicit delete and full-manifest pruning own removal.
 
         accepted_documents = 0
         indexed_documents = 0
@@ -592,24 +622,15 @@ class SiteKnowledgeService:
                     source_type=source_type,
                     source_id=source_id,
                 )
-                if (
-                    not existing_document
-                    and account_media_image_count >= account_media_image_limit
-                ):
+                if not existing_document and account_media_image_count >= account_media_image_limit:
                     accepted_documents -= 1
                     skipped_documents += 1
                     skipped_due_to_quota += 1
                     quota_limited = True
                     processed_documents += 1
                     continue
-            if incremental_media_refresh and source_type == "media":
-                if self.vector_backend is not None:
-                    self.vector_backend.delete_source_index(site_id, source_type, source_id)
-                deleted_entries += self.repository.delete_source_index(
-                    site_id=site_id,
-                    source_type=source_type,
-                    source_id=source_id,
-                )
+            # Preparation and quota checks must finish before replacing this source.
+            # SQL upsert replaces its chunks without deleting its document row.
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -1963,6 +1984,27 @@ def _serialize_media_evidence_document(document: Any) -> dict[str, object]:
         "visual_evidence": visual_evidence,
         "last_indexed_at": _serialize_datetime(document.last_indexed_at),
     }
+
+
+def _refresh_withdrawal_ids(
+    payload: dict[str, Any],
+    field: str,
+    sync_mode: str,
+) -> list[int]:
+    if field not in payload:
+        return []
+    value = payload[field]
+    if (
+        sync_mode != "refresh"
+        or not isinstance(value, list)
+        or len(value) > MAX_SYNC_POST_IDS
+        or any(type(item) is not int or item <= 0 for item in value)
+    ):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.invalid_refresh_withdrawal",
+            "refresh withdrawals must be bounded positive integer source IDs",
+        )
+    return list(dict.fromkeys(value))
 
 
 def _is_complete_media_refresh(

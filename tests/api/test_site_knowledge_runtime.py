@@ -2251,7 +2251,7 @@ def test_site_knowledge_quota_settings_validate_positive_values(tmp_path: Path) 
         )
 
 
-def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None:
+def test_targeted_refresh_preserves_missing_public_document(tmp_path: Path) -> None:
     database_url, settings, runtime_queue, client = _build_client(tmp_path)
 
     initial_result = _execute(client, _sync_payload(), idempotency_key="targeted-prune-initial")
@@ -2288,10 +2288,10 @@ def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None
         providers={},
     ).get_run_result(refresh_result["json"]["data"]["run_id"], site_id="site_alpha")
 
-    assert worker_result["result"]["sync"]["deleted_entries"] > 0
+    assert worker_result["result"]["sync"]["deleted_entries"] == 0
     assert worker_result["result"]["sync"]["indexed_documents"] == 0
     with get_session(database_url) as session:
-        assert list(session.query(SiteKnowledgeChunk).all()) == []
+        assert {chunk.post_id for chunk in session.query(SiteKnowledgeChunk).all()} == {123}
 
 
 def test_comments_are_opt_in_and_source_filtered(tmp_path: Path) -> None:
