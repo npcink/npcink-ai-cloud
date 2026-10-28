@@ -190,12 +190,15 @@ class ZillizCloudSiteKnowledgeBackend:
         if not chunks:
             return
         rows = []
+        tails: dict[tuple[str, int], int] = {}
         for chunk in chunks:
             post_id = int(chunk["post_id"])
             source_type = str(chunk.get("source_type") or chunk["post_type"])
             source_id = int(chunk.get("source_id") or post_id)
             parent_post_id = int(chunk.get("parent_post_id") or post_id)
             chunk_index = int(chunk["chunk_index"])
+            identity = (source_type, source_id)
+            tails[identity] = max(tails.get(identity, 0), chunk_index + 1)
             rows.append(
                 {
                     "id": f"{site_id}:{source_type}:{source_id}:{chunk_index}",
@@ -222,6 +225,17 @@ class ZillizCloudSiteKnowledgeBackend:
                 "site_knowledge.zilliz_upsert_failed",
                 "Zilliz site knowledge upsert failed",
             ) from error
+
+        # Runtime supplies all prepared chunks for each source. Never delete the
+        # old source before upsert succeeds; then remove only obsolete tail IDs.
+        for (source_type, source_id), first_obsolete in tails.items():
+            self._delete(
+                expr=(
+                    f'site_id == "{_escape_expr_string(site_id)}" '
+                    f'and source_type == "{_escape_expr_string(source_type)}" '
+                    f"and source_id == {source_id} and chunk_index >= {first_obsolete}"
+                )
+            )
 
     def search(
         self,
