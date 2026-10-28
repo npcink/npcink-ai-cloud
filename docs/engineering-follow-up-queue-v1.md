@@ -211,6 +211,37 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 本节只校准原队列的实现与证据状态；未完成项仍保留，不把延期写成取消，
 也不授权新产品功能或重做已被现行契约替代的旧提案。
 
+### 1.11 Provider-model 收尾与后续触发（2026-10-28）
+
+操作者确认：P0 结项，保留兼容；下列三组建议暂缓，有具体问题再启动。
+本次静态核对基线为 `d0bdff8e9371bf4a547e8ca466d1db7f04828b46`，不是未来的
+实时 master，也不是新的运行/生产验收。原始建议及其余未实施项仍见
+[历史方案处置](history/engineering/2026/provider-model-management-plan-disposition-2026-10-26.md)；
+本节不改写历史原件、不将暂缓写成已完成或取消。
+
+**P0 已交付，不重复立项**：[#1206](https://github.com/npcink/npcink-ai-cloud/pull/1206)
+（`364787b5`）已承接 kind 保存校验与 model_ids 来源收口；
+[#1293](https://github.com/npcink/npcink-ai-cloud/pull/1293)（`574fe5e5`）继续维护
+账户目录、启用选择与身份边界。当前
+[读取函数](../app/domain/provider_connections/model_allowlist.py)优先采用 config 中的
+model_ids，仅字段缺失时回退 metadata；显式空列表不得重新启用旧型号。
+参照[投影回归](../tests/domain/test_provider_connection_projection.py)。
+函数名的匹配数量和提交祖先关系都不能单独证明行为或 squash 后的交付状态；
+须核最终实现、合并记录及适用测试/验收来源。
+
+| 保留事项 | 当前状态 | 下一触发与最小动作 |
+| --- | --- | --- |
+| 存量 metadata-only model_ids 核查 | 暂缓；fallback 保留，存量数量未核实 | 出现来源不明的具名故障，或明确安排兼容退役评估时，先说明目标环境、只读范围与访问授权，再核非敏感数量和配置来源。即使为零，也不能自动删除 fallback；移除仍需单独范围、兼容/迁移方案及行为回归。 |
+| namespace prefix 收口与 adapter 分发表重构 | 暂缓；不合成一个宽泛 P1 | 可复现的模型身份/分发错误，或有证据的维护瓶颈触发复审；先确认现有路径为何不足，再按具体问题分别拆小批。已有 namespace/目录改进不等于全部重构完成。 |
+| deprecated 模型通知 | 暂缓；不自动接 Portal inbox | 真实弃用影响核心任务、现有目录/错误提示不足，且通知对象、事件及渠道有明确范围安排后再设计；已有 deprecated 字段或收件箱不是执行授权。 |
+
+执行上述复审仍遵守[价值优先范围](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)。
+既有安全、正确性和核心路径阻断可按实际问题修复；不因旧清单自行扩张平台或通知。
+不得为了实施历史计划切换共享脏工作区；必要的源变更从最新 master 使用独立、
+受锁保护的工作区，按[生命周期](single-session-worktree-lifecycle-v1.md)保全退休。
+本次没有查询业务库、移除 fallback、调用 Provider、恢复 Local/cron、操作 M4 或生产；
+三组事项只在新具名触发出现时接续，无变化不重复扫描或重跑旧验收。
+
 ## 2. 已完成（2026-09-21/22，防重复规划）
 
 2026-10-05 会话补充完成项：
