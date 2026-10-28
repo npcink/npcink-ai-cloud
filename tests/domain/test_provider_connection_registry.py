@@ -10,6 +10,7 @@ from app.adapters.providers.base import (
     CatalogInstanceSeed,
     CatalogModelSeed,
     ProviderCatalogSnapshot,
+    ProviderExecutionError,
     ProviderExecutionRequest,
     ProviderExecutionResult,
     ProviderMediaCandidate,
@@ -643,6 +644,46 @@ def test_image_delivery_probe_validates_base64_image_bytes(
     assert result["content_type"] == "image/png"
     assert (result["width"], result["height"]) == (8, 6)
     assert result["connection"]["image_delivery_repair"] == {}
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("provider_failure", [True, False])
+def test_failed_image_probe_replaces_passed_evidence_and_survives_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider_failure: bool,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = _configure_image_probe_connection(database_url, settings, image_response_format="b64_json")
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "siliconflow_primary")
+        assert row is not None
+        row.metadata_json = {"image_delivery_probe": {"status": "ready", "model_id": "old-model"}}
+        session.commit()
+
+    class FailedAdapter:
+        timeout_seconds = 30.0
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            if provider_failure:
+                raise ProviderExecutionError("provider.timeout", "private upstream details")
+            return ProviderExecutionResult(
+                output={"candidate_count": 1}, latency_ms=1, tokens_in=0, tokens_out=0, cost=0.0,
+                media_candidates=(ProviderMediaCandidate(index=1, content_bytes=b"not-an-image"),),
+            )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda settings, row: FailedAdapter(),
+    )
+    with pytest.raises(ProviderConnectionAdminError):
+        service.test_image_delivery("siliconflow_primary")
+    reloaded = ProviderConnectionAdminService(database_url, settings).list_connections()["connections"]
+    probe = next(x for x in reloaded if x["connection_id"] == "siliconflow_primary")["image_delivery_probe"]
+    assert probe["status"] == "failed"
+    assert probe["model_id"] == "siliconflow/Kwai-Kolors/Kolors"
+    assert probe["tested_at"]
+    assert "private upstream details" not in str(probe)
     dispose_engine(database_url)
 
 

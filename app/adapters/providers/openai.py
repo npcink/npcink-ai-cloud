@@ -73,6 +73,7 @@ ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS = frozenset(
         "context_window",
         "feature",
         "endpoint_variant",
+        "image_response_format",
         "price_input",
         "price_output",
         "price_cache_read",
@@ -150,6 +151,11 @@ def _normalize_model_metadata_overrides(
                 if raw_value == "ollama_chat":
                     override[key] = raw_value
                 continue
+            if key == "image_response_format":
+                response_format = str(raw_value or "").strip().lower()
+                if response_format in ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS | {"provider_default"}:
+                    override[key] = response_format
+                continue
             text = str(raw_value or "").strip()
             if text:
                 override[key] = text[:191]
@@ -160,6 +166,7 @@ def _normalize_model_metadata_overrides(
         ):
             override.pop("feature", None)
             override.pop("endpoint_variant", None)
+            override.pop("image_response_format", None)
         if override:
             normalized[model_id] = override
     return normalized
@@ -1544,14 +1551,20 @@ class OpenAIProviderAdapter:
             value = options.get(key)
             if isinstance(value, str) and value.strip():
                 payload[key] = value.strip()
-        if self.image_response_format is not None:
-            payload["response_format"] = self.image_response_format
+        model_id = str(payload["model"])
+        model_override = self.model_metadata_overrides.get(
+            model_id,
+            self.model_metadata_overrides.get(self._namespace_catalog_model_id(model_id), {}),
+        )
+        response_format = model_override.get("image_response_format", self.image_response_format)
+        if response_format and response_format != "provider_default":
+            payload["response_format"] = response_format
         metadata = self._normalize_request_metadata(options.get("metadata"))
         if metadata:
             payload["metadata"] = metadata
         if isinstance(options.get("extra"), dict):
             for key, value in options["extra"].items():
-                if isinstance(key, str) and key not in payload:
+                if isinstance(key, str) and key not in payload and key != "response_format":
                     payload[key] = value
 
     @staticmethod

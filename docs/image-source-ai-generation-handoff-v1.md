@@ -22,6 +22,37 @@ candidates separate while letting the local product surface expose an
 
 ## Phase 1: Manual Action
 
+### Provider delivery compatibility
+
+Cloud's existing provider adapter and artifact materializer normalize image URL
+and Base64 responses into the same temporary artifact contract. Keep this
+inside Cloud; no additional proxy service or provider connection is needed.
+Controlled URL downloads retain their exact-host, address, size and time limits.
+
+By default, omit the upstream `response_format` parameter and accept either
+supported response shape. A connection's `image_response_format` remains an
+optional compatibility override. If models in one connection need different
+request formats, use the existing `config.model_metadata_overrides` map:
+
+```json
+{
+  "native-image-model": {
+    "image_response_format": "provider_default",
+    "source": "provider API documentation",
+    "revision": "2026-10-28"
+  }
+}
+```
+
+Supported model values are `provider_default` (omit the parameter), `url` and
+`b64_json`. An override needs both `source` and `revision`; it can use the raw
+or connection-namespaced model ID. Model settings take precedence over the
+connection override, and ordinary runtime input cannot override that policy
+through `extra.response_format`. Do not infer support from a model name, trust
+arbitrary returned download hosts, or retry billable generation automatically
+to discover a supported format. A saved setting is not successful delivery
+evidence; explicit tests name the tested model and preserve failed results.
+
 `image_source_candidates` results include:
 
 - `ai_generation_handoff`

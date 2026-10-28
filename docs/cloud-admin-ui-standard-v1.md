@@ -546,6 +546,14 @@ workspace tabs through `navigation.ts`.
   dominant card.
 - Text/catalog connectivity must not be presented as proof that image delivery
   works.
+- Keep image delivery status and the optional, explicitly billable test beside
+  the supplier settings. Distinguish unverified, failed and verified evidence;
+  name the tested model rather than implying that every enabled model passed.
+- Unsaved changes disable image testing and suppress stale success. Test only
+  the saved configuration; do not implicitly save credentials or enable models.
+- Response-format overrides and exact-host repair stay in the collapsed
+  advanced disclosure. The ordinary setup remains connect, fetch models,
+  enable and use; format selection is not a prerequisite.
 
 ## 8. Shared Primitives
 

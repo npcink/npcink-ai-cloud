@@ -1634,6 +1634,67 @@ def test_openai_adapter_never_exposes_vision_error_bodies(
     assert leaked_marker not in repr(error.value.args)
 
 
+def test_one_supplier_applies_each_image_models_wire_format_without_retry() -> None:
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append(payload)
+        model = payload["model"]
+        expected = {"native-image": None, "url-image": "url", "b64-image": "b64_json"}
+        assert payload.get("response_format") == expected.get(model, "b64_json")
+        if payload.get("response_format") == "url":
+            data = {"url": "https://images.example.test/result.png"}
+        else:
+            data = {"b64_json": base64.b64encode(b"image").decode("ascii")}
+        return httpx.Response(200, json={"data": [data]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-key",
+        model_namespace_prefix="gateway",
+        image_response_format="b64_json",
+        image_output_hosts=["images.example.test"],
+        model_metadata_overrides={
+            "native-image": {
+                "image_response_format": "provider_default", "source": "provider docs", "revision": "v1",
+            },
+            "gateway/url-image": {
+                "image_response_format": "url", "source": "provider docs", "revision": "v1",
+            },
+            "b64-image": {
+                "image_response_format": "b64_json", "source": "provider docs", "revision": "v1",
+            },
+        },
+        transport=httpx.MockTransport(handler),
+    )
+    for model in ["native-image", "url-image", "b64-image", "fallback-image"]:
+        result = adapter.execute(_build_request(
+            execution_kind="image_generation", endpoint_variant="image_generations",
+            model_id=f"gateway/{model}",
+            input_payload={"prompt": "test", "extra": {"response_format": "untrusted"}},
+        ))
+        assert len(result.media_candidates) == 1
+        assert "b64_json" not in result.output and "url" not in result.output
+        if model == "url-image":
+            assert result.media_candidates[0].source_url == "https://images.example.test/result.png"
+        else:
+            assert result.media_candidates[0].content_bytes == b"image"
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("override", [
+    {"image_response_format": "url"},
+    {"image_response_format": "invalid", "source": "docs", "revision": "v1"},
+])
+def test_image_format_override_requires_valid_policy_and_evidence(override: dict) -> None:
+    adapter = OpenAIProviderAdapter(api_key="test-key", model_metadata_overrides={"image-model": override})
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="image_generation", endpoint_variant="image_generations", model_id="image-model",
+        input_payload={"prompt": "test"},
+    ))
+    assert "response_format" not in payload
+
+
 def test_openai_adapter_strictly_decodes_provider_base64_without_serializing_it() -> None:
     image_bytes = b"provider-image-bytes"
 
