@@ -79,6 +79,11 @@ product work or override the current Phase 1 expansion freeze.
 
 ## How to Read This Repository
 
+- [Portal 自助功能实现与交接规范](engineering/portal-frontend-feature-implementation-patterns.md)
+  — 维护现有能力前核合并身份、事务、身份与运行证据，避免照抄旧分支指令。
+- [A02 九份旧文档保全与替代对账](history/engineering/2026/a02-document-reconciliation-2026-10-28.md)
+  — 原件恢复身份及逐份现行入口；历史计划不作为新增功能或重放旧分支授权。
+
 Use documentation in this order:
 
 1. current code, tests, runtime evidence, and protected repository policy;
