@@ -654,7 +654,9 @@ def test_failed_image_probe_replaces_passed_evidence_and_survives_reload(
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
     settings = _settings(database_url)
-    service = _configure_image_probe_connection(database_url, settings, image_response_format="b64_json")
+    service = _configure_image_probe_connection(
+        database_url, settings, image_response_format="b64_json"
+    )
     with get_session(database_url) as session:
         row = session.get(ProviderConnection, "siliconflow_primary")
         assert row is not None
@@ -678,8 +680,12 @@ def test_failed_image_probe_replaces_passed_evidence_and_survives_reload(
     )
     with pytest.raises(ProviderConnectionAdminError):
         service.test_image_delivery("siliconflow_primary")
-    reloaded = ProviderConnectionAdminService(database_url, settings).list_connections()["connections"]
-    probe = next(x for x in reloaded if x["connection_id"] == "siliconflow_primary")["image_delivery_probe"]
+    reloaded = ProviderConnectionAdminService(database_url, settings).list_connections()[
+        "connections"
+    ]
+    probe = next(x for x in reloaded if x["connection_id"] == "siliconflow_primary")[
+        "image_delivery_probe"
+    ]
     assert probe["status"] == "failed"
     assert probe["model_id"] == "siliconflow/Kwai-Kolors/Kolors"
     assert probe["tested_at"]

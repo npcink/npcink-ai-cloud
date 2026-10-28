@@ -153,7 +153,9 @@ def _normalize_model_metadata_overrides(
                 continue
             if key == "image_response_format":
                 response_format = str(raw_value or "").strip().lower()
-                if response_format in ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS | {"provider_default"}:
+                if response_format in (
+                    ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS | {"provider_default"}
+                ):
                     override[key] = response_format
                 continue
             text = str(raw_value or "").strip()

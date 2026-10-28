@@ -1656,7 +1656,9 @@ def test_one_supplier_applies_each_image_models_wire_format_without_retry() -> N
         image_output_hosts=["images.example.test"],
         model_metadata_overrides={
             "native-image": {
-                "image_response_format": "provider_default", "source": "provider docs", "revision": "v1",
+                "image_response_format": "provider_default",
+                "source": "provider docs",
+                "revision": "v1",
             },
             "gateway/url-image": {
                 "image_response_format": "url", "source": "provider docs", "revision": "v1",
@@ -1687,9 +1689,13 @@ def test_one_supplier_applies_each_image_models_wire_format_without_retry() -> N
     {"image_response_format": "invalid", "source": "docs", "revision": "v1"},
 ])
 def test_image_format_override_requires_valid_policy_and_evidence(override: dict) -> None:
-    adapter = OpenAIProviderAdapter(api_key="test-key", model_metadata_overrides={"image-model": override})
+    adapter = OpenAIProviderAdapter(
+        api_key="test-key", model_metadata_overrides={"image-model": override}
+    )
     _, payload = adapter._build_http_request(_build_request(
-        execution_kind="image_generation", endpoint_variant="image_generations", model_id="image-model",
+        execution_kind="image_generation",
+        endpoint_variant="image_generations",
+        model_id="image-model",
         input_payload={"prompt": "test"},
     ))
     assert "response_format" not in payload
