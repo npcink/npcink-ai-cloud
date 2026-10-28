@@ -239,6 +239,8 @@ deleting the old decision history.
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
 - [M4 Preview Target Alignment Standard](m4-preview-target-alignment-standard-v1.md) — keep 18010 tunnel and candidate sync targets aligned, with version confirmation and recovery steps
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
+- [M4 本地模型与 SSH 生图开发手册](m4-local-models-development-runbook-v1.md) — Draw Things / Klein 4B 配置、SSH HTTP/CLI 调用、取图与 Laya/重排的项目接入边界；独立模型验证不等于 Admin 或 Cloud 闭环可用。
+- [开发生图 API 配置手册](development-image-api-runbook-v1.md) — 免费 Kolors 联调、Z-Image-Turbo 实际开发配图、预算与 SSH 运维；生产模型由操作者另行指定。
 - [Engineering Command Inventory Standard](engineering-command-inventory-standard-v1.md)
 - [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](history/engineering/2026/engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
