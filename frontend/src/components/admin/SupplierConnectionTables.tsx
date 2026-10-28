@@ -12,6 +12,7 @@ import type {
 } from '@/features/admin/ai-resources/types';
 import { asyncOperationRunning, type AsyncOperationState } from '@/features/admin/ai-resources/async-operation-state';
 import { formatDate } from '@/lib/utils';
+import { groupModelSuppliers } from '@/features/admin/ai-resources/supplier-groups';
 
 type Translate = (
   key: string,
@@ -227,11 +228,12 @@ export function ModelSupplierTable({
   translate,
   toolbar,
 }: ModelSupplierTableProps) {
+  const supplierGroups = groupModelSuppliers(connections);
   return (
     <AdminDataTableFrame
       dataUi="model-supplier-directory"
       title={translate('model_directory_title', 'Supplier directory')}
-      resultLabel={translate('directory_result_count', '{{count}} suppliers', { count: String(connections.length) })}
+      resultLabel={translate('directory_result_count', '{{count}} suppliers', { count: String(supplierGroups.length) })}
       headerActions={toolbar}
       footer={(
         <details data-ui="supplier-boundary" className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -253,8 +255,19 @@ export function ModelSupplierTable({
               <th className="w-[32%] px-4 py-2.5 text-right">{translate('column_actions', 'Actions')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {connections.map((connection) => {
+          {supplierGroups.map((group) => (
+          <tbody key={group.key} data-supplier-group={group.key} className="divide-y divide-slate-200 border-b border-slate-200 last:border-b-0 dark:divide-slate-800 dark:border-slate-800">
+            {group.isOllama ? (
+              <tr data-ui="supplier-group-heading" className="bg-slate-50/70 dark:bg-slate-900/35">
+                <th scope="rowgroup" colSpan={4} className="px-4 py-2.5 text-sm font-semibold text-slate-950 dark:text-white">
+                  <span data-ui="supplier-name">{group.displayName}</span>
+                  <span className="ml-3 text-xs font-normal text-slate-500 dark:text-slate-400">
+                    {translate('supplier_connection_count', '{{count}} connections', { count: String(group.connections.length) })}
+                  </span>
+                </th>
+              </tr>
+            ) : null}
+            {group.connections.map((connection) => {
               const testResult = testResults[connection.connection_id];
               const modelCount = connection.model_ids?.length || 0;
               const isSelected = connection.connection_id === selectedConnectionId;
@@ -289,10 +302,17 @@ export function ModelSupplierTable({
                     data-selected={isSelected ? 'true' : 'false'}
                     className={isSelected ? 'bg-blue-50/60 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
                   >
-                    <td className="px-4 py-3 align-top">
+                    <td className={`${group.isOllama ? 'pl-7 pr-4' : 'px-4'} py-3 align-top`}>
                       <div className="flex items-center gap-1">
-                        <span data-ui="supplier-name" className="block max-w-full truncate font-semibold text-slate-950 dark:text-white">{connection.display_name}</span>
+                        <span data-ui={group.isOllama ? 'supplier-connection-name' : 'supplier-name'} className="block max-w-full truncate font-semibold text-slate-950 dark:text-white">
+                          {group.isOllama
+                            ? connection.provider_id === 'ollama-m4-embedding'
+                              ? translate('supplier_connection_embedding', 'Knowledge embeddings')
+                              : translate('supplier_connection_text_vision', 'Text and vision')
+                            : connection.display_name}
+                        </span>
                         <AdminHelpTip label={translate('connection_details_named', '{{name}} connection details', { name: connection.display_name })}>
+                          <span className="block break-all">{connection.display_name} · {connection.connection_id}</span>
                           <span className="block break-all">{connection.provider_id} · {providerKindLabel(connection.kind)}</span>
                           <span className="block break-all">{connection.base_url || '—'}</span>
                           <span className="block break-words">{connection.runtime_profile_ids.join(', ')}</span>
@@ -441,7 +461,10 @@ export function ModelSupplierTable({
                 </Fragment>
               );
             })}
-            {connections.length === 0 ? (
+          </tbody>
+          ))}
+          {connections.length === 0 ? (
+            <tbody>
               <tr>
                 <td colSpan={4} className="px-4 py-6">
                   <AdminEmptyState className="flex items-center justify-between gap-3 text-left">
@@ -454,8 +477,8 @@ export function ModelSupplierTable({
                   </AdminEmptyState>
                 </td>
               </tr>
-            ) : null}
-          </tbody>
+            </tbody>
+          ) : null}
         </table>
     </AdminDataTableFrame>
   );

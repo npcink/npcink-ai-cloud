@@ -15,6 +15,9 @@ export const localeOptions: Array<{ value: Locale; label: string; shortLabel: st
 
 export const translations: Record<Locale, TranslationMap> = {
   en: {
+    'admin.ai_resources.supplier_connection_count': '{{count}} connections',
+    'admin.ai_resources.supplier_connection_text_vision': 'Text and vision',
+    'admin.ai_resources.supplier_connection_embedding': 'Knowledge embeddings',
     'admin.troubleshooting.sample_limited': 'A diagnostic sample limit was reached. Counts and trends describe returned evidence, not the full period; absence of an issue cannot confirm recovery.',
     'admin.troubleshooting.inspect_gap_runs': "Inspect missing-call runs",
     'admin.troubleshooting.gap_runs': "Missing calls (runs)",
@@ -6689,6 +6692,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.account_detail.key_coverage_gap_status': 'Key coverage gap',
   },
   'zh-CN': {
+    'admin.ai_resources.supplier_connection_count': '{{count}} 条连接',
+    'admin.ai_resources.supplier_connection_text_vision': '文本与视觉',
+    'admin.ai_resources.supplier_connection_embedding': '知识库向量',
     'admin.troubleshooting.sample_limited': '诊断样本已达到返回上限；计数和趋势仅代表返回证据，不代表整个时段，未发现问题不能确认恢复。',
     'admin.troubleshooting.inspect_gap_runs': "查看缺失调用的运行",
     'admin.troubleshooting.gap_runs': "缺失运行数",

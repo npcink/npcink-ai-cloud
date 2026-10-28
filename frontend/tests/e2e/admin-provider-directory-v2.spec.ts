@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import type { SupplierConnection } from '../../src/features/admin/ai-resources/types';
 import { test } from './helpers/critical-network-fixture';
 import {
   buildAdminApiEnvelope,
@@ -194,9 +195,10 @@ const providerModelHealthFixture = {
 
 async function installProviderDirectoryHarness(
   page: Page,
-  options: { deleteConflict?: boolean; auditUnavailable?: boolean } = {}
+  options: { deleteConflict?: boolean; auditUnavailable?: boolean; supplierConnections?: SupplierConnection[] } = {}
 ) {
   await installAdminMocks(page);
+  const fixtureConnections = options.supplierConnections || connections;
   let requestCount = 0;
   let deletePreflightCount = 0;
   let deletePayload: unknown = null;
@@ -212,7 +214,7 @@ async function installProviderDirectoryHarness(
       body: JSON.stringify(
         buildAdminApiEnvelope({
           surface: 'admin_ai_resources',
-          connections,
+          connections: fixtureConnections,
           provider_model_health: providerModelHealthFixture,
           capabilities: [],
           capability_matrix: [],
@@ -231,7 +233,7 @@ async function installProviderDirectoryHarness(
   });
   await page.route('**/api/admin/provider-connections/*/test', async (route) => {
     const connectionId = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-2) || '');
-    const connection = connections.find((item) => item.connection_id === connectionId);
+    const connection = fixtureConnections.find((item) => item.connection_id === connectionId);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -285,7 +287,7 @@ async function installProviderDirectoryHarness(
     const pathParts = pathname.split('/');
     if (request.method() === 'GET' && pathname.endsWith('/delete-preflight')) {
       const connectionId = decodeURIComponent(pathParts.at(-2) || '');
-      const connection = connections.find((item) => item.connection_id === connectionId);
+      const connection = fixtureConnections.find((item) => item.connection_id === connectionId);
       deletePreflightCount += 1;
       await route.fulfill({
         status: 200,
@@ -1723,5 +1725,86 @@ for (const width of [1056, 1440]) {
     await dialog.getByRole('tab', { name: /Connection settings|连接设置/ }).click();
     await expect(dialog.getByLabel(/^Display name$|^显示名称$/)).toHaveValue('Retained draft');
     expect(patches).toBe(0);
+  });
+}
+
+
+for (const locale of ['en', 'zh-CN']) {
+  test(`Ollama supplier groups text, embedding and disabled connections in ${locale}`, async ({ page }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const evidence = observeAdminBrowserEvidence(page);
+    const ollama: SupplierConnection = {
+      connection_id: 'ollama-m4', provider_id: 'ollama-m4', display_name: 'Ollama M4',
+      kind: 'openai_compatible', enabled: true, configured: true, status: 'ready',
+      verification_status: 'passed', base_url: 'http://host.docker.internal:11434/v1',
+      capability_ids: ['text_generation', 'vision'], runtime_profile_ids: ['wp-ai.editorial'],
+      model_ids: ['qwen3.5:9b', 'qwen3-vl:2b'], managed_by: 'cloud_provider_connections',
+    };
+    const embedding: SupplierConnection = {
+      ...ollama, connection_id: 'ollama_m4_embedding', provider_id: 'ollama-m4-embedding',
+      display_name: 'Ollama M4 Embedding', capability_ids: ['embedding'], runtime_profile_ids: ['embed.default'],
+      model_ids: ['qwen3-embedding:0.6b'],
+    };
+    await installProviderDirectoryHarness(page, { supplierConnections: [
+      ollama, embedding, { ...ollama, connection_id: 'ollama_m4', enabled: false, status: 'disabled' },
+    ] });
+    await page.addInitScript((value) => localStorage.setItem('locale', value), locale);
+    await page.context().addCookies([{ name: 'npcink_locale', value: locale, url: process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || `http://127.0.0.1:${process.env.NPCINK_CLOUD_FRONTEND_PORT || '3301'}` }]);
+    await page.goto('/admin/ai-resources');
+    const directory = page.locator('[data-ui="model-supplier-directory"]');
+    await expect(directory.locator('[data-ui="supplier-name"]')).toHaveText('Ollama M4');
+    await expect(directory).toContainText(/1 suppliers|1 个供应商/);
+    await expect(directory).toContainText(/3 connections|3 条连接/);
+    await expect(directory.locator('[data-connection-id]')).toHaveCount(3);
+    const embeddingRow = page.locator('[data-connection-id="ollama_m4_embedding"]');
+    await expect(embeddingRow).toContainText(/Knowledge embeddings|知识库向量/);
+    await expect(page.locator('[data-connection-id="ollama_m4"]')).toContainText(/Disabled|已停用/);
+    await embeddingRow.getByRole('button', { name: /^Configure$|^配置$/ }).click();
+    await expect(page).toHaveURL(/focus=ollama_m4_embedding/);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByLabel(/^Display name$|^显示名称$/)).toHaveValue('Ollama M4 Embedding');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(embeddingRow.getByRole('button', { name: /^Configure$|^配置$/ })).toBeFocused();
+    await page.getByLabel(/^Status$|^状态$/i).selectOption('disabled');
+    await expect(directory.locator('[data-connection-id]')).toHaveCount(1);
+    await expect(directory.locator('[data-ui="supplier-name"]')).toHaveText('Ollama M4');
+    await page.getByLabel(/^Status$|^状态$/i).selectOption('all');
+    await page.locator('[data-connection-id="ollama-m4"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+    await expect(dialog.getByLabel(/^Display name$|^显示名称$/)).toHaveValue('Ollama M4');
+    await page.keyboard.press('Escape');
+    const search = page.getByPlaceholder(/Name, provider, model, capability|名称、provider、模型、能力/i);
+    await search.fill('qwen3-embedding');
+    await expect(directory.locator('[data-connection-id]')).toHaveCount(1);
+    await expect(embeddingRow).toBeVisible();
+    await search.fill('');
+    await expect(directory.locator('[data-connection-id]')).toHaveCount(3);
+    await page.route('**/api/admin/provider-connections/ollama_m4_embedding/test', route => route.fulfill({
+      json: buildAdminApiEnvelope({ connection_id: 'ollama_m4_embedding', provider_id: 'ollama-m4-embedding',
+        kind: 'openai_compatible', status: 'error', stage: 'config_preflight', ok: false,
+        error_code: 'provider_connection.test_failed', message: 'Connection verification failed',
+        tested_at: '2026-10-28T00:00:00Z' }),
+    }));
+    await embeddingRow.locator('[data-ui="supplier-more-actions"]').click();
+    await page.getByRole('menuitem', { name: /^Test$|^测试$/ }).click();
+    await expect(page.locator('[data-feedback-for="ollama_m4_embedding"] [role="alert"]')).toBeVisible();
+    await expect(page.locator('[data-feedback-for="ollama-m4"]')).toHaveCount(0);
+    await writeAdminVisualReceipt({
+      page, testInfo, route: '/admin/ai-resources', pageModel: 'queue',
+      artifactId: `ollama-${locale.toLowerCase()}`, dataMode: 'mocked', humanAcceptance: 'pending',
+      testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog'],
+      pageTitle: page.getByRole('heading', { level: 1 }), workingSurface: directory,
+      browserEvidence: evidence,
+      routeRuleResults: [
+        { id: 'single-primary-action', status: 'pass', evidence: 'Connection rows retain secondary Configure and More; header retains Add.' },
+        { id: 'textual-status', status: 'pass', evidence: 'Ready and disabled connection statuses remain visible within the group.' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'Each connection retains its Configure and More actions in its own row.' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'URL focus remains bound to the selected connection, including the embedding row.' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes the connection dialog and restores its Configure button focus.' },
+        { id: 'context-stability', status: 'pass', evidence: 'Status and model search narrow connections while retaining the Ollama supplier heading.' },
+      ],
+      interactionResults: [{ id: 'connection-identity', status: 'pass', evidence: 'Text and embedding Configure buttons open their original named connection; disabled and model search remain scoped.' }],
+    });
   });
 }

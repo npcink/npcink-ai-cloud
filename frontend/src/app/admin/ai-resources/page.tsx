@@ -1,6 +1,7 @@
 'use client';
 
 import { formatUsdAmount } from '@/lib/format-usd';
+import { groupModelSuppliers, supplierGroupNeedsAttention, supplierGroupReady } from '@/features/admin/ai-resources/supplier-groups';
 
 import Link from 'next/link';
 import { modelIdentityKeys, upstreamModelId } from '@/features/admin/ai-resources/model-reference-identity';
@@ -1523,19 +1524,12 @@ function AiResourcesContent() {
     );
   }
 
-  const readyModelSupplierCount = data.connections.filter(
+  const modelSupplierGroups = groupModelSuppliers(data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
-      && connection.status === 'ready'
-      && !connection.attention_required
-  ).length;
-  const modelSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai'
-  ).length;
-  const attentionSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai'
-      && connection.enabled
-      && (connection.attention_required ?? connection.status !== 'ready')
-  ).length;
+  ));
+  const readyModelSupplierCount = modelSupplierGroups.filter(supplierGroupReady).length;
+  const modelSupplierCount = modelSupplierGroups.length;
+  const attentionSupplierCount = modelSupplierGroups.filter(supplierGroupNeedsAttention).length;
   return (
     <BackofficePageStack>
       <BackofficePageHeader

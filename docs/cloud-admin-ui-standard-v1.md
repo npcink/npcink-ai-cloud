@@ -51,6 +51,23 @@ accessibility, preserve the stronger boundary first.
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
 
+### Local Ollama supplier grouping
+
+The existing `ollama-m4` and `ollama-m4-embedding` provider identities share
+one **Ollama M4** supplier group only when their OpenAI-compatible service
+URLs match (ignoring trailing slashes). Distinct hosts, ports, paths or schemes
+remain separate; matching display names or shared gateway addresses alone do
+not establish supplier identity. This is a directory projection, not a provider
+or database migration.
+
+Keep every connection visible under that group, including disabled records.
+Each child retains its own status, enabled-model count, configuration, test,
+error feedback and deletion preflight. Text/vision and Knowledge embeddings
+use separate child labels. Supplier totals count groups; a group needs attention
+if any enabled child needs attention, and is ready only when it has an enabled
+child and all enabled children are ready without attention. Filters narrow the
+visible children without changing their IDs, saved models or runtime routing.
+
 ### Bounded model test
 
 Supplier model rows may open **Model test / 模型测试** for a saved, enabled
