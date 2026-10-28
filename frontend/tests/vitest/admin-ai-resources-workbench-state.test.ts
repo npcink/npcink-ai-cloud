@@ -70,6 +70,29 @@ const staleWorkbench: ProviderWorkbenchState = {
 };
 
 describe('AI resources provider workbench state', () => {
+  it('acknowledges server-saved image delivery without discarding concurrent drafts', () => {
+    const opened = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, {
+      type: 'open_edit', form: editedForm, catalogPreview, referenceProviderId: 'anthropic',
+    });
+    const saved = {
+      type: 'apply_saved_image_delivery' as const, connectionId: editedForm.connectionId,
+      imageResponseFormat: 'url', imageOutputHosts: 'images.example.com',
+    };
+    const clean = providerWorkbenchReducer(opened, saved);
+    expect(hasProviderWorkbenchDraftChanges(clean)).toBe(false);
+    expect(clean.providerConnectionForm.imageOutputHosts).toBe('images.example.com');
+    const draft = providerWorkbenchReducer(opened, {
+      type: 'patch_form', patch: { displayName: 'New name', imageOutputHosts: 'draft.example.com' },
+    });
+    const retained = providerWorkbenchReducer(draft, saved);
+    expect(retained.providerConnectionForm).toMatchObject({
+      displayName: 'New name', imageOutputHosts: 'draft.example.com', imageResponseFormat: 'url',
+    });
+    expect(retained.initialProviderConnectionForm.imageOutputHosts).toBe('images.example.com');
+    expect(hasProviderWorkbenchDraftChanges(retained)).toBe(true);
+    expect(providerWorkbenchReducer(opened, { ...saved, connectionId: 'other' })).toBe(opened);
+  });
+
   it('tracks only connection and selection changes as drafts', () => {
     expect(hasProviderWorkbenchDraftChanges(INITIAL_PROVIDER_WORKBENCH_STATE)).toBe(false);
     const state = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, { type: 'set_model_ids', modelIds: 'account-model' });

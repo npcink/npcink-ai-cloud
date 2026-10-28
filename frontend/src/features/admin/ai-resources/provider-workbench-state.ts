@@ -161,6 +161,7 @@ export type ProviderWorkbenchAction =
       referenceProviderId?: string;
       invalidateCatalog?: boolean;
     }
+  | { type: 'apply_saved_image_delivery'; connectionId: string; imageResponseFormat: string; imageOutputHosts: string }
   | { type: 'apply_preset'; form: ProviderConnectionForm; referenceProviderId: string }
   | {
       type: 'set_model_ids';
@@ -253,6 +254,26 @@ export function providerWorkbenchReducer(
         modelReferenceProviderId:
           action.referenceProviderId ?? state.modelReferenceProviderId,
       };
+    case 'apply_saved_image_delivery': {
+      if (state.providerConnectionForm.connectionId !== action.connectionId) return state;
+      const savedFields = {
+        imageResponseFormat: action.imageResponseFormat,
+        imageOutputHosts: action.imageOutputHosts,
+      };
+      const current = state.providerConnectionForm;
+      const initial = state.initialProviderConnectionForm;
+      return {
+        ...state,
+        initialProviderConnectionForm: { ...initial, ...savedFields },
+        providerConnectionForm: {
+          ...current,
+          imageResponseFormat: current.imageResponseFormat === initial.imageResponseFormat
+            ? action.imageResponseFormat : current.imageResponseFormat,
+          imageOutputHosts: current.imageOutputHosts === initial.imageOutputHosts
+            ? action.imageOutputHosts : current.imageOutputHosts,
+        },
+      };
+    }
     case 'apply_preset':
       return {
         ...state,

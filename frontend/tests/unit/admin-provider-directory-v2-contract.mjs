@@ -183,7 +183,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /rowId="image-response-format"[\s\S]*image_delivery_unconfirmed_compact[\s\S]*image_delivery_test_not_proof_compact[\s\S]*rowId="image-output-hosts"/,
+  /rowId="image-delivery"[\s\S]*imageDeliveryStatusLabel[\s\S]*image_delivery_test_not_proof_compact[\s\S]*rowId="image-response-format"[\s\S]*rowId="image-output-hosts"/,
   'Image delivery must use concise configuration rows while retaining the separate-delivery-test boundary'
 );
 

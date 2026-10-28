@@ -639,27 +639,37 @@ class ProviderConnectionAdminService:
                 probe_result = _inspect_image_delivery_probe_candidate(
                     execution_result.media_candidates,
                 )
-            except ProviderExecutionError as error:
+            except (
+                ProviderExecutionError,
+                ImageGenerationArtifactMaterializationError,
+                ProviderImageFetchError,
+            ) as error:
                 if budget_claim_ids:
                     budget_guard.reconcile(
                         session=session,
                         claim_ids=budget_claim_ids,
                         actual_cost_usd=None,
                     )
-                    session.commit()
-                raise ProviderConnectionAdminError(
-                    _map_test_error_code(error),
-                    "provider image delivery probe failed",
-                    status_code=502,
-                ) from error
-            except (ImageGenerationArtifactMaterializationError, ProviderImageFetchError) as error:
-                if budget_claim_ids:
-                    budget_guard.reconcile(
-                        session=session,
-                        claim_ids=budget_claim_ids,
-                        actual_cost_usd=None,
-                    )
-                    session.commit()
+                session.refresh(row)
+                if verification_inputs == _image_delivery_probe_verification_inputs(row):
+                    now = datetime.now(UTC)
+                    metadata = dict(_dict(row.metadata_json))
+                    metadata["image_delivery_probe"] = {
+                        "probe_id": probe_id,
+                        "status": "failed",
+                        "provider_id": provider_id,
+                        "model_id": model.model_id,
+                        "tested_at": now.isoformat(),
+                    }
+                    row.metadata_json = metadata
+                    row.updated_at = now
+                session.commit()
+                if isinstance(error, ProviderExecutionError):
+                    raise ProviderConnectionAdminError(
+                        _map_test_error_code(error),
+                        "provider image delivery probe failed",
+                        status_code=502,
+                    ) from error
                 reason_code = _string(getattr(error, "reason_code", ""))
                 raise ProviderConnectionAdminError(
                     "provider_connection.image_delivery_probe_failed",
