@@ -1384,7 +1384,9 @@ def _serialize_hosted_runtime_instance(
     }
 
 
-def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | None:
+def _capability_route_fingerprint(
+    *, capability: str, instance: Any, provider_route_identity: str
+) -> str | None:
     fingerprint_builder = {
         "vision": vision_probe_fingerprint,
         "embedding": embedding_probe_fingerprint,
@@ -1394,7 +1396,7 @@ def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | No
     if fingerprint_builder is None:
         return None
     return fingerprint_builder(
-        provider_connection_id=str(instance.provider_id or ""),
+        provider_connection_id=provider_route_identity,
         model_id=str(instance.model_id or ""),
         endpoint_variant=str(instance.endpoint_variant or ""),
     )
@@ -1406,8 +1408,11 @@ def _capability_evidence_is_fresh_for_route(
     capability: str,
     instance: Any,
     now: datetime,
+    provider_route_identity: str,
 ) -> bool:
-    fingerprint = _capability_route_fingerprint(capability=capability, instance=instance)
+    fingerprint = _capability_route_fingerprint(
+        capability=capability, instance=instance, provider_route_identity=provider_route_identity
+    )
     return bool(
         fingerprint
         and capability_evidence_is_fresh(
@@ -1439,6 +1444,7 @@ def _build_hosted_runtime_profile_projection(
     evidence_now = datetime.now(UTC)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
+        route_identities = repository.provider_route_identities()
         instances = repository.list_instances_for_provider()
         models = repository.list_models_by_ids([instance.model_id for instance in instances])
         models_by_id = {model.model_id: model for model in models}
@@ -1487,6 +1493,9 @@ def _build_hosted_runtime_profile_projection(
                             capability="vision",
                             instance=instance,
                             now=evidence_now,
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                         else None
                     ),
@@ -1501,6 +1510,9 @@ def _build_hosted_runtime_profile_projection(
                             capability=capability,
                             instance=instance,
                             now=evidence_now,
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                     },
                 )
@@ -1648,6 +1660,7 @@ def _validate_hosted_runtime_profile_payload(
     provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
+        route_identities = repository.provider_route_identities()
         for profile_payload in payload.profiles:
             profile_id = profile_payload.profile_id.strip()
             if profile_id not in known_profile_ids:
@@ -1708,7 +1721,9 @@ def _validate_hosted_runtime_profile_payload(
                         "audio_generation": audio_generation_probe_fingerprint,
                     }[spec.execution_kind]
                     fingerprint = fingerprint_builder(
-                        provider_connection_id=instance.provider_id,
+                        provider_connection_id=route_identities.get(
+                            instance.provider_id, instance.provider_id
+                        ),
                         model_id=instance.model_id,
                         endpoint_variant=instance.endpoint_variant,
                     )
@@ -1725,6 +1740,9 @@ def _validate_hosted_runtime_profile_payload(
                             capability=spec.execution_kind,
                             instance=instance,
                             now=datetime.now(UTC),
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                     ):
                         return [], (
@@ -6055,7 +6073,9 @@ async def probe_admin_hosted_runtime_capability(
             "audio_generation": audio_generation_probe_fingerprint,
         }[payload.capability]
         fingerprint = fingerprint_builder(
-            provider_connection_id=provider_id,
+            provider_connection_id=repository.provider_route_identities().get(
+                provider_id, provider_id
+            ),
             model_id=model_id,
             endpoint_variant=endpoint_variant,
         )

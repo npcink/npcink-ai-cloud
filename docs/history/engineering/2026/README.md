@@ -9,6 +9,7 @@ specific history collection. Migrated from the `docs/` root on
 2026-09-22 so dated evidence lives in the history namespace.
 
 - [本地开发生图与 WordPress 闭环验证（2026-10-28）](development-image-wordpress-loop-2026-10-28.md)
+- [M4 视觉 ALT 接入修正（2026-10-29）](m4-vision-alt-verification-2026-10-29.md)
 
 - [account entitlement site relink and frontend release retrospective 2026 07 26](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [admin ia v2 consolidation closeout and development retrospective 2026 10 23](admin-ia-v2-consolidation-closeout-and-development-retrospective-2026-10-23.md)
