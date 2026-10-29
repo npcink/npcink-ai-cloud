@@ -307,11 +307,13 @@ class PluginObservabilityService:
                 )
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    func.coalesce(PluginObservabilityEvent.error_code, ""),
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -322,7 +324,7 @@ class PluginObservabilityService:
                 .group_by(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    func.coalesce(PluginObservabilityEvent.error_code, ""),
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -558,12 +560,14 @@ class PluginObservabilityService:
                 .order_by(PluginObservabilityEvent.site_id.asc())
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    func.coalesce(PluginObservabilityEvent.error_code, ""),
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -575,7 +579,7 @@ class PluginObservabilityService:
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    func.coalesce(PluginObservabilityEvent.error_code, ""),
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
