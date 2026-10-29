@@ -26,11 +26,36 @@ A09 本轮处理已知陈旧快照禁写；现有积分包 PATCH 仍是整目录
 
 ## 验证与证据状态
 
-- 后端修复提交 `14c9e09c`；Admin 功能修复提交 `b4495634`，另有首页可见结论的断言校正提交。
-- 插件观测相关本地回归 26 passed；Ruff 与对应 domain 文件 mypy 通过。PostgreSQL 隔离 schema 用例已加入现有 M4 测试入口，实际数据库执行待候选验证。
-- 首轮修正后的七个目标 spec 62 passed；后续针对最终可见结论的首页 6 passed，套餐与订阅补验 10 passed，Portal 共享 Modal 两项代表回归 2 passed。用例存在重叠，不相加为总量。
-- `check:admin-ui`（含类型）、增量 ESLint、`test:i18n-contract`、Modal 键盘契约及文档可达性通过。共享 Admin 完整矩阵仍在执行，结果收尾补录；未修改截图基线。
-- 当前最高证据为 local verified；M4 candidate、CI、合并、生产与人工验收分别待确认，不能据本地绿色宣称生产完成。
+### 本地
+
+- 后端修复提交 `14c9e09c`；Admin 功能修复提交 `b4495634`；`b68c9305` 校正首页正文结论断言；`fd87d78f` 修正窄 PC 测试进入页面的路径。后两项仅改测试，没有修改运行时代码。
+- 最终完整 `check:admin-ui:visual` **194 passed（3.1m）**；视觉治理 12 rules / 9 pilots、15 个注册 spec 通过，没有更新 golden baseline。日志 `.tmp/admin-fixes-visual-final.log`，工件在 `frontend/test-results/`。
+- 完整矩阵以外的首页 **6 passed**；套餐与订阅补验 **10 passed**。补验日志 `.tmp/admin-fixes-overview-final.log`、`.tmp/admin-fixes-supplement.log`；后者此前首页的一项旧帮助标签断言已由前者替换为正文常显断言，不把旧失败写成绿色。
+- Portal 对共享 Modal 的代表消费者回归 **2 passed**：切换站点及日期明细返回恢复滚动位置。日志 `.tmp/admin-fixes-portal-modal.log`。
+- 插件观测相关本地 API/domain 回归 **26 passed**；Ruff 与对应 domain 文件 mypy 通过。仅有既有 TestClient 依赖弃用警告。
+- `check:admin-ui`（含类型）、增量 ESLint、`test:i18n-contract`、Modal 键盘契约、文档可达性、diff 格式通过。日志 `.tmp/admin-fixes-check-closeout.log`、`.tmp/admin-fixes-extra-closeout.log`、`.tmp/admin-fixes-i18n-closeout.log`、`.tmp/admin-fixes-modal-closeout.log`。
+- 已查看首页 1440px 正文结论截图，以及运行配置 900px 历史退出确认截图：确认层位于编辑框之上、按钮可达；Tab 留在上层，Esc 取消后保留底层草稿。既有移动尺寸断言仍保留，不计为本轮移动适配。
+- 初轮目标回归 62 passed 与完整矩阵有重叠，不相加。完整矩阵首次 193 passed / 1 failed 的原因是新测试在 900px 点击已收起侧栏中的不可见链接；修正为先通过真实 Link 进入，再缩窄验证，最终完整矩阵重新通过。
+- 自审覆盖正确性、可读性、共享归属、认证/数据边界及请求行为；没有新增依赖、迁移或公共 API。
+
+### M4 candidate
+
+- 同步前 runtime revision 为 `4a677b13d45e946c2e3fb42511e86d3222e8f73c`。本次行为复查的后端/frontend revision 均为 `49982abda0571f28b96662831589140d00c784f8`，source_dirty=false，acceptance_state=candidate。此后仅测试/收尾文档变化；最终同步身份以 `.tmp/admin-fixes-m4-status-final.log` 为准。
+- 插件观测真实 GET 的 24h 与 336h 均为 **200**，返回有效 totals/errors；页面显示两个数据表，不再是原先的读取 500。全局空的 aria-live alert 不作为接口失败。
+- 使用现有 `m4:preview:test -- --focused tests/integration/test_portal_postgres_acceptance.py::test_plugin_error_aggregates_on_postgres`，在独立命名 schema 内执行站点与 Admin 两类分组，**1 passed**。用例自行删除该 schema，没有操作共享业务数据。日志 `.tmp/admin-fixes-m4-postgres.log`。
+- 1440×1050 真实只读复查 8 个模块页：首页、插件观测、合规资料、套餐、积分包、服务设置、运行配置、订阅列表；另检查一条现有订阅详情。均 HTTP 200、无整页横向溢出；8 页期间收集到的 Admin API 失败及 pageerror 为空。
+- 900×1050 复查首页、合规资料、服务设置、运行配置、积分包，均 HTTP 200、无整页横向溢出。脱敏回执 `.tmp/admin-system-fixes-m4-receipt.json`。
+- 真实浏览页的非 GET 请求监听为 **0**。没有实际保存共享配置、发布合规资料、改套餐或积分、发送邮件、支付交易或付费 Provider 调用。
+
+| 证据层级 | 本轮状态 |
+| --- | --- |
+| local verified | 上述静态、行为、构建与矩阵通过 |
+| candidate validated on M4 | 真实 PostgreSQL 与目标只读页面通过；仍是 candidate |
+| GitHub CI / PR / merged master | 未 push、未创建 PR、未合并；master 基线仍为 `d9185146` |
+| accepted on M4 | 未执行 master promotion |
+| production / human | 生产未操作，人工界面验收待进行 |
+
+独立层级规范工作区 `codex/admin-hierarchy-audit` 的文档提交不在本批功能提交内；其 `docs/README.md` 索引与本批存在同文件交叠，后续集成必须显式保留双方条目。已遵循动态错误/陈旧/待确认结论常显、高频动作保持可见的约束，没有并行编辑其规范文件。
 
 ## 经验补充与回滚
 
