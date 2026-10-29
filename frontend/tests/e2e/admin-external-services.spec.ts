@@ -307,6 +307,7 @@ test('saved changes with failed readback freeze the stale snapshot and retry onl
 
 for (const theme of ['light', 'dark'] as const) {
 test(`verification failures survive refresh and unobserved connections remain unverified in ${theme}`, async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(theme => localStorage.setItem('theme', theme), theme);
   await installExternalServicesHarness(page);
   await page.route('**/api/admin/provider-connections', async route => {
@@ -322,7 +323,7 @@ test(`verification failures survive refresh and unobserved connections remain un
   await expect(page.locator('[data-external-service-id="bocha"]')).toContainText(/Not verified|未验证/);
   await page.reload();
   await expect(row).toContainText(/Verification failed|验证失败/);
-  await page.screenshot({ path: testInfo.outputPath(`external-verification-${theme}.png`), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath(`external-verification-${theme}.png`), fullPage: true, animations: 'disabled' });
 });
 }
 
