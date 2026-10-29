@@ -12,9 +12,9 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await page.goto('/admin');
 
   await expect(page.getByText(/Not operationally ready|未达到运营就绪/i).first()).toBeVisible();
-  await expect(page.getByLabel(
+  await expect(page.locator('[data-ui="admin-overview-conclusion"]')).toContainText(
     /2 formal readiness checks failed across workers, operations cadence|正式运营就绪检查有 2 项失败.*工作进程.*运维定时任务/i
-  )).toBeVisible();
+  );
   await expect(page.getByText(/Provider call coverage gap|Call records missing|供应商调用遥测缺口|调用记录缺失/i).first()).toBeVisible();
   await expect(page.getByText(/Attention subscriptions already need review|Attention 订阅已经需要审查/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
