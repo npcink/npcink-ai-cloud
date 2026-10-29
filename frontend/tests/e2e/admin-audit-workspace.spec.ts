@@ -70,9 +70,12 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   await page.locator('[data-ui="admin-inspector-drawer-close"]').click();
   await expect(page).not.toHaveURL(/focus=101/);
   await page.goto('/admin/audit');
+  await page.getByText(/More filters|更多筛选/, { exact: true }).click();
+  if (!await page.getByLabel(/Idempotency key|幂等键/i).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
   await page.getByLabel(/Idempotency key|幂等键/i).fill('audit-rebuild-102');
   await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
   await expect(page).toHaveURL(/idempotency_key=audit-rebuild-102/);
+  await expect(page.locator('[data-ui="admin-audit-active-filters"]')).toContainText('audit-rebuild-102');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
   await expect(directory).toContainText(/Billing Snapshot Rebuild|Billing snapshot rebuild|账单/i);
 
@@ -140,6 +143,7 @@ test('audit workspace recovers deep pages and distinguishes filtered empty', asy
   await expect(page).not.toHaveURL(/offset=/);
   await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(2);
 
+  if (!await page.getByLabel(/Idempotency key|幂等键/i).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
   await page.getByLabel(/Idempotency key|幂等键/i).fill('missing-audit-event');
   await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
   await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/i)).toBeVisible();
@@ -358,14 +362,17 @@ test('audit scope errors discard old rows and a late response cannot replace a n
     await page.goto('/admin/audit');
     const directory = page.locator(directorySelector);
     await expect(directory).toContainText('initial-scope');
+    if (!await page.getByLabel(/Idempotency key|幂等键/).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
     await page.getByLabel(/Idempotency key|幂等键/).fill('failed-scope');
     await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
     await expect(page.getByRole('alert').filter({ hasText: /审计证据加载失败|Failed to load audit evidence\./ })).toBeVisible();
     await expect(directory.locator('tbody tr')).toHaveCount(0);
     await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/)).toHaveCount(0);
+    if (!await page.getByLabel(/Idempotency key|幂等键/).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
     await page.getByLabel(/Idempotency key|幂等键/).fill('slow-scope');
     await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
     await expect.poll(() => slowRequested).toBe(true);
+    if (!await page.getByLabel(/Idempotency key|幂等键/).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
     await page.getByLabel(/Idempotency key|幂等键/).fill('newest-scope');
     await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
     await expect(directory).toContainText('newest-scope');
@@ -451,6 +458,7 @@ test('audit Quiet PC workspace keeps filters outside table scrolling in both lan
   }
   await testInfo.attach('audit-PC-geometry', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
   const directory = page.locator(directorySelector);
+  if (!await page.getByLabel(/^Scope type$|^范围类型$/).isVisible()) await page.getByText(/More filters|更多筛选/, { exact: true }).click();
   await page.getByLabel(/^Scope type$|^范围类型$/).fill('site');
   await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
   await expect(page).toHaveURL(/scope_kind=site/);

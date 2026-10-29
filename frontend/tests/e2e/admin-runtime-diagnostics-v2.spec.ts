@@ -248,6 +248,9 @@ test('editorial quality detail remains available on the dedicated statistics vie
   await expect(qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]')).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
+  const qualityReference = qualityPanel.locator('[data-ui="editor-quality-reference"]');
+  await expect(qualityReference).not.toHaveAttribute('open', '');
+  await qualityReference.locator('summary').press('Enter');
   const downloadEvent = page.waitForEvent('download');
   await qualityPanel.getByRole('button', { name: /Export JSON|导出 JSON/i }).click();
   const download = await downloadEvent;
@@ -385,7 +388,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   await expect(page.getByRole('heading', { level: 1, name: /Plugin observability|插件观测/i })).toBeVisible();
 });
 
-test('editor quality keeps sample sufficiency separate from candidate status', async ({ page }) => {
+test('editor quality keeps sample sufficiency separate from candidate status', async ({ page }, testInfo) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/editor-assist-quality*', async (route) => {
     await route.fulfill({
@@ -413,6 +416,23 @@ test('editor quality keeps sample sufficiency separate from candidate status', a
   await expect(qualityPanel).toContainText(/Too few samples to assess quality|样本不足，暂不能判断效果/i);
   await expect(qualityPanel).toContainText(/insufficient|样本不足/i);
   await expect(qualityPanel).not.toContainText(/No review candidate|无复核候选/i);
+  await expect(qualityPanel.getByText(/No interval trend evidence returned|当前样本未返回区间趋势证据/)).toBeVisible();
+  await expect(qualityPanel.getByText(/No editor-assist sessions in this window|当前时间窗没有编辑辅助会话/)).toHaveCount(0);
+  const sampleLimit = qualityPanel.locator('[data-ui="editor-quality-sample-limit"]');
+  await expect(sampleLimit).toBeVisible();
+  const rates = qualityPanel.locator('[data-ui="editor-quality-rate"]');
+  await expect(rates.first()).toBeVisible();
+  expect((await sampleLimit.boundingBox())!.y).toBeLessThan((await rates.first().boundingBox())!.y);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(value => document.documentElement.classList.toggle('dark', value === 'dark'), theme);
+      await expect(sampleLimit).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`quality-sample-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
+  }
+
 });
 
 
