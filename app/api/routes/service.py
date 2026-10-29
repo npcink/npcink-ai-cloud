@@ -4429,6 +4429,9 @@ async def get_admin_plugin_history(
     site_id: str = Query(default="", max_length=191),
     plugin_slug: str = Query(default="", max_length=64),
     event_kind: str = Query(default="", max_length=96),
+    error_code: str | None = Query(default=None, max_length=128),
+    event_category: Literal["all", "activity", "status"] = Query(default="all"),
+    unassigned_site: bool = False,
     record_scope: Literal["all", "operational", "test"] = Query(default="operational"),
     status: Literal["all", "ok", "failed", "other"] = Query(default="all"),
     sort: Literal["latest", "failures"] = Query(default="latest"),
@@ -4445,7 +4448,8 @@ async def get_admin_plugin_history(
         result = await run_in_threadpool(partial(
             get_plugin_event_history, get_cloud_services(request).settings.database_url,
             window_hours=window_hours, site_id=site_id, plugin_slug=plugin_slug,
-            event_kind=event_kind, record_scope=record_scope, status=status, sort=sort,
+            event_kind=event_kind, error_code=error_code, event_category=event_category,
+            unassigned_site=unassigned_site, record_scope=record_scope, status=status, sort=sort,
             view=view, page=page, page_size=page_size, snapshot_at=snapshot_at,
             snapshot_id=snapshot_id,
         ))
@@ -4462,6 +4466,7 @@ async def get_admin_plugin_observability(
     window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default=""),
     plugin_slug: str = Query(default=""),
+    activity_category: Literal["all", "activity", "status"] = Query(default="all"),
     record_scope: Literal["all", "operational", "test"] = Query(default="all"),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -4474,6 +4479,7 @@ async def get_admin_plugin_observability(
         site_id=site_id,
         plugin_slug=plugin_slug,
         record_scope=record_scope,
+        activity_category=activity_category,
     )
     return build_envelope(
         status="ok",
@@ -6814,6 +6820,7 @@ async def get_runtime_telemetry_diagnostics(
 async def get_runtime_run_evidence(
     request: Request,
     site_id: str | None = Query(default=None),
+    run_id: str | None = Query(default=None, min_length=1, max_length=191),
     capability: str | None = Query(default=None, max_length=191),
     issue_code: str | None = Query(default=None, max_length=64),
     evidence_scope: Literal["affected", "context"] = Query(default="affected"),
@@ -6824,10 +6831,15 @@ async def get_runtime_run_evidence(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if run_id and not site_id:
+        return JSONResponse(
+            status_code=422, content={"detail": "site_id is required for exact run evidence"}
+        )
     services = get_cloud_services(request)
     result = await run_in_threadpool(
         RuntimeService(services.settings.database_url).get_runtime_run_evidence,
         site_id=site_id,
+        run_id=run_id,
         capability=capability,
         issue_code=issue_code,
         evidence_scope=evidence_scope,

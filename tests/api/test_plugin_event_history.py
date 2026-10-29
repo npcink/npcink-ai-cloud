@@ -178,3 +178,68 @@ def test_history_scope_and_cross_site_links_never_leak_run_evidence(tmp_path: Pa
     assert "MUST_NOT_LEAK" not in str(data)
     assert read(status="other")["total"] == 1
     assert read(status="ok")["total"] == 1
+
+
+def test_exact_problem_filter_keeps_older_records_and_missing_codes(tmp_path: Path) -> None:
+    from sqlalchemy import update
+
+    db, client = _build_client(tmp_path)
+    seed(db)
+    with get_session(db) as session:
+        session.execute(update(PluginObservabilityEvent).values(
+            event_kind="same.kind", error_code="other.reason"
+        ))
+        for i, code in [(0, "target.reason"), (1, "target.reason"), (3, None), (6, "")]:
+            session.execute(update(PluginObservabilityEvent).where(
+                PluginObservabilityEvent.event_id == f"event-{i}"
+            ).values(error_code=code))
+        session.commit()
+    query = {"window_hours": 720, "view": "events", "status": "failed",
+             "site_id": "site-001", "plugin_slug": "npcink-cloud-addon",
+             "event_kind": "same.kind", "error_code": "target.reason"}
+    data = client.get(PATH, params=query, headers=HEADERS).json()["data"]
+    assert data["total"] == 1 and data["items"][0]["event_id"] == "event-0"
+    assert data["items"][0]["error_code"] == "target.reason"
+    missing = client.get(PATH, params={**query, "error_code": ""}, headers=HEADERS).json()["data"]
+    assert missing["total"] == 2
+    assert {item["event_id"] for item in missing["items"]} == {"event-3", "event-6"}
+    summary = client.get(
+        "/internal/service/admin/plugin-observability", params={"window_hours": 720},
+        headers=HEADERS,
+    ).json()["data"]
+    missing_groups = [item for item in summary["errors"] if not item["error_code"]]
+    assert len(missing_groups) == 1 and missing_groups[0]["count"] == 2
+    assert client.get(PATH, params={**query, "site_id": "other-site"}, headers=HEADERS).json()[
+        "data"
+    ]["items"] == []
+    assert client.get(PATH, params={**query, "unassigned_site": True}, headers=HEADERS).json()[
+        "data"
+    ]["items"] == []
+
+
+def test_event_category_filters_before_limits_and_preserves_totals(tmp_path: Path) -> None:
+    db, client = _build_client(tmp_path)
+    seed(db, 1)  # Old activity must not be pushed out by newer status reports.
+    now = datetime.now(UTC)
+    with get_session(db) as session:
+        for i in range(60):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"state-{i}", site_id="site-001", plugin_slug="npcink-cloud-addon",
+                event_kind="addon.monitoring.state_projected", event_id=f"state-{i}",
+                status="ok", received_at=now,
+            ))
+        session.commit()
+    path = "/internal/service/admin/plugin-observability"
+    all_data = client.get(path, params={"window_hours": 720}, headers=HEADERS).json()["data"]
+    activity = client.get(path, params={"window_hours": 720, "activity_category": "activity"},
+                          headers=HEADERS).json()["data"]
+    assert len(all_data["recent_activity"]) == 50
+    assert len(activity["recent_activity"]) == 1
+    assert activity["recent_activity"][0]["event_id"] == "event-0"
+    assert activity["totals"] == all_data["totals"]
+    history = client.get(PATH, params={"window_hours": 720, "event_category": "status"},
+                         headers=HEADERS).json()["data"]
+    assert history["totals"]["events"] == 60
+    assert client.get(
+        PATH, params={"event_category": "invalid"}, headers=HEADERS
+    ).status_code == 422

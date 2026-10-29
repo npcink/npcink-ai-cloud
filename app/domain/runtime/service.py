@@ -175,10 +175,11 @@ from app.domain.runtime.run_lifecycle import (
 )
 from app.domain.runtime.run_projection import RuntimeRunProjector
 from app.domain.runtime.telemetry_evidence import (
-    NON_AI_ZERO_CREDIT_EXECUTION_KINDS,
     PENDING_PROVIDER_EVIDENCE_STATUSES,
+    ai_evidence_condition,
     observation_since,
     provider_evidence_state,
+    requires_ai_evidence,
 )
 from app.domain.runtime.usage_statistics import build_usage_statistics
 from app.domain.service_settings import (
@@ -1355,7 +1356,9 @@ class RuntimeService:
             RunRecord.profile_id == capability,
         )
         with get_session(self.database_url) as session:
-            run_statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            run_statement = select(RunRecord).where(
+                RunRecord.started_at >= recent_since, RunRecord.started_at <= current_time
+            )
             if site_id:
                 run_statement = run_statement.where(RunRecord.site_id == site_id)
             if capability:
@@ -1374,7 +1377,9 @@ class RuntimeService:
                 .join(RunRecord, ProviderCallRecord.run_id == RunRecord.run_id)
                 .where(
                     ProviderCallRecord.created_at >= recent_since,
+                    ProviderCallRecord.created_at <= current_time,
                     RunRecord.started_at >= recent_since,
+                    RunRecord.started_at <= current_time,
                 )
             )
             if site_id:
@@ -1431,7 +1436,7 @@ class RuntimeService:
         ai_evidence_required_run_ids = {
             run.run_id
             for run in runs
-            if str(run.execution_kind or "").strip() not in NON_AI_ZERO_CREDIT_EXECUTION_KINDS
+            if requires_ai_evidence(run)
         }
         provider_call_run_ids = {str(run_id) for run_id in provider_cohort_run_ids}
         provider_evidence_required_run_ids = {
@@ -1517,9 +1522,13 @@ class RuntimeService:
             ):
                 self._update_hosted_governance_provider_call_group(group, call)
 
+        cohort_runs = {run.run_id: run for run in runs}
         for event in meter_events:
-            family = str(event.ability_family or "unknown").strip() or "unknown"
-            execution_kind = str(event.execution_kind or "unknown").strip() or "unknown"
+            owner = cohort_runs.get(str(event.run_id or ""))
+            family = str(owner.ability_family if owner else event.ability_family or "unknown")
+            execution_kind = str(
+                owner.execution_kind if owner else event.execution_kind or "unknown"
+            )
             for group in (
                 run_groups.setdefault(
                     family,
@@ -1540,7 +1549,7 @@ class RuntimeService:
 
         capability_items = self._finalize_hosted_governance_groups(
             run_groups.values(),
-            limit=max_items,
+            limit=max(1, len(run_groups)),
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
@@ -1624,11 +1633,12 @@ class RuntimeService:
                 "runs_truncated": len(runs) >= 5000,
                 "provider_calls_truncated": len(provider_call_rows) >= 10000,
                 "meter_events_truncated": len(meter_events) >= 10000,
+                "capability_groups_truncated": len(capability_items) > max_items,
             },
             "usage_statistics": build_usage_statistics(
                 runs, since=recent_since, until=current_time
             ),
-            "capability_groups": capability_items,
+            "capability_groups": capability_items[:max_items],
             "profile_groups": profile_items,
             "execution_kind_groups": execution_kind_items,
             "provider_model_groups": provider_model_items,
@@ -1642,13 +1652,16 @@ class RuntimeService:
                 "contains_prompt_or_result_payloads": False,
             },
         }
-        result["alert_summary"] = self._build_hosted_governance_alert_summary(result)
+        result["alert_summary"] = self._build_hosted_governance_alert_summary(
+            {**result, "capability_groups": capability_items}
+        )
         return result
 
     def get_runtime_run_evidence(
         self,
         *,
         site_id: str | None = None,
+        run_id: str | None = None,
         capability: str | None = None,
         issue_code: str | None = None,
         evidence_scope: str = "affected",
@@ -1657,13 +1670,19 @@ class RuntimeService:
         limit: int = 25,
     ) -> dict[str, object]:
         """Return bounded, payload-free run evidence for operator diagnostics."""
+        if run_id and not site_id:
+            raise ValueError("site_id is required for exact run evidence")
         current_time = datetime.now(UTC)
         recent_since = observation_since(current_time, recent_minutes, since)
         max_items = max(1, min(100, limit))
         with get_session(self.database_url) as session:
-            statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            statement = select(RunRecord).where(
+                RunRecord.started_at >= recent_since, RunRecord.started_at <= current_time
+            )
             if site_id:
                 statement = statement.where(RunRecord.site_id == site_id)
+            if run_id:
+                statement = statement.where(RunRecord.run_id == run_id)
             if capability:
                 statement = statement.where(
                     or_(
@@ -1685,7 +1704,7 @@ class RuntimeService:
                 )
             elif issue_code == "hosted_model.unmetered_runs":
                 statement = statement.where(
-                    RunRecord.execution_kind.not_in(NON_AI_ZERO_CREDIT_EXECUTION_KINDS),
+                    ai_evidence_condition(),
                     ~exists(
                         select(UsageMeterEvent.id).where(
                             UsageMeterEvent.run_id == RunRecord.run_id,
@@ -1697,7 +1716,7 @@ class RuntimeService:
                     ProviderCallRecord.run_id == RunRecord.run_id,
                 ))
                 statement = statement.where(
-                    RunRecord.execution_kind.not_in(NON_AI_ZERO_CREDIT_EXECUTION_KINDS),
+                    ai_evidence_condition(),
                     has_call if evidence_scope == "context" else ~has_call,
                 )
                 if evidence_scope != "context":
@@ -1775,6 +1794,7 @@ class RuntimeService:
         return {
             "filters": {
                 "site_id": site_id or "",
+                "run_id": run_id or "",
                 "capability": capability or "",
                 "issue_code": issue_code or "",
                 "evidence_scope": evidence_scope,
@@ -1898,7 +1918,6 @@ class RuntimeService:
     ) -> None:
         run_id = str(event.run_id or "").strip()
         if run_id:
-            cast(set[str], group["run_ids"]).add(run_id)
             cast(set[str], group["meter_run_ids"]).add(run_id)
         group["meter_events"] = self._coerce_int(group.get("meter_events"), default=0) + 1
         meter_key = str(event.meter_key or "unknown").strip() or "unknown"

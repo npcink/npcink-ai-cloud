@@ -28,6 +28,9 @@ export type RuntimeTelemetrySummary = {
   sampleLimited: boolean;
   providerFailures: ProviderFailure[];
   generatedAt: string;
+  window: { since: string; until: string };
+  evidenceLimits: Record<string, boolean>;
+  displayLimit: number | null;
   usageTimeline: UsageTimelinePoint[];
   capabilityGroups: {
     id: string;
@@ -45,6 +48,7 @@ export type RuntimeTelemetrySummary = {
     providerCallRunCoverageRate: number;
     providerEvidencePendingRuns: number;
     providerEvidenceRequiredRuns: number | null;
+    aiEvidenceRequiredRuns: number | null;
     meteredRunCoverageRate: number;
   };
   governanceGaps: {
@@ -112,6 +116,9 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
   const usageStatistics = raw?.usage_statistics ?? {};
   return {
     generatedAt: String(raw?.generated_at ?? ''),
+    window: { since: String(raw?.window?.since ?? raw?.filters?.since ?? ''), until: String(raw?.window?.until ?? raw?.generated_at ?? '') },
+    evidenceLimits: Object.fromEntries(Object.entries(raw?.evidence_limits ?? {}).map(([key, value]) => [key, value === true])),
+    displayLimit: raw?.filters?.limit == null ? null : asNumber(raw.filters.limit),
     sampleLimited: Boolean(raw?.evidence_limits?.runs_truncated || raw?.evidence_limits?.provider_calls_truncated || raw?.evidence_limits?.meter_events_truncated),
     usageTimeline: Array.isArray(usageStatistics?.timeline)
       ? usageStatistics.timeline.map((point: any) => ({
@@ -145,6 +152,7 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
       providerCallRunCoverageRate: asNumber(totals.provider_call_run_coverage_rate),
       providerEvidencePendingRuns: asNumber(totals.provider_evidence_pending_runs),
       providerEvidenceRequiredRuns: totals.provider_evidence_required_runs == null ? null : asNumber(totals.provider_evidence_required_runs),
+      aiEvidenceRequiredRuns: totals.ai_evidence_required_runs == null ? null : asNumber(totals.ai_evidence_required_runs),
       meteredRunCoverageRate: asNumber(totals.metered_run_coverage_rate),
     },
     governanceGaps: {

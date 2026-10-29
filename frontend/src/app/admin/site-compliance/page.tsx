@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,6 +11,7 @@ import {
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { ConfirmModal } from '@/components/ui/Modal';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -199,6 +200,10 @@ export default function AdminSiteCompliancePage() {
   const { locale } = useLocale();
   const zh = locale === 'zh-CN';
   const copy = useCallback((zhText: string, enText: string) => (zh ? zhText : enText), [zh]);
+  const copyRef = useRef(copy);
+  useEffect(() => { copyRef.current = copy; }, [copy]);
+  const operationRef = useRef(false);
+  const [awaitingRead, setAwaitingRead] = useState(false);
   const [workspace, setWorkspace] = useState<ComplianceWorkspace | null>(null);
   const [payload, setPayload] = useState<CompliancePayload | null>(null);
   const [savedPayload, setSavedPayload] = useState('');
@@ -220,9 +225,10 @@ export default function AdminSiteCompliancePage() {
         )
       ).data;
       if (!next?.draft?.payload) {
-        throw new Error(copy('合规资料响应无效。', 'Invalid compliance response.'));
+        throw new Error(copyRef.current('合规资料响应无效。', 'Invalid compliance response.'));
       }
       const nextPayload = clonePayload(next.draft.payload);
+      setAwaitingRead(false);
       setWorkspace(next);
       setPayload(nextPayload);
       setSavedPayload(JSON.stringify(nextPayload));
@@ -230,50 +236,22 @@ export default function AdminSiteCompliancePage() {
       setError(
         resolveUiErrorMessage(
           loadError,
-          copy('无法加载网站合规资料。', 'Failed to load site compliance.')
+          copyRef.current('无法加载网站合规资料。', 'Failed to load site compliance.')
         )
       );
     } finally {
       setLoading(false);
     }
-  }, [copy]);
+  }, []);
 
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
 
   const dirty = Boolean(payload) && JSON.stringify(payload) !== savedPayload;
-  useEffect(() => {
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    const warnBeforeNavigation = (event: MouseEvent) => {
-      if (!dirty) return;
-      const target =
-        event.target instanceof Element ? event.target.closest('a[href]') : null;
-      if (!(target instanceof HTMLAnchorElement) || target.target === '_blank') return;
-      const destination = new URL(target.href, window.location.href);
-      if (
-        destination.origin !== window.location.origin ||
-        destination.pathname === window.location.pathname
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingNavigationHref(
-        `${destination.pathname}${destination.search}${destination.hash}`
-      );
-    };
-    window.addEventListener('beforeunload', warnBeforeUnload);
-    document.addEventListener('click', warnBeforeNavigation, true);
-    return () => {
-      window.removeEventListener('beforeunload', warnBeforeUnload);
-      document.removeEventListener('click', warnBeforeNavigation, true);
-    };
-  }, [dirty]);
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    dirty, setPendingNavigationHref, (href) => router.push(href),
+  );
 
   const validation = workspace?.draft.validation;
   const published = workspace?.published;
@@ -353,7 +331,8 @@ export default function AdminSiteCompliancePage() {
   }
 
   async function saveDraft() {
-    if (!payload) return;
+    if (!payload || operationRef.current || awaitingRead || loading) return;
+    operationRef.current = true;
     setAction('save');
     setError('');
     setNotice('');
@@ -389,11 +368,14 @@ export default function AdminSiteCompliancePage() {
         )
       );
     } finally {
+      operationRef.current = false;
       setAction('');
     }
   }
 
   async function publish() {
+    if (operationRef.current || awaitingRead || loading) return;
+    operationRef.current = true;
     setAction('publish');
     setError('');
     setNotice('');
@@ -408,6 +390,7 @@ export default function AdminSiteCompliancePage() {
           'Published. Privacy, terms, and help now read this version.'
         )
       );
+      setAwaitingRead(true);
       await loadWorkspace();
     } catch (publishError) {
       setError(
@@ -417,6 +400,7 @@ export default function AdminSiteCompliancePage() {
         )
       );
     } finally {
+      operationRef.current = false;
       setAction('');
     }
   }
@@ -488,12 +472,14 @@ export default function AdminSiteCompliancePage() {
           retryLabel={copy('重新加载', 'Reload')}
         />
       ) : null}
+      {awaitingRead ? <p role="status">{copy('写入已成功，当前显示旧快照。请重新加载以确认，确认前暂停编辑和发布。', 'Write succeeded. Showing the previous snapshot; reload to confirm before editing or publishing again.')}</p> : null}
       {notice ? (
         <p role="status" aria-live="polite" className="border-l-2 border-emerald-400 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
           {notice}
         </p>
       ) : null}
 
+      <fieldset disabled={Boolean(action) || loading || awaitingRead} className="min-w-0">
       <section
         className="admin-compact-surface min-w-0 overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
         data-ui="site-compliance-workbench"
@@ -1226,6 +1212,7 @@ export default function AdminSiteCompliancePage() {
         </div>
       </div>
       </section>
+      </fieldset>
 
       <ConfirmModal
         isOpen={publishConfirmationOpen}
@@ -1254,11 +1241,11 @@ export default function AdminSiteCompliancePage() {
         confirmLabel={copy('放弃并离开', 'Discard and leave')}
         cancelLabel={copy('继续编辑', 'Keep editing')}
         variant="danger"
-        onClose={() => setPendingNavigationHref('')}
+        onClose={cancelNavigation}
         onConfirm={() => {
           const href = pendingNavigationHref;
           setPendingNavigationHref('');
-          if (href) router.push(href);
+          confirmNavigation(href);
         }}
       />
     </BackofficePageStack>

@@ -625,6 +625,11 @@ export async function installAdminMocks(
         totals: {
           session_total: 65,
           resolved_session_total: 60,
+          pending_session_total: 5,
+          repeated_session_total: 18,
+          exact_saved_session_total: 27,
+          unmatched_saved_session_total: 21,
+          expired_without_save_session_total: 12,
           repeat_session_rate: 0.2769,
           exact_saved_rate: 0.45,
           unmatched_saved_rate: 0.35,
@@ -632,14 +637,17 @@ export async function installAdminMocks(
           sample_stage: 'observation',
         },
         trend: [
-          { label: '2026-04-02', session_total: 8, repeat_session_rate: 0.25, exact_saved_rate: 0.5 },
-          { label: '2026-04-03', session_total: 9, repeat_session_rate: 0.22, exact_saved_rate: 0.44 },
-          { label: '2026-04-04', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
-          { label: '2026-04-05', session_total: 7, repeat_session_rate: 0.29, exact_saved_rate: 0.43 },
-          { label: '2026-04-06', session_total: 11, repeat_session_rate: 0.27, exact_saved_rate: 0.45 },
-          { label: '2026-04-07', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.5 },
-          { label: '2026-04-08', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
-        ],
+          [2, 8, 8, 2, 4], [3, 9, 9, 2, 4], [4, 10, 10, 3, 4],
+          [5, 7, 7, 2, 3], [6, 11, 11, 3, 5], [7, 10, 10, 3, 5], [8, 10, 5, 3, 2],
+        ].map(([day, total, resolved, repeated, exact]) => ({
+          label: `2026-04-${String(day).padStart(2, '0')}`,
+          start_at: `2026-04-${String(day).padStart(2, '0')}T00:00:00Z`,
+          end_at: `2026-04-${String(day + 1).padStart(2, '0')}T00:00:00Z`,
+          session_total: total, resolved_session_total: resolved,
+          pending_session_total: total - resolved,
+          repeated_session_total: repeated, exact_saved_session_total: exact,
+          repeat_session_rate: repeated / total, exact_saved_rate: exact / resolved,
+        })),
         issue_candidates: [
           {
             code: 'editor_assist.repeat_pressure',
@@ -2124,6 +2132,12 @@ export async function installAdminMocks(
     }
     if (pathname === '/api/admin/runtime-profiles/capability-probes/summary' && route.request().method() === 'GET') {
       await fulfillJson(route, { window_minutes: 10080, generated_at: '2026-10-07T06:00:00Z', totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 }, by_capability: [], by_instance: [], recent_failures: [] });
+      return;
+    }
+    if (pathname === '/api/admin/plugin-observability/history' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], page: 1, pages: 1, total: 0,
+        totals: { events: 0, succeeded: 0, failed: 0 },
+        snapshot: { at: '2026-10-07T06:00:00Z', id: 0 } });
       return;
     }
     if (pathname === '/api/admin/plugin-observability' && route.request().method() === 'GET') {

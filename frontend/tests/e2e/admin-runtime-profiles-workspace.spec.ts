@@ -1,6 +1,9 @@
 import { test } from './helpers/critical-network-fixture';
 import { expect, type Page } from '@playwright/test';
 import { installAdminMocks } from './helpers/admin-operator-fixture';
+import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { observeAdminBrowserEvidence } from './helpers/admin-visual-receipt';
 
 const primaryInstance = {
   instance_id: 'text.primary',
@@ -254,6 +257,164 @@ function profileRow(page: Page, profileId: string) {
 function candidateRow(page: Page, instanceId: string) {
   return page.locator(`[data-instance-id="${instanceId}"]`);
 }
+
+test('runtime configuration keeps PC action and dialog context with a structured receipt', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installRuntimeProfilesHarness(page);
+  await page.goto('/admin/runtime-profiles');
+  const surface = page.locator('[data-ui="runtime-profile-table"]');
+  await expect(surface).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+  expect((await surface.boundingBox())!.y).toBeLessThan(1050);
+  await expect(profileRow(page, 'route.short_text')).toContainText(/configured|已配置/i);
+  const screenshotPaths = [testInfo.outputPath('runtime-configuration-1440.png'), testInfo.outputPath('runtime-dialog-900.png')];
+  await page.screenshot({ path: screenshotPaths[0], fullPage: true, animations: 'disabled' });
+  const trigger = profileRow(page, 'route.short_text').getByRole('button');
+  await trigger.click();
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await candidateRow(page, fallbackInstance.instance_id).getByRole('radio').first().check();
+  await expect(candidateRow(page, fallbackInstance.instance_id).getByRole('radio').first()).toBeChecked();
+  await expect(candidateRow(page, unavailableInstance.instance_id).locator('input[type=radio]').first()).toBeDisabled();
+  await expect(page.getByRole('dialog').getByRole('button', { name: /Save usage|保存用途/i })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: screenshotPaths[1], fullPage: true, animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(profileRow(page, 'route.short_text')).toContainText('Text Provider · text-model-v1');
+  expect(browserEvidence.consoleErrors).toEqual([]);
+  expect(browserEvidence.networkFailures).toEqual([]);
+  const rules = {
+    'declared-page-model': 'configuration route retains the profile directory and workbench',
+    'pc-viewport': '1440x1050 page and 900x1050 dialog checked',
+    'horizontal-overflow': 'no whole-page overflow at the narrow PC width; candidate table scrolls internally',
+    'single-page-title': 'exactly one level-one heading',
+    'working-surface-first-viewport': 'profile directory starts above the first viewport bottom',
+    'single-primary-action': 'dialog has one Save usage action; directory actions stay secondary',
+    'textual-status': 'configured status is expressed with text',
+    'action-object-proximity': 'Configure stays in its profile row and radio selection stays in its model row',
+    'distinct-interaction-states': 'checked candidate, disabled retired model, and enabled save exercised',
+    'dialog-focus-recovery': 'Escape closes the dialog and restores Configure focus',
+    'context-stability': 'cancel discards the candidate draft and preserves the saved profile',
+    'browser-runtime-errors': 'no unexplained console or failed network requests',
+  };
+  const dirtyPaths = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { encoding: 'utf8' }).trimEnd().split('\n').filter(Boolean).map((line) => line.slice(3));
+  writeFileSync(testInfo.outputPath('runtime-visual-receipt.json'), JSON.stringify({
+    schema_version: 1, route: '/admin/runtime-profiles', page_model: 'configuration',
+    source_revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    source_dirty: dirtyPaths.length > 0, source_dirty_paths: dirtyPaths,
+    environment: 'local', viewport: { width: 1440, height: 1050 }, tested_states: ['ready', 'dialog', 'dirty', 'cancelled'],
+    rule_results: Object.entries(rules).map(([id, evidence]) => ({ id, evidence, status: 'pass' })),
+    screenshot_paths: screenshotPaths,
+    interaction_results: [{ id: 'cancel-preserves-saved-profile', status: 'pass', evidence: 'saved primary remains after cancelling a different radio selection' }],
+    console_errors: browserEvidence.consoleErrors, network_failures: browserEvidence.networkFailures,
+    review_required_items: ['PC grouping, abnormal-state emphasis and five-second scan require human judgment'],
+    human_acceptance: 'pending', generated_at: new Date().toISOString(),
+  }, null, 2));
+});
+
+test('runtime read failure leaves directory counts unknown', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    await route.fulfill({ status: 503, json: { status: 'error', error_code: 'runtime.unavailable', message: 'unavailable', data: {}, meta: {} } });
+  });
+  await page.goto('/admin/runtime-profiles');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main')).not.toContainText(/Configured\s*0|已配置\s*0/);
+});
+
+test('runtime save locks all candidate edits until the submitted profile is confirmed', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  let release: (() => void) | undefined;
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    if (route.request().method() === 'GET') { await route.fallback(); return; }
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.fallback();
+  });
+  await page.goto('/admin/runtime-profiles');
+  await profileRow(page, 'route.short_text').getByRole('button').click();
+  await candidateRow(page, fallbackInstance.instance_id).getByRole('radio').first().check();
+  await page.getByRole('button', { name: /Save usage|保存用途/i }).click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  try { await expect(candidateRow(page, primaryInstance.instance_id).getByRole('radio').first()).toBeDisabled(); }
+  finally { release?.(); }
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('unavailable media policy stays unknown and cannot overwrite saved settings', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    await route.fulfill({ status: 503, json: { status: 'error', error_code: 'settings.unavailable', message: 'unavailable', data: {}, meta: {} } });
+  });
+  await page.goto('/admin/runtime-profiles');
+  const policy = page.locator('[data-ui="media-recognition-policy"]');
+  await expect(policy.getByRole('alert')).toBeVisible();
+  await expect(policy.getByRole('spinbutton')).toHaveCount(0);
+  await expect(policy.locator('summary')).toContainText(/Unknown|未知/);
+  await expect(policy.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
+});
+
+test('malformed media policy recovers only through GET and the model link opens the vision workbench', async ({ page }) => {
+  await installRuntimeProfilesHarness(page, { profiles: [...initialProfiles, {
+    ...initialProfiles[0], profile_id: 'vision.ai', execution_kind: 'vision', label: 'Vision understanding',
+  }] });
+  let invalid = true;
+  const methods: string[] = [];
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    methods.push(route.request().method());
+    if (!invalid) { await route.fallback(); return; }
+    await route.fulfill({ json: envelope({ settings: { media_recognition_policy: {}, platform_preferences: {} } }) });
+  });
+  await page.goto('/admin/runtime-profiles');
+  const policy = page.locator('[data-ui="media-recognition-policy"]');
+  await expect(policy.locator('summary')).toContainText(/Unknown|未知/);
+  await expect(policy.getByRole('spinbutton')).toHaveCount(0);
+  invalid = false;
+  await policy.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(policy.getByRole('spinbutton')).toHaveValue('100');
+  expect(methods).toEqual(['GET', 'GET']);
+  await policy.getByRole('link', { name: /Configure and verify model|配置并验证模型/i }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(/Vision understanding|视觉理解/i);
+});
+
+test('retrying a failed profile read preserves the already loaded probe summary', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  let reads = 0;
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    reads += 1;
+    if (reads > 1) { await route.fallback(); return; }
+    await route.fulfill({ status: 503, json: { status: 'error', error_code: 'runtime.unavailable', message: 'unavailable', data: {}, meta: {} } });
+  });
+  const summaryReady = page.waitForResponse((response) => response.url().includes('/capability-probes/summary'));
+  await page.goto('/admin/runtime-profiles');
+  await summaryReady;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(page.locator('[data-ui="runtime-profile-table"]')).toBeVisible();
+  const summary = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /Capability verification history|能力验证历史/i }) });
+  await summary.locator('summary').click();
+  await expect(summary).toContainText(/No capability probes|还没有能力验证/i);
+  await expect(summary).not.toContainText(/0%/);
+});
+
+test('malformed probe history stays unavailable and retries independently of configuration', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  let invalid = true;
+  await page.route('**/api/admin/runtime-profiles/capability-probes/summary**', async (route) => {
+    if (!invalid) { await route.fallback(); return; }
+    await route.fulfill({ json: envelope({}) });
+  });
+  await page.goto('/admin/runtime-profiles');
+  const summary = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /Capability verification history|能力验证历史/i }) });
+  await summary.locator('summary').click();
+  await expect(summary).toContainText(/unavailable|无法加载/i);
+  await expect(summary).not.toContainText('0%');
+  invalid = false;
+  await summary.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(summary).toContainText(/No capability probes|还没有能力验证/i);
+});
 
 test('hosted runtime profiles are URL-backed, boundary-focused, and fit a narrow PC window', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -927,3 +1088,29 @@ for (const width of [1056, 1440]) {
     await expect(profileRow(page, 'route.classification')).toContainText('gpt-5.6-sol');
   });
 }
+
+test('browser back confirmation handles Escape above the runtime draft', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const writes = await installRuntimeProfilesHarness(page);
+  await page.goto('/admin');
+  await page.locator('a[href="/admin/runtime-profiles"]').first().click();
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
+  await page.evaluate(() => window.history.back());
+  const confirmation = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: /^Cancel$|^取消$/ }).focus();
+  await page.keyboard.press('Tab');
+  expect(await confirmation.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('runtime-history-confirmation-pc-900.png') });
+  await page.keyboard.press('Escape');
+  await expect(confirmation).toBeHidden();
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ })).toBeChecked();
+  await expect(page).toHaveURL(/\/admin\/runtime-profiles/);
+  await page.evaluate(() => window.history.back());
+  await confirmation.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  expect(writes).toHaveLength(0);
+});

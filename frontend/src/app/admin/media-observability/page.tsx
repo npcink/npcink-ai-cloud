@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -22,10 +23,12 @@ import {
   normalizeCloudWorkflowMetadata,
   type CloudWorkflowMetadata,
 } from '@/components/backoffice/CloudWorkflowMetadataPanel';
-import { AnalyticsBarChart, AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
+import { AnalyticsBarChart } from '@/components/ui/EChartsWrapper';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
+
+import { ObservationTrend } from '@/features/admin/observability/ObservationTrend';
 
 const mediaObservabilityClient = createApiClient({ idempotencyPrefix: 'media_observability' });
 
@@ -60,6 +63,7 @@ type MediaObservabilityData = {
   health: { status: string; score: number; summary: string };
   timeline: Array<{
     bucketStartAt: string;
+    bucketEndAt: string;
     jobsTotal: number;
     failedTotal: number;
     bytesSavedTotal: number;
@@ -89,6 +93,7 @@ type MediaObservabilityData = {
     avgProcessingDurationMs: number;
     lastFinishedAt: string;
   }>;
+  deliveriesByOperation: Array<{ operation: string; started: number; completed: number; acknowledged: number }>;
   errors: Array<{ errorCode: string; count: number; lastSeenAt: string }>;
   recentFailures: Array<{
     runId: string;
@@ -155,8 +160,9 @@ function normalizeMediaObservability(raw: any): MediaObservabilityData {
       summary: String(health.summary ?? ''),
     },
     timeline: Array.isArray(raw?.timeline)
-      ? raw.timeline.map((item: any) => ({
+      ? raw.timeline.map((item: any, index: number) => ({
           bucketStartAt: String(item.bucket_start_at ?? ''),
+          bucketEndAt: String(item.bucket_end_at ?? raw.timeline[index + 1]?.bucket_start_at ?? window.end_at ?? ''),
           jobsTotal: Number(item.jobs_total ?? 0),
           failedTotal: Number(item.failed_total ?? 0),
           bytesSavedTotal: Number(item.bytes_saved_total ?? 0),
@@ -191,6 +197,8 @@ function normalizeMediaObservability(raw: any): MediaObservabilityData {
           lastFinishedAt: String(item.last_finished_at ?? ''),
         }))
       : [],
+    deliveriesByOperation: Array.isArray(raw?.delivery_evidence?.by_operation)
+      ? raw.delivery_evidence.by_operation.map((item: any) => ({ operation: String(item.operation ?? ''), started: Number(item.delivery_started_count ?? 0), completed: Number(item.delivery_stream_completed_count ?? 0), acknowledged: Number(item.delivery_acknowledged_count ?? 0) })) : [],
     errors: Array.isArray(raw?.errors)
       ? raw.errors.map((item: any) => ({
           errorCode: String(item.error_code ?? ''),
@@ -229,12 +237,6 @@ function formatBytes(value: number): string {
 
 function formatPercent(value: number): string {
   return `${(Number(value || 0) * 100).toFixed(1)}%`;
-}
-
-function timelineLabel(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${String(date.getHours()).padStart(2, '0')}:00`;
 }
 
 function statusForSuccess(successRate: number, failures: number): string {
@@ -276,7 +278,8 @@ function normalizeTargetFormat(value: string | null): string {
 }
 
 function AdminMediaObservabilityContent() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -345,15 +348,6 @@ function AdminMediaObservabilityContent() {
     setSiteIdInput(siteIdFilter);
   }, [siteIdFilter]);
 
-  const timelineData = useMemo(
-    () =>
-      (data?.timeline || []).map((point) => ({
-        label: timelineLabel(point.bucketStartAt),
-        value: point.jobsTotal,
-        secondaryValue: point.failedTotal,
-      })),
-    [data]
-  );
   const formatData = useMemo(
     () =>
       (data?.formats || []).map((item) => ({
@@ -367,14 +361,15 @@ function AdminMediaObservabilityContent() {
     () =>
       (data?.formats || []).map((item) => ({
         label: item.targetFormat || t('common.unknown', {}, 'Unknown'),
-        value: Math.abs(item.bytesSavedTotal),
+        value: item.bytesSavedTotal,
         color: item.bytesSavedTotal < 0 ? '#f59e0b' : '#10b981',
       })),
     [data, t]
   );
-  const selectedFailure = data?.recentFailures.find((item) => item.runId === focusedRunId)
-    || data?.recentFailures[0]
-    || null;
+  const selectedFailure = focusedRunId
+    ? data?.recentFailures.find((item) => item.runId === focusedRunId) || null
+    : data?.recentFailures[0] || null;
+  const absentFocus = Boolean(data && focusedRunId && !selectedFailure);
   const isEmpty = data !== null && data.totals.jobsTotal === 0;
 
 
@@ -413,6 +408,17 @@ function AdminMediaObservabilityContent() {
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.media_obs.stale_notice', {}, 'The last successfully loaded media snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 
+      {data ? <>
+        <p data-ui="media-history-scope" className="text-xs text-slate-500">{c('图片衍生处理为只读历史；新衍生及优化任务已暂停。普通图片生成、ALT 和媒体交付保留。', 'Image derivatives are read-only history; new derivative and optimization jobs are paused. Ordinary image generation, ALT and media delivery remain available.')}</p>
+        {absentFocus ? <div data-ui="media-focus-absent" role="status" className="border border-slate-200 p-3 text-sm dark:border-slate-800">{c('指定运行不在当前范围或最近失败列表中；未选择其他运行。', 'The requested run is outside this scope or recent failure list; no other run was selected.')} <code className="break-all">{focusedRunId}</code><button type="button" className="btn btn-ghost btn-sm" onClick={() => updateUrl({ focus: null })}>{c('清除定位', 'Clear focus')}</button></div> : null}
+        <section data-ui="media-delivery-evidence" className="border-y border-slate-200 py-3 dark:border-slate-800">
+          <h2 className="text-sm font-semibold">{c('媒体交付', 'Media delivery')}</h2>
+          <p className="mt-1 text-xs text-slate-500">{targetFormat ? c('当前格式仅统计关联衍生任务的交付；普通图片交付不在此格式范围。', 'This format includes only deliveries linked to derivative jobs; ordinary image delivery is outside this format scope.') : c('按交付开始时间统计所选时段，包含各类媒体操作；与衍生任务数不是同一口径。', 'Selected-period deliveries by start time across media operations; this differs from derivative job counts.')} {c('流完成与客户端收件只证明传输，不证明 WordPress 保存或采纳。', 'Stream completion and client receipt prove transfer, not WordPress saving or adoption.')}</p>
+          <p className="mt-2 text-sm">{c('已开始 / 流完成 / 收件验证', 'Started / stream complete / receipt verified')}: {data.totals.deliveryStartedCount} / {data.totals.deliveryStreamCompletedCount} / {data.totals.deliveryAcknowledgedCount}</p>
+          {data.deliveriesByOperation.length ? <div className="mt-2 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr><th className="py-2">{c('操作', 'Operation')}</th><th>{c('已开始', 'Started')}</th><th>{c('流完成', 'Stream complete')}</th><th>{c('收件验证', 'Receipt verified')}</th></tr></thead><tbody>{data.deliveriesByOperation.map(item => <tr key={item.operation}><td className="py-2 font-mono break-all">{item.operation}</td><td>{item.started}</td><td>{item.completed}</td><td>{item.acknowledged}</td></tr>)}</tbody></table></div> : <p className="mt-1 text-xs text-slate-500">{data.totals.deliveryStartedCount ? c('当前响应未提供操作分组。', 'Operation breakdown is unavailable in this response.') : c('所选范围没有交付开始记录。', 'No delivery starts in this scope.')}</p>}
+          <p className="mt-2 text-xs text-slate-500">{c('当前衍生工件存量（未过期且未清理，非时段增量）', 'Current derivative artifacts (unexpired and unpurged, not period additions)')}: {data.totals.activeArtifactCount} · {formatBytes(data.totals.activeArtifactBytes)} · {c('快照', 'Snapshot')}: {formatDate(data.generatedAt)}</p>
+        </section>
+      </> : null}
       {!data ? null : isEmpty ? (
         <BackofficeEmptyState
           title={t('admin.media_obs.empty_title', {}, 'No media jobs yet')}
@@ -424,11 +430,12 @@ function AdminMediaObservabilityContent() {
         />
       ) : (
         <>
+          <p className="text-xs text-slate-500">{c('以下为所选时段的衍生处理历史；体积变化正值表示节省、负值表示增大。小样本 P95 使用排序后 floor((N−1)×0.95) 的值。', 'Derivative processing history for the selected period. Positive size change means savings; negative means growth. Small-sample P95 uses the sorted floor((N−1)×0.95) value.')} N={data.totals.jobsTotal} · {t('admin.media_obs.queue_wait')}: {formatNumber(data.totals.avgQueueWaitMs)}ms</p>
           <div data-ui="media-observability-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-6">
             {[
               { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },
               { label: t('admin.media_obs.failures', {}, 'Failures'), value: formatNumber(data.totals.failedTotal), warn: data.totals.failedTotal > 0 },
-              { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), warn: statusForSuccess(data.totals.successRate, data.totals.failedTotal) !== 'success' },
+              { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), warn: statusForSuccess(data.totals.successRate, data.totals.failedTotal) !== 'ok' },
               { label: t('admin.media_obs.avg_processing', {}, 'Avg processing'), value: `${formatNumber(data.totals.avgProcessingDurationMs)}ms` },
               { label: t('admin.media_obs.p95_processing', {}, 'P95 processing'), value: `${formatNumber(data.totals.p95ProcessingDurationMs)}ms` },
               { label: t('admin.media_obs.saved', {}, 'Size change'), value: formatBytes(data.totals.bytesSavedTotal), warn: data.totals.bytesSavedTotal < 0 },
@@ -442,14 +449,9 @@ function AdminMediaObservabilityContent() {
           <section className="admin-tier-card overflow-hidden p-3">
             <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.trend_title', {}, 'Jobs and failures')}</h2>
             <div className="mt-2">
-              <AnalyticsLineChart
-                data={timelineData}
-                height={220}
-                primarySeriesName={t('admin.media_obs.jobs', {}, 'Jobs')}
-                secondarySeriesName={t('admin.media_obs.failures', {}, 'Failures')}
-                primaryColor="#2563eb"
-                secondaryColor="#f59e0b"
-              />
+              <ObservationTrend points={data.timeline.map(point => ({ startAt: point.bucketStartAt, endAt: point.bucketEndAt, values: [point.jobsTotal, point.failedTotal] }))} series={[
+                { name: t('admin.media_obs.jobs'), color: '#2563eb' }, { name: t('admin.media_obs.failures'), color: '#f59e0b' },
+              ]} />
             </div>
           </section>
 
@@ -523,14 +525,14 @@ function AdminMediaObservabilityContent() {
                 {data.recentFailures.map((item) => { const selected = selectedFailure?.runId === item.runId; return <button key={item.runId} type="button" data-ui="media-failure-item" aria-pressed={selected} aria-controls="media-failure-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.runId })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950 dark:text-white">{item.errorCode}</span><BackofficeTag tone="warning">{item.targetFormat}</BackofficeTag></div><p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{item.siteId} · {formatBytes(item.sourceBytes)} · {item.finishedAt ? formatDate(item.finishedAt) : t('common.not_found')}</p></div><div className="text-sm font-medium text-slate-500 md:text-right dark:text-slate-400">{formatNumber(item.processingDurationMs)}ms</div></button>; })}
               </div>
               <div id="media-failure-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
-                {selectedFailure ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.media_obs.selected_failure', {}, 'Selected failure')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{selectedFailure.errorCode}</h3><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{selectedFailure.finishedAt ? formatDate(selectedFailure.finishedAt) : t('common.not_found')}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.run_id', {}, 'Run ID')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.runId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.siteId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_format_size', {}, 'Format and source size')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedFailure.targetFormat} · {formatBytes(selectedFailure.sourceBytes)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_timing', {}, 'Queue and processing time')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedFailure.queueWaitMs)}ms · {formatNumber(selectedFailure.processingDurationMs)}ms</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.media_obs.failure_boundary', {}, 'Failure evidence is metadata-only. Image payloads and temporary artifact contents are not exposed here.')}</p></div> : null}
+                {selectedFailure ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.media_obs.selected_failure', {}, 'Selected failure')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{selectedFailure.errorCode}</h3><Link className="text-sm text-blue-700 underline dark:text-blue-300" href={`/admin/troubleshooting?window=${windowHours}&site=${encodeURIComponent(selectedFailure.siteId)}&run_id=${encodeURIComponent(selectedFailure.runId)}`}>{c('查看此运行', 'Inspect this run')}</Link><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{selectedFailure.finishedAt ? formatDate(selectedFailure.finishedAt) : t('common.not_found')}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.run_id', {}, 'Run ID')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.runId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.siteId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_format_size', {}, 'Format and source size')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedFailure.targetFormat} · {formatBytes(selectedFailure.sourceBytes)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_timing', {}, 'Queue and processing time')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedFailure.queueWaitMs)}ms · {formatNumber(selectedFailure.processingDurationMs)}ms</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.media_obs.failure_boundary', {}, 'Failure evidence is metadata-only. Image payloads and temporary artifact contents are not exposed here.')}</p></div> : null}
               </div>
             </div>
           </section> : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.no_recent_failures', {}, 'No recent failures.')}</p>}
         </>
       )}
 
-      {data ? <BackofficeDisclosure summary={t('admin.media_obs.advanced_evidence', {}, 'Advanced workflow and error evidence')} contentClassName="space-y-5"><CloudWorkflowMetadataPanel metadata={data.workflowMetadata} /><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.delivery_started', {}, 'Deliveries started')}</h3><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{formatNumber(data.totals.deliveryStartedCount)} · {t('admin.media_obs.delivery_detail', { completed: formatNumber(data.totals.deliveryStreamCompletedCount || 0), completion_rate: formatPercent(data.totals.streamCompletionRate || 0), acknowledged: formatNumber(data.totals.deliveryAcknowledgedCount || 0), acknowledgement_rate: formatPercent(data.totals.acknowledgementRate || 0) }, '{{completed}} stream-complete ({{completion_rate}}) · {{acknowledged}} receipt-verified ({{acknowledgement_rate}})')}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.queue_wait', {}, 'Avg queue wait')}: {formatNumber(data.totals.avgQueueWaitMs || 0)}ms</p></div><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.errors_title', {}, 'Error codes')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{data.errors.length ? data.errors.map((item) => <div key={`${item.errorCode}-${item.lastSeenAt}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-800"><div className="min-w-0"><p className="truncate font-mono text-sm font-semibold text-slate-950 dark:text-white">{item.errorCode}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div>) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.media_obs.no_errors', {}, 'No media processing failures in this window.')}</p>}</div></div></BackofficeDisclosure> : null}
+      {data ? <BackofficeDisclosure summary={t('admin.media_obs.advanced_evidence', {}, 'Advanced workflow and error evidence')} contentClassName="space-y-5"><CloudWorkflowMetadataPanel metadata={data.workflowMetadata} /><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.errors_title', {}, 'Error codes')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{data.errors.length ? data.errors.map((item) => <div key={`${item.errorCode}-${item.lastSeenAt}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-800"><div className="min-w-0"><p className="truncate font-mono text-sm font-semibold text-slate-950 dark:text-white">{item.errorCode}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div>) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.media_obs.no_errors', {}, 'No media processing failures in this window.')}</p>}</div></div></BackofficeDisclosure> : null}
     </BackofficePageStack>
   );
 }

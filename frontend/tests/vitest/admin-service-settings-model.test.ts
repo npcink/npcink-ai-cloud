@@ -175,7 +175,6 @@ describe('service settings response projection', () => {
       provider_budget: {
         ...setting('provider_account_spend_budget', {}, { enabled: false, status: 'disabled' }),
         setting_kind: 'runtime',
-        config: null as unknown as ProviderBudgetSetting['config'],
       },
     });
 
@@ -194,6 +193,18 @@ describe('service settings response projection', () => {
     });
 
     expect(projectServiceSettingsForms(noisy).savedForms.providerBudget.warning_ratio).toBe('85.5');
+  });
+
+  it('rejects a malformed budget configuration instead of making it editable as defaults', () => {
+    const malformed = response({
+      provider_budget: {
+        ...setting('provider_account_spend_budget', {}, { enabled: false, status: 'disabled' }),
+        setting_kind: 'runtime',
+        config: null as unknown as ProviderBudgetSetting['config'],
+      },
+    });
+
+    expect(() => projectServiceSettingsForms(malformed)).toThrow('Service setting provider_budget is invalid.');
   });
 
   it('supplies the accepted accounting fallback when an older response omits it', () => {

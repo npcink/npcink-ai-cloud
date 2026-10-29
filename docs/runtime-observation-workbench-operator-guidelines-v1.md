@@ -197,6 +197,37 @@ Retention deletion can still shrink a snapshot; the server clamps obsolete
 page numbers and reports its actual page. This is bounded read consistency,
 not an immutable audit export or a promise that every plugin event was received.
 
+### Exact problems, runtime links and evidence scope
+
+Problem history fixes site (including explicitly unassigned sites), plugin,
+event, failed status and `error_code` before pagination. Omitting `error_code`
+means no code filter; an empty value matches both NULL and empty codes. Individual
+metadata includes the code. The optional `event_category=all|activity|status`
+filters before LIMIT: status covers monitoring state/health reports; activity
+retains other events, including unknown types. Summary `activity_category` only
+filters recent activity and does not change headline totals.
+
+`GET /admin/runtime-telemetry/runs?run_id=...` requires diagnostic authorization
+and a non-empty `site_id`. Exact lookup applies both the selected site and the
+bounded time window (including its upper bound); absence never substitutes a
+different run. Links preserve run, site and window. This metadata projection
+does not expose request or response payloads or establish WordPress adoption.
+
+Vector `failure_groups` adds index/search failures, including missing codes,
+with total/limit/truncation metadata (25 groups). The legacy search `errors`
+projection is retained. Headlines use full index/search failure totals. Site
+rows union search, index activity and retained snapshots, limited to 50 with
+coverage metadata. Snapshot `captured_at` and `last_indexed_at` describe retained
+stock, not activity inside the selected period. Period health signals explain
+the score and do not establish current recovery.
+
+Media and vector timelines add `bucket_end_at`. Count charts show explicit
+series and date/time intervals without smoothing; per-bucket tables preserve
+small failure counts. Media distinguishes paused derivative-processing history,
+windowed deliveries and current unexpired artifact stock. A format filter limits
+delivery evidence to derivative-linked artifacts. Client receipt proves transfer,
+not WordPress saving or adoption. No paused execution is re-enabled.
+
 ## Closeout lessons
 
 A merged PR proves source integration, not branch/worktree cleanup. A clean

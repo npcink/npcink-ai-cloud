@@ -16,7 +16,7 @@ const BASE_URL =
 
 function setting(
   settingId: string,
-  status: 'ready' | 'disabled' | 'missing_config',
+  status: 'ready' | 'disabled' | 'missing_config' | 'error',
   config: Record<string, unknown>,
   secrets: Record<string, { configured: boolean; display: string }> = {}
 ) {
@@ -32,6 +32,216 @@ function setting(
     last_error_message: '',
   };
 }
+
+async function installSettingsRecoveryHarness(page: Page) {
+  await installAdminMocks(page);
+  const state = {
+    failReads: false, reads: 0, writes: 0, tests: 0,
+    releaseSave: undefined as (() => void) | undefined,
+    delaySave: false,
+    settings: {
+      portal_public: setting('portal_public', 'ready', { public_base_url: 'https://saved.example.test' }),
+      qq_login: setting('portal_qq_login', 'disabled', { client_id: '' }),
+      portal_email: setting('portal_email', 'ready', {
+        smtp_host: 'smtp.example.test', smtp_port: 465, smtp_username: '',
+        smtp_use_ssl: true, smtp_use_starttls: false, smtp_timeout_seconds: 20,
+        from_email: 'mail@example.test', from_name: 'Saved sender', reply_to: '',
+      }),
+      alipay_payment: setting('payment_alipay', 'disabled', {}),
+      site_relink_policy: setting('site_relink_policy', 'ready', { cooldown_days: 90 }),
+      platform_preferences: setting('platform_preferences', 'ready', { timezone: 'Asia/Shanghai' }),
+    },
+  };
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'GET') {
+      state.reads += 1;
+      await route.fulfill({ status: state.failReads ? 503 : 200, json: state.failReads
+        ? buildAdminApiErrorEnvelope('read unavailable') : buildAdminApiEnvelope({ settings: state.settings }) });
+    } else if (route.request().method() === 'PATCH') {
+      state.writes += 1;
+      const payload = route.request().postDataJSON();
+      if (state.delaySave) await new Promise<void>((resolve) => { state.releaseSave = resolve; });
+      if (path.endsWith('/portal-public')) state.settings.portal_public.config = { public_base_url: payload.public_base_url };
+      await route.fulfill({ json: buildAdminApiEnvelope(state.settings.portal_public) });
+    } else if (path.endsWith('/email/preview')) {
+      const payload = route.request().postDataJSON();
+      await route.fulfill({ json: buildAdminApiEnvelope({
+        preview_type: payload.preview_type, subject: `${payload.locale}: ${payload.from_name}`,
+        html: '<p>Preview only</p>', text: 'Preview only', from_name: payload.from_name,
+        from_email: payload.from_email, recommended_from_name: 'Npcink AI Cloud',
+      }) });
+    } else {
+      state.tests += 1;
+      await route.fulfill({ json: buildAdminApiEnvelope(state.settings.portal_email) });
+    }
+  });
+  return state;
+}
+
+test('service writes lock the submitted draft and category until the readback completes', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  state.delaySave = true;
+  await page.goto('/admin/service-settings');
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
+  await base.fill('https://submitted.example.test');
+  await page.getByRole('button', { name: /Save base URL|保存基础地址/i }).click();
+  await expect.poll(() => state.writes).toBe(1);
+  try {
+    await expect(base).toBeDisabled();
+    await expect(page.getByRole('tab', { name: /Email|邮件配置/i })).toBeDisabled();
+  } finally { state.releaseSave?.(); }
+  await expect(base).toHaveValue('https://submitted.example.test');
+  await expect(base).toBeEnabled();
+});
+
+for (const theme of ['light', 'dark'] as const) {
+test(`saved settings with failed readback freeze stale state and retry only the read in ${theme}`, async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+  const state = await installSettingsRecoveryHarness(page);
+  await page.goto('/admin/service-settings');
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
+  await base.fill('https://submitted.example.test');
+  state.failReads = true;
+  await page.getByRole('button', { name: /Save base URL|保存基础地址/i }).click();
+  await expect(page.getByRole('status').filter({ hasText: /saved.*latest|已保存.*最新/i })).toBeVisible();
+  await expect(page.locator('main')).not.toContainText(/This configuration action failed|本次配置操作失败/);
+  await expect(base).toBeDisabled();
+  await expect(page.getByRole('tab').first()).toContainText(/Awaiting confirmation|待确认/);
+  await expect(page.getByRole('tab').first()).not.toContainText(/Unsaved|未保存/);
+  await page.screenshot({ path: testInfo.outputPath(`saved-read-failure-${theme}.png`), fullPage: true, animations: 'disabled' });
+  state.failReads = false;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(base).toBeEnabled();
+  await expect(base).toHaveValue('https://submitted.example.test');
+  expect(state.writes).toBe(1);
+});
+}
+
+test('email preview reopens with current sender and current locale', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en'));
+  await installSettingsRecoveryHarness(page);
+  await page.goto('/admin/service-settings?tab=email');
+  await page.getByRole('button', { name: /Preview email template|预览邮件模板/i }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('en: Saved sender');
+  await dialog.getByRole('button', { name: /Close preview|关闭预览/i }).click();
+  await page.getByRole('button', { name: /Edit SMTP|编辑 SMTP/i }).click();
+  await page.getByRole('textbox', { name: /Sender name|发件人名称/i }).fill('Draft sender');
+  await page.getByRole('button', { name: /Preview email template|预览邮件模板/i }).click();
+  await expect(dialog).toContainText('en: Draft sender');
+});
+
+test('email preview failure stays inside its dialog and can recover without changing settings', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  let fail = true;
+  await page.route('**/api/admin/service-settings/email/preview', async (route) => {
+    if (!fail) { await route.fallback(); return; }
+    await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('preview unavailable') });
+  });
+  await page.goto('/admin/service-settings?tab=email');
+  await page.getByRole('button', { name: /Preview email template|预览邮件模板/i }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+  fail = false;
+  await dialog.getByRole('button', { name: /Generate preview|生成预览/i }).click();
+  await expect(dialog).toContainText('Saved sender');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  expect(state.writes).toBe(0);
+});
+
+test('all eight setting groups keep URL, keyboard, history and PC panel context', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installSettingsRecoveryHarness(page);
+  await page.goto('/admin/service-settings?tab=portal');
+  const tabs = page.getByRole('tab');
+  const ids = ['portal', 'qq', 'email', 'payment', 'accounting', 'provider-budget', 'site-relink', 'system'];
+  for (let index = 0; index < ids.length; index += 1) {
+    await tabs.nth(index).click();
+    await expect(page).toHaveURL(new RegExp(`tab=${ids[index]}$`));
+    if (ids[index] === 'email') await page.getByRole('button', { name: /Edit SMTP|编辑 SMTP/i }).click();
+    await expect(page.locator('form:visible')).toHaveCount(1);
+    await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', `service-settings-tab-${ids[index]}`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await tabs.last().focus();
+  await page.keyboard.press('Home');
+  await expect(tabs.first()).toBeFocused();
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowDown');
+  await expect(tabs.nth(1)).toBeFocused();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/tab=qq$/);
+  await page.goBack();
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+  await tabs.nth(2).click();
+  await page.setViewportSize({ width: 900, height: 1050 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('service-settings-email-900.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('malformed setting fields fail closed and recover without rendering writable defaults', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  let malformed = true;
+  await page.route('**/api/admin/service-settings', async (route) => {
+    await route.fulfill({ json: buildAdminApiEnvelope(malformed
+      ? { settings: { ...state.settings, portal_email: { ...state.settings.portal_email, secrets: null } } }
+      : { settings: state.settings }) });
+  });
+  await page.goto('/admin/service-settings');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('form')).toHaveCount(0);
+  malformed = false;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i })).toHaveValue('https://saved.example.test');
+  expect(state.writes).toBe(0);
+});
+
+test('upstream outage gives retry guidance without claiming a migration failure', async ({ page }) => {
+  await installSettingsRecoveryHarness(page);
+  await page.route('**/api/admin/service-settings', async (route) => {
+    await route.fulfill({ status: 502, json: buildAdminApiErrorEnvelope('upstream unavailable', 'proxy.admin_session_unreachable') });
+  });
+  await page.goto('/admin/service-settings');
+  await expect(page.locator('main').getByRole('alert')).toContainText(/upstream|上游/);
+  await expect(page.locator('main').getByRole('alert')).not.toContainText(/migration|数据库迁移/i);
+});
+
+test('a failed email test reloads persisted verification state and keeps retry contextual', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  await page.route('**/api/admin/service-settings/email/test', async (route) => {
+    state.settings.portal_email.status = 'error';
+    await route.fulfill({ status: 502, json: buildAdminApiErrorEnvelope('test failed', 'service_settings.email_delivery_failed') });
+  });
+  await page.goto('/admin/service-settings?tab=email');
+  await page.getByRole('textbox', { name: /Test recipient|测试收件人/i }).fill('operator@example.test');
+  await page.getByRole('button', { name: /Send test email|发送测试邮件/i }).click();
+  await expect.poll(() => state.reads).toBe(2);
+  await expect(page.getByRole('tab', { name: /Email|邮件配置/i })).toContainText(/Error|异常/i);
+  await expect(page.getByRole('alert').first()).toContainText(/failed|失败/i);
+});
+
+test('a saved timezone outside the common choices remains visible and unchanged', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  state.settings.platform_preferences.config.timezone = 'Australia/Sydney';
+  await page.goto('/admin/service-settings?tab=system');
+  await expect(page.getByRole('combobox')).toHaveValue('Australia/Sydney');
+  await expect(page.getByRole('combobox').locator('option:checked')).toHaveText('Australia/Sydney');
+});
+
+test('changing the display language preserves the active draft without reloading configuration', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  await page.goto('/admin/service-settings');
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
+  await base.fill('https://draft.example.test');
+  await page.getByRole('button', { name: /^Language$|^语言$/i }).click();
+  await page.getByRole('option', { name: /English/ }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Service Settings');
+  await expect(base).toHaveValue('https://draft.example.test');
+  expect(state.reads).toBe(1);
+});
 
 async function hideNextDevelopmentPortal(page: Page) {
   await page.locator('nextjs-portal').evaluateAll((portals) => {
@@ -431,7 +641,7 @@ test('service settings initial failure preserves the PC shell and bounded retry'
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务设置$/i })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: /service settings unavailable|服务配置/i })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: /service settings unavailable|upstream|服务配置|上游/i })).toBeVisible();
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/service-settings$/);
@@ -573,4 +783,21 @@ test('Provider budget dropdown uses runtime IDs and retains unavailable saved en
   await second.selectOption('deepseek');
   await expect(second).toHaveValue('deepseek');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('browser back preserves service settings draft until discard is confirmed', async ({ page }) => {
+  await installSettingsRecoveryHarness(page);
+  await page.goto('/admin');
+  await page.locator('a[href="/admin/service-settings"]').first().click();
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/ });
+  await base.fill('https://retained.example.test');
+  await page.evaluate(() => window.history.back());
+  const confirm = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃更改/ });
+  await expect(confirm).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/service-settings/);
+  await confirm.getByRole('button', { name: /Cancel|取消/ }).click();
+  await expect(base).toHaveValue('https://retained.example.test');
+  await page.evaluate(() => window.history.back());
+  await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin$/);
 });

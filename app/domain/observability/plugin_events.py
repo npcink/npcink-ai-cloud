@@ -15,6 +15,7 @@ from app.core.models import (
     RunRecord,
     Site,
 )
+from app.domain.observability.plugin_event_filters import plugin_event_category_conditions
 from app.domain.observability.plugin_event_projection import (
     _attention_key as _attention_key_value,
 )
@@ -254,7 +255,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -269,7 +270,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -288,7 +289,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -306,23 +307,24 @@ class PluginObservabilityService:
                 )
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
                 .where(
                     *base_conditions,
-                    PluginObservabilityEvent.error_code.is_not(None),
-                    PluginObservabilityEvent.error_code != "",
+                    PluginObservabilityEvent.status.in_(("error", "failed")),
                 )
                 .group_by(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -333,7 +335,7 @@ class PluginObservabilityService:
                     select(PluginObservabilityEvent)
                     .where(
                         *base_conditions,
-                        PluginObservabilityEvent.status == "error",
+                        PluginObservabilityEvent.status.in_(("error", "failed")),
                     )
                     .order_by(PluginObservabilityEvent.received_at.desc())
                     .limit(10)
@@ -426,6 +428,7 @@ class PluginObservabilityService:
         site_id: str = "",
         plugin_slug: str = "",
         record_scope: str = "all",
+        activity_category: str = "all",
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
@@ -460,7 +463,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -493,7 +496,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -512,7 +515,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -538,7 +541,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -557,25 +560,26 @@ class PluginObservabilityService:
                 .order_by(PluginObservabilityEvent.site_id.asc())
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
                 .where(
                     *base_conditions,
-                    PluginObservabilityEvent.error_code.is_not(None),
-                    PluginObservabilityEvent.error_code != "",
+                    PluginObservabilityEvent.status.in_(("error", "failed")),
                 )
                 .group_by(
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -586,13 +590,14 @@ class PluginObservabilityService:
                     select(PluginObservabilityEvent)
                     .where(
                         *base_conditions,
-                        PluginObservabilityEvent.status == "error",
+                        PluginObservabilityEvent.status.in_(("error", "failed")),
                     )
                     .order_by(PluginObservabilityEvent.received_at.desc())
                     .limit(10)
                 )
             )
 
+            activity_conditions = plugin_event_category_conditions(activity_category)
             # Bounded, metadata-only join; a supplied correlation must not cross sites.
             activity_rows = session.execute(
                 select(PluginObservabilityEvent, RunRecord)
@@ -601,7 +606,7 @@ class PluginObservabilityService:
                     (RunRecord.run_id == PluginObservabilityEvent.correlation_id)
                     & (RunRecord.site_id == PluginObservabilityEvent.site_id),
                 )
-                .where(*base_conditions)
+                .where(*base_conditions, *activity_conditions)
                 .order_by(
                     PluginObservabilityEvent.received_at.desc(),
                     PluginObservabilityEvent.id.desc(),
@@ -729,6 +734,7 @@ class PluginObservabilityService:
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
             "recent_activity": recent_activity,
             "recent_activity_limit": 50,
+            "activity_category": activity_category,
         }
 
     def update_attention_state(
@@ -1003,7 +1009,7 @@ class PluginObservabilityService:
             item = buckets[bucket]
             events_total = self._coerce_int(item.get("events_total")) + 1
             error_total = self._coerce_int(item.get("error_total")) + (
-                1 if str(status or "") == "error" else 0
+                1 if str(status or "") in {"error", "failed"} else 0
             )
             item["events_total"] = events_total
             item["error_total"] = error_total

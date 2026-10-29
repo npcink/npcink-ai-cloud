@@ -78,6 +78,10 @@ test('missing-call investigation separates comparison records and retains recove
   expect(requests.filter(url => url.searchParams.has('since')).every(url => url.searchParams.get('since') === '2026-10-27T12:00:00Z')).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
   await page.screenshot({ path: testInfo.outputPath('missing-call-closure-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 900, height: 1050 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(900);
+  await page.screenshot({ path: testInfo.outputPath('missing-call-closure-900.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1050 });
 });
 
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
@@ -174,6 +178,11 @@ test('runtime diagnostics shows evidence in three tabs with default selection an
   const trendExport = JSON.parse(readFileSync((await trendDownload.path())!, 'utf8'));
   expect(trendExport.selected_issue).toBe('hosted_model.provider_call_gap');
   expect(trendExport.unit).toBe('runs');
+  expect(trendExport.scope.window_hours).toBe(336);
+  expect(trendExport.timezone).toBe('UTC');
+  expect(trendExport.window).toHaveProperty('until');
+  expect(trendExport.evidence_limits).toEqual(expect.any(Object));
+  expect(trendExport.requested_display_limit).toBe(25);
   expect(trendExport.issues).toBeUndefined();
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-trend-expanded.png'), animations: 'disabled' });
   await selectPanel(page, 'overview');
@@ -445,6 +454,10 @@ test('provider failure details explain cause, export evidence and keep recovery 
   const evidence = JSON.parse(readFileSync((await download.path())!, 'utf8'));
   expect(evidence.recovery).toBe('unverified');
   expect(evidence.windowHours).toBe(336);
+  expect(evidence.generatedAt).toBe(evidence.generated_at);
+  expect(evidence.scope.window_hours).toBe(336);
+  expect(evidence.requested_display_limit).toBe(25);
+  expect(evidence.failure_details).toEqual({ returned: 1, may_be_truncated: false });
   expect(evidence.failures[0].runId).toBe('run-schema-rejected');
 });
 
@@ -500,11 +513,11 @@ test('inherited scope filters stay visible at the scope row and clear independen
   await expect(scopeFilters).toHaveCount(0);
 });
 
-test('multi-function evidence retains successful scopes, distinguishes failures, and retries', async ({ page }, testInfo) => {
+test('issue evidence ignores display-group limits, isolates failures, and retries', async ({ page }, testInfo) => {
   await installAdminMocks(page);
   await page.setViewportSize({ width: 1440, height: 1050 });
   const requests: URL[] = [];
-  let failKnowledge = true;
+  let failSource = true;
   let failAll = false;
   let malformed = false;
   const summary = {
@@ -528,8 +541,7 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
       return;
     }
     requests.push(url);
-    const scope = url.searchParams.get('capability')!;
-    if (failAll || (scope === 'knowledge' && failKnowledge)) {
+    if (failAll || failSource) {
       await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('evidence source unavailable') });
       return;
     }
@@ -537,11 +549,11 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
       await route.fulfill({ json: buildAdminApiEnvelope({ items: [{ run_id: null }, { run_id: null }] }) });
       return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({ items: [{
+    await route.fulfill({ json: buildAdminApiEnvelope({ items: ['text', 'knowledge', 'unlisted'].map(scope => ({
       run_id: `run-${scope}`, site_id: 'site-alpha', ability_name: `inspect-${scope}`, ability_family: scope,
       profile_id: `${scope}.managed`, status: 'succeeded', duration_ms: 118, provider_call_count: 0,
       has_meter_event: true, started_at: '2026-10-07T10:00:00Z',
-    }], sampled: false, truncated: false }) });
+    })), sampled: false, truncated: false }) });
   });
   await page.goto('/admin/troubleshooting?site=site-alpha');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(3);
@@ -552,14 +564,15 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
 
   await selectPanel(page, 'records');
   const evidence = page.locator('[data-ui="runtime-run-evidence"]');
-  await expect(evidence.getByRole('alert')).toContainText(/Some functions could not load|部分功能的记录加载失败/);
-  await expect(evidence).toContainText('inspect-text');
+  await expect(evidence.getByRole('alert')).toContainText(/Run records could not load|运行记录加载失败/);
+  await expect(evidence).not.toContainText('inspect-text');
   await expect(evidence).not.toContainText(/No related run records|未返回相关运行记录/);
-  expect(requests.filter((url) => url.searchParams.get('issue_code') === 'hosted_model.provider_call_gap').map((url) => url.searchParams.get('capability')).sort()).toEqual(['knowledge', 'text']);
+  expect(requests.filter((url) => url.searchParams.get('issue_code') === 'hosted_model.provider_call_gap').map((url) => url.searchParams.get('capability')).sort()).toEqual([null]);
   expect(requests.every((url) => url.searchParams.get('site_id') === 'site-alpha' && url.searchParams.get('recent_minutes') === '20160')).toBe(true);
-  failKnowledge = false;
+  failSource = false;
   await evidence.getByRole('button', { name: /Retry records|重试加载记录/ }).click();
   await expect(evidence).toContainText('inspect-knowledge');
+  await expect(evidence).toContainText('inspect-unlisted');
   await expect(evidence.getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-three-issues-selected.png'), animations: 'disabled' });
   await page.emulateMedia({ colorScheme: 'dark' });

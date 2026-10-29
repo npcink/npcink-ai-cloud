@@ -36,7 +36,7 @@ test('dimension lines differ and retained history pages keep a snapshot', async 
   await expect(chart.locator('canvas')).toHaveCount(0);
   await page.getByRole('tab', { name: /图表|Chart/ }).click();
   await expect(chart.getByLabel(/指标|Metric/)).toHaveValue('failed');
-  await page.getByRole('link', { name: /按功能|By function/ }).click();
+  await page.getByRole('link', { name: /按运行类型|By runtime type/ }).click();
   await expect(chart.getByRole('heading')).toContainText(/按功能|Function/);
   await chart.getByLabel(/指标|Metric/).selectOption('runs');
   await expect(chart.locator('tbody tr').first().locator('td')).toHaveText(['4', '8']);
@@ -74,7 +74,7 @@ test('dimension lines differ and retained history pages keep a snapshot', async 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('history-900.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await writeAdminVisualReceipt({ page, testInfo, dataMode: 'mocked', route: '/admin/usage-statistics', pageModel: 'diagnostic', testedStates: ['ready', 'filtered', 'paginated', 'partial_error'], pageTitle: page.getByRole('heading', { name: /使用统计|Usage Statistics/, exact: true }), workingSurface: table, browserEvidence: evidence, humanAcceptance: 'pending', expectedConsoleErrors: [/503/], routeRuleResults: [
+  await writeAdminVisualReceipt({ page, testInfo, dataMode: 'mocked', route: '/admin/usage-statistics', pageModel: 'diagnostic', testedStates: ['ready', 'filtered', 'paginated', 'partial_error'], pageTitle: page.getByRole('heading', { name: /运行观测|Runtime observation/, exact: true }), workingSurface: table, browserEvidence: evidence, humanAcceptance: 'pending', expectedConsoleErrors: [/503/], routeRuleResults: [
     { id: 'single-primary-action', status: 'not_applicable', evidence: 'read-only comparison and history' },
     { id: 'textual-status', status: 'pass', evidence: 'failure, loading, retained scope and page counts are explicit' },
     { id: 'action-object-proximity', status: 'pass', evidence: 'group drill-down and pagination remain in the working table' },

@@ -379,13 +379,14 @@ test('Quiet service filters intersect without replacing the global summary or is
   await page.goto('/admin/coverage');
   await coverageRange(page, 1, 4, 4);
   const header = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(header.getByRole('button', { name: /^Refresh$|^刷新$/i })).toBeEnabled();
   const summary = await header.innerText();
   for (const status of ['error', 'warning', 'ok', 'inactive', 'all', 'needs_action']) {
     const index = ['needs_action', 'error', 'warning', 'ok', 'inactive', 'all'].indexOf(status);
     await statusGroup(page).getByRole('button').nth(index).click();
     await expect(statusGroup(page).getByRole('button').nth(index)).toHaveAttribute('aria-pressed', 'true');
     await coverageRange(page, 1, status === 'all' ? 8 : status === 'needs_action' ? 4 : 2, status === 'all' ? 8 : status === 'needs_action' ? 4 : 2);
-    expect(await header.innerText()).toBe(summary);
+    await expect(header).toHaveText(summary, { useInnerText: true });
   }
   await page.getByRole('combobox', { name: /Reason|原因/i }).selectOption('subscription_lifecycle_risk');
   await page.getByRole('combobox', { name: /Sort|排序/i }).selectOption('customer');
@@ -393,7 +394,7 @@ test('Quiet service filters intersect without replacing the global summary or is
   await coverageRange(page, 1, 1, 1);
   expect(mocks.requests.at(-1)?.get('reason')).toBe('subscription_lifecycle_risk');
   expect(mocks.requests.at(-1)?.get('sort')).toBe('customer');
-  expect(await header.innerText()).toBe(summary);
+  await expect(header).toHaveText(summary, { useInnerText: true });
   const before = mocks.requests.length;
   await page.getByRole('button', { name: /Inspect evidence|查看证据/i }).click();
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toContainText('Directory customer 05');

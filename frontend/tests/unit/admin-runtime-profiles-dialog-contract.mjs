@@ -273,19 +273,18 @@ assert.match(
 
 assert.match(
   pageSource,
-  /useEffect\(\(\) => \{[\s\S]*if \(!dirty\) return;[\s\S]*const handleBeforeUnload = \(event: BeforeUnloadEvent\)[\s\S]*event\.preventDefault\(\)[\s\S]*event\.returnValue = ''[\s\S]*window\.addEventListener\('beforeunload', handleBeforeUnload\)[\s\S]*window\.removeEventListener\('beforeunload', handleBeforeUnload\)[\s\S]*\}, \[dirty\]\)/,
-  'dirty hosted runtime profile drafts must guard browser unload and clean up the handler'
+  /useAdminNavigationGuard\([\s\S]*dirty, setPendingNavigationHref/,
+  'dirty profiles must use the shared unload, link and history guard'
 );
+
+const navigationGuard = readFileSync(fromFrontendRoot('src/hooks/useAdminNavigationGuard.ts'), 'utf8');
+assert.match(navigationGuard, /beforeunload[\s\S]*closest\('a\[href\]'\)/);
+assert.match(navigationGuard, /addEventListener\('popstate'[\s\S]*stopImmediatePropagation\(\)[\s\S]*history.go\(-delta\)/);
+assert.match(pageSource, /confirmNavigation\(href\)/);
 
 assert.match(
   pageSource,
-  /const handleAnchorClick = \(event: MouseEvent\)[\s\S]*event\.target instanceof Element \? event\.target\.closest\('a\[href\]'\)[\s\S]*destination\.origin !== window\.location\.origin \|\| destination\.pathname === window\.location\.pathname[\s\S]*event\.preventDefault\(\)[\s\S]*setPendingNavigationHref\([\s\S]*document\.addEventListener\('click', handleAnchorClick, true\)[\s\S]*document\.removeEventListener\('click', handleAnchorClick, true\)/,
-  'dirty drafts must capture same-origin anchor navigation before Next.js discards the draft'
-);
-
-assert.match(
-  pageSource,
-  /<ConfirmModal[\s\S]*isOpen=\{Boolean\(pendingNavigationHref\)\}[\s\S]*unsaved_leave_title[\s\S]*unsaved_leave_desc[\s\S]*discard_and_leave[\s\S]*onClose=\{\(\) => setPendingNavigationHref\(''\)\}[\s\S]*setEditingProfile\(null\)[\s\S]*router\.push\(href\)/,
+  /<ConfirmModal[\s\S]*isOpen=\{Boolean\(pendingNavigationHref\)\}[\s\S]*unsaved_leave_title[\s\S]*unsaved_leave_desc[\s\S]*discard_and_leave[\s\S]*onClose=\{cancelNavigation\}[\s\S]*setEditingProfile\(null\)[\s\S]*confirmNavigation\(href\)/,
   'dirty navigation must use the shared ConfirmModal and only discard the draft on confirmation'
 );
 

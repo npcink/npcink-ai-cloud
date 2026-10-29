@@ -52,10 +52,20 @@ comparison. Both retain site, capability, period and bounded-result rules.
 
 Call completeness uses settled AI runs, excluding `queued` and `running`;
 these are reported as `provider_evidence_pending_runs`. Non-AI media uploads
-remain excluded. Metering rules remain unchanged. Call existence checks span
+and Site Knowledge status reads remain excluded from AI evidence requirements.
+The same operation classification applies to summary, groups, trends and run
+filters; other Site Knowledge operations remain subject to evidence checks.
+Metering dispatch rules remain unchanged. Call existence checks span
 all associations for the bounded run cohort, independently of the 10,000-row
 call-detail cap. Group `provider_call_gap_runs` is an exact count, never
 derived from rounded percentages. `evidence_limits` discloses capped sources.
+
+Run counts and family ownership come from run records, not associated feedback
+events. Alert totals are computed before display-group limits; group truncation
+is separately reported as `capability_groups_truncated`. Run-list issue filters
+apply directly to the API query, independent of the alert's display groups.
+Selected route fields describe the logical service/route, not actual provider
+execution. Downloads retain effective window, requested scope and evidence limits.
 
 Run records add `provider_evidence_state`: `recorded`, `pending`,
 `failed_without_call`, `canceled_without_call`, `missing` or `not_required`.

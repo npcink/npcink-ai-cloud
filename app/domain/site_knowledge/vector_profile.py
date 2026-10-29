@@ -124,6 +124,7 @@ class SiteKnowledgeVectorProfileAdminService:
         elif validation["index"]["status"] in {
             "reindex_required",
             "rebuilding",
+            "awaiting_site_sync",
             "failed",
         }:
             status = validation["index"]["status"]

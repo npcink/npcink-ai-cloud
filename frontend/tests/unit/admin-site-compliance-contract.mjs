@@ -65,7 +65,7 @@ assert.match(
 
 assert.match(
   page,
-  /closest\('a\[href\]'\)[\s\S]*?beforeunload[\s\S]*?<ConfirmModal/,
+  /useAdminNavigationGuard\([\s\S]*?dirty, setPendingNavigationHref[\s\S]*?<ConfirmModal/,
   'unsaved compliance edits must be protected for browser and admin navigation'
 );
 

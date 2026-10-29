@@ -26,6 +26,8 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'admin.agent_feedback.recommendation_':
+    'src/features/admin/agent-feedback/RecommendationQuality.tsx; bounded metric array and internal_links/related_articles family identifiers',
   'admin.economics.': 'src/app/admin/economics/page.tsx; table labels and backend family labels with literal unknown fallback',
   'portal.notifications.event_':
     'src/app/portal/notifications/page.tsx; bounded support_request_replied or unknown notification event label',

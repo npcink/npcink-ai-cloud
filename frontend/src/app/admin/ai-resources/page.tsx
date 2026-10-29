@@ -1626,12 +1626,21 @@ function AiResourcesContent() {
                 <div
                   role="tablist"
                   aria-label={aiText('provider_workbench_sections', 'Provider workspace sections')}
+                  onKeyDown={(event) => {
+                    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+                    const index = tabs.indexOf(event.target as HTMLButtonElement);
+                    if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+                    tabs[next].focus();
+                    tabs[next].click();
+                  }}
                   className="flex items-center gap-1 border-b border-slate-200 pb-2 dark:border-slate-800"
                 >
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={providerWorkbenchSection === 'connection'}
+                    aria-selected={providerWorkbenchSection === 'connection'} id="provider-tab-connection" aria-controls="provider-panel-connection" tabIndex={providerWorkbenchSection === 'connection' ? 0 : -1}
                     className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       providerWorkbenchSection === 'connection'
                         ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
@@ -1644,7 +1653,7 @@ function AiResourcesContent() {
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={providerWorkbenchSection === 'models'}
+                    aria-selected={providerWorkbenchSection === 'models'} id="provider-tab-models" aria-controls="provider-panel-models" tabIndex={providerWorkbenchSection === 'models' ? 0 : -1}
                     className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       providerWorkbenchSection === 'models'
                         ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
@@ -1657,7 +1666,7 @@ function AiResourcesContent() {
                       {selectedProviderModelIds.length}
                     </span>
                   </button>
-                  <button type="button" role="tab" aria-selected={providerWorkbenchSection === 'references'}
+                  <button type="button" role="tab" aria-selected={providerWorkbenchSection === 'references'} id="provider-tab-references" aria-controls="provider-panel-references" tabIndex={providerWorkbenchSection === 'references' ? 0 : -1}
                     className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${providerWorkbenchSection === 'references'
                       ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
                       : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'}`}
@@ -1665,6 +1674,8 @@ function AiResourcesContent() {
                     {aiText('reference_browse_title', 'Reference information')}
                   </button>
                 </div>
+                <div role="tabpanel" id={`provider-panel-${providerWorkbenchSection}`} aria-labelledby={`provider-tab-${providerWorkbenchSection}`} tabIndex={0}
+                  className={providerWorkbenchSection === 'models' ? 'flex min-h-0 flex-1 flex-col gap-2' : undefined}>
                 <p data-ui="supplier-onboarding-step" className={providerFormMode === 'edit' ? 'sr-only' : 'text-xs text-slate-500 dark:text-slate-400'}>
                   {providerFormMode === 'edit'
                     ? aiText('editing_supplier_hint', 'Connection settings and enabled models are saved together. List filters only change the view.')
@@ -2367,6 +2378,7 @@ function AiResourcesContent() {
                     </div>
                   </details>
                 ) : null}
+                </div>
         </ProviderConnectionDialog>
         <ModelSupplierTable
           connections={aiSupplierConnections}

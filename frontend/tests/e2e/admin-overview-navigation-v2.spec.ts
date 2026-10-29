@@ -12,9 +12,9 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await page.goto('/admin');
 
   await expect(page.getByText(/Not operationally ready|未达到运营就绪/i).first()).toBeVisible();
-  await expect(page.getByLabel(
+  await expect(page.locator('[data-ui="admin-overview-conclusion"]')).toContainText(
     /2 formal readiness checks failed across workers, operations cadence|正式运营就绪检查有 2 项失败.*工作进程.*运维定时任务/i
-  )).toBeVisible();
+  );
   await expect(page.getByText(/Provider call coverage gap|Call records missing|供应商调用遥测缺口|调用记录缺失/i).first()).toBeVisible();
   await expect(page.getByText(/Attention subscriptions already need review|Attention 订阅已经需要审查/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
@@ -154,4 +154,33 @@ test('admin overview API failure preserves the page shell and safe retry', async
   await expect(page.locator('[role="alert"]').filter({ hasText: /加载数据失败|Failed to load data\./ })).toBeVisible();
   await expect(page.getByText('overview unavailable', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
+});
+
+test('overview shows stale read failures and preserves missing metrics as unknown', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.goto('/admin');
+  await expect(page.locator('[data-ui="admin-overview-attention"]')).toBeVisible();
+  await page.route('**/api/admin/overview', (route) => route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }));
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(page.getByText(/Refresh failed.*previous snapshot|刷新失败.*旧快照/)).toBeVisible();
+  await expect(page.locator('[data-ui="admin-overview-attention"]')).toBeVisible();
+  await page.route('**/api/admin/overview', (route) => route.fulfill({ json: buildAdminApiEnvelope({}) }));
+  await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(page.getByText(/Some metrics are unavailable|部分指标未返回/)).toBeVisible();
+  await expect(page.locator('main').getByText('—', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Refresh failed.*previous snapshot|刷新失败.*旧快照/)).toHaveCount(0);
+});
+
+test('commercial watch action names the general service-status destination', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/overview', route => route.fulfill({ json: buildAdminApiEnvelope({
+    counts: { sites_active: 1 },
+    operator_projection: {
+      revision: 'admin-overview-operator-projection-v1', status: 'warning',
+      readiness: { status: 'ready', checks_failed: 0, failure_scopes: [] },
+      watch_items: [{ code: 'commercial_subscription_expiring', scope: 'commercial.subscription', severity: 'warn', value: 2, detail_args: {} }],
+    },
+  }) }));
+  await page.goto('/admin');
+  await expect(page.locator('[data-ui="admin-overview-action"]').getByRole('link', { name: /Open service status|打开服务状态/ })).toHaveAttribute('href', '/admin/coverage');
 });

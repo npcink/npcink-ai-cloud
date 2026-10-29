@@ -1,6 +1,9 @@
 'use client';
 
+import { isTopmostDialog, registerDialog } from '@/lib/dialog-layer';
+
 import React, { useEffect, useCallback, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Button } from './Button';
 
@@ -54,6 +57,7 @@ export function Modal({
   // handlers) do not re-run this effect on every keystroke and steal focus.
   useEffect(() => {
     if (!isOpen) return;
+    const unregisterDialog = registerDialog(dialogRef.current);
 
     previousActiveElementRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -94,6 +98,7 @@ export function Modal({
     });
 
     const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmostDialog(dialogRef.current)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onCloseRef.current();
@@ -124,6 +129,7 @@ export function Modal({
 
     document.addEventListener('keydown', handleDialogKeyDown);
     return () => {
+      unregisterDialog();
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleDialogKeyDown);
       previousActiveElementRef.current?.focus();
@@ -160,7 +166,7 @@ export function Modal({
     full: 'max-w-[calc(100vw-2rem)] h-[calc(100vh-2rem)]',
   };
 
-  return (
+  return createPortal(
     <div
       ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -239,7 +245,8 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

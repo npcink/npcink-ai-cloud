@@ -154,6 +154,7 @@ function SubscriptionDetailContent() {
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [isSnapshotRefreshSaving, setIsSnapshotRefreshSaving] = useState(false);
+  const [snapshotAwaitingRead, setSnapshotAwaitingRead] = useState(false);
   const [snapshotRefreshError, setSnapshotRefreshError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
 
@@ -182,6 +183,8 @@ function SubscriptionDetailContent() {
       `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`
     )).data;
     setDetail(payload);
+    setSnapshotAwaitingRead(false);
+    setSnapshotRefreshError(null);
   };
 
   const normalized = useMemo(() => {
@@ -347,6 +350,7 @@ function SubscriptionDetailContent() {
       : t('common.not_found', {}, 'Not found');
 
   const handleBillingSnapshotRefresh = async () => {
+    if (isSnapshotRefreshSaving || snapshotAwaitingRead) return;
     setLastReceipt(null);
     setSnapshotRefreshError(null);
     setIsSnapshotRefreshSaving(true);
@@ -367,7 +371,12 @@ function SubscriptionDetailContent() {
         ),
         t('admin.subscription_detail.snapshot_refresh_success_title', {}, 'Billing statistics refreshed')
       );
-      await reloadDetail();
+      setSnapshotAwaitingRead(true);
+      try {
+        await reloadDetail();
+      } catch (readError) {
+        setSnapshotRefreshError(resolveUiErrorMessage(readError, t('error.failed_load')));
+      }
     } catch (err) {
       setSnapshotRefreshError(
         resolveUiErrorMessage(err, t('error.failed_save', {}, 'Failed to save.'))
@@ -425,7 +434,7 @@ function SubscriptionDetailContent() {
                   type="button"
                   className={needsCustomerCoverage ? 'btn btn-secondary' : 'btn btn-primary'}
                   onClick={() => void handleBillingSnapshotRefresh()}
-                  disabled={isSnapshotRefreshSaving}
+                  disabled={isSnapshotRefreshSaving || snapshotAwaitingRead}
                 >
                   {isSnapshotRefreshSaving
                     ? t('admin.subscription_detail.snapshot_refresh_saving', {}, 'Refreshing statistics...')
@@ -433,6 +442,10 @@ function SubscriptionDetailContent() {
                       t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
                 </button>
               ) : null}
+            {snapshotAwaitingRead ? <div role="status" className="space-y-2 text-sm">
+              <p>{t('admin.saved_awaiting_read', {}, 'Write succeeded. Reload to confirm the saved state before editing again.')}</p>
+              <button type="button" className="btn btn-secondary" onClick={() => void reloadDetail().catch((err) => setSnapshotRefreshError(resolveUiErrorMessage(err, t('error.failed_load'))))}>{t('common.retry')}</button>
+            </div> : null}
             {snapshotRefreshError ? (
               <BackofficeDiagnosticNotice message={snapshotRefreshError} />
             ) : null}
