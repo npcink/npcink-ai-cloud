@@ -867,7 +867,7 @@ providers or the generic WordPress operation contract.
 
 Development and production embedding spaces are deliberately separate.
 Switching to the production SiliconFlow `BAAI/bge-m3` profile requires a full
-Site Knowledge index rebuild ; never mix the development 4096D and production 1024D vectors.
+Site Knowledge index rebuild; never mix the development 4096D and production 1024D vectors.
 Media-library semantic search fails closed while only the deterministic
 placeholder embedding is active; it must not return random nearest-neighbor
 candidates.
@@ -1075,3 +1075,23 @@ blocked. Images are resized to at most 768px, stripped of EXIF and sent to nativ
 Ollama `/api/embed`; text uses that same model/space. No OCR/ASR expansion or
 WordPress writes. Moving later to any production API requires a new small pilot
 and full index rebuild; this change does not select or deploy that API.
+
+On an already unified installation the normal bootstrap also detects all three
+capabilities and uses the embedding-only path, preventing recreation of the old
+split suppliers. The 2026-10-29 M4 integration pilot passed three real photo
+queries at rank 1, three text queries and cross-site artifact rejection, then
+rolled back its transaction (41.87 seconds including indexing/loading). This
+is a small integration check, not an independent human relevance benchmark.
+
+Legacy media whose originals are unavailable must be labelled
+`embedding_input=metadata_text.v1` / `image_pixels_status=unavailable_legacy_source`
+in the migration metadata and receipt, retaining existing text and identity.
+They must not be counted as successfully migrated pixel embeddings. A normal
+new sync still requires image bytes and preserves the previous source on error.
+
+The first pilot coincided with Docker Desktop's logged internal virtualization
+failure. Recovering the existing development engine preserved all volumes and
+2,132 source documents / 2,364 chunks; rerunning the same small pilot passed.
+A subsequent disk preflight stopped staging before mutation. Transfer only
+exact task-owned cache duplicates after verifying their local SHA-256 copies;
+do not lower the disk guard or prune unrelated models, volumes or worktrees.

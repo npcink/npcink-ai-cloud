@@ -258,6 +258,15 @@ def _apply_classification_timeout(profile: RoutingProfile) -> None:
 
 def configure(settings: Settings) -> dict[str, object]:
     _validate_environment(settings)
+    with get_session(settings.database_url) as session:
+        existing = session.get(ProviderConnection, SITE_KNOWLEDGE_LOCAL_PREVIEW_CONNECTION_ID)
+        config = dict(existing.config_json or {}) if existing is not None else {}
+    if {"text_generation", "vision", "embedding"}.issubset(
+        set(config.get("capability_ids") or [])
+    ):
+        # Do not recreate the former split text/embedding suppliers when
+        # an operator reruns bootstrap on an already unified installation.
+        return configure_embedding_only(settings)
     service = ProviderConnectionAdminService(settings.database_url, settings)
     # Keep the route identity stable: capability evidence fingerprints use the
     # provider id when the connection id is identical. Disable the earlier

@@ -156,6 +156,23 @@ def test_embedding_only_rejects_production_before_probe(monkeypatch) -> None:
         configure_embedding_only(SimpleNamespace(environment="production"))
 
 
+def test_bootstrap_preserves_an_already_unified_supplier(monkeypatch) -> None:
+    class Session:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get(self, *args):
+            return SimpleNamespace(config_json={
+                "capability_ids": ["text_generation", "vision", "embedding"],
+            })
+    monkeypatch.setattr("scripts.configure_m4_ollama_preview.get_session", lambda _: Session())
+    monkeypatch.setattr("scripts.configure_m4_ollama_preview.configure_embedding_only",
+        lambda settings: {"preserved_unified_supplier": True})
+    result = configure(SimpleNamespace(environment="development", database_url="sqlite://"))
+    assert result == {"preserved_unified_supplier": True}
+
+
 def test_m4_ollama_preview_embedding_probe_failure_does_not_block_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
