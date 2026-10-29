@@ -130,6 +130,10 @@ test('package subscription drilldown labels its total separately from the active
   await expect(allSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
   await page.setViewportSize({ width: 900, height: 1050 });
   await expect(allSubscriptions).toBeVisible();
+  const linkBox = (await allSubscriptions.boundingBox())!;
+  const cellBox = (await countCell.boundingBox())!;
+  expect(linkBox.x).toBeGreaterThanOrEqual(cellBox.x);
+  expect(linkBox.x + linkBox.width).toBeLessThanOrEqual(cellBox.x + cellBox.width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   const queueRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');

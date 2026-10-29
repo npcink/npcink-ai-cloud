@@ -482,8 +482,8 @@ function PlansContent() {
                 <thead className="bg-slate-50/70 text-slate-500 dark:bg-slate-900/35 dark:text-slate-400">
                   <tr>
                     <th scope="col" className="w-[16%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
-                    <th scope="col" className="w-[30%] px-3 py-2 font-semibold">{t('common.status')}</th>
-                    <th scope="col" className="w-[11%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
+                    <th scope="col" className="w-[19%] px-3 py-2 font-semibold">{t('common.status')}</th>
+                    <th scope="col" className="w-[22%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
                     <th scope="col" className="w-[13%] px-3 py-2 text-right font-semibold">{t('admin.included_points', {}, 'Package AI credits')}</th>
                     <th scope="col" className="w-[22%] px-3 py-2 font-semibold">{t('common.limit', {}, 'Limits')}</th>
                     <th scope="col" className="w-[8%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
@@ -532,7 +532,7 @@ function PlansContent() {
                             <Link
                               href={subscriptionsHref}
                               aria-label={`${t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })} · ${packageAlias}`}
-                              className="inline-flex cursor-pointer items-center justify-end gap-1 rounded px-1 py-0.5 text-xs font-medium text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                              className="inline-flex cursor-pointer items-center justify-end gap-1 whitespace-nowrap rounded px-1 py-0.5 text-xs font-medium text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
                             >
                               {t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })}
                               <span aria-hidden="true">›</span>
