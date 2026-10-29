@@ -14,7 +14,7 @@ type EvidenceSnapshot = {
   failedScopes: number;
 };
 
-export function useRuntimeRunEvidence({ issueCode, capabilities, site, capability, windowHours, refreshSignal, since = '', evidenceScope = 'affected', runId = '' }: {
+export function useRuntimeRunEvidence({ issueCode, site, capability, windowHours, refreshSignal, since = '', evidenceScope = 'affected', runId = '' }: {
   runId?: string;
   issueCode: string;
   capabilities: string[];
@@ -29,7 +29,8 @@ export function useRuntimeRunEvidence({ issueCode, capabilities, site, capabilit
   const [snapshot, setSnapshot] = useState<EvidenceSnapshot | null>(null);
   // A key also prevents a prior scope's rows from appearing during the render
   // before effect cleanup, or after a delayed response from a cancelled request.
-  const key = JSON.stringify({ runId, issueCode, scopes: capability ? [capability] : [...new Set(capabilities)].sort(), site, windowHours, refreshSignal, attempt, since, evidenceScope });
+  // The issue predicate belongs to the API, not the alert's truncated display groups.
+  const key = JSON.stringify({ runId, issueCode, scopes: capability ? [capability] : [], site, windowHours, refreshSignal, attempt, since, evidenceScope });
 
   useEffect(() => {
     const query = JSON.parse(key) as { runId: string; issueCode: string; scopes: string[]; site: string; windowHours: number; since: string; evidenceScope: string };

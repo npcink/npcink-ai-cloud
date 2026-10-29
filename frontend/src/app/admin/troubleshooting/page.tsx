@@ -204,11 +204,18 @@ export default function AdminTroubleshootingPage() {
   // The quality view owns site/window scope, but cannot filter by function.
   const qualityHref = scopedHref('/admin/usage-statistics?view=quality');
 
+  const exportContext = {
+    scope: { window_hours: windowHours, site_id: siteFilter || null, capability: capabilityFilter || null, requested_since: since || null },
+    window: data?.window, generated_at: data?.generatedAt, timezone: 'UTC',
+    evidence_limits: data?.evidenceLimits, source: 'runtime-telemetry',
+    requested_display_limit: 25, returned_display_limit: data?.displayLimit,
+  };
+
   const issueTrendPanel = selectedIssue?.dailyCounts.length ? (
     <section data-ui="runtime-issue-trend" aria-label={t('admin.troubleshooting.issue_trend_title')}>
       <div className="flex justify-end">
         {trendControls(t('admin.troubleshooting.issue_trend_title'), () => {
-          const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data?.generatedAt, selected_issue: selectedIssue.code, unit: selectedIssue.code === 'hosted_model.provider_errors' ? 'calls' : 'runs', daily_counts: selectedIssue.dailyCounts }, null, 2)], { type: 'application/json' });
+          const blob = new Blob([JSON.stringify({ ...exportContext, window_hours: windowHours, selected_issue: selectedIssue.code, unit: selectedIssue.code === 'hosted_model.provider_errors' ? 'calls' : 'runs', daily_counts: selectedIssue.dailyCounts }, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url; link.download = `runtime-issue-trend-${windowHours}h.json`; link.click();
@@ -218,11 +225,13 @@ export default function AdminTroubleshootingPage() {
       {trendView === 'chart' ? <AnalyticsLineChart
         data={selectedIssue.dailyCounts.map((point) => ({ label: point.day, value: point.count }))}
         primarySeriesName={t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_column' : 'admin.troubleshooting.affected_runs')}
+        comparisonSeries={[{ name: t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.unit_calls' : 'admin.troubleshooting.unit_runs'), values: selectedIssue.dailyCounts.map(point => point.count) }]}
+        xAxisLabel={t('admin.troubleshooting.utc_day')}
         height={180}
         yAxisLabel={t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.unit_calls' : 'admin.troubleshooting.unit_runs')}
       /> : <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.issue_trend_title')}>
         <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
-          <th scope="col" className="px-2 py-2">{t('admin.troubleshooting.trend_day')}</th>
+          <th scope="col" className="px-2 py-2">{t('admin.troubleshooting.utc_day')}</th>
           <th scope="col" className="px-2 py-2 text-right">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.unit_calls' : 'admin.troubleshooting.unit_runs')}</th>
         </tr></thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">{selectedIssue.dailyCounts.map((point) => <tr key={point.day}><td className="px-2 py-2">{point.day}</td><td className="px-2 py-2 text-right tabular-nums">{formatNumber(point.count)}</td></tr>)}</tbody>
@@ -288,7 +297,7 @@ export default function AdminTroubleshootingPage() {
             { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate },
           ].map((metric) => <div key={metric.key} data-ui="runtime-data-integrity" className="flex items-center gap-2">
             <dt className="inline-flex items-center text-slate-500 dark:text-slate-400">{metric.label}<AdminHelpTip label={metric.label}>{t('admin.troubleshooting.integrity_note')}</AdminHelpTip></dt>
-            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{metric.key === 'provider_coverage' && data.totals.providerEvidenceRequiredRuns === 0 ? '\u2014' : formatRate(metric.value)}</Link></dd>
+            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{data.totals.runs === 0 || (metric.key === 'provider_coverage' ? data.totals.providerEvidenceRequiredRuns === 0 : data.totals.aiEvidenceRequiredRuns === 0) ? '\u2014' : formatRate(metric.value)}</Link></dd>
           </div>)}
         </dl>
         <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
@@ -398,7 +407,7 @@ export default function AdminTroubleshootingPage() {
                   {selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.provider_errors' ? <Link href="/admin/ai-resources" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_suppliers')}</Link> : null}
                   <Link href="/admin/runtime-profiles" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
                   {selectedIssue.code === 'hosted_model.provider_errors' && failures.length ? <button type="button" data-ui="provider-failure-details" className="text-xs text-blue-700 hover:underline dark:text-blue-300" onClick={() => {
-                    const blob = new Blob([JSON.stringify({ windowHours, generatedAt: data?.generatedAt, recovery: 'unverified', failures }, null, 2)], { type: 'application/json' });
+                    const blob = new Blob([JSON.stringify({ ...exportContext, windowHours, generatedAt: data?.generatedAt, recovery: 'unverified', failure_details: { returned: failures.length, may_be_truncated: failures.length >= (data?.displayLimit ?? 25) }, failures }, null, 2)], { type: 'application/json' });
                     const url = URL.createObjectURL(blob); const link = document.createElement('a');
                     link.href = url; link.download = 'runtime-failure-evidence.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
                   }}>{t('admin.troubleshooting.failure_export')}</button> : null}
@@ -467,8 +476,8 @@ export default function AdminTroubleshootingPage() {
             <div><dt className="text-slate-500">{t('admin.troubleshooting.site_filter')}</dt><dd>{detailRecord.run?.site_id || detailRecord.failures[0]?.siteId}</dd></div>
             <div><dt className="text-slate-500">{t('admin.troubleshooting.record_time')}</dt><dd>{detailRecord.run?.started_at || detailRecord.failures[0]?.occurredAt ? formatDate(detailRecord.run?.started_at || detailRecord.failures[0].occurredAt) : '—'}</dd></div>
             <div><dt className="text-slate-500">{t('admin.troubleshooting.run_profile')}</dt><dd>{detailRecord.run?.profile_id || detailRecord.failures[0]?.profileId}</dd></div>
-            <div><dt className="text-slate-500">{t('admin.troubleshooting.actual_provider', {}, 'Actual supplier')}</dt><dd>{detailRecord.run?.selected_provider_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
-            <div><dt className="text-slate-500">{t('admin.troubleshooting.actual_model', {}, 'Actual model')}</dt><dd>{detailRecord.run?.selected_model_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
+            <div><dt className="text-slate-500">{t('admin.troubleshooting.selected_route_provider')}</dt><dd>{detailRecord.run?.selected_provider_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
+            <div><dt className="text-slate-500">{t('admin.troubleshooting.selected_route_model')}</dt><dd>{detailRecord.run?.selected_model_id || t('admin.troubleshooting.no_model_evidence', {}, 'No recorded call evidence')}</dd></div>
             {detailRecord.run ? <>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_record')}</dt><dd>{runStatusLabel(detailRecord.run.status, t)} · {detailRecord.run.ability_name} · {scopeLabel([detailRecord.run.ability_family], t)}</dd></div>
               <div><dt className="text-slate-500">{t('admin.troubleshooting.run_duration')}</dt><dd>{detailRecord.run.duration_ms == null ? '—' : `${detailRecord.run.duration_ms} ms`}</dd></div>
