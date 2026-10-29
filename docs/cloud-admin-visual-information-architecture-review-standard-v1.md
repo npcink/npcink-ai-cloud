@@ -137,6 +137,38 @@ prop 名称就认为内容常显。
 本次[定点审查](history/admin/2026/records/admin-information-hierarchy-audit-2026-10-29.md)
 仅记录改造建议；落实时按当前源码重新确认，不把旧截图作为现在的事实。
 
+### 7. 后续 AI 的维护与防回退规则
+
+本轮逐页落实使用[落实台账](admin-information-hierarchy-implementation-ledger.md)。
+台账记录进度和证据，本规范约束后续改动；历史截图与台账不代替当前源码核对。
+
+| 页面模型 | 优先展示 | 可以深入一层的内容 |
+| --- | --- | --- |
+| 总览 | 当前结论、待办对象、原因、直接处理入口 | 稳定职责、计算定义、原始快照 |
+| 队列 | 可区分的对象、当前筛选、状态/影响、可见行操作 | 低频筛选、完整历史、技术键 |
+| 详情 | 当前对象、访问/覆盖/周期等分属状态、阻塞原因、下一步 | 长公式、版本、原始标识、非阻塞维护 |
+| 配置 | 缺失项、实际生效状态、当前编辑面、未保存/失败反馈 | 固定技术契约、历史、术语解释 |
+| 诊断/质量 | 当前问题、样本阶段/分母、证据限制、调查工作面 | 补充分布、原始流水、定义和导出 |
+| 登录 | 访问边界、输入、提交、错误反馈 | 额外会话解释；不新增欢迎卡片 |
+
+后续修改必须遵守：
+
+1. 先读目标路由及其子视图的既有取舍和当前实现。新增 TAB、弹窗、drawer
+   也按本节审查；路由清单以 `frontend/admin-ui-manifest.json` 为准，不能只验首页。
+2. 不重新引入已经去掉的重复标题、说明、指标、嵌套边框或整列强调按钮。
+   确有新任务需要时，在 PR 解释新增信息和职责，而非仅称「统一风格」。
+3. 已下沉内容必须保持具名入口、鼠标/键盘可达和原有范围。不能复制一份常显
+   内容来解决入口难找，也不能让折叠状态改变请求、筛选、权限或保存语义。
+4. 质量百分比必须与当前样本、分母和阶段一起解读；「没有候选」「未上报标签」
+   不升级为「质量通过」。健康分、错误条数、传输收件与编辑采纳分别标明口径。
+5. 复核每条建议并记录「整改并验证／已有修复并验证／不适用及原因」。未验证、
+   失败和受阻项单列，不能以「已审查」「文档完成」或其他页通过替代落实状态。
+6. 改动同步维护相关条款、迁移入口和证据。局部规则留在本规范的对应条目；
+   不新增平行的 AI 专属规范，不复制易过期的整套代码或截图数值作为硬约束。
+
+静态门禁检查结构和契约，浏览器检查内容与版式，人工验收确认实际使用判断。
+三者各自记录；不声称文档能够自动阻止所有后续回退。
+
 ## Core rules
 
 ### One job per visual region
@@ -191,10 +223,10 @@ The Usage Statistics page follows this order:
 
 1. the shared four observation TABs and 1/3/7/14/30-day control;
 2. page title, compact runtime metrics, and source freshness;
-3. refresh and `Chart` / `Table` controls;
-4. site/function/plugin dimension controls next to the working surface;
-5. one dimension table, comparison chart, or paginated plugin history;
-6. definitions and technical-validation scope, collapsed by default.
+3. one wrapping toolbar with refresh, `Chart` / `Table`, and site/function/plugin
+   dimensions next to the working surface; source and active scope remain visible;
+4. one dimension table, comparison chart, or paginated plugin history;
+5. definitions and technical-validation scope, collapsed by default.
 
 Do not restore a bottom related-observation link row or an unconditional
 Runtime Diagnostics shortcut. Contextual table links carry time and site or

@@ -34,6 +34,20 @@ const FILTER_KEYS = [
   'created_to',
 ] as const;
 
+const FILTER_LABELS = {
+  event_id: 'admin.audit_workspace.event_id',
+  idempotency_key: 'admin.audit_workspace.idempotency_key',
+  actor_ref: 'admin.audit_workspace.actor_ref',
+  scope_kind: 'admin.audit_workspace.scope_kind',
+  scope_id: 'admin.audit_workspace.scope_id',
+  site_id: 'admin.audit_workspace.site_id',
+  account_id: 'admin.audit_workspace.account_id',
+  event_kind: 'admin.audit_workspace.event_kind',
+  outcome: 'admin.audit_workspace.outcome',
+  created_from: 'admin.audit_workspace.created_from',
+  created_to: 'admin.audit_workspace.created_to',
+} as const;
+
 const TIME_FILTER_KEYS = new Set(['created_from', 'created_to']);
 
 function positiveInteger(value: string | null, fallback = 0): number {
@@ -298,6 +312,37 @@ export function AdminAuditWorkspace() {
         <form key={requestKey} data-ui="admin-audit-filter-workbench" className="border-b border-slate-200 p-3 dark:border-slate-800" onSubmit={applyFilters}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.event_kind', {}, 'Event type')}
+                <input name="event_kind" defaultValue={searchParams.get('event_kind') || ''} className="input mt-1 w-full" />
+              </label>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.outcome', {}, 'Outcome')}
+                <select name="outcome" defaultValue={searchParams.get('outcome') || ''} className="input mt-1 w-full">
+                  <option value="">{t('common.all', {}, 'All')}</option>
+                  <option value="succeeded">{t('common.succeeded', {}, 'Succeeded')}</option>
+                  <option value="success">{t('common.success', {}, 'Success')}</option>
+                  <option value="error">{t('common.error', {}, 'Error')}</option>
+                  <option value="failed">{t('common.failed', {}, 'Failed')}</option>
+                  <option value="partial">{t('admin.audit_workspace.outcome_partial')}</option>
+                  {searchParams.get('outcome') && !['succeeded', 'success', 'error', 'blocked', 'failed', 'partial'].includes(searchParams.get('outcome') || '') ? <option value={searchParams.get('outcome') || ''}>{searchParams.get('outcome')}</option> : null}
+                  <option value="blocked">{t('common.blocked', {}, 'Blocked')}</option>
+                </select>
+              </label>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.site_id', {}, 'Site ID')}
+                <input name="site_id" defaultValue={searchParams.get('site_id') || ''} className="input mt-1 w-full" />
+              </label>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.account_id', {}, 'Account ID')}
+                <input name="account_id" defaultValue={searchParams.get('account_id') || ''} className="input mt-1 w-full" />
+              </label>
+          </div>
+          <details className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200">
+              {t('admin.audit_workspace.more_filters', {}, 'More filters')}
+            </summary>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               {t('admin.audit_workspace.event_id', {}, 'Event ID')}
               <input
                 name="event_id"
@@ -334,53 +379,23 @@ export function AdminAuditWorkspace() {
                 className="input mt-1 w-full"
               />
             </label>
-          </div>
-
-          <details className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-            <summary className="cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200">
-              {t('admin.audit_workspace.more_filters', {}, 'More filters')}
-            </summary>
-            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.actor_ref', {}, 'Operator ID')}
                 <input name="actor_ref" defaultValue={searchParams.get('actor_ref') || ''} className="input mt-1 w-full" />
               </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {t('admin.audit_workspace.site_id', {}, 'Site ID')}
-                <input name="site_id" defaultValue={searchParams.get('site_id') || ''} className="input mt-1 w-full" />
-              </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {t('admin.audit_workspace.account_id', {}, 'Account ID')}
-                <input name="account_id" defaultValue={searchParams.get('account_id') || ''} className="input mt-1 w-full" />
-              </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {t('admin.audit_workspace.event_kind', {}, 'Event type')}
-                <input name="event_kind" defaultValue={searchParams.get('event_kind') || ''} className="input mt-1 w-full" />
-              </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {t('admin.audit_workspace.outcome', {}, 'Outcome')}
-                <select name="outcome" defaultValue={searchParams.get('outcome') || ''} className="input mt-1 w-full">
-                  <option value="">{t('common.all', {}, 'All')}</option>
-                  <option value="succeeded">{t('common.succeeded', {}, 'Succeeded')}</option>
-                  <option value="success">{t('common.success', {}, 'Success')}</option>
-                  <option value="error">{t('common.error', {}, 'Error')}</option>
-                  <option value="failed">{t('common.failed', {}, 'Failed')}</option>
-                  <option value="partial">{t('admin.audit_workspace.outcome_partial')}</option>
-                  {searchParams.get('outcome') && !['succeeded', 'success', 'error', 'blocked', 'failed', 'partial'].includes(searchParams.get('outcome') || '') ? <option value={searchParams.get('outcome') || ''}>{searchParams.get('outcome')}</option> : null}
-                  <option value="blocked">{t('common.blocked', {}, 'Blocked')}</option>
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.created_from', {}, 'From time')}
                 <input name="created_from" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_from'))} className="input mt-1 w-full [color-scheme:light] dark:[color-scheme:dark]" />
               </label>
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.created_to', {}, 'To time')}
                 <input name="created_to" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_to'))} className="input mt-1 w-full [color-scheme:light] dark:[color-scheme:dark]" />
               </label>
             </div>
           </details>
-
+          {FILTER_KEYS.some(key => searchParams.get(key)) ? <dl data-ui="admin-audit-active-filters" className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600 dark:text-slate-300">
+            {FILTER_KEYS.filter(key => searchParams.get(key)).map(key => <div key={key} className="min-w-0 max-w-full"><dt className="inline font-medium">{t(FILTER_LABELS[key])}: </dt><dd className="inline break-all">{searchParams.get(key)}</dd></div>)}
+          </dl> : null}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="submit" className="btn btn-primary">
               {t('admin.audit_workspace.apply_filters', {}, 'Apply filters')}
@@ -419,11 +434,12 @@ export function AdminAuditWorkspace() {
               {items.map((item) => {
                 const eventId = Number(item.event_id || 0);
                 const selected = eventId > 0 && eventId === selectedEventId;
+                const routineSuccess = ['succeeded', 'success'].includes(item.outcome || '') && (item.event_kind === 'worker.heartbeat' || /[._]cadence$/.test(item.event_kind || ''));
                 return (
                   <tr key={eventId || `${item.event_kind}-${item.created_at}`} aria-selected={selected} className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}>
                     <td className="px-3 py-2.5 align-top text-xs text-slate-500 dark:text-slate-400">{item.created_at ? formatDate(item.created_at) : notAvailable}</td>
                     <td className="px-3 py-2.5 align-top"><p className="truncate font-semibold text-slate-950 dark:text-white">{humanizeAuditToken(identifier(item.event_kind, notAvailable))}</p><p className="mt-1 font-mono text-[0.68rem] text-slate-500 dark:text-slate-400">#{eventId || notAvailable}</p></td>
-                    <td className="px-3 py-2.5 align-top"><BackofficeStatusBadge label={humanizeAuditToken(identifier(item.outcome, notAvailable))} status={identifier(item.outcome, 'unknown')} /></td>
+                    <td className="px-3 py-2.5 align-top"><BackofficeStatusBadge label={humanizeAuditToken(identifier(item.outcome, notAvailable))} status={routineSuccess ? 'read_only' : identifier(item.outcome, 'unknown')} /></td>
                     <td className="px-3 py-2.5 align-top"><p className="truncate font-mono text-xs text-slate-700 dark:text-slate-200">{auditScope(item, notAvailable)}</p></td>
                     <td className="px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300">{identifier(item.actor_ref, humanizeAuditToken(identifier(item.actor_kind, notAvailable)))}</td>
                     <td className="px-3 py-2.5 text-right align-top">

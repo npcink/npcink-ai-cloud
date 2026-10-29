@@ -501,7 +501,7 @@ function AgentFeedbackQualityDashboard() {
                   : t('admin.agent_feedback.no_mutation', {}, 'No mutation')
               }
             />
-            <BackofficeTag tone="neutral">{data.scope || 'all_sites'}</BackofficeTag>
+            <BackofficeTag tone="neutral">{!data.scope || data.scope === 'all_sites' ? t('admin.agent_feedback.all_sites', {}, 'All sites') : data.scope === 'site' ? t('admin.agent_feedback.site_filter', {}, 'Site ID') : data.scope}</BackofficeTag>
             {data.siteId ? <BackofficeIdentifier value={data.siteId} /> : null}
             {data.generatedAt ? <span>{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</span> : null}
             {data.lastEventAt ? <span>{t('admin.agent_feedback.last_event', {}, 'Last feedback')}: {formatDate(data.lastEventAt)}</span> : null}
@@ -510,6 +510,22 @@ function AgentFeedbackQualityDashboard() {
       </BackofficeSectionPanel>
 
       {data ? <p className="text-xs leading-5 text-slate-500" data-ui="feedback-quality-basis">{t('admin.agent_feedback.quality_basis', { count: formatNumber(data.qualityEventsTotal), accepted: formatNumber((data.qualityOutcomes.accepted || 0) + (data.qualityOutcomes.edited_before_accept || 0)), weak: formatNumber(data.labels.evidence_weak || 0), wrong: formatNumber(data.labels.wrong_next_step || 0) })}{data.engineeringEventsTotal > 0 ? ` ${t('admin.agent_feedback.engineering_samples', { count: formatNumber(data.engineeringEventsTotal) })}` : ''}</p> : null}
+
+      {data && !isEmpty ? <>
+          <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
+            <div className="border-b border-slate-200 px-5 py-3 dark:border-slate-800 md:px-6"><h2 className="text-sm font-semibold text-gray-950 dark:text-white">{t('admin.agent_feedback.issue_queue_title', {}, 'Quality issue queue')}</h2></div>
+            <div className={qualityIssues.length ? 'grid xl:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
+                {qualityIssues.map((item) => { const selected = selectedQualityIssue?.label === item.label; return <button key={item.label} type="button" data-ui="feedback-quality-item" aria-pressed={selected} aria-controls="feedback-quality-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.label })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><BackofficeTag tone={labelTone(item.label)}>{labelText(t, item.label)}</BackofficeTag><span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.label}</span></div></div><div className="text-sm font-semibold text-slate-700 md:text-right dark:text-slate-200">{formatNumber(item.count)}</div></button>; })}
+                {qualityIssues.length ? null : <p data-ui="feedback-no-issue-labels" className="px-5 py-3 text-sm text-slate-600 dark:text-slate-300 md:px-6">{t('admin.agent_feedback.no_quality_issues', {}, 'No low-quality labels received in this window.')} {t('admin.agent_feedback.no_quality_sample', { count: formatNumber(data.qualityEventsTotal) }, '{{count}} feedback samples; absence of labels does not establish quality.')}</p>}
+              </div>
+              {qualityIssues.length ? <div id="feedback-quality-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
+                {selectedQualityIssue ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.selected_issue', {}, 'Selected issue')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{labelText(t, selectedQualityIssue.label)}</h3><p className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">{selectedQualityIssue.label}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.events', {}, 'Events')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedQualityIssue.count)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_rate', {}, 'Share of feedback')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatPercent(data.qualityEventsTotal ? selectedQualityIssue.count / data.qualityEventsTotal : 0, data.qualityEventsTotal)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_scope', {}, 'Current scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.agent_feedback.all_sites', {}, 'All sites')} · {windowHours}h</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.agent_feedback.issue_boundary', {}, 'Cloud summarizes this metadata for evaluation only. Approval, preflight, and final writes remain local to WordPress.')}</p></div> : null}
+              </div> : null}
+            </div>
+          </BackofficeSectionPanel>
+
+      </> : null}
 
       {data ? <RecommendationQuality value={data.recommendationQuality} /> : null}
 
@@ -630,28 +646,7 @@ function AgentFeedbackQualityDashboard() {
         />
       ) : data ? (
         <>
-          <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('admin.agent_feedback.attention_label', {}, 'Attention')}</p><h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{t('admin.agent_feedback.issue_queue_title', {}, 'Quality issue queue')}</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.agent_feedback.issue_queue_desc', {}, 'Select a low-quality feedback label to inspect its volume, rate, scope, and governance boundary.')}</p></div>
-            <div className={qualityIssues.length ? 'grid xl:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
-              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
-                {qualityIssues.map((item) => { const selected = selectedQualityIssue?.label === item.label; return <button key={item.label} type="button" data-ui="feedback-quality-item" aria-pressed={selected} aria-controls="feedback-quality-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.label })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><BackofficeTag tone={labelTone(item.label)}>{labelText(t, item.label)}</BackofficeTag><span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.label}</span></div></div><div className="text-sm font-semibold text-slate-700 md:text-right dark:text-slate-200">{formatNumber(item.count)}</div></button>; })}
-                {qualityIssues.length ? null : <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.agent_feedback.no_quality_issues', {}, 'No quality issues in this window.')} description={t('admin.agent_feedback.no_quality_issues_desc', {}, 'The selected scope has no low-quality feedback labels that require evidence review.')} />}
-              </div>
-              {qualityIssues.length ? <div id="feedback-quality-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
-                {selectedQualityIssue ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.selected_issue', {}, 'Selected issue')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{labelText(t, selectedQualityIssue.label)}</h3><p className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">{selectedQualityIssue.label}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.events', {}, 'Events')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedQualityIssue.count)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_rate', {}, 'Share of feedback')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatPercent(data.qualityEventsTotal ? selectedQualityIssue.count / data.qualityEventsTotal : 0, data.qualityEventsTotal)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_scope', {}, 'Current scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.agent_feedback.all_sites', {}, 'All sites')} · {windowHours}h</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.agent_feedback.issue_boundary', {}, 'Cloud summarizes this metadata for evaluation only. Approval, preflight, and final writes remain local to WordPress.')}</p></div> : null}
-              </div> : null}
-            </div>
-          </BackofficeSectionPanel>
-
-          <BackofficeSectionPanel className="overflow-hidden p-0">
-            <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800 md:px-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.agent_feedback.scenarios_label', {}, 'Scenarios')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                {t('admin.agent_feedback.scenarios_title', {}, 'Runtime and surface quality')}
-              </h2>
-            </div>
+          <BackofficeDisclosure summary={t('admin.agent_feedback.scenarios_title', {}, 'Runtime and surface quality')}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[68rem] divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
                 <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
@@ -669,10 +664,10 @@ function AgentFeedbackQualityDashboard() {
                   {data.scenarios.map((scenario) => (
                     <tr key={`${scenario.sourceRuntime}:${scenario.localSurface}`} className="bg-white/55 dark:bg-slate-950/20">
                       <td className="px-5 py-3">
-                        <BackofficeIdentifier value={scenario.sourceRuntime || t('common.unknown')} />
+                        <BackofficeIdentifier full className="break-all whitespace-normal" value={scenario.sourceRuntime || t('common.unknown')} />
                       </td>
                       <td className="px-5 py-3">
-                        <BackofficeIdentifier value={scenario.localSurface || t('common.unknown')} />
+                        <BackofficeIdentifier full className="break-all whitespace-normal" value={scenario.localSurface || t('common.unknown')} />
                       </td>
                       <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">
                         {formatNumber(scenario.eventsTotal)}
@@ -702,15 +697,12 @@ function AgentFeedbackQualityDashboard() {
                 </tbody>
               </table>
             </div>
-          </BackofficeSectionPanel>
+          </BackofficeDisclosure>
 
-          <div className="grid gap-5 xl:grid-cols-3">
-            <BackofficeSectionPanel className="space-y-4">
+          <BackofficeDisclosure summary={t('admin.agent_feedback.distributions', {}, 'Feedback labels, sources and hourly distribution')} contentClassName="grid gap-5 xl:grid-cols-3">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.labels_label', {}, 'Labels')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.labels_title', {}, 'Feedback label mix')}
                 </h2>
               </div>
@@ -722,14 +714,11 @@ function AgentFeedbackQualityDashboard() {
                   </BackofficeStackCard>
                 ))}
               </div>
-            </BackofficeSectionPanel>
+            </section>
 
-            <BackofficeSectionPanel className="space-y-4">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.sources_label', {}, 'Sources')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.sources_title', {}, 'Runtime and surface counts')}
                 </h2>
               </div>
@@ -751,14 +740,11 @@ function AgentFeedbackQualityDashboard() {
                   ))}
                 </div>
               </div>
-            </BackofficeSectionPanel>
+            </section>
 
-            <BackofficeSectionPanel className="space-y-4">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.trend_label', {}, 'Trend')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.trend_title', {}, 'Hourly buckets')}
                 </h2>
               </div>
@@ -794,8 +780,8 @@ function AgentFeedbackQualityDashboard() {
                   </BackofficeStackCard>
                 ))}
               </div>
-            </BackofficeSectionPanel>
-          </div>
+            </section>
+          </BackofficeDisclosure>
         </>
       ) : null}
 

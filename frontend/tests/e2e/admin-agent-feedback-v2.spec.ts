@@ -124,6 +124,9 @@ test('feedback exposes all eligible trend buckets and recommendation save receip
     }) });
   });
   await page.goto('/admin/agent-feedback?window=168');
+  const distributions = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /Feedback labels, sources and hourly distribution|反馈标签、来源与小时分布/ }) });
+  await expect(distributions).not.toHaveAttribute('open', '');
+  await distributions.locator('summary').press('Enter');
   await expect(page.getByText(/All 10 hourly buckets|展示全部 10 个/)).toBeVisible();
   const recommendations = page.locator('[data-ui="feedback-recommendation-quality"]');
   await expect(recommendations).toContainText('0 / 2');

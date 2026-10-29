@@ -70,6 +70,7 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 - [ ] The route remains classified in `frontend/admin-ui-manifest.json`.
 - [ ] Shared `--admin-*` geometry and admin primitives are reused.
 - [ ] The Admin content priority contract (`docs/cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract`) was checked; dynamic conclusions are not hidden as title help, and frequent row actions remain visible.
+- [ ] Existing route decisions were checked; ongoing hierarchy work updates `docs/admin-information-hierarchy-implementation-ledger.md` with disposition, relocated entrypoints, and browser evidence.
 - [ ] No new route-local dialog or credential reveal implementation was added.
 - [ ] `pnpm run check:admin-ui` passed.
 - [ ] `pnpm run check:admin-ui:visual` passed when layout, tables, dialogs, or shared primitives changed.
