@@ -203,18 +203,156 @@ test('vector settings reports each failed step and retries only from that step',
   await page.getByLabel('Zilliz Token').fill('zilliz-secret');
   await page.getByRole('button', { name: /Save configuration|保存配置/i }).click();
   const receipt = page.locator('[data-ui="vector-configuration-save-receipt"]');
-  await expect(receipt).toContainText(/Embedding configuration:\s+failed|Embedding 配置:\s+failed/i);
-  await expect(receipt).toContainText(/Vector store configuration:\s+not_started|Vector store 配置:\s+not_started/i);
+  await expect(receipt).toContainText(/Embedding configuration:\s+(?:Failed|失败)|Embedding 配置:\s+(?:Failed|失败)/i);
+  await expect(receipt).toContainText(/Vector store configuration:\s+(?:Not started|未开始)|Vector store 配置:\s+(?:Not started|未开始)/i);
   expect(vectorStoreRequests).toBe(0);
 
   await page.getByRole('button', { name: /Retry embedding and continue|重试 Embedding 并继续/i }).click();
-  await expect(receipt).toContainText(/Vector store configuration:\s+failed|Vector store 配置:\s+failed/i);
+  await expect(receipt).toContainText(/Vector store configuration:\s+(?:Failed|失败)|Vector store 配置:\s+(?:Failed|失败)/i);
   expect(embeddingRequests).toBe(2);
   expect(vectorStoreRequests).toBe(1);
 
   await page.getByRole('button', { name: /Retry vector store only|仅重试 Vector store/i }).click();
-  await expect(receipt).toContainText(/Embedding configuration:\s+succeeded|Embedding 配置:\s+succeeded/i);
-  await expect(receipt).toContainText(/Vector store configuration:\s+succeeded|Vector store 配置:\s+succeeded/i);
+  await expect(receipt).toContainText(/Embedding configuration:\s+(?:Completed|已完成)|Embedding 配置:\s+(?:Completed|已完成)/i);
+  await expect(receipt).toContainText(/Vector store configuration:\s+(?:Completed|已完成)|Vector store 配置:\s+(?:Completed|已完成)/i);
   expect(embeddingRequests).toBe(2);
   expect(vectorStoreRequests).toBe(2);
+});
+
+for (const responseKind of ['unavailable', 'malformed'] as const) {
+test(`initial ${responseKind} profile read stays unknown and cannot submit configuration`, async ({ page }) => {
+  await installAdminMocks(page);
+  let failed = true;
+  let writes = 0;
+  await page.route('**/api/admin/site-knowledge-vector-profile**', async route => {
+    if (route.request().method() !== 'GET') writes += 1;
+    await route.fulfill({ status: failed && responseKind === 'unavailable' ? 503 : 200, json: failed
+      ? responseKind === 'malformed' ? buildAdminApiEnvelope({}) : { status: 'error', error_code: 'profile.unavailable', message: 'unavailable' }
+      : buildAdminApiEnvelope(baseVectorProfile) });
+  });
+  await page.goto('/admin/vector-settings');
+  await expect(page.getByRole('button', { name: /Retry|重试/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Save configuration|保存配置/ })).toHaveCount(0);
+  await expect(page.locator('[data-vector-section="validation"]')).toHaveCount(0);
+  expect(writes).toBe(0);
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/ }).click();
+  await expect(page.locator('[data-vector-section="configuration"]')).toBeVisible();
+});
+}
+
+test('background index polling preserves endpoint and token drafts and follows nested lifecycle', async ({ page }) => {
+  await page.clock.install();
+  await installAdminMocks(page);
+  const profile = structuredClone(baseVectorProfile);
+  // Older servers can still return ready at the top level during site sync.
+  profile.status = 'ready';
+  profile.validation.index.status = 'awaiting_site_sync';
+  profile.vector_store.endpoint = 'https://saved.example.zilliz.com';
+  let reads = 0;
+  await page.route('**/api/admin/site-knowledge-vector-profile', async route => {
+    reads += 1;
+    await route.fulfill({ json: buildAdminApiEnvelope(profile) });
+  });
+  await page.goto('/admin/vector-settings');
+  await page.getByLabel('Zilliz Endpoint').fill('https://draft.example.zilliz.com');
+  await page.getByLabel('Zilliz Token').fill('draft-test-token');
+  const initialReads = reads;
+  await page.clock.runFor(15050);
+  await expect.poll(() => reads).toBe(initialReads + 1);
+  await expect(page.getByLabel('Zilliz Endpoint')).toHaveValue('https://draft.example.zilliz.com');
+  await expect(page.getByLabel('Zilliz Token')).toHaveValue('draft-test-token');
+  await page.clock.runFor(15050);
+  await expect.poll(() => reads).toBe(initialReads + 2);
+  await expect(page.getByLabel('Zilliz Endpoint')).toHaveValue('https://draft.example.zilliz.com');
+  await expect(page.getByRole('button', { name: /Save configuration|保存配置/ })).toBeDisabled();
+  profile.validation.index.status = 'ready';
+  await page.clock.runFor(15050);
+  await expect.poll(() => reads).toBe(initialReads + 3);
+  await expect(page.getByRole('button', { name: /Save configuration|保存配置/ })).toBeEnabled();
+  await page.clock.runFor(30050);
+  expect(reads).toBe(initialReads + 3);
+});
+
+test('saving locks the submitted draft and excludes concurrent index rebuilds', async ({ page }) => {
+  await installAdminMocks(page);
+  const profile = structuredClone(baseVectorProfile);
+  profile.provider.configured = false;
+  profile.validation.connection.status = 'ready';
+  profile.validation.index.status = 'reindex_required';
+  profile.vector_store.endpoint = 'https://saved.example.zilliz.com';
+  const writes: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/admin/site-knowledge-vector-profile**', async route => {
+    const request = route.request();
+    if (request.method() !== 'GET') {
+      writes.push(new URL(request.url()).pathname);
+      if (writes.length === 1) {
+        expect(request.postDataJSON()).toEqual({ credential: 'submitted-test-key' });
+        await held;
+      }
+    }
+    await route.fulfill({ json: buildAdminApiEnvelope(profile) });
+  });
+  await page.goto('/admin/vector-settings');
+  await page.getByLabel('SiliconFlow API Key').fill('submitted-test-key');
+  await page.getByLabel('Zilliz Token').fill('submitted-test-token');
+  await page.getByRole('button', { name: /Save configuration|保存配置/ }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  await expect(page.getByLabel('SiliconFlow API Key')).toBeDisabled();
+  await expect(page.getByLabel('Zilliz Endpoint')).toBeDisabled();
+  await expect(page.getByLabel('Zilliz Token')).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Rebuild vector index|重建向量索引/ })).toBeDisabled();
+  release();
+  await expect(page.locator('[data-ui="vector-configuration-save-receipt"]')).toContainText(/Configuration saved|配置已保存/);
+  expect(writes).toEqual(['/api/admin/site-knowledge-vector-profile', '/api/admin/site-knowledge-vector-profile/vector-store']);
+});
+
+test('connection prerequisites and no-hit retrieval evidence have distinct actionable states', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await installAdminMocks(page);
+  const profile = structuredClone(baseVectorProfile);
+  profile.validation.index.status = 'not_ready';
+  profile.validation.retrieval.status = 'no_hit';
+  profile.validation.retrieval.last_verified_at = '2026-10-29T03:00:00Z';
+  await page.route('**/api/admin/site-knowledge-vector-profile', async route => {
+    await route.fulfill({ json: buildAdminApiEnvelope(profile) });
+  });
+  await page.goto('/admin/vector-settings');
+  const validation = page.locator('[data-vector-section="validation"]');
+  await expect(validation).toContainText(/Awaiting connection configuration|等待连接配置/);
+  await expect(validation).not.toContainText(/Rebuild needed|需要重建/);
+  await expect(validation).toContainText(/Searched, no hits|已检索，零命中/);
+  await expect(validation).toContainText('2026-10-29T03:00:00Z');
+  await expect(validation).toContainText(/0 results|0 条结果/);
+  await expect(page.getByRole('button', { name: /Rebuild vector index|重建向量索引/ })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('vector-evidence-900.png'), fullPage: true });
+});
+
+test('failed background reads retain a labelled snapshot and disable writes until read recovery', async ({ page }) => {
+  await page.clock.install();
+  await installAdminMocks(page);
+  const profile = structuredClone(baseVectorProfile);
+  profile.validation.index.status = 'awaiting_site_sync';
+  let failRead = false;
+  await page.route('**/api/admin/site-knowledge-vector-profile', async route => {
+    await route.fulfill({ status: failRead ? 503 : 200, json: failRead
+      ? { status: 'error', error_code: 'profile.unavailable', message: 'unavailable' }
+      : buildAdminApiEnvelope(profile) });
+  });
+  await page.goto('/admin/vector-settings');
+  await page.getByLabel('Zilliz Endpoint').fill('https://draft.example.zilliz.com');
+  failRead = true;
+  await page.clock.runFor(15050);
+  await expect(page.getByText(/The last read snapshot|以下为上次读取的快照/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Save configuration|保存配置/ })).toBeDisabled();
+  await expect(page.getByLabel('Zilliz Endpoint')).toHaveValue('https://draft.example.zilliz.com');
+  failRead = false;
+  profile.validation.index.status = 'ready';
+  await page.getByRole('button', { name: /Retry|重试/ }).click();
+  await expect(page.getByText(/The last read snapshot|以下为上次读取的快照/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Save configuration|保存配置/ })).toBeEnabled();
+  await expect(page.getByLabel('Zilliz Endpoint')).toHaveValue('https://draft.example.zilliz.com');
 });
