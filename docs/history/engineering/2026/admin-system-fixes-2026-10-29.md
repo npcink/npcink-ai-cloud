@@ -96,3 +96,12 @@ A09 本轮处理已知陈旧快照禁写；现有积分包 PATCH 仍是整目录
 | 层级规范 | 独立工作区已提交 `f852fe48` | 尚未集成；docs/README.md 有同文件交叠，需显式保留双方索引 |
 
 A09 的多人并发版本锁仍未实现；已知陈旧禁写不等同于并发覆盖保护。上述界面待办和契约限制均保留，未因复核而扩大到商业功能或共享真实配置写入。
+
+### 本轮最终候选与交付状态
+
+- 补修提交：`12d845f9`（下钻范围）、`7e8474f7`（链接窄列）、`42a668ae`（限制/操作列与英文检查）。最后一个运行时代码提交为 `42a668ae385a181791f16e5d1d30475bb864231c`，后续仅追加本节文档。
+- M4 status 的 backend / frontend source revision 均为上述 `42a668ae`，source_dirty=false、acceptance_state=candidate。日志 `.tmp/admin-implementation-review-m4-final.log`。先前第一次 sync 因未显式声明 feature-branch candidate 被本地保护拒绝，随后使用现有 `NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1` 候选通道；没有绕过 accepted 或 production 门禁。
+- 最终真实套餐页在中英文、1440×1050 与 900×1050 四个组合中，订阅链接、限制项、操作按钮均留在各自单元格内，无整页横向溢出。已查看最终中文窄 PC / 英文宽 PC 截图；工件 `.tmp/admin-implementation-review-plans-{zh,en}-{900,1440}.png`，页脚版本与候选一致。
+- 真实点击 Free 的“全部订阅（2）”，目标 API HTTP 200、total=2、无 status 条件；插件 24h / 336h GET 再次返回 200、totals 有效。真实浏览页非 GET 监听仍为 0。所有 mutation 的成功/失败/等待验证均使用隔离 mock，没有写入 M4 共享业务配置。
+- 文档可达性 **596/596**、diff 格式通过。没有重新执行全量 194 项、后端 26 项或 PostgreSQL 1 项；引用其原始日志，并执行本轮受影响的定向验证。
+- GitHub push / PR / CI / merge、M4 accepted promotion、生产发布及人工验收均未执行。功能补修在当前分支与 M4 candidate 可查看，界面层级待办及 A09/A12 限制仍按上节保留。
