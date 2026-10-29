@@ -167,6 +167,9 @@ deleting the old decision history.
 - [Cloud Agent Workflow Metadata Projection](cloud-agent-workflow-metadata-projection-v1.md)
 - [Cloud Agent Feedback Contract](cloud-agent-feedback-contract-v1.md)
 - [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
+- [运行诊断、审计证据与反馈质量审查 — 2026-10-29](history/engineering/2026/runtime-diagnostics-audit-2026-10-29.md) — 只读检查与 15 项修复建议，区分 M4 实测、本地夹具和环境阻塞；不是修复或生产验收。
+- [观测总览各 TAB 审查 — 2026-10-29](history/engineering/2026/observability-tabs-audit-2026-10-29.md) — 前序问题清单、范围与分批证据。
+- [观测总览 F06–F14 本地修复记录 — 2026-10-29](history/engineering/2026/observability-tabs-fixes-f06-f14-2026-10-29.md) — 本地验证及待补的 M4/集成状态。
 - [Internal AI Advisor](internal-ai-advisor-v1.md) — advisory read layer over Cloud service evidence; allowed and forbidden internal AI usage
 
 - [七会话 Phase 1 收口与协作经验 — 2026-10-24](history/engineering/2026/seven-chat-phase1-closeout-2026-10-24.md) — 七个会话的职责、证据分层、T2/M4 收口和可复用协作经验；不替代生产授权或 Phase 2 计划。
