@@ -84,8 +84,8 @@ test('package management combines readable limits, descriptions, and editing whi
   const freeRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
   await expect(freeRow.getByText('Free', { exact: true })).toBeVisible();
   await expect(freeRow.getByText('free', { exact: true })).toHaveCount(0);
-  const freeSubscriptions = freeRow.getByRole('link', { name: /Open subscriptions.*Free|打开订阅.*Free/i });
-  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all&status=active');
+  const freeSubscriptions = freeRow.getByRole('link', { name: /All subscriptions.*Free|全部订阅.*Free/i });
+  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
   await expect(freeSubscriptions).toContainText('›');
   await freeRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i }).click();
   const inspector = page.locator('[data-ui="admin-workbench-dialog"]');
@@ -110,6 +110,35 @@ test('package management combines readable limits, descriptions, and editing whi
   await page.getByText(/Package initialization|套餐初始化/i).click();
   await expect(page.getByRole('heading', { name: /Create package record|创建套餐记录/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Create missing packages|创建缺失套餐|补齐缺失套餐/i })).toBeVisible();
+});
+
+test('package subscription drilldown labels its total separately from the active count', async ({ page }) => {
+  await installPlanDirectoryHarness(page);
+  const initialCatalog = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/admin/plans');
+  await page.goto('/admin/plans');
+  const payload = await (await initialCatalog).json();
+  const free = payload.data.items.find((item: { plan: { plan_id: string } }) => item.plan.plan_id === 'free');
+  free.subscription_counts = { total: 5, active: 3 };
+  await page.route('**/api/admin/plans', (route) => route.fulfill({ json: payload }));
+  await page.reload();
+
+  const row = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
+  const countCell = row.locator('td').nth(2);
+  await expect(countCell.locator('p')).toHaveText('3');
+  const allSubscriptions = countCell.getByRole('link', { name: /All subscriptions.*5.*Free|全部订阅.*5.*Free/ });
+  await expect(allSubscriptions).toBeVisible();
+  await expect(allSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await expect(allSubscriptions).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  const queueRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');
+  await allSubscriptions.click();
+  const query = new URL((await queueRequest).url()).searchParams;
+  expect(query.get('plan_id')).toBe('free');
+  expect(query.get('risk')).toBe('all');
+  expect(query.has('status')).toBe(false);
+  await expect(page).toHaveURL('/admin/subscriptions?plan_id=free&risk=all');
 });
 
 test('package initialization reports mixed results and retries only failed tiers', async ({ page }) => {
