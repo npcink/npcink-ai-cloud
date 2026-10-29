@@ -48,6 +48,8 @@ from app.domain.model_capabilities.probes import (
     image_generation_probe_fingerprint,
     vision_probe_fingerprint,
 )
+from app.domain.routing.errors import RoutingNoCandidatesError
+from app.domain.routing.service import RoutingService
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -4840,6 +4842,81 @@ def test_capability_probe_refreshes_expired_evidence(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["data"]["cache_hit"] is False
     assert len(provider.requests) == 1
+
+
+def test_aliased_connection_probe_and_runtime_share_route_identity(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "openai")
+        assert connection is not None
+        connection.connection_id = "openai_local"
+        session.commit()
+
+    routing = RoutingService(database_url)
+    with pytest.raises(RoutingNoCandidatesError):
+        routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision")
+
+    def probe(key: str) -> dict[str, Any]:
+        response = client.post(
+            "/internal/service/admin/runtime-profiles/capability-probe",
+            headers=merge_json_headers(build_internal_headers(idempotency_key=key)),
+            json={"capability": "vision", "instance_id": "openai-wp-ai-vision-test"},
+        )
+        assert response.status_code == 200
+        return response.json()["data"]
+
+    first = probe("aliased-vision-first")
+    assert first["cache_hit"] is False
+    assert len(provider.requests) == 1
+    assert routing.resolve(
+        profile_id=VISION_AI_PROFILE_ID, execution_kind="vision"
+    ).selected_candidate.instance_id == "openai-wp-ai-vision-test"
+    assert probe("aliased-vision-cached")["cache_hit"] is True
+    assert len(provider.requests) == 1
+
+    projection = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    instance = next(
+        item for item in projection["available_instances"]["vision"]
+        if item["instance_id"] == "openai-wp-ai-vision-test"
+    )
+    assert instance["vision_evidence"]["state"] == "verified"
+    profile = next(p for p in projection["profiles"] if p["profile_id"] == VISION_AI_PROFILE_ID)
+    payload = _runtime_profile_replacement_from_projection([profile])
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="aliased-save")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": payload,
+        },
+    )
+    assert response.status_code == 200
+
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "openai_local")
+        assert connection is not None
+        connection.base_url = "https://replacement.example.test/v1"
+        session.commit()
+    with pytest.raises(RoutingNoCandidatesError):
+        routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision")
+    changed = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    instance = next(
+        item for item in changed["available_instances"]["vision"]
+        if item["instance_id"] == "openai-wp-ai-vision-test"
+    )
+    assert instance["vision_evidence"] is None
+    refreshed = probe("aliased-vision-new-route")
+    assert refreshed["cache_hit"] is False
+    assert refreshed["route_fingerprint"] != first["route_fingerprint"]
+    assert len(provider.requests) == 2
+    assert routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision").candidates
 
 
 def test_capability_probe_summary_aggregates_metadata_only_events(tmp_path: Path) -> None:

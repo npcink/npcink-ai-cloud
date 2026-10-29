@@ -24,6 +24,8 @@ Status: active operator runbook。安装与实测基线为 **2026-10-28**；使�
 
 这份手册不改变 Cloud/WordPress 责任边界，不启用暂停的产品入口，不代表 CI、M4 candidate/accepted、生产或 WordPress 采用验收。
 
+2026-10-29 视觉接入补充：`qwen3-vl:2b` 在当前 `ollama-m4-embedding` 目录身份下完成真实能力验证及 WordPress ALT 调用；此前 `no_eligible_model` 是当前连接的验证缺口，不能据此推断宿主机缺模型。连接别名的验证/运行标识修复及分层证据见[视觉 ALT 排障记录](history/engineering/2026/m4-vision-alt-verification-2026-10-29.md)，复发检查见[开发生图手册](development-image-api-runbook-v1.md#视觉能力不可用时的必查步骤)。这不代表本会话接入 Laya、重排或替换嵌入模型。
+
 ## 2. 已安装配置
 
 | 项目 | 配置 |
