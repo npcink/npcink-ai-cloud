@@ -47,6 +47,14 @@ test('admin overview keeps canonical work destinations primary and evidence coll
     contentType: 'image/png',
   });
 
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    const firstAction = await page.locator('[data-ui="admin-overview-action"]').first().boundingBox();
+    expect(firstAction && firstAction.y + firstAction.height).toBeLessThan(1050);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-home-${width}.png` });
+  }
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);

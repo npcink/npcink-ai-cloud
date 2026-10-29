@@ -497,6 +497,7 @@ function AdminPluginObservabilityContent() {
   const [loading, setLoading] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [recentExpanded, setRecentExpanded] = useState(false);
   const [issueKey, setIssueKey] = useState<string | null>(null);
   const [inspectedSite, setInspectedSite] = useState<string | null>(null);
   const [siteSort, setSiteSort] = useState<SiteSortKey>('errors');
@@ -531,7 +532,7 @@ function AdminPluginObservabilityContent() {
     const controller = new AbortController();
     requestAbortRef.current = controller;
     setLoading(true);
-    if (!refresh) { setData(null); setIssueKey(null); setInspectedSite(null); }
+    if (!refresh) { setData(null); setIssueKey(null); setInspectedSite(null); setRecentExpanded(false); }
     setError('');
     try {
       const params = new URLSearchParams({ window_hours: String(windowHours) });
@@ -730,9 +731,11 @@ function AdminPluginObservabilityContent() {
           <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
           {!sortedSites.length ? <p className="p-4 text-sm text-slate-500">{t('admin.plugin_obs_no_sites')}</p> : null}
         </AdminDataTableFrame>
-        <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={c('所选范围内最近 50 条', 'Latest 50 in selected scope')} dataUi="plugin-recent-activity" density="compact" headerActions={<select aria-label={c('近期事件类别', 'Recent event category')} className="input w-auto" value={activityCategory} onChange={e => updateUrl({ activity: e.target.value === 'all' ? null : e.target.value })}><option value="all">{c('全部事件', 'All events')}</option><option value="activity">{c('任务与反馈等事件', 'Activity and feedback')}</option><option value="status">{c('连接与状态上报', 'Connection and status')}</option></select>}>
-          <p className="p-3 text-xs text-slate-500">{t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>
-          {data.recentActivity.map((item, index) => <div key={`${item.eventId}-${index}`} className="border-t border-slate-200 p-3 text-sm dark:border-slate-800">
+        <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={`${c('当前显示', 'Showing')} ${Math.min(data.recentActivity.length, recentExpanded ? 50 : 5)} / ${data.recentActivity.length} · ${c('所选范围内最近 50 条以内', 'Latest up to 50 in selected scope')}`} dataUi="plugin-recent-activity" density="compact" headerActions={<select aria-label={c('近期事件类别', 'Recent event category')} className="input w-auto" value={activityCategory} onChange={e => updateUrl({ activity: e.target.value === 'all' ? null : e.target.value })}><option value="all">{c('全部事件', 'All events')}</option><option value="activity">{c('任务与反馈等事件', 'Activity and feedback')}</option><option value="status">{c('连接与状态上报', 'Connection and status')}</option></select>}>
+          <p className="px-3 pt-3 text-xs text-slate-500 dark:text-slate-400">{c('按收到上报的时间排列，非实际运行时间。时区', 'Ordered by report receipt, not execution time. Timezone')}: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+          {data.recentActivity.some(item => !item.run) ? <p data-ui="plugin-unlinked-note" className="px-3 pt-2 text-xs text-slate-500 dark:text-slate-400">{c('未关联运行不代表调用失败，部分事件只是状态上报。', 'An unlinked run does not imply failure; some events only report state.')}</p> : null}
+          <div id="plugin-recent-records">
+          {data.recentActivity.slice(0, recentExpanded ? 50 : 5).map((item, index) => <div data-ui="plugin-recent-record" key={`${item.eventId}-${index}`} className="border-t border-slate-200 p-3 text-sm dark:border-slate-800">
             <p>{activityStatus(item.status)} · {eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)} · {siteName(item.siteId)}</p>
             <p className="text-xs text-slate-500">{c('收到上报', 'Report received')}: {formatDate(item.receivedAt)}</p>
             {item.run ? <details className="mt-2"><summary className="cursor-pointer">{c('查看对应运行', 'View linked run')}</summary>
@@ -741,9 +744,14 @@ function AdminPluginObservabilityContent() {
                 <dt>{c('实际完成', 'Execution finished')}</dt><dd>{formatDate(item.run.finishedAt) || '—'}</dd>
                 <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd><dd><Link className="text-blue-700 underline dark:text-blue-300" href={`/admin/troubleshooting?window=${windowHours}&site=${encodeURIComponent(item.siteId || '')}&run_id=${encodeURIComponent(item.run.runId)}`}>{c('查看此运行', 'Inspect this run')}</Link></dd>
                 {item.run.errorCode ? <><dt>{c('错误代码', 'Error code')}</dt><dd>{item.run.errorCode}</dd></> : null}
-              </dl></details> : <p className="text-xs text-slate-500">{c('未关联 Cloud 运行；不代表调用失败，部分事件只是状态上报。', 'No linked Cloud run; this does not imply failure. Some events only report state.')}</p>}
+              </dl></details> : <p className="text-xs text-slate-500">{c('未关联运行', 'No linked run')}</p>}
           </div>)}
+          </div>
           {!data.recentActivity.length ? <p className="p-3 text-sm">{c('所选范围暂无近期上报。', 'No recent reports in this scope.')}</p> : null}
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 p-3 dark:border-slate-800">
+            {data.recentActivity.length > 5 ? <button type="button" className="btn btn-ghost btn-sm" aria-expanded={recentExpanded} aria-controls="plugin-recent-records" onClick={() => setRecentExpanded(expanded => !expanded)}>{recentExpanded ? c('收起为最近 5 条', 'Show latest 5') : `${c('展开本次返回的全部记录', 'Show all returned reports')} (${data.recentActivity.length})`}</button> : null}
+            <details><summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400">{c('上报时间说明', 'About report timing')}</summary><p className="mt-2 max-w-2xl text-xs text-slate-500 dark:text-slate-400">{t('admin.plugin_obs_receipt_time_note')}</p></details>
+          </div>
         </AdminDataTableFrame>
         <BackofficeDisclosure summary={c('完整留存上报记录', 'All retained reports')} onToggle={event => setHistoryOpen(event.currentTarget.open)}>{historyOpen ? <PluginHistory key={`${windowHours}:${siteIdFilter}:${pluginFilter}`} hours={windowHours} site={siteIdFilter} plugin={pluginFilter === 'all' ? '' : pluginFilter} recordScope="all" /> : null}</BackofficeDisclosure>
         <details className="border-t border-slate-200 py-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_trend')}</summary><p className="my-3 text-xs text-slate-500">{t('admin.plugin_obs_count_note')} {t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>{data.timeline.length ? <AnalyticsLineChart data={timelineData} height={240} primarySeriesName={t('admin.plugin_obs_record_count')} secondarySeriesName={t('admin.plugin_obs_error_records')} /> : <p>{t('admin.plugin_obs_no_trend')}</p>}</details>

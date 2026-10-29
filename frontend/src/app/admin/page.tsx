@@ -830,19 +830,9 @@ function AdminOverviewContent() {
       <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-attention">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.home_actions_eyebrow', {}, 'Action list')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
               {t('admin.home_actions_title', {}, 'Todo and exceptions')}
             </h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {t(
-                'admin.home_actions_desc',
-                {},
-                'Every row comes from the current overview payload and opens the owning queue. This surface does not create or change a record.'
-              )}
-            </p>
           </div>
           <span
             data-ui="admin-overview-action-count"
@@ -887,7 +877,7 @@ function AdminOverviewContent() {
           </div>
         ) : (
           <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
-            {t('admin.home_attention_clear', {}, 'No immediate watch items are rising from the current overview payload.')}
+            {t('admin.home_attention_clear', {}, 'No immediate items need follow-up.')}
           </BackofficeStackCard>
         )}
 
@@ -910,20 +900,17 @@ function AdminOverviewContent() {
       </BackofficeSectionPanel>
 
       <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-support-lookup">
-        <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-admin-support-lookup>
+        <div data-admin-support-lookup>
           <div className="grid gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.home_support_lookup_eyebrow', {}, 'Support lookup')}
-              </p>
-              <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+              <h2 className="text-base font-semibold text-slate-950 dark:text-white">
                 {t('admin.home_support_lookup_title', {}, 'Find the customer record first')}
-              </h3>
+              </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {t(
                   'admin.home_support_lookup_desc',
                   {},
-                  'Search by email, customer, site, or domain. Start from the customer or Portal user record, then open service status only when coverage needs follow-up.'
+                  'Search by email, customer, site, or domain.'
                 )}
               </p>
             </div>
@@ -952,21 +939,7 @@ function AdminOverviewContent() {
               </div>
             </form>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            <Link
-              href="/admin/coverage"
-              className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-            >
-              {t('admin.home_support_lookup_coverage', {}, 'Open service status')}
-            </Link>
-            <Link
-              href="/admin/troubleshooting"
-              className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-            >
-              {t('admin.home_support_lookup_diagnostics', {}, 'Open diagnostics')}
-            </Link>
-          </div>
-        </BackofficeStackCard>
+        </div>
       </BackofficeSectionPanel>
 
       <details ref={runtimeEvidenceRef} className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
@@ -1063,7 +1036,7 @@ function AdminOverviewContent() {
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  {t('admin.home_secondary_sites_empty', {}, 'No site-level anomalies in the current overview payload.')}
+                  {t('admin.home_secondary_sites_empty', {}, 'No site anomalies need follow-up.')}
                 </p>
               )}
             </BackofficeStackCard>

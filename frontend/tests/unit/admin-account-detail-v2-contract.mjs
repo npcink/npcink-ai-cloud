@@ -281,8 +281,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /activeDetailTab === 'overview'[\s\S]*admin\.account_detail\.access_status_title[\s\S]*admin\.accounts\.suspend_account_action/,
-  'account status and its direct contextual action must stay in Overview'
+  /activeDetailTab === 'access'[\s\S]*<CustomerAccessPanel[\s\S]*admin\.account_detail\.access_status_title[\s\S]*admin\.accounts\.suspend_account_action/,
+  'the contextual account-status action belongs to Access, beside the access controls'
 );
 assert.match(
   source,
