@@ -88,14 +88,15 @@ test('administrator investigates errors and sites, preserves filters and manages
   await expect(page.locator('[data-ui="plugin-sites"]')).toContainText('site_mvp');
   await page.locator('[data-ui="plugin-problems"]').getByRole('button', {name: /Inspect|排查/}).click();
   const drawer = page.getByRole('dialog');
-  await expect(drawer).toContainText(/not the complete history|并非完整运行历史/);
+  await expect(drawer).toContainText(/Retained records for this problem|此问题的留存记录/);
   await drawer.getByText(/Original identifiers and fields|原始编号与字段/).first().click();
   await expect(drawer).toContainText('provider_timeout');
-  await drawer.getByRole('button', {name: /View site records|查看本站记录/}).click();
-  await expect(drawer).toContainText(/24 reported records|24 条上报记录/);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('[data-ui="plugin-problems"]').getByRole('button')).toBeFocused();
+  await page.locator('[data-ui="plugin-sites"]').getByRole('button', {name: /View.*records|查看.*记录/}).click();
+  await expect(drawer).toContainText(/24 reported records|24 条上报记录/);
+  await page.keyboard.press('Escape');
   await page.getByRole('button', {name: /Last 3 days|近 3 天/}).click();
   await expect(page).toHaveURL(/window=72/);
   await page.getByRole('combobox', {name: /^Plugin$|^插件$/}).selectOption('npcink-cloud-addon');
@@ -141,11 +142,11 @@ test('zero records keep monitoring alerts accessible and never claim health', as
   await expect(page.locator('[data-ui="plugin-attention-item"]')).toHaveCount(1);
 });
 
-test('unknown codes remain inspectable without untranslated homepage labels', async ({page}) => {
+test('unknown error and event codes remain visible in the problem list', async ({page}) => {
   await installPluginObservabilityHarness(page, {...pluginObservabilityData, errors:[{...pluginObservabilityData.errors[0],error_code:'new_vendor_failure',event_kind:'new.event'}],recent_errors:[]});
   await page.goto('/admin/plugin-observability');
-  await expect(page.locator('[data-ui="plugin-problems"]')).toContainText(/Runtime error|运行出现错误/);
-  await expect(page.locator('[data-ui="plugin-problems"]')).not.toContainText('new_vendor_failure');
+  await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('new_vendor_failure');
+  await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('new.event');
   await page.locator('[data-ui="plugin-problems"]').getByRole('button').click();
   await page.getByRole('dialog').getByText(/Original identifiers and fields|原始编号与字段/).click();
   await expect(page.getByRole('dialog')).toContainText('new_vendor_failure');

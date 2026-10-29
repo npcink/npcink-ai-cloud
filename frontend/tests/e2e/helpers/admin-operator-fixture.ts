@@ -2134,6 +2134,12 @@ export async function installAdminMocks(
       await fulfillJson(route, { window_minutes: 10080, generated_at: '2026-10-07T06:00:00Z', totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 }, by_capability: [], by_instance: [], recent_failures: [] });
       return;
     }
+    if (pathname === '/api/admin/plugin-observability/history' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], page: 1, pages: 1, total: 0,
+        totals: { events: 0, succeeded: 0, failed: 0 },
+        snapshot: { at: '2026-10-07T06:00:00Z', id: 0 } });
+      return;
+    }
     if (pathname === '/api/admin/plugin-observability' && route.request().method() === 'GET') {
       await fulfillJson(route, {
         generated_at: '2026-10-07T06:00:00Z',

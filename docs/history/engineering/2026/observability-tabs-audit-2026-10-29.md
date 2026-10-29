@@ -117,6 +117,12 @@
 
 停止条件：能够从现有有界证据回答“什么任务、何时、哪个站点、何种失败、对应哪条运行、是否有保存反馈、缺失什么证据”，随后回到真实 WordPress 编辑闭环验证。
 
+## 后续实施状态
+
+用户批准后，F06–F14 已完成本地修复与定向验证，见
+[第二批修复回执](observability-tabs-fixes-f06-f14-2026-10-29.md)。
+上述发现保留为审计时点证据；第二批尚未进入共享 M4、合并或生产。
+
 ## 本地原始附件
 
 原始审计、第一批验证回执、M4 状态、截图和夹具输出在同一 worktree 的 gitignored `.tmp/` 中：`observation-audit-2026-10-29.md`、`observation-fixes-2026-10-29.md`、`observation-m4-audit2-status.txt`、`observation-audit2-media.jpg`、`observation-audit2-media-empty.jpg`、`observation-audit2-focus.jpg`、`observation-audit2-vector-fixture.json`。附件是本机证据，不作为克隆仓库后保证存在的文件。

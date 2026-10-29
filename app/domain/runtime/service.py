@@ -1649,6 +1649,7 @@ class RuntimeService:
         self,
         *,
         site_id: str | None = None,
+        run_id: str | None = None,
         capability: str | None = None,
         issue_code: str | None = None,
         evidence_scope: str = "affected",
@@ -1657,13 +1658,19 @@ class RuntimeService:
         limit: int = 25,
     ) -> dict[str, object]:
         """Return bounded, payload-free run evidence for operator diagnostics."""
+        if run_id and not site_id:
+            raise ValueError("site_id is required for exact run evidence")
         current_time = datetime.now(UTC)
         recent_since = observation_since(current_time, recent_minutes, since)
         max_items = max(1, min(100, limit))
         with get_session(self.database_url) as session:
-            statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            statement = select(RunRecord).where(
+                RunRecord.started_at >= recent_since, RunRecord.started_at <= current_time
+            )
             if site_id:
                 statement = statement.where(RunRecord.site_id == site_id)
+            if run_id:
+                statement = statement.where(RunRecord.run_id == run_id)
             if capability:
                 statement = statement.where(
                     or_(
@@ -1775,6 +1782,7 @@ class RuntimeService:
         return {
             "filters": {
                 "site_id": site_id or "",
+                "run_id": run_id or "",
                 "capability": capability or "",
                 "issue_code": issue_code or "",
                 "evidence_scope": evidence_scope,

@@ -106,3 +106,34 @@ def test_long_runtime_window_preserves_function_scope_in_summary_and_run_evidenc
         assert client.get(
             f'/internal/service/admin/{route}?recent_minutes=129601', headers=headers,
         ).status_code == 422
+
+
+def test_exact_run_lookup_keeps_site_window_and_auth_boundaries(tmp_path: Path) -> None:
+    db, client = media._build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(db) as session:
+        session.add_all([
+            media._run_record("exact-target", "site-media-001", status="failed", now=now),
+            media._run_record("exact-other", "site-media-001", status="succeeded", now=now),
+            media._run_record("exact-future", "site-media-001", status="failed",
+                              now=now + timedelta(days=1)),
+            media._run_record("exact-old", "site-media-001", status="failed",
+                              now=now - timedelta(days=20)),
+        ])
+        session.commit()
+    path = "/internal/service/admin/runtime-telemetry/runs"
+    query = {"site_id": "site-media-001", "run_id": "exact-target", "recent_minutes": 60}
+    headers = build_internal_headers()
+    assert client.get(path, params=query).status_code == 401
+    data = client.get(path, params=query, headers=headers).json()["data"]
+    assert [r["run_id"] for r in data["items"]] == ["exact-target"]
+    assert data["filters"]["run_id"] == "exact-target"
+    assert "input_json" not in str(data) and "output_json" not in str(data)
+    for override in ({"site_id": "site-media-002"}, {"run_id": "absent"},
+                     {"run_id": "exact-old"}, {"run_id": "exact-future"}):
+        assert client.get(path, params={**query, **override}, headers=headers).json()[
+            "data"
+        ]["items"] == []
+    assert client.get(path, params={"run_id": "exact-target"}, headers=headers).status_code == 422
+    assert client.get(path, params={**query, "run_id": "exact-old", "recent_minutes": 43200},
+                      headers=headers).json()["data"]["items"][0]["run_id"] == "exact-old"

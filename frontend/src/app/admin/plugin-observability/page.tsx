@@ -1,5 +1,8 @@
 'use client';
 
+import Link from 'next/link';
+import { PluginHistory } from '@/features/admin/observability/PluginHistory';
+
 import { normalizeObservationWindow, observationWindows, type ObservationWindow } from '@/features/admin/observability/window';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +15,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
   BackofficeEmptyState,
+  BackofficeDisclosure,
   BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
@@ -451,11 +455,11 @@ function pluginLabel(t: TranslationFn, slug: string) {
 }
 function eventLabel(t: TranslationFn, code: string) {
   const known: Record<string, string> = {"addon.editor_assist.generation.presented": "admin.plugin_obs_event_map_0", "addon.editor_assist.generation.superseded": "admin.plugin_obs_event_map_7", "addon.editor_assist.outcome.observed": "admin.plugin_obs_event_map_1", "addon.editor_assist.outcome.expired": "admin.plugin_obs_event_map_2", "addon.media_recognition.completed": "admin.plugin_obs_event_map_3", "addon.media_recognition.failed": "admin.plugin_obs_event_map_4", "validation.technical_monitoring_only": "admin.plugin_obs_event_map_5", "runtime_request": "admin.plugin_obs_event_map_6"};
-  return t(known[code] || 'admin.plugin_obs_event_other');
+  return known[code] ? t(known[code]) : code || t('admin.plugin_obs_event_other');
 }
 function errorLabel(t: TranslationFn, code: string) {
   const known: Record<string, string> = {"runtimecanceled": "admin.plugin_obs_error_map_0", "provider_timeout": "admin.plugin_obs_error_map_1", "timeout": "admin.plugin_obs_error_map_2"};
-  return t(known[code.toLowerCase()] || 'admin.plugin_obs_error_other');
+  return known[code.toLowerCase()] ? t(known[code.toLowerCase()]) : code || t('admin.plugin_obs_error_other');
 }
 function healthReason(t: TranslationFn, code: string) {
   const known: Record<string, string> = {"plugin_observability.error_rate_high": "admin.plugin_obs_health_map_0", "plugin_observability.error_rate_elevated": "admin.plugin_obs_health_map_1", "plugin_observability.latency_high": "admin.plugin_obs_health_map_2", "plugin_observability.reporting_stale": "admin.plugin_obs_health_map_3", "plugin_observability.inactive": "admin.plugin_obs_health_map_4"};
@@ -485,12 +489,14 @@ function AdminPluginObservabilityContent() {
   const windowHours = normalizeWindowOption(searchParams.get('window'));
   const pluginFilter = normalizePluginFilter(searchParams.get('plugin'));
   const siteIdFilter = searchParams.get('site') || '';
+  const activityCategory = ['activity', 'status'].includes(searchParams.get('activity') || '') ? searchParams.get('activity')! : 'all';
   const focusedAttentionKey = searchParams.get('focus') || '';
   const [data, setData] = useState<PluginObservabilityData | null>(null);
   const [error, setError] = useState('');
   const [siteIdInput, setSiteIdInput] = useState(siteIdFilter);
   const [loading, setLoading] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [issueKey, setIssueKey] = useState<string | null>(null);
   const [inspectedSite, setInspectedSite] = useState<string | null>(null);
   const [siteSort, setSiteSort] = useState<SiteSortKey>('errors');
@@ -508,6 +514,7 @@ function AdminPluginObservabilityContent() {
     plugin?: PluginFilter | null;
     site?: string | null;
     focus?: string | null;
+    activity?: string | null;
   }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -530,6 +537,7 @@ function AdminPluginObservabilityContent() {
       const params = new URLSearchParams({ window_hours: String(windowHours) });
       if (pluginFilter !== 'all') params.set('plugin_slug', pluginFilter);
       if (siteIdFilter) params.set('site_id', siteIdFilter);
+      params.set('activity_category', activityCategory);
       const response = await pluginObservabilityClient.request<unknown>(
         `/api/admin/plugin-observability?${params.toString()}`,
         { signal: controller.signal }
@@ -545,7 +553,7 @@ function AdminPluginObservabilityContent() {
         setLoading(false);
       }
     }
-  }, [windowHours, pluginFilter, siteIdFilter, t]);
+  }, [windowHours, pluginFilter, siteIdFilter, activityCategory, t]);
 
   useEffect(() => {
     void loadData();
@@ -681,7 +689,7 @@ function AdminPluginObservabilityContent() {
   const copyEvidence = async () => {
     if (!selectedIssue) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify({ window: data?.window, problem: selectedIssue, recentErrors: recent }, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify({ window: data?.window, problem: selectedIssue, sampleScope: "global_latest_10_filtered_not_complete", recentErrors: recent }, null, 2));
       toast.success(t('admin.plugin_obs_copied'));
     } catch { toast.error(t('admin.plugin_obs_copy_failed')); }
   };
@@ -714,7 +722,7 @@ function AdminPluginObservabilityContent() {
         <p className="text-sm text-slate-600">{data.totals.eventsTotal === 0 ? t('admin.plugin_obs_no_records') : data.totals.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</p>
         <AdminDataTableFrame title={t('admin.plugin_obs_problems')} resultLabel={t('admin.plugin_obs_group_note')} dataUi="plugin-problems" density="compact">
           <table className="w-full"><thead><tr>{problemColumns.map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>
-            {data.errors.map(item => <tr key={errorKey(item)} className="border-t border-slate-100 dark:border-slate-800"><td className={cellClass}><p className="font-medium">{errorLabel(t, item.errorCode)}</p><p className="mt-1 text-xs text-slate-500">{eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)}</p></td><td className={cellClass}>{siteName(item.siteId)}</td><td className={cellClass}>{item.count}</td><td className={cellClass}>{item.lastSeenAt ? formatDate(item.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setIssueKey(errorKey(item))}>{t('admin.plugin_obs_inspect')}</button></td></tr>)}
+            {data.errors.map(item => <tr key={errorKey(item)} className="border-t border-slate-100 dark:border-slate-800"><td className={cellClass}><p className="break-all font-medium">{errorLabel(t, item.errorCode)}</p><p className="mt-1 break-all text-xs text-slate-500">{eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)}</p></td><td className={cellClass}>{siteName(item.siteId)}</td><td className={cellClass}>{item.count}</td><td className={cellClass}>{item.lastSeenAt ? formatDate(item.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setIssueKey(errorKey(item))}>{t('admin.plugin_obs_inspect')}</button></td></tr>)}
           </tbody></table>
           {!data.errors.length ? <p className="p-4 text-sm text-slate-500">{data.totals.errorTotal > 0 ? t('admin.plugin_obs_missing_breakdown') : t('admin.plugin_obs_no_errors')}</p> : null}
         </AdminDataTableFrame>
@@ -722,7 +730,7 @@ function AdminPluginObservabilityContent() {
           <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
           {!sortedSites.length ? <p className="p-4 text-sm text-slate-500">{t('admin.plugin_obs_no_sites')}</p> : null}
         </AdminDataTableFrame>
-        <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={c('所选范围内最近 50 条', 'Latest 50 in selected scope')} dataUi="plugin-recent-activity" density="compact">
+        <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={c('所选范围内最近 50 条', 'Latest 50 in selected scope')} dataUi="plugin-recent-activity" density="compact" headerActions={<select aria-label={c('近期事件类别', 'Recent event category')} className="input w-auto" value={activityCategory} onChange={e => updateUrl({ activity: e.target.value === 'all' ? null : e.target.value })}><option value="all">{c('全部事件', 'All events')}</option><option value="activity">{c('任务与反馈等事件', 'Activity and feedback')}</option><option value="status">{c('连接与状态上报', 'Connection and status')}</option></select>}>
           <p className="p-3 text-xs text-slate-500">{t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>
           {data.recentActivity.map((item, index) => <div key={`${item.eventId}-${index}`} className="border-t border-slate-200 p-3 text-sm dark:border-slate-800">
             <p>{activityStatus(item.status)} · {eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)} · {siteName(item.siteId)}</p>
@@ -731,21 +739,20 @@ function AdminPluginObservabilityContent() {
               <dl className="space-y-1 py-2"><dt>{c('运行状态', 'Run status')}</dt><dd>{activityStatus(item.run.status)}</dd>
                 <dt>{c('实际开始', 'Execution started')}</dt><dd>{formatDate(item.run.startedAt) || '—'}</dd>
                 <dt>{c('实际完成', 'Execution finished')}</dt><dd>{formatDate(item.run.finishedAt) || '—'}</dd>
-                <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd>
+                <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd><dd><Link className="text-blue-700 underline dark:text-blue-300" href={`/admin/troubleshooting?window=${windowHours}&site=${encodeURIComponent(item.siteId || '')}&run_id=${encodeURIComponent(item.run.runId)}`}>{c('查看此运行', 'Inspect this run')}</Link></dd>
                 {item.run.errorCode ? <><dt>{c('错误代码', 'Error code')}</dt><dd>{item.run.errorCode}</dd></> : null}
               </dl></details> : <p className="text-xs text-slate-500">{c('未关联 Cloud 运行；不代表调用失败，部分事件只是状态上报。', 'No linked Cloud run; this does not imply failure. Some events only report state.')}</p>}
           </div>)}
           {!data.recentActivity.length ? <p className="p-3 text-sm">{c('所选范围暂无近期上报。', 'No recent reports in this scope.')}</p> : null}
         </AdminDataTableFrame>
+        <BackofficeDisclosure summary={c('完整留存上报记录', 'All retained reports')} onToggle={event => setHistoryOpen(event.currentTarget.open)}>{historyOpen ? <PluginHistory key={`${windowHours}:${siteIdFilter}:${pluginFilter}`} hours={windowHours} site={siteIdFilter} plugin={pluginFilter === 'all' ? '' : pluginFilter} recordScope="all" /> : null}</BackofficeDisclosure>
         <details className="border-t border-slate-200 py-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_trend')}</summary><p className="my-3 text-xs text-slate-500">{t('admin.plugin_obs_count_note')} {t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>{data.timeline.length ? <AnalyticsLineChart data={timelineData} height={240} primarySeriesName={t('admin.plugin_obs_record_count')} secondarySeriesName={t('admin.plugin_obs_error_records')} /> : <p>{t('admin.plugin_obs_no_trend')}</p>}</details>
       </> : null}
       <AdminInspectorDrawer open={Boolean(selectedIssue || siteDetails)} title={selectedIssue ? errorLabel(t, selectedIssue.errorCode) : siteName(inspectedSite)} titleId="plugin-problem-title" closeLabel={closeLabel} onClose={() => {setIssueKey(null);setInspectedSite(null);}}>
         <div className="space-y-5 text-sm">
-          {selectedIssue ? <><p>{siteName(selectedIssue.siteId)} · {eventLabel(t, selectedIssue.eventKind)} · {selectedIssue.count} {t('admin.plugin_obs_occurrences')}</p><h3 className="font-semibold">{t('admin.plugin_obs_known')}</h3><p>{t('admin.plugin_obs_unknown_cause')}</p><h3 className="font-semibold">{t('admin.plugin_obs_next')}</h3><ol className="list-decimal space-y-2 pl-5"><li>{t('admin.plugin_obs_step_records')}</li><li>{t('admin.plugin_obs_step_logs')}</li></ol><button className="btn btn-secondary btn-sm" disabled={!selectedIssue.siteId} onClick={() => {setInspectedSite(selectedIssue.siteId);setIssueKey(null);}}>{t('admin.plugin_obs_view_records')}</button><button className="btn btn-ghost btn-sm" onClick={() => void copyEvidence()}>{t('admin.plugin_obs_copy')}</button></> : null}
+          {selectedIssue ? <><p>{siteName(selectedIssue.siteId)} · {eventLabel(t, selectedIssue.eventKind)} · {selectedIssue.count} {t('admin.plugin_obs_occurrences')}</p><h3 className="font-semibold">{t('admin.plugin_obs_known')}</h3><p>{t('admin.plugin_obs_unknown_cause')}</p><h3 className="font-semibold">{t('admin.plugin_obs_next')}</h3><ol className="list-decimal space-y-2 pl-5"><li>{t('admin.plugin_obs_step_records')}</li><li>{t('admin.plugin_obs_step_logs')}</li></ol><button className="btn btn-ghost btn-sm" onClick={() => void copyEvidence()}>{t('admin.plugin_obs_copy')}</button></> : null}
           {siteDetails ? <p>{t('admin.plugin_obs_site_summary', {records: String(siteDetails.eventsTotal), errors: String(siteDetails.errorTotal)})}</p> : null}
-          <h3 className="font-semibold">{t('admin.plugin_obs_recent')}</h3><p className="text-xs text-slate-500">{t('admin.plugin_obs_recent_limit')}</p>
-          {recent.map((item,index) => <div className="space-y-2 border-t border-slate-200 py-3 dark:border-slate-800" key={index}><p>{formatDate(item.receivedAt)} · {errorLabel(t,item.errorCode)}</p><p>{eventLabel(t,item.eventKind)} · {pluginLabel(t,item.pluginSlug)}</p><details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{item.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{item.eventKind}</code></dd><dt>{t('admin.plugin_obs_ability_id')}</dt><dd><code>{item.abilityId || '—'}</code></dd><dt>{t('admin.plugin_obs_proposal_id')}</dt><dd><code>{item.proposalId || '—'}</code></dd><dt>{t('admin.plugin_obs_route')}</dt><dd><code>{item.route || '—'}</code></dd></dl></details></div>)}
-          {!recent.length ? <p>{t('admin.plugin_obs_no_recent')}</p> : null}
+          {selectedIssue ? <PluginHistory key={errorKey(selectedIssue)} hours={windowHours} site={selectedIssue.siteId || ''} recordScope="all" problem={{ plugin: selectedIssue.pluginSlug, event: selectedIssue.eventKind, error: selectedIssue.errorCode, unassignedSite: !selectedIssue.siteId }} /> : siteDetails ? <PluginHistory key={siteDetails.siteId} hours={windowHours} site={siteDetails.siteId} recordScope="all" /> : null}
           {selectedIssue ? <details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{selectedIssue.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{selectedIssue.eventKind}</code></dd><dt>{t('admin.plugin_obs_plugin_id')}</dt><dd><code>{selectedIssue.pluginSlug}</code></dd><dt>{t('admin.plugin_obs_site_id')}</dt><dd><code>{selectedIssue.siteId || '—'}</code></dd></dl></details> : null}
           {siteDetails ? <><button className="btn btn-secondary btn-sm" onClick={() => {updateUrl({site: siteDetails.siteId, focus: null});setInspectedSite(null);}}>{t('admin.plugin_obs_filter_site')}</button><details><summary className="cursor-pointer">{t('admin.plugin_obs_statistics')}</summary><p className="py-3">{t('admin.plugin_obs_record_stats', {rate: formatSuccessRate(siteDetails.successRate), seconds: (siteDetails.avgLatencyMs / 1000).toFixed(1)})}</p><p>{t('admin.plugin_obs_count_note')} {t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p><code className="break-all">{siteDetails.siteId}</code></details></> : null}
         </div>

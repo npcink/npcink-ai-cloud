@@ -17,6 +17,7 @@ import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
 import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
+import { ExactRuntimeRun } from '@/features/admin/observability/ExactRuntimeRun';
 import { useRuntimeRunEvidence } from '@/features/admin/observability/useRuntimeRunEvidence';
 import { adminNavigationWindowHint, adminScopedNavigationHref } from '@/features/admin/navigation';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
@@ -81,7 +82,7 @@ export default function AdminTroubleshootingPage() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const loadedScopeRef = useRef('');
 
-  const updateUrl = useCallback((updates: { window?: number | null; focus?: string | null; site?: string | null; function?: string | null; panel?: string | null; since?: string | null; evidence?: string | null }) => {
+  const updateUrl = useCallback((updates: { window?: number | null; focus?: string | null; site?: string | null; function?: string | null; panel?: string | null; since?: string | null; evidence?: string | null; run_id?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
       if (value) params.set(key, String(value));
@@ -269,6 +270,7 @@ export default function AdminTroubleshootingPage() {
             </div>
           ) : null}
 
+      {searchParams.get('run_id') ? <ExactRuntimeRun runId={searchParams.get('run_id')!} site={siteFilter} windowHours={windowHours} since={since} refreshSignal={refreshSignal} onClear={() => updateUrl({ run_id: null })} /> : null}
       <div data-ui="runtime-recovery-review" className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
         <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>

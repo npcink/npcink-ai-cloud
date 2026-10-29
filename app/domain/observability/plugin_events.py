@@ -15,6 +15,7 @@ from app.core.models import (
     RunRecord,
     Site,
 )
+from app.domain.observability.plugin_event_filters import plugin_event_category_conditions
 from app.domain.observability.plugin_event_projection import (
     _attention_key as _attention_key_value,
 )
@@ -310,7 +311,7 @@ class PluginObservabilityService:
                 select(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    func.coalesce(PluginObservabilityEvent.error_code, ""),
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -321,7 +322,7 @@ class PluginObservabilityService:
                 .group_by(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    func.coalesce(PluginObservabilityEvent.error_code, ""),
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -425,6 +426,7 @@ class PluginObservabilityService:
         site_id: str = "",
         plugin_slug: str = "",
         record_scope: str = "all",
+        activity_category: str = "all",
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
@@ -561,7 +563,7 @@ class PluginObservabilityService:
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    func.coalesce(PluginObservabilityEvent.error_code, ""),
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -573,7 +575,7 @@ class PluginObservabilityService:
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    func.coalesce(PluginObservabilityEvent.error_code, ""),
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -591,6 +593,7 @@ class PluginObservabilityService:
                 )
             )
 
+            activity_conditions = plugin_event_category_conditions(activity_category)
             # Bounded, metadata-only join; a supplied correlation must not cross sites.
             activity_rows = session.execute(
                 select(PluginObservabilityEvent, RunRecord)
@@ -599,7 +602,7 @@ class PluginObservabilityService:
                     (RunRecord.run_id == PluginObservabilityEvent.correlation_id)
                     & (RunRecord.site_id == PluginObservabilityEvent.site_id),
                 )
-                .where(*base_conditions)
+                .where(*base_conditions, *activity_conditions)
                 .order_by(
                     PluginObservabilityEvent.received_at.desc(),
                     PluginObservabilityEvent.id.desc(),
@@ -727,6 +730,7 @@ class PluginObservabilityService:
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
             "recent_activity": recent_activity,
             "recent_activity_limit": 50,
+            "activity_category": activity_category,
         }
 
     def update_attention_state(
