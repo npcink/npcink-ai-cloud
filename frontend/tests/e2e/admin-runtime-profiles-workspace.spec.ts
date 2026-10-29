@@ -1090,10 +1090,11 @@ for (const width of [1056, 1440]) {
 }
 
 test('browser back confirmation handles Escape above the runtime draft', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 900, height: 1050 });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   const writes = await installRuntimeProfilesHarness(page);
   await page.goto('/admin');
   await page.locator('a[href="/admin/runtime-profiles"]').first().click();
+  await page.setViewportSize({ width: 900, height: 1050 });
   await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/ }).click();
   await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
   await page.evaluate(() => window.history.back());
