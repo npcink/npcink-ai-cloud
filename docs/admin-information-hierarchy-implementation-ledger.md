@@ -96,9 +96,19 @@ Status: active implementation ledger, 2026-10-29.
   未放宽断言、更新 golden 或删测试。
 - `check:admin-ui`、完整 frontend contracts、定向 ESLint/typecheck 通过。
   `check:agent-feedback-quality` 含 24 项 API 检查通过；未触发 Provider 或真实写入。
-- 文档可达性 599/599、release-policy 通过。综合视觉矩阵、M4 candidate、PR/CI、
-  master 合并和 accepted 状态尚在推进，最终证据另附；不把本地状态写成生产或人工验收。
+- 文档可达性 599/599、release-policy 通过。最终注册视觉矩阵 195/195 通过，
+  含结构化 visual receipts；模拟 API 证据保存在 `observation-final-fixtures/`。
+- M4 candidate `b85875b5`，`source_dirty=false`，frontend revision 同源；
+  1440×1050 / 900×1050 实页检查用量、质量、审计、反馈。首屏可见工作面，
+  页面无横向溢出；审计宽表在表内横向滚动，保留可见查看证据列。
+  质量导出和审计技术筛选通过 Enter 展开；反馈分布键盘操作及暗色窄 PC 截图已留档。
+  未发送反馈、执行真实写入或调用 Provider；浏览器未捕获 error。
+- 正确性、保密、兼容、性能、维护性复核：变更不改统计/查询/分页/状态所有者；
+  折叠内容不含必须常显的限制；原始标识及已有导出边界保留；无新增请求或依赖。
+  PR/CI、master 合并和 accepted 状态待后续记录；生产和人工验收未执行。
 
 证据目录（本机）：
 `/Users/muze/.codex/visualizations/2026/10/29/01a18570-6c8d-7cc0-8297-7e5c99662bbc/admin-followthrough/`。
 `observation-fixtures/` 使用模拟 API；`*-before-bb92-1440.png` 使用 M4 只读数据。
+`*-candidate-b858-*.png` 为本批 M4 只读页面；`observation-final-fixtures/`
+为最终代码的模拟 API 浏览器矩阵，包含空态、失败和真实环境未出现的交互状态。
