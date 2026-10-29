@@ -108,6 +108,8 @@ test(`saved settings with failed readback freeze stale state and retry only the 
   await expect(page.getByRole('status').filter({ hasText: /saved.*latest|已保存.*最新/i })).toBeVisible();
   await expect(page.locator('main')).not.toContainText(/This configuration action failed|本次配置操作失败/);
   await expect(base).toBeDisabled();
+  await expect(page.getByRole('tab').first()).toContainText(/Awaiting confirmation|待确认/);
+  await expect(page.getByRole('tab').first()).not.toContainText(/Unsaved|未保存/);
   await page.screenshot({ path: testInfo.outputPath(`saved-read-failure-${theme}.png`), fullPage: true, animations: 'disabled' });
   state.failReads = false;
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();

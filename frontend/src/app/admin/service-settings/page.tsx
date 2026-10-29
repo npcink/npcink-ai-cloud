@@ -899,7 +899,7 @@ export default function AdminServiceSettingsPage() {
     alipayPublicKey: Boolean(data?.settings.alipay_payment.secrets.public_key?.configured),
   };
   const activeGroupDirty = (() => {
-    if (!savedForms) return false;
+    if (!savedForms || !snapshotCurrent) return false;
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
@@ -1354,8 +1354,8 @@ export default function AdminServiceSettingsPage() {
         items={tabs.map((tab) => ({
           id: tab.id,
           label: tab.label,
-          status: tab.description,
-          tone: tab.tone,
+          status: snapshotCurrent ? tab.description : t('admin.service_settings.awaiting_read', {}, 'Awaiting confirmation'),
+          tone: snapshotCurrent ? tab.tone : 'attention',
         }))}
         onSelect={(nextTab) => requestTabChange(nextTab as ServiceSettingsTab)}
       >
