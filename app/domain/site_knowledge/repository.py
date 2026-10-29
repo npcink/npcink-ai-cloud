@@ -492,12 +492,15 @@ class SiteKnowledgeRepository:
         site_id: str,
         *,
         source_types: list[str] | None = None,
+        source_id: int | None = None,
     ) -> list[str]:
         statement = select(SiteKnowledgeChunk.embedding_model).where(
             SiteKnowledgeChunk.site_id == site_id
         )
         if source_types:
             statement = statement.where(SiteKnowledgeChunk.source_type.in_(source_types))
+        if source_id is not None:
+            statement = statement.where(SiteKnowledgeChunk.source_id == source_id)
         return [
             str(model)
             for model in self.session.scalars(

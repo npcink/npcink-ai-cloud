@@ -18,6 +18,8 @@ from scripts.configure_m4_ollama_preview import (
     _probe_embedding,
     _validate_environment,
     configure,
+    configure_embedding_only,
+    embedding_config,
 )
 
 
@@ -64,11 +66,11 @@ def test_m4_ollama_preview_embedding_connection_is_secretless_and_bounded() -> N
     assert payload["runtime_profile_ids"] == ["embed.default"]
     assert payload["secretless"] is True
     assert payload["config"] == {
-        "model_ids": ["qwen3-embedding:0.6b"],
-        "site_knowledge_model_id": "qwen3-embedding:0.6b",
+        "model_ids": ["npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8"],
+        "site_knowledge_model_id": "npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8",
         "local_preview_profile_id": "site-knowledge.local-preview.v1",
-        "local_preview_probe_revision": "site-knowledge-local-preview-probe.v1",
-        "dimensions": 1024,
+        "local_preview_probe_revision": "site-knowledge-local-preview-probe.v2",
+        "dimensions": 4096,
         "metric": "COSINE",
         "timeout_seconds": 30,
     }
@@ -97,7 +99,7 @@ def test_m4_ollama_preview_embedding_probe_requires_expected_dimensions(
         def execute(self, request: object) -> object:
             request_seen["request"] = request
             return SimpleNamespace(
-                output={"embedding": [0.0] * 1024},
+                output={"embedding": [0.1] * 4096},
                 latency_ms=27,
             )
 
@@ -118,7 +120,7 @@ def test_m4_ollama_preview_embedding_probe_requires_expected_dimensions(
     request = request_seen["request"]
     assert isinstance(request, ProviderExecutionRequest)
     assert request.execution_kind == "embedding"
-    assert request.model_id == "qwen3-embedding:0.6b"
+    assert request.model_id == "npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8"
     assert request.input_payload == {"text": "猫咪媒体语义搜索"}
     assert request.policy == {"storage_mode": "no_store"}
 
@@ -126,6 +128,49 @@ def test_m4_ollama_preview_embedding_probe_requires_expected_dimensions(
 def test_m4_ollama_preview_configuration_rejects_production() -> None:
     with pytest.raises(RuntimeError, match="development-only"):
         _validate_environment(SimpleNamespace(environment="production"))  # type: ignore[arg-type]
+
+
+def test_embedding_replacement_preserves_other_models_and_settings() -> None:
+    original = {
+        "model_ids": ["qwen3.5:9b", "qwen3-vl:2b", "qwen3-embedding:0.6b"],
+        "site_knowledge_model_id": "qwen3-embedding:0.6b",
+        "model_metadata_overrides": {"qwen3.5:9b": {"endpoint_variant": "ollama_chat"}},
+        "capability_ids": ["text_generation", "vision", "embedding"],
+        "runtime_profile_ids": ["embed.default"], "secretless": True,
+    }
+    updated = embedding_config(original)
+    assert updated["model_ids"] == [
+        "qwen3.5:9b", "qwen3-vl:2b", "npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8",
+    ]
+    for key in ("model_metadata_overrides", "capability_ids", "runtime_profile_ids", "secretless"):
+        assert updated[key] == original[key]
+    assert original["site_knowledge_model_id"] == "qwen3-embedding:0.6b"
+    assert updated["dimensions"] == 4096
+
+
+def test_embedding_only_rejects_production_before_probe(monkeypatch) -> None:
+    def unexpected(settings):
+        pytest.fail("production must not probe or mutate")
+    monkeypatch.setattr("scripts.configure_m4_ollama_preview._probe_embedding", unexpected)
+    with pytest.raises(RuntimeError, match="development-only"):
+        configure_embedding_only(SimpleNamespace(environment="production"))
+
+
+def test_bootstrap_preserves_an_already_unified_supplier(monkeypatch) -> None:
+    class Session:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get(self, *args):
+            return SimpleNamespace(config_json={
+                "capability_ids": ["text_generation", "vision", "embedding"],
+            })
+    monkeypatch.setattr("scripts.configure_m4_ollama_preview.get_session", lambda _: Session())
+    monkeypatch.setattr("scripts.configure_m4_ollama_preview.configure_embedding_only",
+        lambda settings: {"preserved_unified_supplier": True})
+    result = configure(SimpleNamespace(environment="development", database_url="sqlite://"))
+    assert result == {"preserved_unified_supplier": True}
 
 
 def test_m4_ollama_preview_embedding_probe_failure_does_not_block_configuration(

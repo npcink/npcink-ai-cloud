@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test';
 import { buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 const baseVectorProfile = {
+  runtime: {
+    environment: 'development', provider_id: 'ollama-m4-embedding',
+    model_id: 'npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8',
+    dimensions: 4096, backend: 'postgres_json', index_status: 'ready'
+  },
   profile_id: 'site-knowledge.zh.v1',
   model_id: 'BAAI/bge-m3',
   dimensions: 1024,
@@ -97,6 +102,13 @@ test('vector settings keeps the fixed PC profile and saves the continuous config
   });
 
   await page.goto('/admin/vector-settings');
+  await expect(page.getByTestId('vector-runtime-profile')).toContainText('4096D');
+  await expect(page.getByTestId('vector-runtime-profile')).toContainText('8b-q4_k_m');
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect.poll(() => page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth
+  )).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await expect(
     page.getByRole('heading', { name: /Site vector service|站点向量服务/i })
   ).toBeVisible();

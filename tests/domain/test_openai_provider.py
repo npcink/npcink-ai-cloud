@@ -1377,6 +1377,31 @@ def test_openai_adapter_executes_embeddings_over_http() -> None:
     assert result.tokens_out == 0
 
 
+@pytest.mark.parametrize("image", [False, True])
+def test_ollama_embeddings_use_native_multimodal_transport_and_usage(image: bool) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/embed"
+        payload = json.loads(request.content)
+        assert payload["input"] == ({"image": "encoded-image"} if image else "hello")
+        assert payload["truncate"] is False
+        assert payload["options"]["num_ctx"] == 8192
+        return httpx.Response(200, json={
+            "model": "local-vl", "embeddings": [[0.1, 0.2]], "prompt_eval_count": 7,
+        })
+
+    adapter = OpenAIProviderAdapter(
+        base_url="http://ollama.example/v1", api_key="test",
+        transport=httpx.MockTransport(handler),
+    )
+    result = adapter.execute(_build_request(
+        execution_kind="embedding", endpoint_variant="ollama_embeddings", model_id="local-vl",
+        input_payload={"image_base64": "encoded-image"} if image else {"text": "hello"},
+    ))
+    assert result.output["embedding"] == [0.1, 0.2]
+    assert result.tokens_in == 7
+    assert result.tokens_out == 0
+
+
 def test_openai_adapter_executes_image_generation_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/images/generations")
