@@ -17,7 +17,24 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   const detailTabs = page.getByRole('tab');
   await expect(detailTabs).toHaveCount(6);
   await expect(page.getByRole('tab', { name: /^Overview|^概况|^概況/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toBeVisible();
+  const overview = page.locator('[data-ui="account-overview-posture"]');
+  await expect(overview).toBeVisible();
+  await expect(overview).toContainText(/Package|套餐|方案/i);
+  await expect(overview).toContainText(/Coverage|覆盖|覆蓋/i);
+  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toHaveCount(0);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-customer-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('tab', { name: /^Access|^访问|^存取/i }).click();
+  await page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i }).click();
+  const suspendDialog = page.getByRole('dialog');
+  await expect(suspendDialog).toContainText(/Confirm account suspension|确认暂停账户/i);
+  await suspendDialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
+  await expect(suspendDialog).toHaveCount(0);
+
   await expect(page.getByText(/More account actions|更多账户操作|更多帳戶操作/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Manage package|管理套餐|管理方案/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Back to customers|Back to accounts|返回客户列表|返回客戶列表/i })).toHaveAttribute('href', '/admin/accounts');

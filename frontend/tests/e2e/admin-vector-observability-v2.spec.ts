@@ -99,3 +99,32 @@ test('vector observability exits initial loading with a scoped retry', async ({ 
   await expect(page.locator('[role="alert"]').filter({ hasText: /vector diagnostics unavailable|Failed to load vector diagnostics|加载向量诊断失败/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
 });
+
+test('vector errors lead the PC workspace while methods and distributions are available on demand', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installVectorHarness(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/admin/vector-observability');
+  const queue = page.locator('[data-ui="vector-error-workspace"]');
+  await expect(queue).toBeVisible();
+  await expect(page.locator('[data-ui="vector-observability-scope-row"]')).toContainText(/Health score: 71|健康分: 71/);
+  await expect(page.locator('[data-ui="vector-signal-scope"]')).toContainText(/recovery is unverified|未核实当前恢复状态/);
+  const method = page.locator('details').filter({ has: page.locator('summary', { hasText: /Health scoring method|健康评分口径/ }) });
+  await expect(method).not.toHaveAttribute('open', '');
+  const distributions = page.locator('[data-ui="vector-distributions"]');
+  await expect(distributions).not.toHaveAttribute('open', '');
+  const trend = page.getByRole('heading', { name: /Searches and no-hit|搜索与无命中/ });
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await expect.poll(() => page.locator('[data-ui="vector-error-item"]').first().evaluate(el => el.getBoundingClientRect().bottom)).toBeLessThan(1050);
+    const positions = await page.evaluate(() => ({ queue: document.querySelector('[data-ui="vector-error-workspace"]')!.getBoundingClientRect().top, trend: Array.from(document.querySelectorAll('h3')).find(el => /Searches and no-hit|搜索与无命中/.test(el.textContent || ''))!.getBoundingClientRect().top, overflow: document.documentElement.scrollWidth > innerWidth }));
+    expect(positions.queue).toBeLessThan(positions.trend);
+    expect(positions.overflow).toBe(false);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-vector-${width}.png` });
+  }
+  await expect(trend).toBeVisible();
+  await distributions.locator('summary').press('Enter');
+  await expect(distributions.getByText('site_mvp', { exact: true })).toBeVisible();
+  await method.locator('summary').press('Enter');
+  await expect(method).toContainText(/Score deductions|评分依据/);
+});

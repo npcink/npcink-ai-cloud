@@ -204,7 +204,8 @@ function siteRuntimeExplanationText(
 function SiteDetailContent() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
   const toast = useToast();
   const { siteId } = params as { siteId: string };
   
@@ -480,6 +481,12 @@ function SiteDetailContent() {
       graceActive ||
       billingMismatch
   );
+  const commercialReasons = [
+    !site.subscription ? t('admin.site_detail.subscription_missing_desc') : !['active', 'trialing'].includes(subscriptionStatus) ? `${c('订阅', 'Subscription')}: ${translateStatusLabel(subscriptionStatus, t)}` : '',
+    overBudget ? c('预算超限', 'Budget exceeded') : '',
+    graceActive ? c('处于宽限期', 'Grace period active') : '',
+    billingMismatch ? `${c('账单差额', 'Billing delta')}: ${formatAdminCurrency(Number(site.billing_reconciliation?.delta_cost || 0))}` : '',
+  ].filter(Boolean).join(' · ');
   const isProvisioning = site.status === 'provisioning';
   const postureTone =
     site.status === 'suspended' || hasCommercialRisk || hasRuntimeRisk
@@ -552,7 +559,7 @@ function SiteDetailContent() {
             fallback: site.subscription.plan_id || t('common.plan'),
           })
         : t('admin.site_detail.subscription_missing_desc', undefined, 'No active customer subscription is covering this site yet.'),
-      toneClassName: hasCommercialRisk ? 'text-red-600 dark:text-red-400' : undefined,
+      toneClassName: !site.subscription || !['active', 'trialing'].includes(subscriptionStatus) ? 'text-red-600 dark:text-red-400' : undefined,
     },
     {
       label: t('admin.site_detail.coverage_state_label', undefined, 'Coverage state'),
@@ -564,7 +571,7 @@ function SiteDetailContent() {
             ? t('admin.site_detail.coverage_state_keys', undefined, 'Key coverage blocker')
             : t('admin.site_detail.coverage_state_ok', undefined, 'Coverage aligned'),
       detail: hasCommercialRisk
-        ? t('admin.site_detail.coverage_state_commercial_desc', undefined, 'Subscription, budget, grace, or billing reconciliation is already leading the next action.')
+        ? site.status === 'suspended' ? commercialReasons : ''
         : hasRuntimeRisk
           ? t('admin.site_detail.coverage_state_runtime_desc', undefined, 'Commercial coverage is readable; runtime diagnostics should lead the next action.')
           : hasKeyCoverageGap
@@ -579,23 +586,16 @@ function SiteDetailContent() {
     {
       label: t('common.cost'),
       value: formatAdminCurrency(Number(costBudget.current_total || site.usage_summary?.cost_estimate || 0)),
-      detail: site.usage_summary?.cost_usd
-        ? `${formatCurrency(site.usage_summary.cost_usd, 'USD')} × ${
-            site.usage_summary.accounting_fx?.usd_cny_rate || '—'
-          } · ${site.usage_summary.accounting_fx?.rate_version || ''}`
-        : billingMismatch
-          ? t('admin.site_detail.billing_delta_desc', undefined, 'Billing reconciliation is not fully aligned yet, so treat commercial evidence as active follow-up.')
-          : t('admin.site_detail.billing_aligned_desc', undefined, 'Billing evidence is aligned closely enough for normal operator follow-up.'),
+      detail: [
+        site.usage_summary?.cost_usd ? formatCurrency(site.usage_summary.cost_usd, 'USD') : '',
+        billingMismatch ? t('admin.site_detail.billing_delta_desc') : '',
+      ].filter(Boolean).join(' · '),
       toneClassName: billingMismatch ? 'text-amber-700 dark:text-amber-300' : undefined,
     },
   ];
   const entitlementSummary = localizeAdminCommercialCopy(site.commercial_follow_up?.entitlement_summary, t);
   const budgetHeadroomSummary = localizeAdminCommercialCopy(site.commercial_follow_up?.budget_headroom_summary, t);
   const runtimeGatingSummary = localizeAdminCommercialCopy(site.commercial_follow_up?.runtime_gating_summary, t);
-  const siteNextOperatorFollowUp = localizeAdminCommercialCopy(
-    site.commercial_follow_up?.next_operator_follow_up,
-    t
-  );
   const formatUsageAgainstLimit = (
     current: number,
     limit: number,
@@ -612,7 +612,7 @@ function SiteDetailContent() {
     <BackofficePageStack>
       <BackofficePageHeader
         title={site.site_name || site.site_id}
-        description={postureDescription}
+        description={c('查看站点覆盖、运行与归属证据。', 'Inspect site coverage, runtime and ownership evidence.')}
         primaryAction={site.status === 'provisioning' ? (
               <button
                 type="button"
@@ -631,10 +631,6 @@ function SiteDetailContent() {
           </Link>
         )}
         summaryItems={[
-          {
-            label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
-            value: t('common.enabled', undefined, 'Enabled'),
-          },
           { label: t('common.keys'), value: formatInteger(site.key_count) },
           {
             label: t('admin.failed_runs'),
@@ -651,12 +647,12 @@ function SiteDetailContent() {
         summaryAside={(
           <div className="flex flex-wrap items-center justify-end gap-2">
             <BackofficeIdentifier value={site.site_id} className="text-xs text-gray-500 dark:text-gray-400" />
-            <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
-            <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
+            <BackofficeStatusBadge status={postureTone} label={`${c('整体', 'Overall')}: ${postureTone === 'ok' ? translateStatusLabel('ok', t) : c('需跟进', 'Needs follow-up')}`} />
+            <BackofficeStatusBadge status={site.status} label={`${t('common.site')}: ${translateStatusLabel(site.status, t)}`} />
             {site.subscription ? (
               <BackofficeStatusBadge
                 status={site.subscription.status}
-                label={translateStatusLabel(site.subscription.status, t)}
+                label={`${c('订阅', 'Subscription')}: ${translateStatusLabel(site.subscription.status, t)}`}
               />
             ) : null}
           </div>
@@ -677,99 +673,34 @@ function SiteDetailContent() {
             {siteActionError}
           </p>
         ) : null}
-        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.site_detail.primary_title', undefined, 'Current follow-up')}
-            </p>
-            <h3 className="mt-3 text-lg font-semibold text-gray-950 dark:text-white">{postureTitle}</h3>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{nextStep.description}</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Link href={nextStep.href} className="btn btn-primary">
-                {nextStep.label}
-              </Link>
-            </div>
-          </BackofficeStackCard>
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.site_detail.followup_focus_title', undefined, 'Follow-up focus')}
-            </p>
-            <div className="mt-4 space-y-4">
-              {watchItems.map((item) => (
-                <div key={item.label} className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4 last:border-b-0 last:pb-0 dark:border-gray-800">
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{item.label}</p>
-                    <p className={cn('mt-1 text-sm font-semibold text-gray-950 dark:text-white', item.toneClassName)}>
-                      {item.value}
-                    </p>
-                  </div>
-                  <p className="max-w-sm text-right text-sm text-gray-600 dark:text-gray-400">{item.detail}</p>
-                </div>
-              ))}
-            </div>
-          </BackofficeStackCard>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">{postureTitle}</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{site.status !== 'suspended' && hasCommercialRisk ? commercialReasons : postureDescription}</p>
+          </div>
+          <Link href={nextStep.href} className="btn btn-primary" title={nextStep.description}>{nextStep.label}</Link>
+        </div>
+        <dl className="grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-800 md:grid-cols-3">
+          {watchItems.map(item => <div key={item.label} className="min-w-0">
+            <dt className="text-xs text-slate-500 dark:text-slate-400">{item.label}</dt>
+            <dd className={cn('mt-1 text-sm font-semibold text-slate-950 dark:text-white', item.toneClassName)}>{item.value}</dd>
+            {item.detail ? <dd className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.detail}</dd> : null}
+          </div>)}
+        </dl>
+        <div className="flex flex-wrap items-center gap-3 text-sm" aria-label={t('admin.related_surfaces')}>
+          {site.related_surfaces?.account_href ? <Link href={returnTo} className="text-slate-600 underline underline-offset-4 dark:text-slate-300">{t('common.account', {}, 'Customer')}</Link> : null}
+          {site.related_surfaces?.subscription_href ? <Link href={site.related_surfaces.subscription_href} className="text-slate-600 underline underline-offset-4 dark:text-slate-300">{t('admin.inspect_subscription_detail', {}, 'Inspect subscription detail')}</Link> : null}
+        </div>
+        <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800" data-ui="site-runtime-status">
+          <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.runtime_explainability')}</h3>
+          {(site.runtime_operator_explanations || []).slice(0, 3).map((item, index) => <p key={`${item.state || 'runtime'}-${index}`} className={cn('text-sm', item.state && item.state !== 'ok' ? 'text-amber-800 dark:text-amber-200' : 'text-slate-600 dark:text-slate-300')}>
+            <span className="font-medium">{translateStatusLabel(item.state || 'ok', t)}</span> · {item.explain_text ? siteRuntimeExplanationText(item.explain_text, t) : t('common.not_available', {}, 'N/A')}
+          </p>)}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.related_surfaces', {}, 'Related surfaces')}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              {site.related_surfaces?.account_href ? (
-                <Link href={returnTo} className="btn btn-secondary">
-                  {t('common.account', {}, 'Customer')}
-                </Link>
-              ) : null}
-              {site.related_surfaces?.subscription_href ? (
-                <Link href={site.related_surfaces.subscription_href} className="text-sm font-medium text-slate-600 underline decoration-dotted underline-offset-4 transition hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
-                  {t('admin.inspect_subscription_detail', {}, 'Inspect subscription detail')}
-                </Link>
-              ) : null}
-            </div>
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-              {siteNextOperatorFollowUp ||
-                t(
-                  'admin.site_detail.related_surfaces_desc',
-                  undefined,
-                  'Use related surfaces to move between customer, coverage, and audit follow-up without restarting from overview.'
-                )}
-            </p>
-          </BackofficeStackCard>
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.runtime_explainability', {}, 'Runtime explainability')}
-            </p>
-            <div className="mt-3 space-y-3">
-              {(site.runtime_operator_explanations || []).slice(0, 3).map((item, index) => (
-                <div key={`${item.state || 'runtime'}-${index}`} className="rounded-xl border border-slate-200/70 px-3 py-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                    {translateStatusLabel(item.state || 'ok', t)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.explain_text ? siteRuntimeExplanationText(item.explain_text, t) : t('common.not_available', {}, 'N/A')}</p>
-                </div>
-              ))}
-            </div>
-          </BackofficeStackCard>
-        </div>
-
-        <BackofficeStackCard>
+        <BackofficeDisclosure data-ui="site-relink-policy" open={site.status === 'archived'} summary={`${t('admin.site_detail.relink_policy_title')} · ${site.site_relink_policy?.cross_account_relink_ready ? t('admin.site_detail.relink_ready') : site.status === 'archived' ? t('admin.site_detail.relink_cooling') : t('admin.site_detail.relink_bound')}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t(
-                  'admin.site_detail.relink_policy_eyebrow',
-                  undefined,
-                  'Site ownership'
-                )}
-              </p>
-              <h3 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                {t(
-                  'admin.site_detail.relink_policy_title',
-                  undefined,
-                  'Cross-account relink cooldown'
-                )}
-              </h3>
               <p className="mt-1 max-w-2xl text-sm text-gray-600 dark:text-gray-300">
                 {site.status === 'archived' &&
                 site.site_relink_policy?.ownership_released_at
@@ -894,7 +825,7 @@ function SiteDetailContent() {
               </div>
             </div>
           ) : null}
-        </BackofficeStackCard>
+        </BackofficeDisclosure>
 
         <details className="border-t border-slate-200 pt-4 dark:border-slate-800">
           <summary className="cursor-pointer list-none text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1086,7 +1017,7 @@ function SiteDetailContent() {
                 detail: site.usage_summary?.cost_usd
                   ? `${formatCurrency(site.usage_summary.cost_usd, 'USD')} × ${
                       site.usage_summary.accounting_fx?.usd_cny_rate || '—'
-                    }`
+                    } · ${site.usage_summary.accounting_fx?.rate_version || '—'}`
                   : undefined,
               },
             ]}

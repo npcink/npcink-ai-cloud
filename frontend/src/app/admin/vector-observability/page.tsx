@@ -106,7 +106,6 @@ type VectorObservabilityData = {
 };
 
 
-
 function normalizeVectorObservability(raw: any): VectorObservabilityData {
   const totals = raw?.totals ?? {};
   const window = raw?.window ?? {};
@@ -304,11 +303,15 @@ function AdminVectorObservabilityContent() {
   const intentData = useMemo(
     () =>
       (data?.intents || []).map((item) => ({
-        label: item.intent || t('admin.vector_obs.unknown_intent', {}, 'Unknown'),
+        label: item.intent === 'internal_links'
+          ? (locale === 'zh-CN' ? '内链推荐' : 'Internal links')
+          : item.intent === 'related_content'
+            ? (locale === 'zh-CN' ? '相关文章' : 'Related content')
+            : item.intent || t('admin.vector_obs.unknown_intent', {}, 'Unknown'),
         value: item.queriesTotal,
         color: item.noHitRate >= 0.25 ? '#f59e0b' : '#2563eb',
       })),
-    [data, t]
+    [data, t, locale]
   );
   const selectedError = focusedErrorCode
     ? data?.errors.find(item => failureKey(item) === focusedErrorCode || (item.kind === 'search' && item.errorCode === focusedErrorCode)) || null
@@ -345,7 +348,6 @@ function AdminVectorObservabilityContent() {
     ),
   ];
 
-
   return (
     <BackofficePageStack spacing="compact">
       <AdminObservabilityTabs />
@@ -371,14 +373,14 @@ function AdminVectorObservabilityContent() {
         </button>
         {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
         {data?.generatedAt ? <p className="ml-auto text-xs text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
-        {data ? <BackofficeStatusBadge status={data.health.status} label={`${c('所选时段信号', 'Selected-period signal')}: ${vectorStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : null}
+        {data ? <BackofficeStatusBadge status={data.health.status} label={`${c('所选时段信号', 'Selected-period signal')}: ${vectorStatusLabel(t, data.health.status)} · ${c('健康分', 'Health score')}: ${data.health.score}`} /> : null}
       </div>
 
       {absentFocus ? <div data-ui="vector-focus-absent" role="status" className="border border-slate-200 p-3 text-sm dark:border-slate-800">
         {c('指定错误不在当前范围或返回的分组中；未选择其他错误。', 'The requested error is outside this scope or returned groups; no other error was selected.')} <code className="break-all">{focusedErrorCode}</code>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => updateUrl({ focus: null })}>{c('清除定位', 'Clear focus')}</button>
       </div> : null}
-      {data ? <p data-ui="vector-signal-scope" className="text-xs text-slate-500">{c('这是所选时段的历史汇总，未核实当前恢复状态。', 'Historical evidence for the selected period; current recovery is unverified.')} {failureKind('index')}: {data.totals.indexFailedTotal} · {failureKind('search')}: {data.totals.searchFailedTotal} · {c('无命中率', 'No-hit rate')}: {data.totals.searchQueriesTotal ? formatPercent(data.totals.noHitRate) : '—'} · P95: {data.totals.searchQueriesTotal ? `${data.totals.p95SearchLatencyMs} ms` : '—'}<br />{c('评分依据：出现失败扣 25；无命中率 ≥25%/50% 扣 10/25；P95 ≥1200/3000 ms 扣 8/15。已索引量是最新留存快照，不是时段新增量。', 'Score deductions: any failure 25; no-hit rate ≥25%/50% deducts 10/25; P95 ≥1200/3000 ms deducts 8/15. Indexed counts are latest retained snapshots, not period additions.')}</p> : null}
+      {data ? <p data-ui="vector-signal-scope" className="text-xs text-slate-500 dark:text-slate-400">{c('这是所选时段的历史汇总，未核实当前恢复状态。已索引量为最新留存快照，非时段新增。', 'Historical evidence for the selected period; current recovery is unverified. Indexed counts are latest retained snapshots, not period additions.')}</p> : null}
       {!data ? null : (
         <div data-ui="vector-observability-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-5">
           {[
@@ -425,6 +427,34 @@ function AdminVectorObservabilityContent() {
         </>
       ) : (
         <>
+          {data.errorsTruncated ? <p className="text-xs text-amber-700 dark:text-amber-300">{c('仅显示前 25 个失败分组；顶部失败总数包含全部记录。', 'Only the first 25 failure groups are shown; the headline includes all failures.')}</p> : null}
+          {data.errors.length ? <section data-ui="vector-error-workspace" className="admin-tier-card overflow-hidden p-0 md:p-0">
+            <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800"><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.vector_obs.error_queue_title', {}, 'Vector error queue')}</h2></div>
+            <div className="grid xl:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
+                {data.errors.map((item) => { const selected = selectedError === item; return <button key={failureKey(item)} type="button" data-ui="vector-error-item" aria-pressed={selected} aria-controls="vector-error-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: failureKey(item) })}><div className="min-w-0"><p className="truncate font-semibold text-slate-950 dark:text-white">{failureKind(item.kind)} · {failureLabel(item.errorCode)}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><div className="md:text-right"><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div></button>; })}
+              </div>
+              <div id="vector-error-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
+                {selectedError ? (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.vector_obs.selected_error', {}, 'Selected error')}</p>
+                      <h3 className="mt-1 break-words text-base font-semibold text-slate-950 dark:text-white">{failureKind(selectedError.kind)} · {failureLabel(selectedError.errorCode)}</h3>
+                    </div>
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                      <dt className="text-slate-500 dark:text-slate-400">{t('admin.vector_obs.occurrences', {}, 'Occurrences')}</dt>
+                      <dd className="text-slate-800 dark:text-slate-100">{formatNumber(selectedError.count)}</dd>
+                      <dt className="text-slate-500 dark:text-slate-400">{t('admin.vector_obs.last_seen', {}, 'Last seen')}</dt>
+                      <dd className="text-slate-800 dark:text-slate-100">{selectedError.lastSeenAt ? formatDate(selectedError.lastSeenAt) : t('common.not_found')}</dd>
+                      <dt className="text-slate-500 dark:text-slate-400">{t('admin.vector_obs.scope', {}, 'Current scope')}</dt>
+                      <dd className="break-words text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.vector_obs.all_sites', {}, 'All sites')} · {windowHours}h</dd>
+                    </dl>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section> : <p className="text-xs text-slate-500 dark:text-slate-400">{failureTotal ? c('存在失败，但当前没有返回可展示的分组；请刷新或查看运行诊断。', 'Failures exist, but no groups were returned. Refresh or inspect runtime diagnostics.') : c('所选时段没有索引或搜索失败。', 'No index or search failures in this period.')}</p>}
+
           <div className="grid gap-3 xl:grid-cols-2">
             <section className="admin-tier-card overflow-hidden p-3">
               <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -449,12 +479,14 @@ function AdminVectorObservabilityContent() {
             </section>
           </div>
 
+          {data.sitesTruncated ? <p className="text-xs text-amber-700 dark:text-amber-300">{c('仅显示前 50 个站点；使用站点筛选查看其他站点。', 'Only the first 50 sites are shown; filter by site to inspect others.')}</p> : null}
+          <BackofficeDisclosure data-ui="vector-distributions" summary={c('站点与搜索意图分布', 'Site and search intent breakdown')}>
           <div className="grid gap-3 xl:grid-cols-3">
             <section className="admin-tier-card overflow-hidden p-3 xl:col-span-2">
               <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
                 {t('admin.vector_obs.sites', {}, 'Sites')}
               </h3>
-              {data.sitesTruncated ? <p className="text-xs text-amber-700 dark:text-amber-300">{c('仅显示前 50 个站点；使用站点筛选查看其他站点。', 'Only the first 50 sites are shown; filter by site to inspect others.')}</p> : null}
+
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
@@ -501,9 +533,9 @@ function AdminVectorObservabilityContent() {
               </h3>
               <AnalyticsBarChart data={intentData} height={220} barColor="#2563eb" />
               <div className="space-y-2">
-                {(data?.intents || []).slice(0, 5).map((intent) => (
+                {(data?.intents || []).slice(0, 5).map((intent, index) => (
                   <div key={intent.intent} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium text-slate-700 dark:text-slate-200">{intent.intent}</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">{intentData[index]?.label}<code className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">{intent.intent}</code></span>
                     <BackofficeTag tone={intent.noHitRate >= 0.25 ? 'warning' : 'info'}>
                       {formatNumber(intent.queriesTotal)}
                     </BackofficeTag>
@@ -513,20 +545,11 @@ function AdminVectorObservabilityContent() {
             </section>
           </div>
 
-          {data.errorsTruncated ? <p className="text-xs text-amber-700 dark:text-amber-300">{c('仅显示前 25 个失败分组；顶部失败总数包含全部记录。', 'Only the first 25 failure groups are shown; the headline includes all failures.')}</p> : null}
-          {data.errors.length ? <section className="admin-tier-card overflow-hidden p-0 md:p-0">
-            <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800"><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.vector_obs.error_queue_title', {}, 'Vector error queue')}</h2></div>
-            <div className="grid xl:grid-cols-[minmax(0,1fr)_22rem]">
-              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
-                {data.errors.map((item) => { const selected = selectedError === item; return <button key={failureKey(item)} type="button" data-ui="vector-error-item" aria-pressed={selected} aria-controls="vector-error-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: failureKey(item) })}><div className="min-w-0"><p className="truncate font-semibold text-slate-950 dark:text-white">{failureKind(item.kind)} · {failureLabel(item.errorCode)}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><div className="md:text-right"><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div></button>; })}
-              </div>
-              <div id="vector-error-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
-                {selectedError ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.vector_obs.selected_error', {}, 'Selected error')}</p><h3 className="mt-2 break-words text-lg font-semibold text-slate-950 dark:text-white">{failureKind(selectedError.kind)} · {failureLabel(selectedError.errorCode)}</h3></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.vector_obs.occurrences', {}, 'Occurrences')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedError.count)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.vector_obs.last_seen', {}, 'Last seen')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedError.lastSeenAt ? formatDate(selectedError.lastSeenAt) : t('common.not_found')}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.vector_obs.scope', {}, 'Current scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.vector_obs.all_sites', {}, 'All sites')} · {windowHours}h</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.vector_obs.error_boundary', {}, 'This surface exposes aggregate runtime evidence only. Chunk text, embeddings, and query text remain hidden.')}</p></div> : null}
-              </div>
-            </div>
-          </section> : <p className="text-xs text-slate-500 dark:text-slate-400">{failureTotal ? c('存在失败，但当前没有返回可展示的分组；请刷新或查看运行诊断。', 'Failures exist, but no groups were returned. Refresh or inspect runtime diagnostics.') : c('所选时段没有索引或搜索失败。', 'No index or search failures in this period.')}</p>}
-
-          <BackofficeDisclosure summary={t('admin.vector_obs.advanced_snapshots', {}, 'Advanced index snapshots')} contentClassName="grid gap-3 md:grid-cols-2">{data.indexSnapshots.slice(0, 8).map((snapshot) => <div key={`${snapshot.siteId}-${snapshot.capturedAt}`} className="min-w-0 rounded-xl border border-slate-200/80 p-3 text-sm dark:border-slate-800"><div className="flex flex-wrap items-center justify-between gap-2"><BackofficeIdentifier value={snapshot.siteId} /><BackofficeTag tone="info">{snapshot.vectorBackend || t('admin.vector_obs.backend_local', {}, 'local')}</BackofficeTag></div><div className="mt-2 text-slate-600 dark:text-slate-300">{t('admin.vector_obs.coverage_value', { docs: formatNumber(snapshot.documentCount), chunks: formatNumber(snapshot.chunkCount) }, '{{docs}} docs · {{chunks}} chunks')} · {snapshot.embeddingProvider || t('admin.vector_obs.embedding_deterministic', {}, 'deterministic')} {snapshot.embeddingDimensions}d</div><p className="mt-2 text-xs text-slate-500">{c('快照时间', 'Captured')}: {snapshot.capturedAt ? formatDate(snapshot.capturedAt) : '—'} · {c('最后索引', 'Last indexed')}: {snapshot.lastIndexedAt ? formatDate(snapshot.lastIndexedAt) : '—'}</p></div>)}</BackofficeDisclosure>
+          </BackofficeDisclosure>
+          <BackofficeDisclosure summary={c('健康评分口径', 'Health scoring method')}>
+            <p className="text-sm text-slate-600 dark:text-slate-300">{c('评分依据：出现失败扣 25；无命中率 ≥25%/50% 扣 10/25；P95 ≥1200/3000 ms 扣 8/15。', 'Score deductions: any failure 25; no-hit rate ≥25%/50% deducts 10/25; P95 ≥1200/3000 ms deducts 8/15.')}</p>
+          </BackofficeDisclosure>
+          <BackofficeDisclosure summary={t('admin.vector_obs.advanced_snapshots', {}, 'Advanced index snapshots')} contentClassName="grid gap-3 md:grid-cols-2"><p className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">{t('admin.vector_obs.error_boundary', {}, 'This surface exposes aggregate runtime evidence only. Chunk text, embeddings, and query text remain hidden.')}</p>{data.indexSnapshots.slice(0, 8).map((snapshot) => <div key={`${snapshot.siteId}-${snapshot.capturedAt}`} className="min-w-0 rounded-xl border border-slate-200/80 p-3 text-sm dark:border-slate-800"><div className="flex flex-wrap items-center justify-between gap-2"><BackofficeIdentifier value={snapshot.siteId} /><BackofficeTag tone="info">{snapshot.vectorBackend || t('admin.vector_obs.backend_local', {}, 'local')}</BackofficeTag></div><div className="mt-2 text-slate-600 dark:text-slate-300">{t('admin.vector_obs.coverage_value', { docs: formatNumber(snapshot.documentCount), chunks: formatNumber(snapshot.chunkCount) }, '{{docs}} docs · {{chunks}} chunks')} · {snapshot.embeddingProvider || t('admin.vector_obs.embedding_deterministic', {}, 'deterministic')} {snapshot.embeddingDimensions}d</div><p className="mt-2 text-xs text-slate-500">{c('快照时间', 'Captured')}: {snapshot.capturedAt ? formatDate(snapshot.capturedAt) : '—'} · {c('最后索引', 'Last indexed')}: {snapshot.lastIndexedAt ? formatDate(snapshot.lastIndexedAt) : '—'}</p></div>)}</BackofficeDisclosure>
         </>
       )}
     </BackofficePageStack>

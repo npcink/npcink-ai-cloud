@@ -195,3 +195,45 @@ test('successful report exposes linked execution separately from receipt time', 
   await expect(activity).toContainText(/Report received|收到上报/);
   await page.screenshot({ path: '/tmp/plugin-linked-run-preview.png', fullPage: true });
 });
+
+test('recent reports preview five without reordering and expand without fetching history', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  let historyRequests = 0;
+  page.on('request', request => { if (request.url().includes('/plugin-observability/history?')) historyRequests += 1; });
+  const harness = await installPluginObservabilityHarness(page, {
+    ...pluginObservabilityData,
+    recent_activity: Array.from({ length: 12 }, (_, index) => ({
+      event_id: `evt-preview-${index}`, site_id: 'site_mvp', plugin_slug: 'npcink-cloud-addon',
+      event_kind: `preview_event_${index}`, status: 'ok', received_at: '2026-07-12T11:58:00Z',
+      run: index === 11 ? { run_id: 'run-preview-last', status: 'succeeded', started_at: '2026-07-12T11:57:00Z', finished_at: '2026-07-12T11:57:30Z' } : null,
+    })),
+  });
+  await page.goto('/admin/plugin-observability');
+  const recent = page.locator('[data-ui="plugin-recent-activity"]');
+  const records = recent.locator('[data-ui="plugin-recent-record"]');
+  await expect(records).toHaveCount(5);
+  await expect(records.first()).toContainText('preview_event_0');
+  await expect(records.last()).toContainText('preview_event_4');
+  await expect(recent.locator('[data-ui="plugin-unlinked-note"]')).toHaveCount(1);
+  const reads = harness.getUrls().length;
+  await recent.getByRole('button', { name: /Show all returned reports|展开本次返回的全部记录/ }).click();
+  await expect(records).toHaveCount(12);
+  expect(harness.getUrls().length).toBe(reads);
+  expect(historyRequests).toBe(0);
+  await records.last().locator('summary').click();
+  await expect(records.last().getByText('run-preview-last', { exact: true })).toBeVisible();
+  await expect(records.last().getByRole('link')).toHaveAttribute('href', /run_id=run-preview-last/);
+  await recent.getByRole('button', { name: /Show latest 5|收起为最近 5 条/ }).click();
+  await expect(records).toHaveCount(5);
+  await recent.getByRole('button', { name: /Show all returned reports|展开本次返回的全部记录/ }).click();
+  await recent.getByRole('combobox', { name: /Recent event category|近期事件类别/ }).selectOption('status');
+  await expect(records).toHaveCount(5);
+  await expect.poll(() => harness.getUrls().at(-1)).toContain('activity_category=status');
+  expect(historyRequests).toBe(0);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-plugin-${width}.png`, fullPage: true });
+  }
+});
