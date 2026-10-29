@@ -172,6 +172,7 @@ deleting the old decision history.
 - [运行配置与服务设置修复记录 — 2026-10-29](history/engineering/2026/runtime-service-settings-fixes-2026-10-29.md) — R01–R14 修复、PC 回归与最终 M4 candidate 只读复查；记录前序同步锁释放后的新状态，尚非合并或生产验收。
 - [Admin 分模块排查经验与复盘 — 2026-10-29](history/engineering/2026/admin-audit-lessons-2026-10-29.md) — 状态、范围、草稿、证据与导航的共性检查方法，以及本轮工作方法纠偏。
 - [Admin 系统性检查与问题清单 — 2026-10-29](history/engineering/2026/admin-system-audit-2026-10-29.md) — 27 个页面/视图的只读检查、隔离复现与 13 项问题；含插件观测真实 500 和跨页面草稿/回读问题，尚未实施本轮业务修复。
+- [Admin 系统检查修复记录 — 2026-10-29](history/engineering/2026/admin-system-fixes-2026-10-29.md) — 13 项问题的落实、共享导航与弹窗维护、异常回读验证及独立证据状态。
 - [运行诊断、审计与反馈质量修复记录 — 2026-10-29](history/engineering/2026/runtime-diagnostics-fixes-2026-10-29.md) — D01–D15 本地修复、PC 回归与共享预览恢复复查；尚非 M4 candidate 或生产验收。
 - [运行诊断、审计证据与反馈质量审查 — 2026-10-29](history/engineering/2026/runtime-diagnostics-audit-2026-10-29.md) — 只读检查与 15 项修复建议，区分 M4 实测、本地夹具和环境阻塞；不是修复或生产验收。
 - [观测总览各 TAB 审查 — 2026-10-29](history/engineering/2026/observability-tabs-audit-2026-10-29.md) — 前序问题清单、范围与分批证据。
