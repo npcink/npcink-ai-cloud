@@ -479,6 +479,13 @@ export default function VectorSettingsPage() {
   }, [copy, profile?.status]);
 
   if (loading) return <AdminRouteSkeleton />;
+  const localRuntime = profile?.runtime?.provider_id === 'ollama-m4-embedding';
+  const runtimeIndexStatus = profile?.runtime?.index_status || '';
+  const runtimeStatusLabel = {
+    ready: zh ? '已就绪' : 'Ready',
+    empty: zh ? '暂无索引' : 'No index',
+    reindex_required: zh ? '待重建' : 'Rebuild required'
+  }[runtimeIndexStatus] || runtimeIndexStatus;
   const indexNeedsAction = ['reindex_required', 'awaiting_site_sync', 'failed'].includes(
     profile?.validation.index.status || ''
   );
@@ -505,15 +512,22 @@ export default function VectorSettingsPage() {
           </Link>
         }
         summaryItems={[
-          { label: 'Profile', value: profile?.profile_id || 'site-knowledge.zh.v1' },
+          {
+            label: localRuntime ? (zh ? '环境' : 'Environment') : 'Profile',
+            value: localRuntime
+              ? profile?.runtime?.environment || ''
+              : profile?.profile_id || 'site-knowledge.zh.v1'
+          },
           {
             label: copy('admin.vector_settings.model', '模型', 'Model'),
-            value: profile?.model_id || 'BAAI/bge-m3'
+            value: localRuntime
+              ? profile?.runtime?.model_id || ''
+              : profile?.model_id || 'BAAI/bge-m3'
           },
           {
             label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
-            value: status.label,
-            toneClassName: status.tone === 'success'
+            value: localRuntime ? runtimeStatusLabel : status.label,
+            toneClassName: (localRuntime ? runtimeIndexStatus === 'ready' : status.tone === 'success')
               ? 'text-emerald-700 dark:text-emerald-300'
               : status.tone === 'warning' || status.tone === 'failed'
                 ? 'text-amber-700 dark:text-amber-300'
@@ -526,7 +540,7 @@ export default function VectorSettingsPage() {
         <p className="text-sm text-slate-600 dark:text-slate-300" data-testid="vector-runtime-profile">
           {zh ? '当前运行配置' : 'Current runtime'}: {profile.runtime.environment} ·{' '}
           {profile.runtime.model_id} · {profile.runtime.dimensions}D ·{' '}
-          {formatBackend(profile.runtime.backend)} · {profile.runtime.index_status}
+          {formatBackend(profile.runtime.backend)} · {runtimeStatusLabel}
         </p>
       ) : null}
 
@@ -556,7 +570,7 @@ export default function VectorSettingsPage() {
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-1">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
-              {copy(
+              {localRuntime ? (zh ? '生产向量配置' : 'Production vector configuration') : copy(
                 'admin.vector_settings.configuration_title',
                 '向量配置',
                 'Vector configuration'

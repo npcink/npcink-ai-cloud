@@ -259,8 +259,10 @@ def _apply_classification_timeout(profile: RoutingProfile) -> None:
 def configure(settings: Settings) -> dict[str, object]:
     _validate_environment(settings)
     with get_session(settings.database_url) as session:
-        existing = session.get(ProviderConnection, SITE_KNOWLEDGE_LOCAL_PREVIEW_CONNECTION_ID)
-        config = dict(existing.config_json or {}) if existing is not None else {}
+        unified_connection = session.get(
+            ProviderConnection, SITE_KNOWLEDGE_LOCAL_PREVIEW_CONNECTION_ID,
+        )
+        config = dict(unified_connection.config_json or {}) if unified_connection else {}
     if {"text_generation", "vision", "embedding"}.issubset(
         set(config.get("capability_ids") or [])
     ):
