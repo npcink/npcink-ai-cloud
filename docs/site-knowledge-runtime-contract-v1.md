@@ -917,6 +917,9 @@ SQL chunks or search results. A visual embedding is not a generated caption.
 Native Ollama requests use `/api/embed` with non-truncating text input or an image
 input object. Responses must have exactly 4096 finite, nonzero components. An
 unavailable/invalid image or vector leaves the previous source index intact.
+Incremental media refresh skips unchanged content only when that source already
+has a pixel embedding in the current local space. A metadata-only legacy vector
+must be upgraded through normal image loading even when its content hash matches.
 The additive Admin vector-profile `runtime` object reports actual environment,
 provider/model, dimensions, backend and index-space status without changing
 the production profile or existing credential/rebuild contracts. See the

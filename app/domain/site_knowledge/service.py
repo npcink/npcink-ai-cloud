@@ -499,6 +499,7 @@ class SiteKnowledgeService:
                 == str(normalized["content_hash"])
                 and self.repository.list_embedding_models(
                     site_id, source_types=[source_type], source_id=source_id,
+                    embedding_input="image_pixels.v1" if self.local_multimodal_embedding else None,
                 ) == [self.embedding_space_id]
             ):
                 accepted_documents += 1

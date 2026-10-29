@@ -9,7 +9,7 @@ from PIL import Image
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import Account, ProviderConnection, Site
+from app.core.models import Account, ProviderConnection, Site, SiteKnowledgeChunk
 from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 from app.domain.site_knowledge.media_embedding import load_media_embedding_image
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -112,6 +112,34 @@ def test_media_space_change_reembeds_pixels_and_failure_preserves_index(tmp_path
             unchanged = service.sync(site_id="site", input_payload=payload, run_id="unchanged")
             assert unchanged["sync"]["unchanged_documents"] == 1
             assert len(requests) == 1
+            # A migrated metadata-only vector can use the current model while
+            # still requiring a pixel upgrade when the original becomes available.
+            from sqlalchemy import select
+
+            chunk = session.scalar(select(SiteKnowledgeChunk))
+            chunk.metadata_json = {**chunk.metadata_json, "embedding_input": "metadata_text.v1"}
+            session.commit()
+
+            def unavailable(*args, **kwargs):
+                raise SiteKnowledgeBackendError("image_unavailable", "Unavailable")
+
+            monkeypatch.setattr(
+                "app.domain.site_knowledge.media_embedding.load_media_embedding_image", unavailable,
+            )
+            with pytest.raises(SiteKnowledgeBackendError):
+                service.sync(site_id="site", input_payload=payload, run_id="still-unavailable")
+            assert session.scalar(select(SiteKnowledgeChunk)).metadata_json[
+                "embedding_input"
+            ] == "metadata_text.v1"
+            monkeypatch.setattr(
+                "app.domain.site_knowledge.media_embedding.load_media_embedding_image",
+                lambda *args, **kwargs: "pixels",
+            )
+            upgraded = service.sync(site_id="site", input_payload=payload, run_id="pixels-restored")
+            assert upgraded["sync"]["indexed_documents"] == 1
+            assert upgraded["sync"]["unchanged_documents"] == 0
+            assert len(requests) == 2
+            assert requests[-1].input_payload == {"image_base64": "pixels"}
             spaces = service.repository.list_embedding_models("site")
             assert spaces == [service.embedding_space_id]
 
