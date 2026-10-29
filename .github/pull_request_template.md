@@ -57,6 +57,9 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 - Secondary action:
 - Destructive action and confirmation:
 - Low-frequency detail moved behind:
+- Content inventory (always visible / on demand / technical evidence / removed duplication):
+- Core conclusion, blocker, scope and sample limits kept visible:
+- Relocated content and its named destination (including keyboard access):
 - Visual risk tier (`low`, `material`, or `shared`):
 - Required browser states:
 - Visual receipt artifact:
@@ -66,6 +69,7 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 
 - [ ] The route remains classified in `frontend/admin-ui-manifest.json`.
 - [ ] Shared `--admin-*` geometry and admin primitives are reused.
+- [ ] The Admin content priority contract (`docs/cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract`) was checked; dynamic conclusions are not hidden as title help, and frequent row actions remain visible.
 - [ ] No new route-local dialog or credential reveal implementation was added.
 - [ ] `pnpm run check:admin-ui` passed.
 - [ ] `pnpm run check:admin-ui:visual` passed when layout, tables, dialogs, or shared primitives changed.

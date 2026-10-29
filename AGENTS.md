@@ -111,6 +111,13 @@ Prefer `pnpm run pr:publish` over ad-hoc bodies that drop headings.
 
 ## Verification commands
 
+Admin 内容、版式或交互改动前，必读
+[信息层级评审规范](docs/cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract)。
+先列出「常显 / 按需 / 技术证据 / 删除重复」清单；核心结论、阻塞原因、
+当前范围、样本限制和高频动作不得只放 hover 或折叠内。页面说明可收起，
+但不得把动态状态当说明传入标题帮助。PR 必须记录被移走内容的入口和相关
+PC 浏览器证据；文档或静态契约通过不等于视觉验收。
+
 当前项目仅做 **PC 端开发与界面验收**（公共站点、Portal、登录及 Admin）；
 移动端和平板端不在当前适配/优化/验收范围。PC 窄窗口仍属 PC 范围。
 前端检查按改动影响选择：纯文案/间距/列宽通常只查当前页面与相关 PC 宽度；

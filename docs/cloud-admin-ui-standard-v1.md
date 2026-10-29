@@ -15,6 +15,7 @@ executable gates.
 This document composes with:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
+- [Admin content priority contract](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract) — required visible/disclosed/evidence/redundant inventory before changing Admin content;
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
 - [Admin Quiet Queue Contract Index](admin-ui-spec.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
