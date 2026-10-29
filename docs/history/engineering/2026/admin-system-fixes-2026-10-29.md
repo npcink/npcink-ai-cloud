@@ -121,3 +121,10 @@ PR #1312 的 frontend job 在原有预算投影单测中复现失败：测试仍
 和目录存在校验。本地使用项目已有 Python 运行环境执行完整 `test:contracts`
 通过，日志 `/tmp/admin-integration-contracts.log`。首次本地运行误用了系统旧版
 Python，在 `zip(strict=True)` 停止；切换项目环境后通过，未改契约以适配旧环境。
+
+第三轮浏览器矩阵为 193 passed / 1 failed：服务队列的全局摘要比较包含了刷新
+按钮，CI 在请求尚未稳定时抓到“加载中”，其计数仍与预期相同。保留完整摘要
+相等、全部筛选与请求数量要求，改为先确认初始刷新完成，并使用 Playwright
+可重试的文本相等断言等待后续稳定。未改运行时代码、golden 或验收阈值。
+原始用例在本地单跑未复现（1 passed），修正后连续执行 3 次通过；日志
+`/tmp/admin-integration-queue-{repro,fixed}.log`。仍需本次 head 的 required CI。
