@@ -19,6 +19,7 @@ from app.core.models import (
     RoutingProfile,
     RunRecord,
 )
+from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
 
 
 class CatalogRepository:
@@ -117,6 +118,25 @@ class CatalogRepository:
             .order_by(ProviderConnection.connection_id.asc())
         )
         return list(self.session.scalars(statement))
+
+    def provider_route_identities(self) -> dict[str, str]:
+        """Use the same exact connection identity for probes and runtime admission."""
+        identities: dict[str, str] = {}
+        for connection in self.list_enabled_provider_connections():
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            if provider_id:
+                identity = (
+                    build_provider_connection_route_identity(
+                        connection_id=connection.connection_id,
+                        base_url=str(connection.base_url or ""),
+                        config=config,
+                    )
+                    if connection.connection_id != provider_id
+                    else provider_id
+                )
+                identities.setdefault(provider_id, identity)
+        return identities
 
     def list_models(
         self,
