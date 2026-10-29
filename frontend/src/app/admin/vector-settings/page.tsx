@@ -497,7 +497,11 @@ export default function VectorSettingsPage() {
     <BackofficePageStack data-page-model="configuration">
       <BackofficeConfigurationHeader
         title={copy('admin.vector_settings.title', '站点向量服务', 'Site vector service')}
-        description={copy(
+        description={localRuntime
+          ? (zh
+              ? '本地通过 Ollama 提供图文向量；下方生产连接配置在发布时单独使用。'
+              : 'Ollama provides local text and image embeddings. Production connections below are configured separately for release.')
+          : copy(
           'admin.vector_settings.description',
           '使用平台固定的中文站点向量档案。管理员只需提供供应商密钥和 Zilliz 连接凭证。',
           'Use the platform-defined Chinese Site Knowledge vector profile. Admins only provide the provider key and Zilliz connection credentials.'

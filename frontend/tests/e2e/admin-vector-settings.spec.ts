@@ -104,6 +104,11 @@ test('vector settings keeps the fixed PC profile and saves the continuous config
   await page.goto('/admin/vector-settings');
   await expect(page.getByTestId('vector-runtime-profile')).toContainText('4096D');
   await expect(page.getByTestId('vector-runtime-profile')).toContainText('8b-q4_k_m');
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect.poll(() => page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth
+  )).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await expect(
     page.getByRole('heading', { name: /Site vector service|站点向量服务/i })
   ).toBeVisible();
