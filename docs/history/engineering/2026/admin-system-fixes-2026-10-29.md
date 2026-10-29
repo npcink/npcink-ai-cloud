@@ -81,6 +81,7 @@ A09 本轮处理已知陈旧快照禁写；现有积分包 PATCH 仍是整目录
 - 本轮浏览器定向回归 **9 passed**，另分别复跑套餐和订阅的“写成功、GET 失败、只读重试”各 **1 passed**，共 11 项；不与前序 194 相加。日志 `.tmp/admin-implementation-review-targeted.log`、`.tmp/admin-implementation-review-package-readback.log`、`.tmp/admin-implementation-review-readback.log`。
 - 本轮构建、`check:admin-ui`（含类型）、增量 ESLint、套餐目录契约、i18n 契约通过。日志 `.tmp/admin-implementation-review-check.log`、`.tmp/admin-implementation-review-lint.log`、`.tmp/admin-implementation-review-i18n.log`。Next 构建产生的 `next-env.d.ts` 自动变更已移除，不提交构建副产物。
 - M4 首次同步 `12d845f9` 后的截图发现 900px 下新链接挤成多行；随后将状态列 30% / 订阅列 11% 调整为 19% / 22%，链接保持单行。补充链接不跨出本单元格的断言并重新构建，定向用例 **1 passed**（是上述用例的改后重跑，不作为新的独立覆盖相加），增量 ESLint 与套餐目录契约通过。日志 `.tmp/admin-implementation-review-plans-width.log`、`.tmp/admin-implementation-review-width-lint.log`。
+- 继续查看稳定后的 900px 截图，发现限制说明挤进操作列、管理按钮断行；最终将操作列扩为 12%、状态列缩为 17%，限制按单项换行、操作按钮约束在单元格内。新增的英文检查还复现了缺失套餐的 Advanced setup 按钮溢出，已用受限宽度及按词换行修正。套餐管理与下钻最终 **2 passed**，日志 `.tmp/admin-implementation-review-plans-width-final.log`，增量 ESLint 与目录契约通过。首轮几何断言在不同时间采集边界受到侧栏动画干扰，已改为同一 DOM 任务内比较；没有放宽边界要求。
 
 ### 信息层级仍未完成的部分
 

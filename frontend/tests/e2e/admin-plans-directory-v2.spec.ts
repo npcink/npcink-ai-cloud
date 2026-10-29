@@ -121,6 +121,8 @@ test('package subscription drilldown labels its total separately from the active
   free.subscription_counts = { total: 5, active: 3 };
   await page.route('**/api/admin/plans', (route) => route.fulfill({ json: payload }));
   await page.reload();
+  await page.getByRole('button', { name: /语言|Language/ }).click();
+  await page.getByRole('option', { name: /English/ }).click();
 
   const row = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
   const countCell = row.locator('td').nth(2);
@@ -130,10 +132,23 @@ test('package subscription drilldown labels its total separately from the active
   await expect(allSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
   await page.setViewportSize({ width: 900, height: 1050 });
   await expect(allSubscriptions).toBeVisible();
-  const linkBox = (await allSubscriptions.boundingBox())!;
-  const cellBox = (await countCell.boundingBox())!;
-  expect(linkBox.x).toBeGreaterThanOrEqual(cellBox.x);
-  expect(linkBox.x + linkBox.width).toBeLessThanOrEqual(cellBox.x + cellBox.width);
+  await expect.poll(() => allSubscriptions.evaluate((element) => {
+    const link = element.getBoundingClientRect();
+    const cell = element.closest('td')!.getBoundingClientRect();
+    return link.left >= cell.left && link.right <= cell.right;
+  })).toBe(true);
+  for (const item of await page.locator('[data-ui="plan-catalog-item"]').all()) {
+    for (const cellIndex of [4, 5]) {
+      const cell = item.locator('td').nth(cellIndex);
+      await expect.poll(() => cell.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return [...element.querySelectorAll('p > span, button')].every((child) => {
+          const content = child.getBoundingClientRect();
+          return content.left >= bounds.left && content.right <= bounds.right;
+        });
+      })).toBe(true);
+    }
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   const queueRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');
