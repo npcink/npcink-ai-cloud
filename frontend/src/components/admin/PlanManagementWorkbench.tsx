@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
@@ -213,6 +213,10 @@ export function PlanManagementWorkbench({
   onSaved,
 }: PlanManagementWorkbenchProps) {
   const { t } = useLocale();
+  const translationRef = useRef(t);
+  useEffect(() => { translationRef.current = t; }, [t]);
+  const savingRef = useRef(false);
+  const [awaitingRead, setAwaitingRead] = useState(false);
   const [detail, setDetail] = useState<PlanDetailPayload | null>(null);
   const [form, setForm] = useState<PlanVersionFormState>(() => buildInitialForm(null));
   const [activeTab, setActiveTab] = useState<ManagementTab>('parameters');
@@ -230,17 +234,19 @@ export function PlanManagementWorkbench({
       const payload = (await planManagementClient.request<PlanDetailPayload>(
         `/api/admin/plans/${encodeURIComponent(planId)}`
       )).data;
+      setAwaitingRead(false);
       setDetail(payload);
       setForm(buildInitialForm(payload));
     } catch (loadError) {
-      setError(resolveUiErrorMessage(loadError, t('error.failed_load')));
+      setError(resolveUiErrorMessage(loadError, translationRef.current('error.failed_load')));
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [planId, t]);
+  }, [planId]);
 
   useEffect(() => {
     if (!open || !planId) return;
+    setAwaitingRead(false);
     setDetail(null);
     setNotice(null);
     setLastReceipt(null);
@@ -300,7 +306,8 @@ export function PlanManagementWorkbench({
   };
 
   const handleSave = async () => {
-    if (!detail || isSaving) return;
+    if (!detail || isSaving || savingRef.current || awaitingRead) return;
+    savingRef.current = true;
     setIsSaving(true);
     setError(null);
     setNotice(null);
@@ -329,11 +336,13 @@ export function PlanManagementWorkbench({
         )
       );
       setLastReceipt(data.receipt ?? null);
+      setAwaitingRead(true);
       await loadDetail(false);
       await onSaved();
     } catch (saveError) {
       setError(resolveUiErrorMessage(saveError, t('error.failed_save', {}, 'Failed to save.')));
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -373,7 +382,7 @@ export function PlanManagementWorkbench({
           <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={onClose}>
             {t('common.close', {}, 'Close')}
           </button>
-          <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving}>
+          <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving || awaitingRead}>
             {isSaving ? t('common.saving', {}, 'Saving...') : t('common.save', {}, 'Save')}
           </button>
         </div>
@@ -396,8 +405,12 @@ export function PlanManagementWorkbench({
         </div>
       ) : null}
 
+      {awaitingRead ? <div role="status" className="space-y-2 text-sm">
+        <p>{t('admin.saved_awaiting_read', {}, 'Write succeeded. Reload to confirm the saved state before editing again.')}</p>
+        <button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadDetail()}>{t('common.retry')}</button>
+      </div> : null}
       {detail ? (
-        <>
+        <fieldset disabled={isSaving || isLoading || awaitingRead} className="min-w-0">
           <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800" role="tablist">
             {tabs.map((tab) => (
               <button
@@ -430,6 +443,7 @@ export function PlanManagementWorkbench({
                     setDetail((current) => current?.sales_offer ? {
                       ...current, sales_offer: { ...current.sales_offer, status },
                     } : current);
+                    setAwaitingRead(true);
                     await loadDetail(false);
                     await onSaved();
                   }}
@@ -649,7 +663,7 @@ export function PlanManagementWorkbench({
             </section>
           ) : null}
 
-        </>
+        </fieldset>
       ) : null}
     </AdminWorkbenchDialog>
   );

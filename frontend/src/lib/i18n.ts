@@ -15,6 +15,12 @@ export const localeOptions: Array<{ value: Locale; label: string; shortLabel: st
 
 export const translations: Record<Locale, TranslationMap> = {
   en: {
+    'admin.credit_packs_focus_missing': 'The requested pack is absent from the current results.',
+    'admin.saved_awaiting_read': 'Write succeeded. Reload to confirm the saved state before editing again.',
+    'admin.overview_stale_notice': 'Refresh failed. Showing the previous snapshot.',
+    'admin.overview_metrics_unknown': 'Some metrics are unavailable; — means unknown.',
+    'admin.home_open_service_status': 'Open service status',
+
     'admin.agent_feedback.quality_basis': "Accepted actions {{accepted}} / {{count}} non-impression feedback events; weak evidence {{weak}} / {{count}}; wrong step {{wrong}} / {{count}}. These describe the sample, not saved adoption or a quality pass.",
     'admin.agent_feedback.engineering_samples': "Includes {{count}} known engineering smoke events; these do not prove customer value.",
     'admin.agent_feedback.focus_absent': "The selected label was not returned in this scope; its URL focus is preserved.",
@@ -1868,7 +1874,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.credit_packs_saved_notice': 'AI credit pack catalog saved.',
     'admin.credit_packs_saved_title': 'AI credit pack updated',
     'admin.credit_packs_unavailable_title': 'AI credit pack catalog unavailable',
-    'admin.credit_packs_retained_notice': 'Showing the last successfully loaded AI credit pack catalog.',
+    'admin.credit_packs_retained_notice': 'Showing the last successfully loaded AI credit pack catalog. Editing is paused until a successful refresh.',
     'admin.credit_packs_open_packages': 'Open package catalog',
     'admin.credit_packs_active_count': 'Active packs',
     'admin.credit_packs_default_validity': 'Default validity',
@@ -6738,6 +6744,12 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.account_detail.key_coverage_gap_status': 'Key coverage gap',
   },
   'zh-CN': {
+    'admin.credit_packs_focus_missing': '当前结果中没有指定的积分包，请清除定位或调整筛选。',
+    'admin.saved_awaiting_read': '写入已成功，请重新加载确认保存结果；确认前暂停编辑。',
+    'admin.overview_stale_notice': '刷新失败，当前展示上次成功读取的旧快照。',
+    'admin.overview_metrics_unknown': '部分指标未返回；— 表示未知，不代表零。',
+    'admin.home_open_service_status': '打开服务状态',
+
     'admin.agent_feedback.quality_basis': "接受动作 {{accepted}} / {{count}} 条非曝光反馈；证据偏弱 {{weak}} / {{count}}；步骤错误 {{wrong}} / {{count}}。这些比例仅描述样本，不代表保存采纳率或质量通过。",
     'admin.agent_feedback.engineering_samples': "含 {{count}} 条已知工程 smoke 事件，不能作为客户价值证明。",
     'admin.agent_feedback.focus_absent': "当前范围未返回所选标签，已保留链接定位。",
@@ -8284,7 +8296,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.credit_packs_saved_notice': 'AI 积分包目录已保存。',
     'admin.credit_packs_saved_title': 'AI 积分包已更新',
     'admin.credit_packs_unavailable_title': 'AI 积分包目录暂不可用',
-    'admin.credit_packs_retained_notice': '当前展示最近一次成功加载的AI 积分包目录。',
+    'admin.credit_packs_retained_notice': '当前展示最近一次成功加载的AI 积分包目录。刷新成功前暂停编辑。',
     'admin.credit_packs_open_packages': '打开套餐目录',
     'admin.credit_packs_active_count': '启用 AI 积分包',
     'admin.credit_packs_default_validity': '默认有效期',

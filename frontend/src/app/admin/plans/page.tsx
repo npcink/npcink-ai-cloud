@@ -504,7 +504,7 @@ function PlansContent() {
                         ? t('admin.plans.reason_unpublished', {}, 'The package exists but has no published version for subscription assignment.')
                         : null;
                     const planId = item?.plan?.plan_id || '';
-                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}`;
+                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}&risk=all&status=active`;
                     return (
                       <tr
                         key={shell.tier_id}

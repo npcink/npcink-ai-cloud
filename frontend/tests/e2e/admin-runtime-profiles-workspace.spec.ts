@@ -1088,3 +1088,28 @@ for (const width of [1056, 1440]) {
     await expect(profileRow(page, 'route.classification')).toContainText('gpt-5.6-sol');
   });
 }
+
+test('browser back confirmation handles Escape above the runtime draft', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1050 });
+  const writes = await installRuntimeProfilesHarness(page);
+  await page.goto('/admin');
+  await page.locator('a[href="/admin/runtime-profiles"]').first().click();
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
+  await page.evaluate(() => window.history.back());
+  const confirmation = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: /^Cancel$|^取消$/ }).focus();
+  await page.keyboard.press('Tab');
+  expect(await confirmation.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('runtime-history-confirmation-pc-900.png') });
+  await page.keyboard.press('Escape');
+  await expect(confirmation).toBeHidden();
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ })).toBeChecked();
+  await expect(page).toHaveURL(/\/admin\/runtime-profiles/);
+  await page.evaluate(() => window.history.back());
+  await confirmation.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  expect(writes).toHaveLength(0);
+});

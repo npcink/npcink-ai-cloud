@@ -155,3 +155,32 @@ test('admin overview API failure preserves the page shell and safe retry', async
   await expect(page.getByText('overview unavailable', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
 });
+
+test('overview shows stale read failures and preserves missing metrics as unknown', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.goto('/admin');
+  await expect(page.locator('[data-ui="admin-overview-attention"]')).toBeVisible();
+  await page.route('**/api/admin/overview', (route) => route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }));
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(page.getByText(/Refresh failed.*previous snapshot|刷新失败.*旧快照/)).toBeVisible();
+  await expect(page.locator('[data-ui="admin-overview-attention"]')).toBeVisible();
+  await page.route('**/api/admin/overview', (route) => route.fulfill({ json: buildAdminApiEnvelope({}) }));
+  await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(page.getByText(/Some metrics are unavailable|部分指标未返回/)).toBeVisible();
+  await expect(page.locator('main').getByText('—', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Refresh failed.*previous snapshot|刷新失败.*旧快照/)).toHaveCount(0);
+});
+
+test('commercial watch action names the general service-status destination', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/overview', route => route.fulfill({ json: buildAdminApiEnvelope({
+    counts: { sites_active: 1 },
+    operator_projection: {
+      revision: 'admin-overview-operator-projection-v1', status: 'warning',
+      readiness: { status: 'ready', checks_failed: 0, failure_scopes: [] },
+      watch_items: [{ code: 'commercial_subscription_expiring', scope: 'commercial.subscription', severity: 'warn', value: 2, detail_args: {} }],
+    },
+  }) }));
+  await page.goto('/admin');
+  await expect(page.locator('[data-ui="admin-overview-action"]').getByRole('link', { name: /Open service status|打开服务状态/ })).toHaveAttribute('href', '/admin/coverage');
+});

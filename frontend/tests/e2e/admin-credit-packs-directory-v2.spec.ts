@@ -130,3 +130,51 @@ test('credit pack editor changes one selected pack while preserving the atomic c
   expect(harness.getLastPatch().find((item) => item.pack_id === 'pack_small')?.amount).toBe(9.9);
   await expect(page.locator('[data-pack-id="pack_medium"]')).toContainText('29.90');
 });
+
+test('credit packs retain missing focus, block stale edits, and isolate modal shortcuts', async ({ page }) => {
+  const harness = await installCreditPackHarness(page);
+  await page.goto('/admin/credit-packs?focus=absent');
+  await expect(page.locator('[data-ui="credit-pack-directory-row"][data-selected="true"]')).toHaveCount(0);
+  await expect(page.getByText(/requested pack is absent|当前结果中没有指定的积分包/)).toBeVisible();
+  await page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/ }).click();
+  const editor = page.getByRole('dialog');
+  await editor.getByLabel(/^Pack$|^(?:AI )?积分包$/).fill('Retained draft');
+  await editor.locator('[data-ui="admin-workbench-close"]').focus();
+  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(editor.getByLabel(/^Pack$|^(?:AI )?积分包$/)).toHaveValue('Retained draft');
+  await editor.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
+  harness.failNextRequest();
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/ })).toBeDisabled();
+  expect(harness.getPatchCount()).toBe(0);
+  await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/ })).toBeEnabled();
+});
+
+test('credit pack save locks every input until its delayed response completes', async ({ page }) => {
+  await installCreditPackHarness(page);
+  let release!: () => void;
+  const pendingSave = new Promise<void>((resolve) => { release = resolve; });
+  let writes = 0;
+  await page.route('**/api/admin/credit-packs', async (route) => {
+    if (route.request().method() !== 'PATCH') { await route.fallback(); return; }
+    writes += 1;
+    await pendingSave;
+    await route.fallback();
+  });
+  await page.goto('/admin/credit-packs');
+  await page.locator('[data-pack-id="pack_small"]').getByRole('button', { name: /Edit|编辑/ }).click();
+  const editor = page.getByRole('dialog');
+  await editor.getByLabel(/^Pack$|^(?:AI )?积分包$/).fill('Saved draft');
+  await editor.getByRole('button', { name: /Save pack|保存(?: AI )?积分包/ }).click();
+  await expect.poll(() => writes).toBe(1);
+  for (const input of await editor.locator('input').all()) await expect(input).toBeDisabled();
+  await page.keyboard.press('Enter');
+  expect(writes).toBe(1);
+  release();
+  await expect(editor).toBeHidden();
+  await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('Saved draft');
+});

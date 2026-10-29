@@ -18,6 +18,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -756,28 +757,9 @@ export default function RuntimeProfilesPage() {
     }
   }, [mediaRecognitionBlocked, mediaRecognitionDirty, mediaRecognitionError]);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    const handleAnchorClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
-      if (!(target instanceof HTMLAnchorElement) || target.target === '_blank') return;
-      const destination = new URL(target.href, window.location.href);
-      if (destination.origin !== window.location.origin || destination.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingNavigationHref(`${destination.pathname}${destination.search}${destination.hash}`);
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('click', handleAnchorClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('click', handleAnchorClick, true);
-    };
-  }, [dirty]);
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    dirty, setPendingNavigationHref, (href) => router.push(href),
+  );
 
   useEffect(() => {
     const requested = searchParams.get('profile');
@@ -1660,7 +1642,7 @@ export default function RuntimeProfilesPage() {
         confirmLabel={copy('discard_and_leave', 'Discard and leave')}
         cancelLabel={t('common.cancel')}
         variant="danger"
-        onClose={() => setPendingNavigationHref('')}
+        onClose={cancelNavigation}
         onConfirm={() => {
           const href = pendingNavigationHref;
           setMediaRecognitionForm(JSON.parse(mediaRecognitionBaseline) as MediaRecognitionPolicyForm);
@@ -1668,7 +1650,7 @@ export default function RuntimeProfilesPage() {
           setProviderFilter('');
           setModelSearch('');
           setPendingNavigationHref('');
-          if (href) router.push(href);
+          confirmNavigation(href);
         }}
       />
     </BackofficePageStack>

@@ -784,3 +784,20 @@ test('Provider budget dropdown uses runtime IDs and retains unavailable saved en
   await expect(second).toHaveValue('deepseek');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test('browser back preserves service settings draft until discard is confirmed', async ({ page }) => {
+  await installSettingsRecoveryHarness(page);
+  await page.goto('/admin');
+  await page.locator('a[href="/admin/service-settings"]').first().click();
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/ });
+  await base.fill('https://retained.example.test');
+  await page.evaluate(() => window.history.back());
+  const confirm = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃更改/ });
+  await expect(confirm).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/service-settings/);
+  await confirm.getByRole('button', { name: /Cancel|取消/ }).click();
+  await expect(base).toHaveValue('https://retained.example.test');
+  await page.evaluate(() => window.history.back());
+  await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+});

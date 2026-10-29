@@ -85,7 +85,7 @@ test('package management combines readable limits, descriptions, and editing whi
   await expect(freeRow.getByText('Free', { exact: true })).toBeVisible();
   await expect(freeRow.getByText('free', { exact: true })).toHaveCount(0);
   const freeSubscriptions = freeRow.getByRole('link', { name: /Open subscriptions.*Free|打开订阅.*Free/i });
-  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free');
+  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all&status=active');
   await expect(freeSubscriptions).toContainText('›');
   await freeRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i }).click();
   const inspector = page.locator('[data-ui="admin-workbench-dialog"]');
@@ -153,4 +153,37 @@ test('package initialization reports mixed results and retries only failed tiers
   await expect(results).toContainText(/Plus.*succeeded/is);
   expect(planRequests).toEqual(['plus', 'agency', 'plus']);
   expect(versionRequests).toEqual(['plus', 'agency', 'plus']);
+});
+
+test('package write followed by read failure allows read retry only', async ({ page }) => {
+  await installPlanDirectoryHarness(page);
+  let writes = 0;
+  let failReads = false;
+  await page.route('**/api/admin/plans/free', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      writes += 1;
+      failReads = true;
+      await route.fulfill({ json: buildAdminApiEnvelope({}) }); return;
+    }
+    if (failReads) {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
+    }
+    await route.fallback();
+  });
+  await page.goto('/admin/plans');
+  const freeRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: /Free/ }).first();
+  await freeRow.getByRole('button', { name: /Manage|管理/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('input').first()).toBeVisible();
+  await dialog.locator('input').first().fill('77');
+  await dialog.getByRole('button', { name: /^Save$|^保存$/ }).click();
+  await expect(dialog.getByText(/Write succeeded|写入已成功/)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeDisabled();
+  await expect(dialog.locator('input').first()).toBeDisabled();
+  expect(writes).toBe(1);
+  failReads = false;
+  await dialog.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(dialog.getByText(/Write succeeded|写入已成功/)).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeEnabled();
+  expect(writes).toBe(1);
 });
