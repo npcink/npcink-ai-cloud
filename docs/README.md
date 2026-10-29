@@ -169,6 +169,7 @@ deleting the old decision history.
 - [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
 - [外部能力三页签审查 — 2026-10-29](history/engineering/2026/external-capabilities-audit-2026-10-29.md) — 当前 master/M4 只读检查、隔离异常复现及 10 项修复建议；不是修复或生产验收。
 - [外部能力三页签修复记录 — 2026-10-29](history/engineering/2026/external-capabilities-fixes-2026-10-29.md) — E01–E10 本地修复、PC 回归与提交；M4 candidate 同步受共享操作锁阻挡，尚未应用。
+- [运行配置与服务设置修复记录 — 2026-10-29](history/engineering/2026/runtime-service-settings-fixes-2026-10-29.md) — R01–R14 修复、PC 回归与最终 M4 candidate 只读复查；记录前序同步锁释放后的新状态，尚非合并或生产验收。
 - [运行诊断、审计与反馈质量修复记录 — 2026-10-29](history/engineering/2026/runtime-diagnostics-fixes-2026-10-29.md) — D01–D15 本地修复、PC 回归与共享预览恢复复查；尚非 M4 candidate 或生产验收。
 - [运行诊断、审计证据与反馈质量审查 — 2026-10-29](history/engineering/2026/runtime-diagnostics-audit-2026-10-29.md) — 只读检查与 15 项修复建议，区分 M4 实测、本地夹具和环境阻塞；不是修复或生产验收。
 - [观测总览各 TAB 审查 — 2026-10-29](history/engineering/2026/observability-tabs-audit-2026-10-29.md) — 前序问题清单、范围与分批证据。
