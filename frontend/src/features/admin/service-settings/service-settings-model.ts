@@ -234,6 +234,22 @@ function fallbackAccountingFx(): ServiceSetting {
 export function projectServiceSettingsForms(
   source: ServiceSettingsData
 ): ServiceSettingsProjection {
+  // Missing/malformed settings are unknown, never an editable empty configuration.
+  const required = ['portal_public', 'qq_login', 'portal_email', 'alipay_payment',
+    'site_relink_policy', 'platform_preferences'] as const;
+  if (!source?.settings || typeof source.settings !== 'object' || Array.isArray(source.settings)) {
+    throw new TypeError('Service settings response is invalid.');
+  }
+  for (const key of [...required, 'accounting_fx', 'provider_budget'] as const) {
+    const setting = source.settings[key];
+    if (setting === undefined && !required.includes(key as typeof required[number])) continue;
+    if (!setting || typeof setting !== 'object' || Array.isArray(setting)
+      || typeof setting.enabled !== 'boolean' || typeof setting.status !== 'string'
+      || !setting.config || typeof setting.config !== 'object' || Array.isArray(setting.config)
+      || !setting.secrets || typeof setting.secrets !== 'object' || Array.isArray(setting.secrets)) {
+      throw new TypeError(`Service setting ${key} is invalid.`);
+    }
+  }
   const portalPublic = source.settings.portal_public;
   const qq = source.settings.qq_login;
   const email = source.settings.portal_email;

@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminConfigurationRow, AdminConfigurationTable } from '@/components/admin/AdminConfigurationTable';
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
@@ -365,10 +365,19 @@ function normalizeCapabilityProbeSummary(value: unknown): CapabilityProbeSummary
     throw new TypeError('Capability probe summary response is not an object.');
   }
   const data = value as Record<string, unknown>;
+  if (!Number.isFinite(data.window_minutes) || Number(data.window_minutes) <= 0
+    || !data.totals || typeof data.totals !== 'object'
+    || !Array.isArray(data.by_capability) || !Array.isArray(data.by_instance) || !Array.isArray(data.recent_failures)) {
+    throw new TypeError('Capability probe summary response is invalid.');
+  }
   const normalizeGroup = (raw: unknown): CapabilityProbeGroup => {
     const item = raw && typeof raw === 'object' && !Array.isArray(raw)
       ? raw as Record<string, unknown>
       : Object.create(null) as Record<string, unknown>;
+    if (['attempts', 'verified', 'failed'].some((key) => !Number.isInteger(item[key]) || Number(item[key]) < 0)
+      || !Number.isFinite(item.success_rate) || Number(item.success_rate) < 0 || Number(item.success_rate) > 1) {
+      throw new TypeError('Capability probe counts are invalid.');
+    }
     return {
       attempts: Number(item.attempts || 0),
       verified: Number(item.verified || 0),
@@ -432,6 +441,13 @@ function normalizeMediaRecognitionPolicy(
   const preferenceConfig = preferences.config && typeof preferences.config === 'object' && !Array.isArray(preferences.config)
     ? preferences.config as Record<string, unknown>
     : Object.create(null) as Record<string, unknown>;
+  if (typeof setting.enabled !== 'boolean'
+    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(config.window_start || ''))
+    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(config.window_end || ''))
+    || !Number.isInteger(config.daily_limit) || Number(config.daily_limit) < 1 || Number(config.daily_limit) > 10000
+    || typeof preferenceConfig.timezone !== 'string' || !preferenceConfig.timezone.trim()) {
+    throw new TypeError('Media recognition policy response is invalid.');
+  }
   return {
     enabled: Boolean(setting.enabled),
     timezone: String(preferenceConfig.timezone || DEFAULT_MEDIA_RECOGNITION_POLICY.timezone),
@@ -539,10 +555,13 @@ export default function RuntimeProfilesPage() {
   const { t } = useLocale();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const copy = useCallback(
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.runtime_profiles.${key}`, params, fallback),
     [t]
   );
+  const copyRef = useRef(copy);
+  useEffect(() => { copyRef.current = copy; }, [copy]);
   const profileName = useCallback((profile: RuntimeProfile) => {
     const key = profileLabelKey(profile);
     return key ? copy(key, profile.label || profile.profile_id) : (profile.label || profile.routing_intent || profile.profile_id);
@@ -555,6 +574,8 @@ export default function RuntimeProfilesPage() {
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const operationRef = useRef(false);
+  const profilesReadActive = useRef(false);
   const [probingInstanceId, setProbingInstanceId] = useState('');
   const [probeError, setProbeError] = useState('');
   const [error, setError] = useState('');
@@ -565,6 +586,8 @@ export default function RuntimeProfilesPage() {
   const [mediaRecognitionForm, setMediaRecognitionForm] = useState<MediaRecognitionPolicyForm>(DEFAULT_MEDIA_RECOGNITION_POLICY);
   const [mediaRecognitionBaseline, setMediaRecognitionBaseline] = useState(mediaRecognitionPolicySnapshot(DEFAULT_MEDIA_RECOGNITION_POLICY));
   const [mediaRecognitionLoading, setMediaRecognitionLoading] = useState(true);
+  const [mediaRecognitionLoaded, setMediaRecognitionLoaded] = useState(false);
+  const policyReadActive = useRef(false);
   const [mediaRecognitionSaving, setMediaRecognitionSaving] = useState(false);
   const [mediaRecognitionError, setMediaRecognitionError] = useState('');
   const [mediaRecognitionErrorCode, setMediaRecognitionErrorCode] = useState('');
@@ -584,22 +607,24 @@ export default function RuntimeProfilesPage() {
   }, []);
 
   const loadProfiles = useCallback(async () => {
+    if (profilesReadActive.current) return;
+    profilesReadActive.current = true;
+    const copy = copyRef.current;
     setLoading(true);
     setError('');
     setData(null);
     setActiveProfileId('');
     setEditingProfile(null);
-    setProbeSummary(null);
-    setProbeSummaryError('');
     try {
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles');
       applyData(normalizeRuntimeProfilesData(response.data));
     } catch (cause) {
       setError(resolveUiErrorMessage(cause, copy('error_load', 'Failed to load hosted runtime profiles.')));
     } finally {
+      profilesReadActive.current = false;
       setLoading(false);
     }
-  }, [applyData, copy]);
+  }, [applyData, setEditingProfile]);
 
   useEffect(() => {
     void loadProfiles();
@@ -609,9 +634,12 @@ export default function RuntimeProfilesPage() {
     const next = normalizeMediaRecognitionPolicy(value, platformPreferences);
     setMediaRecognitionForm(next);
     setMediaRecognitionBaseline(mediaRecognitionPolicySnapshot(next));
-  }, []);
+  }, [setMediaRecognitionForm]);
 
   const loadMediaRecognitionPolicy = useCallback(async () => {
+    if (policyReadActive.current || operationRef.current) return;
+    policyReadActive.current = true;
+    const copy = copyRef.current;
     setMediaRecognitionLoading(true);
     setMediaRecognitionError('');
     try {
@@ -620,18 +648,22 @@ export default function RuntimeProfilesPage() {
         response.data.settings.media_recognition_policy,
         response.data.settings.platform_preferences
       );
+      setMediaRecognitionLoaded(true);
     } catch (cause) {
+      setMediaRecognitionLoaded(false);
       setMediaRecognitionError(resolveUiErrorMessage(cause, copy('media_recognition_load_error', 'Failed to load the media recognition policy.')));
     } finally {
+      policyReadActive.current = false;
       setMediaRecognitionLoading(false);
     }
-  }, [applyMediaRecognitionPolicy, copy]);
+  }, [applyMediaRecognitionPolicy]);
 
   useEffect(() => {
     void loadMediaRecognitionPolicy();
   }, [loadMediaRecognitionPolicy]);
 
   const loadProbeSummary = useCallback(async () => {
+    const copy = copyRef.current;
     setProbeSummaryError('');
     try {
       const response = await runtimeProfilesClient.request<CapabilityProbeSummary>(
@@ -641,7 +673,7 @@ export default function RuntimeProfilesPage() {
     } catch (cause) {
       setProbeSummaryError(resolveUiErrorMessage(cause, copy('probe_summary_load_error', 'Capability verification history is unavailable.')));
     }
-  }, [copy]);
+  }, []);
 
   useEffect(() => {
     void loadProbeSummary();
@@ -699,14 +731,18 @@ export default function RuntimeProfilesPage() {
   const mediaRecognitionBlocked = savedMediaRecognitionPolicy.enabled && !mediaRecognitionModelReady;
   const mediaRecognitionNeedsVerification = mediaRecognitionBlocked
     || mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR;
-  const mediaRecognitionStatusLabel = mediaRecognitionNeedsVerification
+  const mediaRecognitionStatusLabel = !mediaRecognitionLoaded
+    ? copy('status_unknown', 'Unknown')
+    : mediaRecognitionNeedsVerification
     ? copy('media_recognition_needs_verification', 'Needs verification')
     : mediaRecognitionDirty
       ? copy('media_recognition_unsaved', 'Unsaved')
       : savedMediaRecognitionPolicy.enabled
         ? copy('media_recognition_enabled', 'Enabled')
         : copy('media_recognition_disabled', 'Disabled');
-  const mediaRecognitionStatusTone = mediaRecognitionNeedsVerification
+  const mediaRecognitionStatusTone = !mediaRecognitionLoaded
+    ? 'warning'
+    : mediaRecognitionNeedsVerification
     ? 'warning'
     : mediaRecognitionDirty
       ? 'warning'
@@ -742,6 +778,20 @@ export default function RuntimeProfilesPage() {
       document.removeEventListener('click', handleAnchorClick, true);
     };
   }, [dirty]);
+
+  useEffect(() => {
+    const requested = searchParams.get('profile');
+    if (requested && data?.profiles.some((profile) => profile.profile_id === requested)) setActiveProfileId(requested);
+  }, [searchParams, data]);
+
+  function openProfile(profile: RuntimeProfile) {
+    if (operationRef.current) return;
+    selectProfile(profile.profile_id);
+    setProviderFilter(new URLSearchParams(window.location.search).get('provider') || '');
+    setModelSearch('');
+    setProbeError('');
+    setEditingProfile({ ...profile, candidate_instance_ids: [...profile.candidate_instance_ids] });
+  }
 
   const candidatePool = useMemo(() => {
     if (!editingProfile || !data) return [];
@@ -895,7 +945,7 @@ export default function RuntimeProfilesPage() {
   }
 
   async function saveProfiles() {
-    if (!editingProfile || saving) return;
+    if (!editingProfile || operationRef.current) return;
     if (!profileDirty) { setEditingProfile(null); return; }
     const profile = editingProfile;
     if (profile.candidate_instance_ids.some((id) => {
@@ -912,6 +962,7 @@ export default function RuntimeProfilesPage() {
       setProbeError(copy('explicit_verification_required', 'Use Verify capability for the selected models before saving. Saving does not start a capability probe.'));
       return;
     }
+    operationRef.current = true;
     setSaving(true);
     setProbeError('');
     try {
@@ -929,16 +980,15 @@ export default function RuntimeProfilesPage() {
       });
       applyData(normalizeRuntimeProfilesData(response.data));
       setEditingProfile(null);
-      setMediaRecognitionError('');
-      setMediaRecognitionErrorCode('');
       if (!response.data.receipt) toast.success(copy('message_saved', 'Usage configuration saved.'), t('common.success'));
     } catch (cause) {
       setProbeError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save usage configuration.')));
-    } finally { setSaving(false); }
+    } finally { operationRef.current = false; setSaving(false); }
   }
 
   async function saveMediaRecognitionPolicy() {
-    if (!mediaRecognitionDirty || mediaRecognitionSaving || mediaRecognitionValidationError) return;
+    if (!mediaRecognitionLoaded || mediaRecognitionLoading || !mediaRecognitionDirty || operationRef.current || mediaRecognitionValidationError) return;
+    operationRef.current = true;
     setMediaRecognitionSaving(true);
     setMediaRecognitionError('');
     try {
@@ -969,12 +1019,14 @@ export default function RuntimeProfilesPage() {
           : resolveUiErrorMessage(cause, copy('media_recognition_save_error', 'Failed to save the media recognition policy.'))
       );
     } finally {
+      operationRef.current = false;
       setMediaRecognitionSaving(false);
     }
   }
 
   async function verifyInstance(instance: RuntimeInstance, capability: string, timeoutMs: number) {
-    if (probingInstanceId) return;
+    if (operationRef.current) return;
+    operationRef.current = true;
     setProbingInstanceId(instance.instance_id);
     setProbeError('');
     try {
@@ -988,7 +1040,9 @@ export default function RuntimeProfilesPage() {
         applyCapabilityEvidence(instance.instance_id, failedEvidence);
       }
       setProbeError(probeFailureMessage(cause, instance));
+      await loadProbeSummary();
     } finally {
+      operationRef.current = false;
       setProbingInstanceId('');
     }
   }
@@ -1013,10 +1067,10 @@ export default function RuntimeProfilesPage() {
           </Link>
         )}
         summaryItems={[
-          { label: copy('summary_configured', 'Configured'), value: String(configuredCount) },
-          { label: copy('summary_unconfigured', 'Unconfigured'), value: String(unconfiguredCount) },
-          { label: copy('summary_paused', 'Paused'), value: String(pausedCount) },
-          { label: copy('summary_configuration_error', 'Configuration error'), value: String(attentionCount) },
+          { label: copy('summary_configured', 'Configured'), value: data ? String(configuredCount) : '—' },
+          { label: copy('summary_unconfigured', 'Unconfigured'), value: data ? String(unconfiguredCount) : '—' },
+          { label: copy('summary_paused', 'Paused'), value: data ? String(pausedCount) : '—' },
+          { label: copy('summary_configuration_error', 'Configuration error'), value: data ? String(attentionCount) : '—' },
         ]}
       />
 
@@ -1058,12 +1112,7 @@ export default function RuntimeProfilesPage() {
                   <th className="px-3 py-3 text-left align-top" scope="row"><span className="block font-semibold">{profileName(profile)}</span><span className="mt-1 block text-xs font-normal text-slate-500">{copy(`${profileLabelKey(profile)}_tasks`, profile.description)}</span></th>
                   <td className="break-words px-3 py-3 align-top"><span>{instanceLabel(primary)}</span><span className="mt-1 block text-xs text-slate-500">{profile.candidate_instance_ids[1] ? `${copy('fallback_model', 'Fallback')}: ${instanceLabel(instancesById.get(profile.candidate_instance_ids[1]))}` : copy('fallback_unconfigured', 'No fallback configured')}</span>{primary?.upstream_status === 'missing_from_latest_catalog' ? <span className="block text-xs text-amber-700">{copy('catalog_unconfirmed', 'Catalog unconfirmed')}</span> : null}</td>
                   <td className="px-3 py-3 align-top"><BackofficeStatusBadge status={paused ? 'disabled' : tone} label={paused ? copy('status_paused', 'Paused') : !profile.candidate_instance_ids.length ? copy('summary_unconfigured', 'Unconfigured') : tone === 'error' ? copy('summary_configuration_error', 'Configuration error') : copy('status_configured', 'Usage configured')} /></td>
-                  <td className="px-3 py-3 text-right align-top"><button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                    selectProfile(profile.profile_id);
-                    setProviderFilter(new URLSearchParams(window.location.search).get('provider') || '');
-                    setModelSearch(''); setProbeError('');
-                    setEditingProfile({ ...profile, candidate_instance_ids: [...profile.candidate_instance_ids] });
-                  }}>{copy('action_configure', 'Configure')}</button></td>
+                  <td className="px-3 py-3 text-right align-top"><button type="button" className="btn btn-secondary btn-sm" disabled={saving || mediaRecognitionSaving || Boolean(probingInstanceId)} onClick={() => openProfile(profile)}>{copy('action_configure', 'Configure')}</button></td>
                 </tr>;
               })}
             </tbody>
@@ -1074,13 +1123,13 @@ export default function RuntimeProfilesPage() {
       {data ? (
         <BackofficeDisclosure summary={copy('probe_summary_title', 'Capability verification history')}>
           {probeSummaryError ? (
-            <p className="text-sm text-rose-700 dark:text-rose-300">{probeSummaryError}</p>
+            <div><p className="text-sm text-rose-700 dark:text-rose-300">{probeSummaryError}</p><button type="button" className="btn btn-secondary btn-sm mt-2" onClick={() => void loadProbeSummary()}>{t('common.retry')}</button></div>
           ) : probeSummary ? (
             <div className="space-y-3 text-sm">
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-slate-600 dark:text-slate-300">
                 <span>{copy('probe_summary_window', 'Last {{days}} days', { days: String(Math.max(1, Math.round(probeSummary.window_minutes / 1440))) })}</span>
                 <span>{copy('probe_summary_attempts', '{{count}} attempts', { count: String(probeSummary.totals.attempts) })}</span>
-                <span>{copy('probe_summary_success_rate', '{{rate}}% verified', { rate: String(Math.round(probeSummary.totals.success_rate * 100)) })}</span>
+                <span>{probeSummary.totals.attempts ? copy('probe_summary_success_rate', '{{rate}}% verified', { rate: String(Math.round(probeSummary.totals.success_rate * 100)) }) : copy('probe_summary_rate_unknown', 'Verification rate: —')}</span>
               </div>
               {probeSummary.totals.attempts === 0 ? (
                 <p className="text-slate-500 dark:text-slate-400">{copy('probe_summary_empty', 'No capability probes have been recorded yet. Verify a selected candidate to start collecting evidence.')}</p>
@@ -1143,8 +1192,7 @@ export default function RuntimeProfilesPage() {
             <BackofficeStatusBadge label={mediaRecognitionStatusLabel} status={mediaRecognitionStatusTone} />
             <span className="min-w-0 text-xs font-normal text-slate-500 dark:text-slate-400">
               {mediaRecognitionPrimary ? instanceLabel(mediaRecognitionPrimary) : copy('model_unassigned', 'Not assigned')}
-              {' / '}{mediaRecognitionForm.window_start}-{mediaRecognitionForm.window_end}
-              {' / '}{copy('media_recognition_daily_limit_summary', '{{count}} images/day', { count: mediaRecognitionForm.daily_limit })}
+              {mediaRecognitionLoaded ? <> / {mediaRecognitionForm.window_start}-{mediaRecognitionForm.window_end} / {copy('media_recognition_daily_limit_summary', '{{count}} images/day', { count: mediaRecognitionForm.daily_limit })}</> : ' / —'}
             </span>
           </div>}
           contentClassName="pt-4"
@@ -1156,7 +1204,7 @@ export default function RuntimeProfilesPage() {
             <button
               type="button"
               className="btn btn-primary btn-sm shrink-0"
-              disabled={mediaRecognitionLoading || mediaRecognitionSaving || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
+              disabled={!mediaRecognitionLoaded || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId) || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
               onClick={() => void saveMediaRecognitionPolicy()}
             >
               {mediaRecognitionSaving
@@ -1170,11 +1218,11 @@ export default function RuntimeProfilesPage() {
               <span>{mediaRecognitionError}</span>
               <div className="flex flex-wrap items-center gap-2">
                 {mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR ? (
-                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai">
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) openProfile(mediaRecognitionProfile); }}>
                     {copy('media_recognition_configure_profile', 'Configure and verify model')}
                   </Link>
                 ) : null}
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void saveMediaRecognitionPolicy()}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => void (mediaRecognitionLoaded ? saveMediaRecognitionPolicy() : loadMediaRecognitionPolicy())}>
                   {t('common.retry')}
                 </button>
               </div>
@@ -1182,6 +1230,8 @@ export default function RuntimeProfilesPage() {
           ) : null}
 
           <div className="mt-3">
+          {mediaRecognitionLoaded ? (
+          <fieldset className="min-w-0" disabled={!mediaRecognitionLoaded || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)}>
             <AdminConfigurationTable
               ariaLabel={copy('media_recognition_table_label', 'Site media recognition policy')}
               itemHeading={copy('configuration_item_heading', 'Setting')}
@@ -1206,7 +1256,7 @@ export default function RuntimeProfilesPage() {
                     : copy('model_unassigned', 'Not assigned')}
                 detail={<div className="flex flex-wrap items-center gap-2">
                   <span>{copy('media_recognition_model_inherited', 'Inherited from Vision understanding; this policy does not store another model selection.')}</span>
-                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai">
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) openProfile(mediaRecognitionProfile); }}>
                     {copy('media_recognition_configure_profile', 'Configure and verify model')}
                   </Link>
                 </div>}
@@ -1284,6 +1334,8 @@ export default function RuntimeProfilesPage() {
                 </div>}
               />
             </AdminConfigurationTable>
+          </fieldset>
+          ) : null}
           </div>
           {mediaRecognitionValidationError && mediaRecognitionDirty ? (
             <p className="mt-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
@@ -1311,11 +1363,11 @@ export default function RuntimeProfilesPage() {
             {profileName(editingProfile)}
           </span>
         ) : null}
-        saving={saving}
+        saving={saving || Boolean(probingInstanceId)}
         closeLabel={t('common.close')}
         cancelLabel={t('common.cancel')}
         saveLabel={copy('action_save_usage', 'Save usage')}
-        savingLabel={copy('action_saving', 'Saving...')}
+        savingLabel={probingInstanceId ? copy('verifying', '验证中...') : copy('action_saving', 'Saving...')}
         footerNotice={copy('dialog_save_notice', 'Save applies this usage immediately. Cancel discards changes.')}
         density="compact"
         contentMode="contained"
@@ -1323,7 +1375,7 @@ export default function RuntimeProfilesPage() {
         onSubmit={() => void saveProfiles()}
       >
         {editingProfile ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+          <fieldset disabled={saving || Boolean(probingInstanceId)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
             <details className="shrink-0 text-xs text-slate-500"><summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary><p className="mt-1 break-words">{editingProfile.tasks.join(' · ')}</p><p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p></details>
             <div className="shrink-0 max-h-[45vh] overflow-y-auto">
               <AdminConfigurationTable
@@ -1597,7 +1649,7 @@ export default function RuntimeProfilesPage() {
                 <BackofficeEmptyState title={copy('models_empty_title', 'No matching models')} description={copy('models_empty_description', 'Enable a compatible model in Model suppliers or clear the current filters.')} />
               )}
             </section>
-          </div>
+          </fieldset>
         ) : null}
       </AdminWorkbenchDialog>
 
