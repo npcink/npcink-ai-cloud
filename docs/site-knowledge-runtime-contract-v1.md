@@ -902,3 +902,22 @@ in `result_grouping.ranking_version`; search transport remains
 `site_knowledge_search.v1`. See [reading-task abstention v2](site-knowledge-reading-task-abstention-v2.md)
 for the successful-empty contract, evidence counters and unchanged v1 control.
 Other search intents retain their existing policy and response shape.
+
+## Local multimodal development profile (2026-10-29)
+
+The M4-only Qwen3-VL-Embedding-8B Q4 profile uses 4096D text and image embeddings
+in one space. Media sync accepts optional `media_items[].source_artifact_id`,
+reusing the existing site-scoped artifact ownership, expiry and byte checks.
+The background runtime projection forwards its already validated artifact ID.
+Otherwise only bounded public HTTPS image fetches are accepted; private URLs
+are not a fallback. The loader supports JPEG/PNG/WebP, at most 8 MiB/16M pixels,
+and derives a metadata-free 768px JPEG. Image bytes/base64 never enter knowledge
+SQL chunks or search results. A visual embedding is not a generated caption.
+
+Native Ollama requests use `/api/embed` with non-truncating text input or an image
+input object. Responses must have exactly 4096 finite, nonzero components. An
+unavailable/invalid image or vector leaves the previous source index intact.
+The additive Admin vector-profile `runtime` object reports actual environment,
+provider/model, dimensions, backend and index-space status without changing
+the production profile or existing credential/rebuild contracts. See the
+[local operations procedure](m4-preview-development-v1.md#unified-local-multimodal-embedding-2026-10-29).

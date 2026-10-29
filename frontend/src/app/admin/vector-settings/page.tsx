@@ -26,6 +26,14 @@ const vectorSettingsClient = createApiClient({
 });
 
 type VectorProfile = {
+  runtime?: {
+    environment: string;
+    provider_id: string;
+    model_id: string;
+    dimensions: number;
+    backend: string;
+    index_status: string;
+  };
   profile_id: string;
   model_id: string;
   dimensions: number;
@@ -513,6 +521,14 @@ export default function VectorSettingsPage() {
           }
         ]}
       />
+
+      {profile?.runtime ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300" data-testid="vector-runtime-profile">
+          {zh ? '当前运行配置' : 'Current runtime'}: {profile.runtime.environment} ·{' '}
+          {profile.runtime.model_id} · {profile.runtime.dimensions}D ·{' '}
+          {formatBackend(profile.runtime.backend)} · {profile.runtime.index_status}
+        </p>
+      ) : null}
 
       {error ? (
         <BackofficeDiagnosticNotice

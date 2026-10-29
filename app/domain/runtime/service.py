@@ -5166,6 +5166,7 @@ class RuntimeService:
                     "media_fingerprint": str(
                         request_item.get("media_fingerprint") or ""
                     )[:128],
+                    "source_artifact_id": str(request_item.get("source_artifact_id") or "")[:36],
                     "alt": str(request_item.get("alt") or "")[:1000],
                     "caption": str(request_item.get("caption") or "")[:2000],
                     "description": str(request_item.get("description") or "")[:4000],
