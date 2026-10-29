@@ -13,6 +13,7 @@ from app.core.services import CloudServices
 from app.domain.observability.plugin_events import (
     EXPECTED_PLUGIN_SLUGS,
     PORTAL_BASELINE_PLUGIN_SLUGS,
+    PluginObservabilityService,
 )
 from tests.conftest import build_internal_headers, seed_site_auth
 
@@ -458,3 +459,51 @@ def test_recent_activity_links_only_same_site_runs_without_content(tmp_path: Pat
         headers=build_internal_headers(trace_id="traceadminlinked000000000000000"),
     )
     assert other.json()["data"]["recent_activity"][0]["run"] is None
+
+
+def test_failure_statuses_agree_across_summary_groups_timeline_and_history(tmp_path: Path) -> None:
+    from app.domain.observability.plugin_event_history import get_plugin_event_history
+
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC) - timedelta(seconds=1)
+    cases = [
+        ("error", "failure.error"),
+        ("failed", "failure.failed"),
+        ("error", None),
+        ("failed", ""),
+        ("ok", "diagnostic.only"),
+        ("warning", "diagnostic.warning"),
+    ]
+    with get_session(database_url) as session:
+        for index, (status, code) in enumerate(cases):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"failure-status-{index}", site_id="site-001",
+                key_id="key_default", schema_version="2026-06-01",
+                plugin_slug="npcink-cloud-addon", event_kind="operation.completed",
+                source="local", status=status, error_code=code,
+                received_at=now, captured_at=now,
+            ))
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/plugin-observability?window_hours=24",
+        headers=build_internal_headers(trace_id="tracefailurestatuses0000000000000"),
+    )
+    assert response.status_code == 200
+    admin = response.json()["data"]
+    portal = PluginObservabilityService(database_url).get_summary(site_id="site-001")
+    for data in (admin, portal):
+        assert data["totals"]["events_total"] == 6
+        assert data["totals"]["error_total"] == 4
+        assert sum(row["error_total"] for row in data["timeline"]) == 4
+        assert sum(row["error_total"] for row in data["plugins"]) == 4
+        assert sum(row["error_total"] for row in data["plugins"][0]["event_kinds"]) == 4
+        assert sum(row["count"] for row in data["errors"]) == 4
+        assert {row["error_code"] for row in data["errors"]} == {
+            "failure.error", "failure.failed", "",
+        }
+        assert len(data["recent_errors"]) == 4
+    assert sum(row["error_total"] for row in admin["sites"]) == 4
+    history = get_plugin_event_history(database_url, status="failed")
+    assert history["totals"]["failed"] == 4
+    assert history["totals"]["events"] == 4

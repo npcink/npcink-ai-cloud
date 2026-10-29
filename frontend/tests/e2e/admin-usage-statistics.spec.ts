@@ -12,7 +12,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   let runtimeFail = false;
   let truncated = false;
   const requests: string[] = [];
-  const row = { id: 'site-a', runs: 12, failed: 2, success_rate: 0.75, avg_latency_ms: 1200 };
+  const row = { id: 'site-a', runs: 12, failed: 2, success_rate: 0.75, avg_latency_ms: 10000000, succeeded_avg_latency_ms: 1200, failed_avg_latency_ms: 60000000 };
   await page.route('**/api/admin/runtime-telemetry*', route => {
     requests.push(route.request().url());
     if (runtimeFail) return route.fulfill({ status: 503, json: {} });
@@ -30,6 +30,9 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   expect(toolbarBox).not.toBeNull();
   expect(await toolbar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('12');
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText(/成功任务平均耗时|Average succeeded task duration/);
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText(/1.2/);
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText('10,000');
   const definitions = page.locator('[data-ui="usage-definitions"]');
   await expect(definitions).not.toHaveAttribute('open', '');
   await expect(definitions.locator('dl')).toBeHidden();
@@ -45,7 +48,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await page.keyboard.press('Escape');
   await expect(page.getByRole('tooltip')).toBeHidden();
   await metricHints.nth(3).hover();
-  await expect(page.getByRole('tooltip')).toContainText(/完整起止时间|Completed timing/);
+  await expect(page.getByRole('tooltip')).toContainText(/完整起止时间|complete timestamps/);
   await definitions.locator('summary').click();
   await expect(definitions.locator('dd')).toHaveCount(3);
   await expect(definitions.locator('dl')).toBeVisible();

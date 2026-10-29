@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { BackofficePageHeader, BackofficePageStack, BackofficeSectionPanel } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { EditorAssistQualityPanel } from '@/components/admin/EditorAssistQualityPanel';
@@ -24,6 +24,7 @@ export default function UsageStatisticsPage() {
   const { locale } = useLocale();
   const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
   const params = useSearchParams();
+  const router = useRouter();
   const hours = normalizeObservationWindow(params.get('window'), 336, observationCapability(`/admin/usage-statistics?${params}`) ?? 'runtime');
   const qualityView = params.get('view') === 'quality';
   const dimension = ['sites', 'functions', 'plugins'].includes(params.get('group') || '') ? params.get('group')! : 'sites';
@@ -50,7 +51,7 @@ export default function UsageStatisticsPage() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [hours, refresh, siteFilter, functionFilter, qualityView, since]);
-  const filterHref = (key: string, value: string) => { const next = new URLSearchParams(params.toString()); next.set(key, value); if (key === 'group' && value === 'plugins') { next.delete('function'); next.delete('since'); } if (key !== 'page') next.delete('page'); return `/admin/usage-statistics?${next}`; };
+  const filterHref = (key: string, value: string) => { const next = new URLSearchParams(params.toString()); if (value) next.set(key, value); else next.delete(key); if (key === 'group' && value === 'plugins') { next.delete('function'); next.delete('since'); } if (key !== 'page') next.delete('page'); return `/admin/usage-statistics?${next}`; };
   const stats = runtime?.usage_statistics;
   const number = (value: number | null | undefined, suffix = '') => value == null ? '—' : `${Number(value.toFixed(1)).toLocaleString()}${suffix}`;
   const pluginMode = dimension === 'plugins';
@@ -58,7 +59,7 @@ export default function UsageStatisticsPage() {
     { label: c('运行次数', 'Runs'), value: number(stats?.runs), detail: c('所选时间范围内的运行记录；最多统计 5,000 条样本。', 'Runtime records in the selected window; up to 5,000 samples.'), detailDisplay: 'hint' as const },
     { label: c('有运行的站点', 'Sites with runs'), value: number(stats?.active_sites), detail: c('至少包含一条运行记录的站点数量。', 'Sites with at least one runtime record.'), detailDisplay: 'hint' as const },
     { label: c('运行成功率', 'Run success rate'), value: number(stats?.success_rate == null ? null : stats.success_rate * 100, '%'), detail: c('成功运行数 ÷ 全部运行数，处理中任务计入分母。', 'Succeeded runs ÷ all runs; processing tasks remain in the denominator.'), detailDisplay: 'hint' as const },
-    { label: c('平均任务耗时', 'Average task duration'), value: number(stats?.avg_latency_ms == null ? null : stats.avg_latency_ms / 1000, c(' 秒', ' s')), detail: c('仅统计有完整起止时间的任务，包含成功和失败；明细分开显示两类耗时。', 'Completed timing samples include succeeded and failed tasks; the breakdown separates their durations.'), detailDisplay: 'hint' as const },
+    { label: c('成功任务平均耗时', 'Average succeeded task duration'), value: number(stats?.succeeded_avg_latency_ms == null ? null : stats.succeeded_avg_latency_ms / 1000, c(' 秒', ' s')), detail: c('成功任务从开始到结束的平均耗时；仅统计完整起止时间，不等于模型执行耗时。失败耗时见明细，可能包含超时清理前的等待。', 'Average start-to-finish duration of succeeded tasks with complete timestamps; not model execution time. Failed durations in the breakdown may include waiting before timeout cleanup.'), detailDisplay: 'hint' as const },
     { label: c('任务失败情况', 'Task failures'), value: !stats ? c('未知', 'Unknown') : stats.runs === 0 ? c('暂无运行', 'No runs') : stats.failed ? c(`${stats.failed} 次失败`, `${stats.failed} failed`) : c('未记录任务失败', 'No recorded task failures'), detail: !stats ? c('运行证据未加载', 'Runtime evidence unavailable') : stats.possibly_truncated ? c(`${number(stats?.runs)} 条样本 · 已截断`, `${number(stats?.runs)} runs · truncated`) : c(`${number(stats?.runs)} 条样本 · 完整`, `${number(stats?.runs)} runs · complete`), toneClassName: !stats || stats.runs === 0 ? 'text-slate-500' : stats.failed || stats.possibly_truncated ? 'text-amber-700' : 'text-emerald-700' },
   ];
   const localTime = (value?: string) => formatDateTime(value, locale) || '—';
@@ -100,7 +101,7 @@ export default function UsageStatisticsPage() {
   return <BackofficePageStack spacing="compact">
     <AdminObservabilityTabs />
     <BackofficePageHeader density="compact" secondaryAction={qualityView ? <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button> : undefined} title={params.get('view') === 'quality' ? c('编辑质量证据', 'Editorial quality evidence') : c('运行观测', 'Runtime observation')} description={params.get('view') === 'quality' ? c('查看编辑辅助运行的质量证据', 'Review quality evidence from editorial assistance runs') : c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={params.get('view') === 'quality' ? [] : metrics.map(item => ({ ...item, size: 'compact' as const }))} primaryAction={params.get('view') === 'quality' ? undefined : <div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">{c('当前工作范围', 'Current workspace')}: {c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按运行类型' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)}<br />{runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')}</div>} />
-    {params.get('view') === 'quality' ? <EditorAssistQualityPanel onRequestStateChange={onQualityState} disclosure={false} siteId={siteFilter} windowHours={hours} refreshSignal={refresh} /> : <>
+    {params.get('view') === 'quality' ? <EditorAssistQualityPanel taskKey={params.get('task') || ''} onTaskKeyChange={value => router.push(filterHref('task', value))} onClearSite={() => router.push(filterHref('site', ''))} onRequestStateChange={onQualityState} disclosure={false} siteId={siteFilter} windowHours={hours} refreshSignal={refresh} /> : <>
     <div data-ui="usage-statistics-toolbar" className="relative z-10 flex w-full max-w-full flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
       <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button>
       <div className="ml-auto flex shrink-0 gap-1" role="tablist" aria-label={c('运行分析视图', 'Runtime analysis view')}><button type="button" role="tab" aria-selected={analysisView === 'chart'} className={`btn btn-sm ${analysisView === 'chart' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAnalysisView('chart'); if (pluginMode) window.history.replaceState(null, '', filterHref('group', 'sites')); }}>{c('图表', 'Chart')}</button><button type="button" role="tab" aria-selected={analysisView === 'table'} className={`btn btn-sm ${analysisView === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAnalysisView('table')}>{c('表格', 'Table')}</button></div>
