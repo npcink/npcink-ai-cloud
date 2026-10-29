@@ -195,6 +195,18 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(detailWorkspace).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/admin/support-requests/${requestId}\\?return_to=`));
 
+  const attachmentSummary = page.locator('summary').filter({ hasText: /Attachments|附件/ });
+  const attachmentInput = page.getByLabel(/^Attachments$|^附件$/);
+  await expect(attachmentInput).toBeHidden();
+  await attachmentSummary.focus();
+  await attachmentSummary.press('Enter');
+  await expect(attachmentInput).toBeVisible();
+  await attachmentInput.setInputFiles({ name: 'selected-evidence.txt', mimeType: 'text/plain', buffer: Buffer.from('fixture-only evidence') });
+  await expect(page.getByLabel(/Attachment visibility|附件可见性/)).toBeVisible();
+  await attachmentSummary.press('Enter');
+  await expect(attachmentInput).toBeHidden();
+  await expect(attachmentSummary).toContainText('selected-evidence.txt');
+
   const reply = page.getByLabel(/Public reply|公开回复/i);
   const sendReply = page.getByRole('button', { name: /Send public reply|发送公开回复/i });
   await expect(sendReply).toBeDisabled();

@@ -1748,7 +1748,6 @@ function AiResourcesContent() {
                         required
                       />
                     )}
-                    detail={aiText('display_name_note', 'Operator-facing name')}
                   />
                   <AdminConfigurationRow
                     rowId="credential"

@@ -452,7 +452,7 @@ export default function AdminSiteCompliancePage() {
               },
               {
                 label: copy('当前公开版本', 'Published version'),
-                value: published?.version_number ? `v${published.version_number}` : '—',
+                value: published?.version_number ? `v${published.version_number}` : copy('尚未发布', 'Not published'),
                 detail: formatTime(published?.effective_at, zh),
                 detailDisplay: 'hint',
                 size: 'compact',
@@ -522,9 +522,9 @@ export default function AdminSiteCompliancePage() {
               );
             })}
           </nav>
-          <p className="mt-3 hidden text-xs leading-5 text-slate-500 dark:text-slate-400 xl:block">
+          {dirty ? <p className="mt-3 hidden text-xs leading-5 text-slate-500 dark:text-slate-400 xl:block">
             {copy('切换区域不会丢失当前草稿；离开页面时仍会保护未保存修改。', 'Switching sections keeps the draft; leaving the page still protects unsaved changes.')}
-          </p>
+          </p> : null}
         </aside>
 
         <div className="min-w-0 p-4 md:p-5" data-ui="site-compliance-active-panel">

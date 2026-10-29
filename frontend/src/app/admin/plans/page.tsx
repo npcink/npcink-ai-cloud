@@ -424,7 +424,6 @@ function PlansContent() {
       isPresent: Boolean(item && Number(item.published_version_count || 0) > 0),
     };
   });
-  const readyPackageCount = canonicalTierCoverage.filter((entry) => entry.isPresent).length;
   const activeSubscriptions = canonicalTierCoverage.reduce(
     (sum, entry) => sum + Number(entry.item?.subscription_counts?.active || 0),
     0
@@ -449,7 +448,6 @@ function PlansContent() {
         )}
         summaryItems={[
           { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
-          { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(readyPackageCount), toneClassName: readyPackageCount === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
           { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
           { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
           { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },

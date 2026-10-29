@@ -67,6 +67,7 @@ export function AdminAuditSummaryPanel({
   windowMinutes = 1440,
   limit = 5,
   display = 'cards',
+  compactEmpty = false,
   className,
 }: {
   title?: string;
@@ -76,6 +77,7 @@ export function AdminAuditSummaryPanel({
   windowMinutes?: number;
   limit?: number;
   display?: 'cards' | 'table';
+  compactEmpty?: boolean;
   className?: string;
 }) {
   const { t } = useLocale();
@@ -179,6 +181,10 @@ export function AdminAuditSummaryPanel({
   return (
     <>
       <BackofficeStackCard className={className}>
+      {compactEmpty && !isLoading && !error && eventTotal === 0 ? <div data-ui="admin-audit-empty-summary" className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400">
+        <span>{title || t('admin.audit_summary.title', {}, 'Recent audit summary')} · 0</span>
+        <span>{t('admin.audit_summary.empty', {}, 'No recent audit groups are available for the current scope.')}</span>
+      </div> : <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -331,6 +337,7 @@ export function AdminAuditSummaryPanel({
           ) : null}
         </>
       )}
+      </>}
       </BackofficeStackCard>
 
       <AdminInspectorDrawer

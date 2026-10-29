@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { BackofficePageHeader, BackofficePageStack } from '@/components/backoffice/BackofficeScaffold';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -78,11 +79,12 @@ export default function AdminEconomicsPage() {
         { label: t('admin.economics.current_accounts'), value: revenue ? `${margin.activePaidAccounts} / ${margin.trialingAccounts}` : '—' },
       ]} />
     <p className="text-xs text-slate-500">{t('admin.economics.snapshot_note')}</p>
-    <section aria-label={t('admin.economics.revenue')} className="flex flex-wrap gap-x-6 gap-y-2 py-2 text-sm" data-ui="economics-revenue">
-      {sourceState(revenueSource) === 'loading' ? <p role="status">{t('admin.economics.loading')}</p> : sourceState(revenueSource) === 'error' ? <p role="alert">{t('admin.economics.revenue_error')}</p> : revenue ? <>
+    {sourceState(revenueSource) === 'loading' ? <p role="status">{t('admin.economics.loading')}</p> : sourceState(revenueSource) === 'error' ? <p role="alert">{t('admin.economics.revenue_error')}</p> : revenue ? <details data-ui="economics-revenue" className="text-sm">
+      <summary className="cursor-pointer">{t('admin.economics.revenue_breakdown')}</summary>
+      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-slate-600 dark:text-slate-300">
         <span>{t('admin.economics.subscription_revenue')}: {money(revenue.subscription_revenue_cny)}</span><span>{t('admin.economics.pack_revenue')}: {money(revenue.credit_pack_revenue_cny)}</span><span>{t('admin.economics.refunds')}: {money(revenue.refunds_cny)}</span>
-      </> : null}
-    </section>
+      </div>
+    </details> : null}
     <AdminDataTableFrame density="compact" title={t('admin.economics.usage')} dataUi="economics-usage" resultLabel={`${familyNames.length}`}>
       {sourceState(usageSource) === 'error' ? <p role="alert" className="p-3">{t('admin.economics.usage_error')}</p> : null}
       <table className="w-full text-left text-sm"><thead><tr>{['family', 'runs', 'tokens', 'calls', 'recorded_cost', 'allocated_cost'].map(key => <th key={key} className="px-3 py-2">{label(key)}</th>)}</tr></thead><tbody>
@@ -91,7 +93,7 @@ export default function AdminEconomicsPage() {
       </tbody></table>
     </AdminDataTableFrame>
     <AdminDataTableFrame density="compact" title={t('admin.economics.bills')} dataUi="economics-bills" resultLabel={`${bills.length}`} headerActions={<button type="button" className="btn btn-secondary btn-sm" disabled={local.month !== month} onClick={() => commitBills([...bills, { id: crypto.randomUUID(), provider_name: '', amount_cny: 0, families: [] }])}>{t('admin.economics.add_bill')}</button>}>
-      <p className="px-3 py-2 text-xs text-slate-500">{t('admin.economics.local_note')}</p>
+      <p className="px-3 py-2 text-xs text-slate-500">{t('admin.economics.local_scope')}<AdminHelpTip label={t('admin.economics.local_storage_help')}>{t('admin.economics.local_note')}</AdminHelpTip></p>
       {storageError ? <p role="alert" className="px-3 py-2">{t('admin.economics.storage_error')}</p> : null}
       <table className="w-full text-left text-sm"><thead><tr>{['provider', 'amount', 'families', 'action'].map(key => <th key={key} className="px-3 py-2">{label(key)}</th>)}</tr></thead><tbody>
         {bills.map((bill, index) => <tr key={bill.id} data-ui="economics-bill-row" className="border-t border-slate-200 dark:border-slate-800">

@@ -341,7 +341,10 @@ test('subscription queue keyboard flow moves focus and opens detail without a re
   await page.goto('/admin/subscriptions');
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(2);
   await expect(page.locator('[data-ui="admin-workspace-navigation-note"]')).toHaveCount(0);
+  const keyboardHelp = page.getByRole('button', { name: /^Keyboard shortcuts$|^键盘快捷键$/i });
+  await keyboardHelp.focus();
   await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
+  await keyboardHelp.press('Escape');
 
   const customerInput = page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i);
   await customerInput.focus();

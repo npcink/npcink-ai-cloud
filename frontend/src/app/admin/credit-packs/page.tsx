@@ -240,7 +240,6 @@ export default function AdminCreditPacksPage() {
         summaryItems={[
           { label: t('admin.credit_packs_active_count', {}, 'Active packs'), value: `${activeCount}/${items.length}` },
           { label: t('admin.credit_packs_default_validity', {}, 'Default validity'), value: t('admin.credit_packs_validity_days_value', { days: String(defaultValidityDays) }, `${defaultValidityDays} days`) },
-          { label: t('admin.credit_packs_expiry_policy', {}, 'Expiry policy'), value: t('admin.credit_packs_expiry_policy_value', {}, 'Purchase time + validity') },
           { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
         ]}
       />
@@ -326,7 +325,7 @@ export default function AdminCreditPacksPage() {
                   >
                     <th className={`sticky left-0 z-[5] px-3 py-2 align-middle ${cellBackground}`} scope="row">
                       <span className="block truncate font-semibold text-slate-950 dark:text-white">{item.label}</span>
-                      <span className="mt-0.5 block truncate text-xs font-normal text-slate-500 dark:text-slate-400">{item.pack_id}</span>
+                      {items.filter(pack => pack.label === item.label).length > 1 ? <span className="mt-0.5 block break-all text-xs font-normal text-slate-500 dark:text-slate-400">{item.pack_id}</span> : null}
                     </th>
                     <td className="px-3 py-2 align-middle font-semibold tabular-nums text-slate-950 dark:text-white">{formatNumber(item.ai_credits)}</td>
                     <td className="px-3 py-2 align-middle font-semibold tabular-nums text-slate-950 dark:text-white">{formatPackAmount(item)}</td>

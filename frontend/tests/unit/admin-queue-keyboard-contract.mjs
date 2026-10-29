@@ -37,7 +37,7 @@ for (const key of ['admin.queue_keyboard_label', 'admin.queue_keyboard_move', 'a
 assert.match(supportWorkspace, /useAdminQueueKeyboard\(\{/, 'ticket queue must use the shared queue keyboard hook');
 assert.match(supportWorkspace, /itemIds: items\.map\(\(item\) => item\.request_id\)/, 'ticket keyboard order must follow the rendered queue');
 assert.match(supportWorkspace, /onOpen: \(requestId\) => router\.push\(supportRequestDetailHref\(requestId\)\)/, 'Enter on a ticket must open its detail with return context');
-assert.match(supportWorkspace, /headerActions=\{<AdminQueueKeyboardHint \/>\}/, 'ticket queue must show the keyboard hint');
+assert.match(supportWorkspace, /headerActions=\{<AdminHelpTip[\s\S]*<AdminQueueKeyboardHint \/>[\s\S]*<\/AdminHelpTip>\}/, 'ticket queue must keep keyboard guidance reachable from its named header help');
 assert.match(supportWorkspace, /open=\{Boolean\(selectedRequest\) && !editRequest && !keyboardFocus\}/, 'keyboard selection must not let the ticket drawer take Enter');
 
 assert.match(subscriptionsPage, /useAdminQueueKeyboard\(\{/, 'subscription queue must use the shared queue keyboard hook');

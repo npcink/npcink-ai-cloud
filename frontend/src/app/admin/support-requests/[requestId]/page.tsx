@@ -8,6 +8,7 @@ import {
   BackofficePageHeader,
   BackofficeSectionPanel,
   BackofficeStackCard,
+  BackofficeDisclosure,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -337,10 +338,9 @@ export default function AdminSupportRequestDetailPage() {
     <BackofficePageStack data-ui="support-request-detail-workspace">
       <BackofficePageHeader
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
-        description={supportRequest?.description || ''}
         summaryItems={supportRequest ? [
-          { label: t('admin.support_requests_priority', {}, 'Priority'), value: supportRequest.priority },
-          { label: t('common.account', {}, 'Account'), value: supportRequest.account_id },
+          { label: t('admin.support_requests_priority', {}, 'Priority'), value: ({ high: t('admin.support_priority_high', {}, 'High'), normal: t('admin.support_priority_normal', {}, 'Normal'), low: t('admin.support_priority_low', {}, 'Low') } as Record<string, string>)[supportRequest.priority] || supportRequest.priority },
+          { label: t('common.account', {}, 'Account'), value: supportRequest.email || supportRequest.account_id },
           { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
         ] : []}
         summaryAside={
@@ -371,8 +371,7 @@ export default function AdminSupportRequestDetailPage() {
 
       {supportRequest ? (
         <BackofficeSectionPanel>
-          <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-4">
-            <span>{supportRequest.email}</span>
+          <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-3">
             <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportRequest.account_id}</Link>
             {supportRequest.site_id ? (
               <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportRequest.site_id}</Link>
@@ -386,6 +385,7 @@ export default function AdminSupportRequestDetailPage() {
 
       <BackofficeSectionPanel>
         <div className="space-y-3">
+          {supportRequest?.description && !messages.some(message => message.body === supportRequest.description) ? <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{supportRequest.description}</p> : null}
           {messages.map((message) => (
             <BackofficeStackCard
               key={message.message_id}
@@ -404,70 +404,6 @@ export default function AdminSupportRequestDetailPage() {
               </p>
             </BackofficeStackCard>
           ))}
-        </div>
-      </BackofficeSectionPanel>
-
-      <BackofficeSectionPanel>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {t('admin.support_attachments_title', {}, 'Attachments')}
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('admin.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
-          </p>
-        </div>
-        {attachments.length ? (
-          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-            {attachments.map((attachment) => (
-              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
-                    <BackofficeStatusBadge
-                      status={attachment.visibility === 'internal' ? 'warning' : 'read_only'}
-                      label={
-                        attachment.visibility === 'internal'
-                          ? t('admin.support_attachment_internal', {}, 'Internal')
-                          : t('admin.support_attachment_public', {}, 'Public')
-                      }
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
-                  </p>
-                </div>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
-                  {t('common.download', {}, 'Download')}
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-center">
-          <input
-            className="input"
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
-            onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
-          />
-          <select
-            className="input"
-            value={attachmentVisibility}
-            onChange={(event) => setAttachmentVisibility(event.target.value as 'public' | 'internal')}
-          >
-            <option value="public">{t('admin.support_attachment_public', {}, 'Public')}</option>
-            <option value="internal">{t('admin.support_attachment_internal', {}, 'Internal')}</option>
-          </select>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={pendingAction === 'attachment' || !attachmentFile}
-            onClick={() => void handleAttachmentUpload()}
-          >
-            {pendingAction === 'attachment'
-              ? t('common.saving', {}, 'Saving...')
-              : t('admin.support_attachment_upload_action', {}, 'Upload')}
-          </button>
         </div>
       </BackofficeSectionPanel>
 
@@ -578,6 +514,70 @@ export default function AdminSupportRequestDetailPage() {
           </button>
         </BackofficeSectionPanel>
       </div>
+
+      <BackofficeDisclosure summary={<span>{t('admin.support_attachments_title', {}, 'Attachments')} · {attachments.length}{attachmentFile ? ` · ${attachmentFile.name}` : ''}</span>}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('admin.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+          </p>
+        </div>
+        {attachments.length ? (
+          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {attachments.map((attachment) => (
+              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
+                    <BackofficeStatusBadge
+                      status={attachment.visibility === 'internal' ? 'warning' : 'read_only'}
+                      label={
+                        attachment.visibility === 'internal'
+                          ? t('admin.support_attachment_internal', {}, 'Internal')
+                          : t('admin.support_attachment_public', {}, 'Public')
+                      }
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                  </p>
+                </div>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
+                  {t('common.download', {}, 'Download')}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-center">
+          <input
+            className="input"
+            type="file"
+            aria-label={t('admin.support_attachments_title', {}, 'Attachments')}
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+            onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+          />
+          <select
+            className="input"
+            aria-label={t('admin.support_attachment_visibility', {}, 'Attachment visibility')}
+            value={attachmentVisibility}
+            onChange={(event) => setAttachmentVisibility(event.target.value as 'public' | 'internal')}
+          >
+            <option value="public">{t('admin.support_attachment_public', {}, 'Public')}</option>
+            <option value="internal">{t('admin.support_attachment_internal', {}, 'Internal')}</option>
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={pendingAction === 'attachment' || !attachmentFile}
+            onClick={() => void handleAttachmentUpload()}
+          >
+            {pendingAction === 'attachment'
+              ? t('common.saving', {}, 'Saving...')
+              : t('admin.support_attachment_upload_action', {}, 'Upload')}
+          </button>
+        </div>
+      </BackofficeDisclosure>
+
     </BackofficePageStack>
   );
 }

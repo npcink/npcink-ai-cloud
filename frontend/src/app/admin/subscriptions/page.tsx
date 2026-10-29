@@ -17,6 +17,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
@@ -539,22 +540,24 @@ function SubscriptionsContent() {
 
       <>
         <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
+          <div className="space-y-3 border-b border-slate-200/80 px-5 py-3 dark:border-slate-800 md:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
                   {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
                 </h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+                <AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}>
+                  <p>
                   {t(
                     'admin.subscriptions.queue_list_desc_v2',
                     {},
                     'Filters, risk classification, and sorting are applied across all matching subscriptions by the service API.'
                   )}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
-                <AdminQueueKeyboardHint />
+                  </p>
+                  <div className="mt-2"><AdminQueueKeyboardHint /></div>
+                </AdminHelpTip>
                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
                   {t(
                     'admin.subscriptions.result_count',
@@ -712,7 +715,7 @@ function SubscriptionsContent() {
                     role="listitem"
                     data-ui="subscription-queue-item"
                     className={cn(
-                      'grid gap-4 border-b border-slate-200/80 px-5 py-5 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(10rem,0.85fr)_minmax(13rem,1.15fr)] md:items-center md:px-6',
+                      'grid gap-3 border-b border-slate-200/80 px-5 py-3 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(10rem,0.85fr)_minmax(13rem,1.15fr)] md:items-center md:px-6',
                       riskLevel === 'stable'
                         ? '2xl:grid-cols-[minmax(14rem,1.4fr)_minmax(9rem,0.8fr)_auto]'
                         : '2xl:grid-cols-[minmax(11rem,1fr)_minmax(13rem,1.35fr)_minmax(9rem,0.8fr)_auto]',
@@ -775,7 +778,7 @@ function SubscriptionsContent() {
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>
-                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-primary btn-sm whitespace-nowrap">
+                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-secondary btn-sm whitespace-nowrap">
                         {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                       </Link>
                     </div>

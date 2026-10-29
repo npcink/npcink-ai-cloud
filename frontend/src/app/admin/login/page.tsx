@@ -120,10 +120,7 @@ function AdminLoginPageContent() {
         aria-labelledby="admin-login-title"
       >
         <div className="mb-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">
-            {t('admin.login_eyebrow', {}, 'Internal operations')}
-          </p>
-          <h1 id="admin-login-title" className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
+          <h1 id="admin-login-title" className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
             {t('admin.login_title', {}, 'Sign in to admin')}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">

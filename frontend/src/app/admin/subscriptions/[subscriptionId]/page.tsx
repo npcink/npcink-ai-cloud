@@ -413,7 +413,7 @@ function SubscriptionDetailContent() {
       />
 
       <BackofficeSectionPanel>
-        <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.customer_ops.subscription_scope', {}, 'Free also has a subscription record. Period end is not payment evidence. Removed sites remain in history but do not require current statistics maintenance.')}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.period_boundary', {}, 'Period end is not payment evidence.')}{normalized.planId === 'free' ? ` ${t('admin.subscription_detail.free_record', {}, 'Free also has a subscription record.')}` : ''}{normalized.relatedSites.some(site => site.status === 'removed') ? ` ${t('admin.subscription_detail.removed_history', {}, 'Removed sites remain in history and do not require current statistics maintenance.')}` : ''}</p>
         <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
           <div className="flex min-w-0 flex-col justify-between gap-4">
             <div>
@@ -537,7 +537,7 @@ function SubscriptionDetailContent() {
               label={t('admin.subscription_detail.usage_table_region_label', {}, 'Budget and usage')}
               hint={t('admin.table_scroll_hint', {}, 'Swipe horizontally to see more columns.')}
             >
-              <table className="min-w-[36rem] text-left text-sm">
+              <table className="w-full min-w-[36rem] text-left text-sm">
                 <thead className="text-xs text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="py-2 font-semibold">{t('admin.subscription_detail.metric_label', {}, 'Metric')}</th>
@@ -642,7 +642,8 @@ function SubscriptionDetailContent() {
           accountId={normalized.accountId}
           trailHref={detail?.related_surfaces?.audit_href}
           display="table"
-          className="h-full"
+          compactEmpty
+          className="self-start"
         />
       </div>
 

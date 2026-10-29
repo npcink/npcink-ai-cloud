@@ -344,7 +344,10 @@ test('ticket queue keyboard flow moves focus, ignores typing, and opens detail w
   });
   await page.goto('/admin/support-requests');
   await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(4);
+  const keyboardHelp = page.getByRole('button', { name: /^Keyboard shortcuts$|^键盘快捷键$/i });
+  await keyboardHelp.focus();
   await expect(page.locator('[data-ui="admin-queue-keyboard-hint"]')).toBeVisible();
+  await keyboardHelp.press('Escape');
 
   const search = page.getByLabel(/Search tickets|搜索工单/i);
   await search.focus();
