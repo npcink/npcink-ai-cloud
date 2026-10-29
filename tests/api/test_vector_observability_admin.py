@@ -310,3 +310,71 @@ def test_admin_vector_observability_empty_data_returns_zero_counts(tmp_path: Pat
     assert data["health"]["status"] == "inactive"
     assert data["sites"] == []
     assert data["errors"] == []
+
+
+def test_vector_failures_without_codes_and_index_only_sites_are_visible(tmp_path: Path) -> None:
+    from sqlalchemy import delete, update
+
+    database_url, client = _build_client(tmp_path)
+    _seed_vector_metrics(database_url)
+    with get_session(database_url) as session:
+        session.execute(delete(SiteKnowledgeSearchMetric).where(
+            SiteKnowledgeSearchMetric.site_id == "site-vector-001"
+        ))
+        session.execute(update(SiteKnowledgeIndexJobMetric).values(
+            status="failed", error_code="index.fixture_failed"
+        ))
+        session.execute(update(SiteKnowledgeSearchMetric).values(error_code=None))
+        # Current retained stock remains visible even when its capture predates this window.
+        session.execute(update(SiteKnowledgeIndexSnapshot).values(
+            captured_at=datetime.now(UTC) - timedelta(days=20)
+        ))
+        session.commit()
+    response = client.get(
+        "/internal/service/admin/vector-observability?window_hours=336",
+        headers=build_internal_headers(),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["totals"]["index_failed_total"] == 1
+    assert data["totals"]["search_failed_total"] == 1
+    assert {(g["kind"], g["error_code"], g["count"]) for g in data["failure_groups"]} == {
+        ("index", "index.fixture_failed", 1), ("search", "", 1),
+    }
+    sites = {s["site_id"]: s for s in data["sites"]}
+    assert sites["site-vector-001"]["queries_total"] == 0
+    assert sites["site-vector-001"]["index_failed_total"] == 1
+    assert sites["site-vector-001"]["document_count"] == 1
+    assert sites["site-vector-001"]["captured_at"]
+    assert data["sites_total"] == 2 and data["sites_truncated"] is False
+    assert data["errors"] == []  # Legacy search-code projection is retained.
+    assert data["timeline"][0]["bucket_start_at"] == data["window"]["start_at"]
+    assert data["timeline"][-1]["bucket_end_at"] == data["window"]["end_at"]
+    assert all(a["bucket_end_at"] == b["bucket_start_at"]
+               for a, b in zip(data["timeline"], data["timeline"][1:], strict=False))
+
+
+def test_vector_bounded_groups_do_not_replace_full_failure_totals(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    _seed_vector_metrics(database_url)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        for i in range(27):
+            run_id = f"run-vector-limit-{i}"
+            session.add(_run_record(run_id, "site-vector-001",
+                                    ability_name="knowledge-search", status="failed", now=now))
+            session.flush()
+            session.add(SiteKnowledgeSearchMetric(
+                run_id=run_id, site_id="site-vector-001", status="failed",
+                error_code=f"fixture.error.{i}", intent="site_search",
+                embedding_provider="deterministic", embedding_model="fixture",
+                vector_backend="local", created_at=now, finished_at=now,
+            ))
+        session.commit()
+    data = client.get(
+        "/internal/service/admin/vector-observability?window_hours=336",
+        headers=build_internal_headers(),
+    ).json()["data"]
+    assert data["totals"]["search_failed_total"] == 28
+    assert len(data["failure_groups"]) == 25
+    assert data["failure_groups_total"] == 28 and data["failure_groups_truncated"] is True

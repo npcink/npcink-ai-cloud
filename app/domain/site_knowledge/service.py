@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -73,6 +74,10 @@ from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
+)
 
 if TYPE_CHECKING:
     from app.core.models import RunRecord
@@ -172,6 +177,10 @@ class SiteKnowledgeService:
             model_id=self.embedding_model,
         )
         self.embedding_dimensions = int(self.settings.site_knowledge_embedding_dimensions)
+        self.local_multimodal_embedding = (
+            self.embedding_provider_id == SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID
+            and self.embedding_model == SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID
+        )
 
     def execute(
         self,
@@ -488,6 +497,10 @@ class SiteKnowledgeService:
                     source_id=source_id,
                 )
                 == str(normalized["content_hash"])
+                and self.repository.list_embedding_models(
+                    site_id, source_types=[source_type], source_id=source_id,
+                    embedding_input="image_pixels.v1" if self.local_multimodal_embedding else None,
+                ) == [self.embedding_space_id]
             ):
                 accepted_documents += 1
                 unchanged_documents += 1
@@ -1166,6 +1179,28 @@ class SiteKnowledgeService:
         ability_name: str,
         max_chunks: int | None = None,
     ) -> list[dict[str, object]]:
+        if max_chunks is not None and max_chunks <= 0:
+            return []
+        if self.local_multimodal_embedding and document.get("source_type") == "media":
+            from app.domain.site_knowledge.media_embedding import load_media_embedding_image
+
+            image = load_media_embedding_image(
+                document, session=self.repository.session, settings=self.settings, site_id=site_id
+            )
+            return [{
+                "chunk_index": 0,
+                "chunk_text": str(document.get("content_excerpt") or document.get("title") or ""),
+                "embedding": self._embed_text_with_provider(
+                    "", site_id=site_id, run_id=run_id, ability_name=ability_name,
+                    image_base64=image,
+                ),
+                "embedding_model": self.embedding_space_id,
+                "metadata": {
+                    "source": "wordpress_public_image",
+                    "content_hash": str(document.get("content_hash") or ""),
+                    "embedding_input": "image_pixels.v1",
+                },
+            }]
         source_text = "\n\n".join(
             part
             for part in (
@@ -1249,6 +1284,7 @@ class SiteKnowledgeService:
         site_id: str,
         run_id: str,
         ability_name: str,
+        image_base64: str = "",
     ) -> list[float]:
         provider = self.providers.get(self.embedding_provider_id)
         if provider is None:
@@ -1267,9 +1303,11 @@ class SiteKnowledgeService:
             execution_kind="embedding",
             model_id=model_id,
             instance_id=f"{self.embedding_provider_id}-site-knowledge-embedding",
-            endpoint_variant="embeddings",
+            endpoint_variant=(
+                "ollama_embeddings" if self.local_multimodal_embedding else "embeddings"
+            ),
             trace_id=run_id,
-            input_payload={"text": text},
+            input_payload={"image_base64": image_base64} if image_base64 else {"text": text},
             policy={"storage_mode": "result_only"},
             timeout_ms=max(1, int(self._embedding_timeout_seconds() * 1000)),
         )
@@ -1320,11 +1358,20 @@ class SiteKnowledgeService:
                 "site_knowledge.embedding_invalid",
                 "site knowledge embedding provider returned an invalid embedding",
             )
-        vector = [float(value) for value in embedding]
+        try:
+            vector = [float(value) for value in embedding]
+        except (TypeError, ValueError, OverflowError) as error:
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.embedding_invalid", "Embedding must contain numeric values"
+            ) from error
         if len(vector) != self.embedding_dimensions:
             raise SiteKnowledgeBackendError(
                 "site_knowledge.embedding_dimension_mismatch",
                 "site knowledge embedding dimensions do not match configuration",
+            )
+        if not all(math.isfinite(value) for value in vector) or not any(vector):
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.embedding_invalid", "Embedding must be finite and nonzero"
             )
         return vector
 
@@ -1345,6 +1392,8 @@ class SiteKnowledgeService:
         )
 
     def _embedding_timeout_seconds(self) -> float:
+        if self.local_multimodal_embedding:
+            return float(self.settings.ollama_timeout_seconds)
         if self.embedding_provider_id == "siliconflow":
             return float(self.settings.siliconflow_timeout_seconds)
         if self.embedding_provider_id == "openai":
@@ -1924,6 +1973,7 @@ def _normalize_public_media(document: dict[str, Any]) -> dict[str, object] | Non
         "taxonomies": {"category": [], "post_tag": []},
         "content_hash": content_hash,
         "media_fingerprint": media_fingerprint,
+        "source_artifact_id": str(document.get("source_artifact_id") or "")[:36],
         "visual_evidence": visual_evidence,
     }
 

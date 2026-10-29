@@ -144,3 +144,34 @@ test('subscription service remediation keeps one statistics refresh secondary', 
   await expect(refresh).toHaveCount(1);
   await expect(refresh).toHaveClass(/btn-secondary/);
 });
+
+test('successful snapshot rebuild with failed readback retries GET without another rebuild', async ({ page }) => {
+  await installAdminMocks(page);
+  let writes = 0;
+  let failRead = false;
+  await page.route('**/api/admin/subscriptions/sub_mvp**', async (route) => {
+    if (route.request().method() === 'POST') {
+      writes += 1; failRead = true;
+      await route.fulfill({ json: buildAdminApiEnvelope({}) }); return;
+    }
+    if (failRead) {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
+    }
+    await route.fulfill({ json: buildAdminApiEnvelope({
+      subscription: { subscription_id: 'sub_mvp', status: 'past_due', account_id: LONG_ACCOUNT_ID },
+      account: { account_id: LONG_ACCOUNT_ID, name: 'Synthetic customer' },
+      billing_snapshot_status: { status: 'stale', stale_site_count: 1, next_action: { action: 'rebuild' } },
+    }) });
+  });
+  await page.goto('/admin/subscriptions/sub_mvp');
+  const refresh = page.getByRole('button', { name: /Refresh.*statistics|刷新.*统计/ });
+  await refresh.click();
+  await expect(page.getByText(/Write succeeded|写入已成功/)).toBeVisible();
+  await expect(refresh).toBeDisabled();
+  expect(writes).toBe(1);
+  failRead = false;
+  await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(page.getByText(/Write succeeded|写入已成功/)).toHaveCount(0);
+  await expect(refresh).toBeEnabled();
+  expect(writes).toBe(1);
+});

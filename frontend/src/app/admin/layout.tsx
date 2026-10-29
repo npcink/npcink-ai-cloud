@@ -18,6 +18,7 @@ import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
+import { installAdminHistoryTracking } from '@/hooks/useAdminNavigationGuard';
 import { getAdminCommandShortcutLabel } from '@/lib/admin-shortcuts';
 
 interface AdminLayoutProps {
@@ -75,6 +76,7 @@ function isTypingShortcutTarget(target: EventTarget | null): boolean {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
+  useEffect(() => { installAdminHistoryTracking(); }, []);
   const pathname = usePathname();
   const { t } = useLocale();
   const isLoginPage = pathname === '/admin/login';
@@ -189,6 +191,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       }
 
       if (key === 'k') {
+        if (document.querySelector('[aria-modal]') && !document.querySelector('[data-ui="admin-command-dialog"]')) return;
         event.preventDefault();
         setCommandOpen((current) => !current);
       }

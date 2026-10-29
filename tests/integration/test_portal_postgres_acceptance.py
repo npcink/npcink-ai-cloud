@@ -95,3 +95,21 @@ def test_activity_index_postgres_round_trip(portal_database: str) -> None:
         assert_activity_index_round_trip(engine)
     finally:
         engine.dispose()
+
+
+def test_plugin_error_aggregates_on_postgres(portal_database: str) -> None:
+    """Admin and site summaries must execute their grouped binds on PostgreSQL."""
+    from app.core.db import init_schema
+    from app.domain.observability.plugin_events import PluginObservabilityService
+    from tests.api.test_plugin_observability_admin import _seed_plugin_events
+    from tests.conftest import seed_site_auth
+
+    init_schema(portal_database)
+    seed_site_auth(portal_database, site_id="site-001", scopes=["stats:read"])
+    seed_site_auth(portal_database, site_id="site-002", scopes=["stats:read"])
+    _seed_plugin_events(portal_database)
+    service = PluginObservabilityService(portal_database)
+    admin = service.get_admin_summary(window_hours=336)
+    site = service.get_summary(site_id="site-001")
+    assert admin["errors"]
+    assert site["errors"]

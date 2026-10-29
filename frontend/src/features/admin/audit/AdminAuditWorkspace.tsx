@@ -93,22 +93,28 @@ export function AdminAuditWorkspace() {
   }, [offset, searchParams]);
 
   const query = useAdminAuditWorkspace(requestKey);
-  const items = Array.isArray(query.data?.items) ? query.data.items : [];
-  const pagination = query.data?.pagination ?? {};
-  const total = Number(pagination.total ?? query.data?.total ?? 0);
-  const loadedRange = resolveAuditLoadedRange(query.data);
   const hasCurrentData = query.data?.requestKey === requestKey && !query.isPlaceholderData;
+  const data = hasCurrentData ? query.data : undefined;
+  const loadedScope = new URLSearchParams(query.data?.requestKey);
+  const requestedScope = new URLSearchParams(requestKey);
+  loadedScope.delete('offset');
+  requestedScope.delete('offset');
+  const paginationData = loadedScope.toString() === requestedScope.toString() ? query.data : undefined;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const pagination = paginationData?.pagination ?? {};
+  const total = Number(pagination.total ?? data?.total ?? 0);
+  const loadedRange = resolveAuditLoadedRange(paginationData);
   const navigationPending = query.isFetching || !hasCurrentData;
   const focusedEventId = positiveInteger(searchParams.get('focus'));
   const selectedEventId = focusedEventId === dismissedFocus ? 0 : focusedEventId;
   const selectedEvent = items.find((item) => Number(item.event_id || 0) === selectedEventId);
   const filterCount = FILTER_KEYS.filter((key) => searchParams.get(key)?.trim()).length;
-  const generatedAt = String(query.data?.generated_at || '');
-  const returnedCountValue = Number(query.data?.diagnostics?.returned_count);
+  const generatedAt = String(data?.generated_at || '');
+  const returnedCountValue = Number(data?.diagnostics?.returned_count);
   const returnedCount = Number.isInteger(returnedCountValue) && returnedCountValue >= 0
     ? returnedCountValue
     : items.length;
-  const queryDurationValue = Number(query.data?.diagnostics?.query_duration_ms);
+  const queryDurationValue = Number(data?.diagnostics?.query_duration_ms);
   const queryDurationMs = Number.isFinite(queryDurationValue) && queryDurationValue >= 0
     ? queryDurationValue
     : null;
@@ -186,11 +192,11 @@ export function AdminAuditWorkspace() {
         summaryItems={[
           {
             label: t('admin.audit_workspace.visible', {}, 'Visible records'),
-            value: formatNumber(items.length),
+            value: data ? formatNumber(items.length) : '—',
           },
           {
             label: t('admin.audit_workspace.total', {}, 'Matching records'),
-            value: formatNumber(total),
+            value: data ? formatNumber(total) : '—',
           },
           {
             label: t('admin.audit_workspace.filters', {}, 'Active filters'),
@@ -219,7 +225,7 @@ export function AdminAuditWorkspace() {
       {errorMessage ? (
         <BackofficeDiagnosticNotice
           message={errorMessage}
-          staleDescription={query.data
+          staleDescription={data
             ? t('admin.audit_workspace.stale_notice', {}, 'The last loaded audit page remains visible.')
             : undefined}
           retryLabel={t('common.retry', {}, 'Retry')}
@@ -227,7 +233,7 @@ export function AdminAuditWorkspace() {
         />
       ) : null}
 
-      {query.data ? (
+      {data ? (
         <div
           className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
           data-ui="admin-audit-query-evidence"
@@ -250,17 +256,22 @@ export function AdminAuditWorkspace() {
         </div>
       ) : null}
 
+      {data && selectedEventId > 0 && !selectedEvent ? <div role="status" className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800" data-ui="admin-audit-focus-absent">
+        <p>{t('admin.audit_workspace.focus_absent', { id: String(selectedEventId) })}</p>
+        <button type="button" className="btn btn-secondary btn-sm mt-2" onClick={() => updateUrl({ event_id: String(selectedEventId), offset: null })}>{t('admin.audit_workspace.find_exact')}</button>
+      </div> : null}
+
       <AdminDataTableFrame
         dataUi="admin-audit-directory"
         density="compact"
         title={t('admin.audit_workspace.directory_title', {}, 'Audit records')}
-        resultLabel={t(
+        resultLabel={data ? t(
           'admin.audit_workspace.directory_result',
           { count: formatNumber(total) },
           '{{count}} matching records'
-        )}
+        ) : t('admin.audit_workspace.results_unknown')}
         bodyClassName=""
-        footer={(
+        footer={paginationData ? (
           <div data-ui="admin-audit-pagination" className="flex items-center justify-between border-t border-slate-200 px-3 py-2 dark:border-slate-800">
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {t(
@@ -282,7 +293,7 @@ export function AdminAuditWorkspace() {
               </button>
             </div>
           </div>
-        )}
+        ) : undefined}
       >
         <form key={requestKey} data-ui="admin-audit-filter-workbench" className="border-b border-slate-200 p-3 dark:border-slate-800" onSubmit={applyFilters}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -290,6 +301,7 @@ export function AdminAuditWorkspace() {
               {t('admin.audit_workspace.event_id', {}, 'Event ID')}
               <input
                 name="event_id"
+                type="number"
                 inputMode="numeric"
                 min="1"
                 defaultValue={searchParams.get('event_id') || ''}
@@ -352,6 +364,9 @@ export function AdminAuditWorkspace() {
                   <option value="succeeded">{t('common.succeeded', {}, 'Succeeded')}</option>
                   <option value="success">{t('common.success', {}, 'Success')}</option>
                   <option value="error">{t('common.error', {}, 'Error')}</option>
+                  <option value="failed">{t('common.failed', {}, 'Failed')}</option>
+                  <option value="partial">{t('admin.audit_workspace.outcome_partial')}</option>
+                  {searchParams.get('outcome') && !['succeeded', 'success', 'error', 'blocked', 'failed', 'partial'].includes(searchParams.get('outcome') || '') ? <option value={searchParams.get('outcome') || ''}>{searchParams.get('outcome')}</option> : null}
                   <option value="blocked">{t('common.blocked', {}, 'Blocked')}</option>
                 </select>
               </label>
@@ -384,7 +399,7 @@ export function AdminAuditWorkspace() {
           tabIndex={0}
           className="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         >
-        {query.isLoading && !query.data ? (
+        {query.isFetching && !data ? (
           <p className="px-4 py-8 text-sm text-slate-500 dark:text-slate-400" role="status">
             {t('admin.audit_workspace.loading', {}, 'Loading audit evidence...')}
           </p>
@@ -462,7 +477,7 @@ export function AdminAuditWorkspace() {
               </form>
             )}
           />
-        ) : (
+        ) : !data ? null : (
           <BackofficeEmptyState
             className="m-5 md:m-6"
             title={t('admin.audit_workspace.empty_title', {}, 'No matching audit evidence')}

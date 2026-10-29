@@ -61,7 +61,7 @@ export interface AnalyticsLineChartProps {
   onLegendSelectChanged?: (selected: Record<string, boolean>) => void;
   comparisonSeries?: Array<{
     name: string;
-    values: number[];
+    values: (number | null)[];
     // Optional per-series emphasis for multi-series comparison charts; when
     // neither field is set the series keeps the original neutral style.
     emphasis?: boolean;

@@ -34,7 +34,7 @@ assert.match(source, /headerVisibility="sr-only"/, 'the table must keep its acce
 assert.doesNotMatch(source, /admin\.plans\.search_label|admin\.plans\.sort_label|admin\.plans\.state_filter_label/, 'the fixed catalog must not expose redundant search, sort, or readiness controls');
 assert.match(source, /<p className="font-semibold text-slate-950 dark:text-white">\{packageAlias\}<\/p>/, 'package identity must remain plain text');
 assert.doesNotMatch(source, /<button[\s\S]{0,320}>\s*\{packageAlias\}\s*<\/button>/, 'package identity must not duplicate the manage action');
-assert.match(source, /text-blue-700[\s\S]{0,420}<span aria-hidden="true">›<\/span>/, 'active subscription counts must keep a persistent link affordance');
+assert.match(source, /text-blue-700[\s\S]{0,420}<span aria-hidden="true">›<\/span>/, 'the all-subscriptions action must keep a persistent link affordance');
 assert.match(source, /aria-label=\{planId[\s\S]{0,180}admin\.plans\.manage_title/, 'the compact manage button must keep an object-specific accessible name');
 assert.match(source, /PlanManagementWorkbench/, 'one package management workbench must own package context and maintenance');
 assert.doesNotMatch(workbench, /admin\.plans\.open_subscriptions_action/, 'the workbench must not duplicate the subscription link already owned by the catalog count');

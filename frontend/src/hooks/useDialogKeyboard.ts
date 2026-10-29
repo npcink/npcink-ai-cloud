@@ -1,5 +1,7 @@
 'use client';
 
+import { isTopmostDialog, registerDialog } from '@/lib/dialog-layer';
+
 import { useEffect, useRef } from 'react';
 
 type DialogKeyboardOptions = {
@@ -37,6 +39,7 @@ export function useDialogKeyboard<T extends HTMLElement = HTMLDivElement>({
 
   useEffect(() => {
     if (!open) return;
+    const unregisterDialog = registerDialog(dialogRef.current);
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -51,6 +54,7 @@ export function useDialogKeyboard<T extends HTMLElement = HTMLDivElement>({
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmostDialog(dialogRef.current)) return;
       if (event.key === 'Escape' && !closeDisabledRef.current) {
         event.preventDefault();
         closeRef.current();
@@ -76,6 +80,7 @@ export function useDialogKeyboard<T extends HTMLElement = HTMLDivElement>({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => {
+      unregisterDialog();
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;

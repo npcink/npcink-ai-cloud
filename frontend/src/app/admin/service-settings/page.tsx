@@ -1,7 +1,7 @@
 'use client';
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
@@ -18,6 +18,7 @@ import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclos
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -62,7 +63,7 @@ function persistServiceSettingsTab(pathname: string, nextTab: ServiceSettingsTab
   const params = new URLSearchParams(window.location.search);
   params.set('tab', nextTab);
   const query = params.toString();
-  window.history.replaceState(window.history.state, '', `${pathname}?${query}`);
+  window.history.pushState(null, '', `${pathname}?${query}`);
 }
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
@@ -275,6 +276,9 @@ function serviceSettingsRequestErrorMessage(
       ? t('admin.service_settings.error_http_suffix', { message, status: String(error.statusCode) }, '{{message}} (HTTP {{status}}).')
       : message;
   }
+  if (error.errorCode.startsWith('proxy.') || error.statusCode === 502 || error.statusCode === 503 || error.statusCode === 504) {
+    return t('admin.service_settings.error_upstream_unavailable', { status: String(error.statusCode) }, 'The service or session upstream is temporarily unavailable (HTTP {{status}}). Retry later; this does not establish a configuration failure.');
+  }
   if (error.statusCode >= 500) {
     return t('admin.service_settings.error_http_migration_hint', { message, status: String(error.statusCode) }, '{{message}}（HTTP {{status}}）。请确认数据库迁移已执行，并查看 API 日志。');
   }
@@ -289,7 +293,10 @@ function settingTone(status: SettingStatus): 'ready' | 'attention' | 'neutral' |
 }
 
 export default function AdminServiceSettingsPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const translatorRef = useRef(t);
+  useEffect(() => { translatorRef.current = t; }, [t]);
+  const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
   const { success: showSuccessToast } = useToast();
@@ -303,6 +310,12 @@ export default function AdminServiceSettingsPage() {
   const [data, setData] = useState<NormalizedServiceSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState('');
+  const operationRef = useRef(false);
+  const [snapshotCurrent, setSnapshotCurrent] = useState(false);
+  const [pendingReadMessage, setPendingReadMessage] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const previewRequestRef = useRef(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [emailTestRecipient, setEmailTestRecipient] = useState('');
@@ -386,9 +399,8 @@ export default function AdminServiceSettingsPage() {
   }, [notice, showSuccessToast, t]);
 
   const loadSettings = useCallback(async function loadSettings() {
-    if (settingsRequestActiveRef.current) {
-      return;
-    }
+    if (settingsRequestActiveRef.current) return false;
+    const t = translatorRef.current;
     const requestSequence = settingsRequestSequenceRef.current + 1;
     settingsRequestSequenceRef.current = requestSequence;
     settingsRequestActiveRef.current = true;
@@ -402,10 +414,12 @@ export default function AdminServiceSettingsPage() {
         throw new Error(t('admin.service_settings.invalid_response', {}, 'Service settings response is invalid.'));
       }
       if (!settingsMountedRef.current || settingsRequestSequenceRef.current !== requestSequence) {
-        return;
+        return false;
       }
       const projection = projectServiceSettingsForms(nextData);
       setData(projection.data);
+      setSnapshotCurrent(true);
+      setPendingReadMessage('');
       setEmailConfigExpanded(projection.emailConfigExpanded);
       const nextSavedForms = projection.savedForms;
       savedFormsRef.current = nextSavedForms;
@@ -422,10 +436,13 @@ export default function AdminServiceSettingsPage() {
       setEmailCredentialRevealed(false);
       setAlipayPrivateKeyRevealed(false);
       setAlipayPublicKeyRevealed(false);
+      return true;
     } catch (loadError) {
       if (settingsMountedRef.current && settingsRequestSequenceRef.current === requestSequence) {
+        setSnapshotCurrent(false);
         setError(serviceSettingsRequestErrorMessage(loadError, t('admin.service_settings.load_failed', {}, 'Failed to load service settings.'), t));
       }
+      return false;
     } finally {
       if (settingsRequestSequenceRef.current === requestSequence) {
         settingsRequestActiveRef.current = false;
@@ -434,7 +451,7 @@ export default function AdminServiceSettingsPage() {
         }
       }
     }
-  }, [t]);
+  }, []);
 
   useEffect(() => {
     settingsMountedRef.current = true;
@@ -567,17 +584,20 @@ export default function AdminServiceSettingsPage() {
     savingKey: string,
     successMessage: string
   ) {
+    if (operationRef.current || !snapshotCurrent || loading) return;
+    operationRef.current = true;
     setSaving(savingKey);
     setError('');
     setNotice('');
-    const fallbackMessage = t('admin.service_settings.save_failed', {}, 'Failed to save service settings.');
     try {
       await writeJson(path, 'PATCH', body);
-      setNotice(successMessage);
-      await loadSettings();
+      const confirmed = await loadSettings();
+      if (confirmed) setNotice(successMessage);
+      else setPendingReadMessage(t('admin.service_settings.saved_read_failed', {}, 'Settings saved, but the latest state could not be read. Retry the read; do not save again.'));
     } catch (saveError) {
-      setError(serviceSettingsRequestErrorMessage(saveError, fallbackMessage, t));
+      setError(serviceSettingsRequestErrorMessage(saveError, t('admin.service_settings.save_failed', {}, 'Failed to save service settings.'), t));
     } finally {
+      operationRef.current = false;
       setSaving('');
     }
   }
@@ -588,24 +608,32 @@ export default function AdminServiceSettingsPage() {
     savingKey: string,
     successMessage: string
   ) {
+    if (operationRef.current || !snapshotCurrent || loading || activeGroupDirty) return;
+    operationRef.current = true;
     setSaving(savingKey);
     setError('');
     setNotice('');
-    const fallbackMessage = t('admin.service_settings.test_failed', {}, 'Failed to test service settings.');
     try {
       await writeJson(path, 'POST', body);
-      setNotice(successMessage);
-      await loadSettings();
+      const confirmed = await loadSettings();
+      if (confirmed) setNotice(successMessage);
+      else setPendingReadMessage(t('admin.service_settings.tested_read_failed', {}, 'The test completed, but the latest state could not be read. Retry the read; do not repeat the test.'));
     } catch (testError) {
-      setError(serviceSettingsRequestErrorMessage(testError, fallbackMessage, t));
+      // Tests persist their result on the server, including failures.
+      await loadSettings();
+      setError(serviceSettingsRequestErrorMessage(testError, t('admin.service_settings.test_failed', {}, 'Failed to test service settings.'), t));
     } finally {
+      operationRef.current = false;
       setSaving('');
     }
   }
 
   async function loadEmailPreview(type: EmailPreviewType = emailPreviewType) {
-    setSaving('email-preview');
-    setError('');
+    if (previewLoading || operationRef.current) return;
+    const requestId = ++previewRequestRef.current;
+    setPreviewLoading(true);
+    setPreviewError('');
+    setEmailPreview(null);
     try {
       const preview = (await serviceSettingsClient.request<EmailPreview>(
         '/api/admin/service-settings/email/preview',
@@ -613,7 +641,7 @@ export default function AdminServiceSettingsPage() {
           method: 'POST',
           body: {
             preview_type: type,
-            locale: 'zh-CN',
+            locale,
             from_name: emailForm.from_name,
             from_email: emailForm.from_email,
           },
@@ -622,21 +650,27 @@ export default function AdminServiceSettingsPage() {
       if (!preview?.html || !preview.subject) {
         throw new Error(t('admin.service_settings.email_preview_invalid', {}, 'Email preview response is invalid.'));
       }
+      if (requestId !== previewRequestRef.current) return;
       setEmailPreview(preview);
       setNotice('');
     } catch (previewError) {
+      if (requestId !== previewRequestRef.current) return;
       setEmailPreview(null);
-      setError(serviceSettingsRequestErrorMessage(previewError, t('admin.service_settings.email_preview_failed', {}, 'Failed to load email preview.'), t));
+      setPreviewError(serviceSettingsRequestErrorMessage(previewError, t('admin.service_settings.email_preview_failed', {}, 'Failed to load email preview.'), t));
     } finally {
-      setSaving('');
+      if (requestId === previewRequestRef.current) setPreviewLoading(false);
     }
+  }
+
+  function closeEmailPreview() {
+    previewRequestRef.current += 1;
+    setPreviewLoading(false);
+    setEmailPreviewOpen(false);
   }
 
   function openEmailPreviewDrawer() {
     setEmailPreviewOpen(true);
-    if (!emailPreview) {
-      void loadEmailPreview();
-    }
+    void loadEmailPreview();
   }
 
   function submitPortalPublic(event: FormEvent<HTMLFormElement>) {
@@ -856,19 +890,7 @@ export default function AdminServiceSettingsPage() {
     if (alipayForm.public_key) {
       payload.public_key = alipayForm.public_key;
     }
-    setSaving('alipay-payment');
-    setError('');
-    setNotice('');
-    const fallbackMessage = t('admin.service_settings.save_failed', {}, '保存服务配置失败。');
-    try {
-      await writeJson('/api/admin/service-settings/alipay-payment', 'PATCH', payload);
-      setNotice(t('admin.service_settings.alipay_saved', {}, '支付宝支付配置已保存。'));
-      await loadSettings();
-    } catch (saveError) {
-      setError(serviceSettingsRequestErrorMessage(saveError, fallbackMessage, t));
-    } finally {
-      setSaving('');
-    }
+    await saveJson('/api/admin/service-settings/alipay-payment', payload, 'alipay-payment', t('admin.service_settings.alipay_saved', {}, '支付宝支付配置已保存。'));
   }
 
   const secretConfigured = {
@@ -878,7 +900,7 @@ export default function AdminServiceSettingsPage() {
     alipayPublicKey: Boolean(data?.settings.alipay_payment.secrets.public_key?.configured),
   };
   const activeGroupDirty = (() => {
-    if (!savedForms) return false;
+    if (!savedForms || !snapshotCurrent) return false;
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
@@ -1066,39 +1088,33 @@ export default function AdminServiceSettingsPage() {
     setError('');
   }, [activeTab]);
 
-  const requestTabChange = useCallback((nextTab: ServiceSettingsTab) => {
-    if (nextTab === activeTab) return;
+  function requestTabChange(nextTab: ServiceSettingsTab) {
+    if (nextTab === activeTab || operationRef.current || loading || !snapshotCurrent) return;
     if (activeGroupDirty) {
       setPendingTab(nextTab);
       return;
     }
     setError('');
-    setActiveTab(nextTab);
     persistServiceSettingsTab(pathname, nextTab);
-  }, [activeGroupDirty, activeTab, pathname]);
+  }
 
   useEffect(() => {
-    if (!activeGroupDirty) return;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    const handleAnchorClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
-      if (!(target instanceof HTMLAnchorElement) || target.target === '_blank') return;
-      const destination = new URL(target.href, window.location.href);
-      if (destination.origin !== window.location.origin || destination.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingNavigationHref(`${destination.pathname}${destination.search}${destination.hash}`);
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('click', handleAnchorClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('click', handleAnchorClick, true);
-    };
-  }, [activeGroupDirty]);
+    const requested = serviceSettingsTabFromQuery(searchParams.get('tab'));
+    if (requested === activeTab) return;
+    if (activeGroupDirty || operationRef.current) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', activeTab);
+      window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
+      if (!operationRef.current) setPendingTab(requested);
+    } else {
+      setError('');
+      setActiveTab(requested);
+    }
+  }, [searchParams, activeTab, activeGroupDirty, pathname]);
+
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    activeGroupDirty, setPendingNavigationHref, (href) => router.push(href),
+  );
 
   const emailSetting = data?.settings.portal_email;
   const emailStatus = emailSetting?.status || 'missing_config';
@@ -1230,7 +1246,7 @@ export default function AdminServiceSettingsPage() {
       label: t('admin.service_settings.email_preview_test', {}, '测试邮件'),
     },
   ];
-  const activeStateNotice = (activeGroupDirty || activeValidationIssues.length > 0 || error) ? (
+  const activeStateNotice = (activeGroupDirty || activeValidationIssues.length > 0 || error) && snapshotCurrent ? (
     <div
       data-ui="service-settings-active-state"
       role={error || activeValidationIssues.length > 0 ? 'alert' : 'status'}
@@ -1306,20 +1322,28 @@ export default function AdminServiceSettingsPage() {
         summaryItems={metrics}
       />
 
+      {!snapshotCurrent ? (
+        <div role="status" className="border-l-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <p>{pendingReadMessage || t('admin.service_settings.stale_snapshot', {}, 'Showing the previous snapshot. Current settings are unknown; editing is paused until the read recovers.')}</p>
+          {error ? <p className="mt-1">{error}</p> : null}
+          <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={loading || Boolean(saving)} onClick={() => void loadSettings()}>{t('common.retry')}</button>
+        </div>
+      ) : null}
+      <fieldset className="min-w-0" disabled={loading || Boolean(saving) || !snapshotCurrent}>
       <AdminSettingsWorkbench
         ariaLabel={t('admin.service_settings.tablist_label', {}, 'Service settings categories')}
         activeId={activeTab}
         items={tabs.map((tab) => ({
           id: tab.id,
           label: tab.label,
-          status: tab.description,
-          tone: tab.tone,
+          status: snapshotCurrent ? tab.description : t('admin.service_settings.awaiting_read', {}, 'Awaiting confirmation'),
+          tone: snapshotCurrent ? tab.tone : 'attention',
         }))}
         onSelect={(nextTab) => requestTabChange(nextTab as ServiceSettingsTab)}
       >
 
       {activeTab === 'portal' ? (
-          <div id="service-settings-portal" className="grid gap-3" role="tabpanel">
+          <div id="service-settings-portal" aria-labelledby="service-settings-tab-portal" className="grid gap-3" role="tabpanel">
             <div className="flex min-w-0 items-baseline gap-3">
               <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                 {t('admin.service_settings.portal_public_title', {}, '门户基础地址')}
@@ -1397,7 +1421,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'accounting' ? (
-          <div id="service-settings-accounting" className="grid gap-3" role="tabpanel">
+          <div id="service-settings-accounting" aria-labelledby="service-settings-tab-accounting" className="grid gap-3" role="tabpanel">
             <div className="flex min-w-0 items-baseline gap-3">
               <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                 {t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
@@ -1517,7 +1541,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'provider-budget' ? (
-          <div id="service-settings-provider-budget" className="grid gap-3" role="tabpanel">
+          <div id="service-settings-provider-budget" aria-labelledby="service-settings-tab-provider-budget" className="grid gap-3" role="tabpanel">
             <div className="flex min-w-0 items-baseline gap-3">
               <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                 {t('admin.service_settings.provider_budget_title', {}, 'Provider 账户预算')}
@@ -1747,7 +1771,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'site-relink' ? (
-          <div id="service-settings-site-relink" className="grid gap-3" role="tabpanel">
+          <div id="service-settings-site-relink" aria-labelledby="service-settings-tab-site-relink" className="grid gap-3" role="tabpanel">
               <div className="flex min-w-0 items-baseline gap-3">
                 <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                   {t(
@@ -1861,7 +1885,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'system' ? (
-        <div id="service-settings-system" className="grid gap-3" role="tabpanel">
+        <div id="service-settings-system" aria-labelledby="service-settings-tab-system" className="grid gap-3" role="tabpanel">
           <div className="flex min-w-0 items-baseline gap-3">
             <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
               {t('admin.service_settings.system_title', {}, 'Platform preferences')}
@@ -1887,7 +1911,7 @@ export default function AdminServiceSettingsPage() {
                   value={platformPreferencesForm.timezone}
                   onChange={(event) => setPlatformPreferencesForm((current) => ({ ...current, timezone: event.target.value }))}
                 >
-                  {['Asia/Shanghai', 'UTC', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'].map((timezone) => (
+                  {Array.from(new Set([platformPreferencesForm.timezone, 'Asia/Shanghai', 'UTC', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'])).map((timezone) => (
                     <option key={timezone} value={timezone}>{timezone}</option>
                   ))}
                 </select>}
@@ -1906,7 +1930,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'qq' ? (
-          <div id="service-settings-qq" className="grid gap-3" role="tabpanel">
+          <div id="service-settings-qq" aria-labelledby="service-settings-tab-qq" className="grid gap-3" role="tabpanel">
             <div className="flex min-w-0 items-baseline gap-3">
               <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.qq_title', {}, 'QQ 快捷登录')}</h2>
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">
@@ -1992,7 +2016,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       {activeTab === 'email' ? (
-          <div id="service-settings-email" className="space-y-4" role="tabpanel">
+          <div id="service-settings-email" aria-labelledby="service-settings-tab-email" className="space-y-4" role="tabpanel">
             <section className="space-y-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -2246,6 +2270,7 @@ export default function AdminServiceSettingsPage() {
 
       <AdminWorkbenchDialog
         open={emailPreviewOpen}
+        error={previewError}
         title={t('admin.service_settings.email_preview_title', {}, 'Preview email')}
         titleId="email-preview-drawer-title"
         headerAccessory={(
@@ -2272,17 +2297,17 @@ export default function AdminServiceSettingsPage() {
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={saving === 'email-preview'}
+              disabled={previewLoading}
               onClick={() => void loadEmailPreview()}
             >
-              {saving === 'email-preview'
+              {previewLoading
                 ? t('admin.service_settings.email_preview_loading', {}, 'Generating')
                 : t('admin.service_settings.email_preview_refresh', {}, 'Generate preview')}
             </button>
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => setEmailPreviewOpen(false)}
+              onClick={closeEmailPreview}
             >
               {t('admin.service_settings.email_preview_close', {}, 'Close preview')}
             </button>
@@ -2290,7 +2315,7 @@ export default function AdminServiceSettingsPage() {
         )}
         density="compact"
         contentMode="contained"
-        onClose={() => setEmailPreviewOpen(false)}
+        onClose={closeEmailPreview}
         onSubmit={() => void loadEmailPreview()}
       >
             <div data-ui="email-preview-workspace-scroll" className="grid min-h-0 flex-1 overflow-y-auto overscroll-contain lg:grid-cols-[16rem_1fr] lg:overflow-hidden">
@@ -2300,7 +2325,7 @@ export default function AdminServiceSettingsPage() {
                   <select
                     className={fieldClassName()}
                     value={emailPreviewType}
-                    disabled={saving === 'email-preview'}
+                    disabled={previewLoading}
                     onChange={(event) => {
                       const nextType = event.target.value as EmailPreviewType;
                       setEmailPreviewType(nextType);
@@ -2397,7 +2422,7 @@ export default function AdminServiceSettingsPage() {
       </AdminWorkbenchDialog>
 
       {activeTab === 'payment' ? (
-          <div id="service-settings-payment" className="space-y-4" role="tabpanel">
+          <div id="service-settings-payment" aria-labelledby="service-settings-tab-payment" className="space-y-4" role="tabpanel">
             <section className="space-y-4">
               <div className="flex min-w-0 items-baseline gap-3">
                 <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
@@ -2581,6 +2606,7 @@ export default function AdminServiceSettingsPage() {
       ) : null}
 
       </AdminSettingsWorkbench>
+      </fieldset>
 
       <ConfirmModal
         isOpen={pendingTab !== null}
@@ -2599,7 +2625,6 @@ export default function AdminServiceSettingsPage() {
           restoreActiveGroup();
           setPendingTab(null);
           if (nextTab) {
-            setActiveTab(nextTab);
             persistServiceSettingsTab(pathname, nextTab);
           }
         }}
@@ -2616,12 +2641,12 @@ export default function AdminServiceSettingsPage() {
         confirmLabel={t('admin.service_settings.discard_and_leave', {}, 'Discard and leave')}
         cancelLabel={t('common.cancel', {}, 'Cancel')}
         variant="danger"
-        onClose={() => setPendingNavigationHref('')}
+        onClose={cancelNavigation}
         onConfirm={() => {
           const href = pendingNavigationHref;
           restoreActiveGroup();
           setPendingNavigationHref('');
-          if (href) router.push(href);
+          confirmNavigation(href);
         }}
       />
 

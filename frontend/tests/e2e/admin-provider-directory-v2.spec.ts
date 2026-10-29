@@ -1814,3 +1814,27 @@ for (const width of [1056, 1440]) {
     expect(patches).toBe(0);
   });
 }
+
+test('provider workspace tabs expose panels and support roving keyboard navigation', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  await page.goto('/admin/ai-resources');
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /Configure|配置/ }).click();
+  const dialog = page.getByRole('dialog');
+  const connection = dialog.getByRole('tab', { name: /Connection settings|连接设置/ });
+  const models = dialog.getByRole('tab', { name: /Model management|模型管理/ });
+  const references = dialog.getByRole('tab', { name: /Reference information|参考资料/ });
+  await connection.focus();
+  await connection.press('ArrowRight');
+  await expect(models).toBeFocused();
+  await expect(models).toHaveAttribute('tabindex', '0');
+  await expect(connection).toHaveAttribute('tabindex', '-1');
+  await expect(dialog.getByRole('tabpanel')).toHaveAttribute('id', 'provider-panel-models');
+  await models.press('End');
+  await expect(references).toBeFocused();
+  await expect(dialog.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'provider-tab-references');
+  await references.press('ArrowRight');
+  await expect(connection).toBeFocused();
+  await expect(connection).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});

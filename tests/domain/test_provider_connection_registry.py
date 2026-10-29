@@ -1224,8 +1224,10 @@ def test_runtime_settings_accept_m4_ollama_embedding_only_in_development(
 
     assert projection.embedding_count == 1
     assert settings.site_knowledge_embedding_provider == "ollama-m4-embedding"
-    assert settings.site_knowledge_embedding_model == "qwen3-embedding:0.6b"
-    assert settings.site_knowledge_embedding_dimensions == 1024
+    assert settings.site_knowledge_embedding_model == (
+        "npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8"
+    )
+    assert settings.site_knowledge_embedding_dimensions == 4096
     providers = resolve_execution_provider_adapters(settings)
     assert "ollama-m4-embedding" in providers
     assert isinstance(providers["ollama-m4-embedding"], OpenAIProviderAdapter)

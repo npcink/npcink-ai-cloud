@@ -91,3 +91,56 @@ test('Agent feedback exits initial loading with a scoped retry', async ({ page }
   await expect(page.locator('[role="alert"]').filter({ hasText: /feedback diagnostics unavailable|Failed to load Agent feedback diagnostics|加载 Agent 反馈诊断失败/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
 });
+
+test('feedback preserves absent focus and never shows another site snapshot after failure', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await page.route('**/api/admin/agent-feedback?*', async route => {
+    const site = new URL(route.request().url()).searchParams.get('site_id');
+    await route.fulfill(site ? { status: 503, json: buildAdminApiErrorEnvelope('site unavailable') }
+      : { json: buildAdminApiEnvelope(feedbackData) });
+  });
+  await page.goto('/admin/agent-feedback?window=168&focus=missing-label');
+  await expect(page.getByText(/selected label was not returned|当前范围未返回所选标签/)).toBeVisible();
+  await expect(page.locator('[data-ui="feedback-quality-item"][aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.getByRole('main')).toContainText('60.0%');
+  await page.getByLabel(/Filter by site ID|按站点 ID 筛选/).fill('another-site');
+  await page.getByRole('button', { name: /^Filter$|^筛选$/ }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('main')).not.toContainText('60.0%');
+  await expect(page.locator('[data-ui="feedback-quality-item"]')).toHaveCount(0);
+  await expect(page.getByText(/last successfully loaded feedback snapshot|最近一次成功加载的反馈观测快照/)).toHaveCount(0);
+});
+
+test('feedback exposes all eligible trend buckets and recommendation save receipts on PC', async ({ page }, testInfo) => {
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await page.route('**/api/admin/agent-feedback?*', async route => {
+    const empty = new URL(route.request().url()).searchParams.get('window_hours') === '24';
+    await route.fulfill({ json: buildAdminApiEnvelope({ ...feedbackData,
+      events_total: empty ? 0 : 40, quality_events_total: empty ? 0 : 40,
+      quality_trend: Array.from({ length: 10 }, (_, i) => ({ bucket: `2026-10-28T${String(i).padStart(2, '0')}:00:00Z`, events_total: 1, accepted: 1, rejected: 0, ignored: 0, expired: 0, blocked: 0 })),
+      recommendation_quality: { minimum_sample_size: 20, internal_links: { events_total: 4, impression_sessions_total: 2, apply_total: 1, saved_sessions_total: 0, undo_total: 1, sample_status: 'insufficient' } },
+    }) });
+  });
+  await page.goto('/admin/agent-feedback?window=168');
+  await expect(page.getByText(/All 10 hourly buckets|展示全部 10 个/)).toBeVisible();
+  const recommendations = page.locator('[data-ui="feedback-recommendation-quality"]');
+  await expect(recommendations).toContainText('0 / 2');
+  await expect(recommendations).toContainText(/Below 20|少于 20/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(value => document.documentElement.classList.toggle('dark', value === 'dark'), theme);
+      await page.screenshot({ path: testInfo.outputPath(`feedback-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
+  await page.getByRole('button', { name: '24h', exact: true }).click();
+  await expect(page.getByText(/No feedback in this window|当前窗口没有反馈/, { exact: true })).toBeVisible();
+  await page.goto('/admin/agent-feedback?window=24&focus=missing-label');
+  await expect(page.getByText(/selected label was not returned|当前范围未返回所选标签/)).toBeVisible();
+  await expect(page.getByRole('main')).not.toContainText('60.0%');
+  await expect(page.getByRole('main')).toContainText('—');
+});

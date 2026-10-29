@@ -126,6 +126,9 @@ class AgentFeedbackService:
         trend: dict[str, dict[str, int]] = {}
         scenarios: dict[str, dict[str, Any]] = {}
         rejection_reasons: dict[str, int] = {}
+        quality_outcomes: dict[str, int] = {}
+        quality_total = 0
+        engineering_total = 0
         for event in events:
             payload = event.payload_json if isinstance(event.payload_json, dict) else {}
             outcome = str(payload.get("local_outcome") or "unknown").strip() or "unknown"
@@ -135,6 +138,17 @@ class AgentFeedbackService:
             self._increment(outcomes, outcome)
             self._increment(source_runtimes, source_runtime)
             self._increment(local_surfaces, local_surface)
+            if source_runtime == "model_flow_smoke" or local_surface == "admin_preview_smoke":
+                engineering_total += 1
+            # Impressions remain raw operational evidence, never quality outcomes.
+            action_id = str(payload.get("source_action_id") or "").strip()
+            if (
+                action_id in RECOMMENDATION_QUALITY_ACTION_FAMILIES
+                and action_id.endswith("_impression")
+            ):
+                continue
+            quality_total += 1
+            self._increment(quality_outcomes, outcome)
             self._increment_trend_bucket(trend, event.created_at, outcome, feedback_labels)
             self._increment_scenario(
                 scenarios,
@@ -160,6 +174,9 @@ class AgentFeedbackService:
             "window_start_at": self._format_datetime(since),
             "last_event_at": self._format_datetime(last_event_at) if last_event_at else "",
             "events_total": total,
+            "quality_events_total": quality_total,
+            "quality_outcomes": quality_outcomes,
+            "engineering_events_total": engineering_total,
             "limited": limited,
             "max_events": AGENT_FEEDBACK_SUMMARY_MAX_EVENTS,
             "outcomes": outcomes,
@@ -190,12 +207,13 @@ class AgentFeedbackService:
             "recommendation_quality": self._recommendation_quality_summary(events),
             "rates": {
                 "accepted_rate": self._rate(
-                    outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
-                    total,
+                    quality_outcomes.get("accepted", 0)
+                    + quality_outcomes.get("edited_before_accept", 0),
+                    quality_total,
                 ),
-                "evidence_useful_rate": self._rate(labels.get("evidence_useful", 0), total),
-                "evidence_weak_rate": self._rate(labels.get("evidence_weak", 0), total),
-                "wrong_next_step_rate": self._rate(labels.get("wrong_next_step", 0), total),
+                "evidence_useful_rate": self._rate(labels.get("evidence_useful", 0), quality_total),
+                "evidence_weak_rate": self._rate(labels.get("evidence_weak", 0), quality_total),
+                "wrong_next_step_rate": self._rate(labels.get("wrong_next_step", 0), quality_total),
             },
             "production_mutation": False,
             "approval_truth": "wordpress_local",
@@ -304,6 +322,7 @@ class AgentFeedbackService:
                 "apply_total": len(actions["apply"]),
                 "saved_unchanged_total": len(actions["saved_unchanged"]),
                 "saved_edited_total": len(actions["saved_edited"]),
+                "saved_sessions_total": len(actions["saved_unchanged"] | actions["saved_edited"]),
                 "undo_total": len(actions["undo"]),
                 "open_rate": self._rate(len(actions["open"]), denominator),
                 "copy_rate": self._rate(len(actions["copy"]), denominator),
@@ -609,6 +628,9 @@ class AgentFeedbackService:
                 "events_total": 0,
                 "accepted": 0,
                 "rejected": 0,
+                "ignored": 0,
+                "expired": 0,
+                "blocked": 0,
                 "evidence_weak": 0,
                 "wrong_next_step": 0,
             },
@@ -616,8 +638,12 @@ class AgentFeedbackService:
         bucket["events_total"] += 1
         if outcome in {"accepted", "edited_before_accept"}:
             bucket["accepted"] += 1
-        if cls._is_rejected_outcome(outcome):
+        if outcome == "rejected":
             bucket["rejected"] += 1
+        elif outcome in {"ignored", "expired"}:
+            bucket[outcome] += 1
+        elif outcome in {"blocked_by_policy", "blocked_by_missing_input"}:
+            bucket["blocked"] += 1
         if "evidence_weak" in labels:
             bucket["evidence_weak"] += 1
         if "wrong_next_step" in labels:

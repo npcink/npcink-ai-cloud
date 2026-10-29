@@ -31,12 +31,12 @@ const adminOverviewClient = createApiClient({ idempotencyPrefix: 'admin_overview
 interface AdminOverview {
   generatedAt: string;
   totals: {
-    accounts: number;
-    sites: number;
-    sitesActive: number;
-    subscriptions: number;
-    subscriptionsActive: number;
-    siteKeysActive: number;
+    accounts: number | null;
+    sites: number | null;
+    sitesActive: number | null;
+    subscriptions: number | null;
+    subscriptionsActive: number | null;
+    siteKeysActive: number | null;
   };
   expiringSubscriptions: {
     in7Days: number;
@@ -66,10 +66,10 @@ interface AdminOverview {
   };
   recentUsage: {
     windowDays: number;
-    runs: number;
-    providerCalls: number;
-    tokensTotal: number;
-    cost: number;
+    runs: number | null;
+    providerCalls: number | null;
+    tokensTotal: number | null;
+    cost: number | null;
   };
   planDistribution: Array<{
     planId: string;
@@ -130,6 +130,14 @@ interface AdminOverview {
   };
 }
 
+function overviewNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function formatOverviewMetric(value: number | null): string {
+  return value === null ? '—' : formatInteger(value);
+}
+
 function normalizeOverview(raw: any): AdminOverview {
   const counts = raw?.counts ?? {};
   const expiring = raw?.expiring_subscriptions ?? {};
@@ -173,12 +181,12 @@ function normalizeOverview(raw: any): AdminOverview {
   return {
     generatedAt: String(raw?.generated_at ?? ''),
     totals: {
-      accounts: Number(counts.accounts_total ?? 0),
-      sites: Number(counts.sites_total ?? 0),
-      sitesActive: Number(counts.sites_active ?? 0),
-      subscriptions: Number(counts.subscriptions_total ?? 0),
-      subscriptionsActive: Number(counts.subscriptions_active ?? 0),
-      siteKeysActive: Number(counts.site_keys_active ?? 0),
+      accounts: overviewNumber(counts.accounts_total),
+      sites: overviewNumber(counts.sites_total),
+      sitesActive: overviewNumber(counts.sites_active),
+      subscriptions: overviewNumber(counts.subscriptions_total),
+      subscriptionsActive: overviewNumber(counts.subscriptions_active),
+      siteKeysActive: overviewNumber(counts.site_keys_active),
     },
     expiringSubscriptions: {
       in7Days: Number(expiring.within_7_days ?? 0),
@@ -214,10 +222,10 @@ function normalizeOverview(raw: any): AdminOverview {
     },
     recentUsage: {
       windowDays: Number(recentUsage.window_days ?? 7),
-      runs: Number(totals.runs ?? 0),
-      providerCalls: Number(totals.provider_calls ?? 0),
-      tokensTotal: Number(totals.tokens_total ?? 0),
-      cost: Number(totals.cost ?? 0),
+      runs: overviewNumber(totals.runs),
+      providerCalls: overviewNumber(totals.provider_calls),
+      tokensTotal: overviewNumber(totals.tokens_total),
+      cost: overviewNumber(totals.cost),
     },
     planDistribution: Array.isArray(raw?.plan_distribution)
       ? raw.plan_distribution.map((item: any) => ({
@@ -393,6 +401,8 @@ function overviewRuntimeAlertSummary(
 function AdminOverviewContent() {
   const { t } = useLocale();
   const router = useRouter();
+  const translationRef = useRef(t);
+  useEffect(() => { translationRef.current = t; }, [t]);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const runtimeEvidenceRef = useFragmentDisclosure('runtime-attention', Boolean(overview));
@@ -419,7 +429,7 @@ function AdminOverviewContent() {
       }
     } catch (err) {
       if (sequence === requestSequenceRef.current) {
-        setError(resolveUiErrorMessage(err, t('error.failed_load')));
+        setError(resolveUiErrorMessage(err, translationRef.current('error.failed_load')));
       }
     } finally {
       globalThis.clearTimeout(timeout);
@@ -428,7 +438,7 @@ function AdminOverviewContent() {
         setIsLoading(false);
       }
     }
-  }, [t]);
+  }, []);
 
   useEffect(() => {
     void loadOverview();
@@ -620,22 +630,22 @@ function AdminOverviewContent() {
   const primaryMetrics = [
     {
       label: t('admin.active_sites'),
-      value: formatInteger(overview.totals.sitesActive),
+      value: formatOverviewMetric(overview.totals.sitesActive),
       detail: t('admin.home_metric_sites', {}, 'Sites currently provisioned for service.'),
     },
     {
       label: t('admin.active_subscriptions'),
-      value: formatInteger(overview.totals.subscriptionsActive),
+      value: formatOverviewMetric(overview.totals.subscriptionsActive),
       detail: t('admin.home_metric_subscriptions', {}, 'Subscriptions currently contributing to access.'),
     },
     {
       label: t('admin.home_evidence_provider_calls', {}, 'Provider calls'),
-      value: formatInteger(overview.recentUsage.providerCalls),
+      value: formatOverviewMetric(overview.recentUsage.providerCalls),
       detail: t('admin.home_evidence_provider_calls_desc', {}, 'Observed provider-call records in the same window.'),
     },
     {
       label: t('admin.home_runtime_runs', {}, 'Runtime runs'),
-      value: formatInteger(overview.recentUsage.runs),
+      value: formatOverviewMetric(overview.recentUsage.runs),
       detail: t('admin.home_metric_runtime_runs', {}, 'Hosted runtime executions in the current evidence window.'),
     },
   ];
@@ -711,17 +721,17 @@ function AdminOverviewContent() {
   const evidenceWindowMetrics = [
     {
       label: t('admin.home_evidence_runs', {}, 'Runs'),
-      value: formatInteger(overview.recentUsage.runs),
+      value: formatOverviewMetric(overview.recentUsage.runs),
       detail: t('admin.home_evidence_runs_desc', {}, 'Hosted executions in the current overview window.'),
     },
     {
       label: t('admin.home_evidence_provider_calls', {}, 'Provider calls'),
-      value: formatInteger(overview.recentUsage.providerCalls),
+      value: formatOverviewMetric(overview.recentUsage.providerCalls),
       detail: t('admin.home_evidence_provider_calls_desc', {}, 'Observed provider-call records in the same window.'),
     },
     {
       label: t('admin.home_evidence_cost', {}, 'Cost'),
-      value: formatAdminCurrency(overview.recentUsage.cost),
+      value: overview.recentUsage.cost === null ? '—' : formatAdminCurrency(overview.recentUsage.cost),
       detail: t('admin.home_evidence_cost_desc', {}, 'Internal estimated cost, not a customer wallet balance.'),
       size: 'compact' as const,
     },
@@ -771,7 +781,7 @@ function AdminOverviewContent() {
     },
     {
       label: t('admin.home_commercial_revenue', {}, 'Usage window cost'),
-      value: formatAdminCurrency(overview.recentUsage.cost),
+      value: overview.recentUsage.cost === null ? '—' : formatAdminCurrency(overview.recentUsage.cost),
       detail: t('admin.home_commercial_revenue_detail', {}, 'Current usage window cost estimate.'),
     },
   ];
@@ -797,7 +807,7 @@ function AdminOverviewContent() {
     <AdminWorkspacePage>
       <BackofficePageHeader
         title={t('admin.home_title', {}, 'Platform state comes first')}
-        description={platformConclusion}
+        secondaryAction={<button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadOverview()}>{t('common.refresh')}</button>}
         primaryAction={(
           <Link href={primaryActionHref} className="btn btn-primary">
             {primaryActionLabel}
@@ -814,6 +824,9 @@ function AdminOverviewContent() {
           </span>
         )}
       />
+      <p role="status" data-ui="admin-overview-conclusion" className="text-sm text-slate-700 dark:text-slate-200">{platformConclusion}</p>
+      {error ? <BackofficeDiagnosticNotice message={`${t('admin.overview_stale_notice', {}, 'Refresh failed. Showing the previous snapshot.')} ${error}`} retryLabel={t('common.retry')} onRetry={() => void loadOverview()} /> : null}
+      {Object.values(overview.totals).some((value) => value === null) || Object.values(overview.recentUsage).some((value) => value === null) ? <p role="status">{t('admin.overview_metrics_unknown', {}, 'Some metrics are unavailable; — means unknown.')}</p> : null}
       <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-attention">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -866,7 +879,7 @@ function AdminOverviewContent() {
                 <div className="flex shrink-0 items-center justify-between gap-3 md:justify-end">
                   <span className="text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{item.value}</span>
                   <Link href={overviewActionHref(item.scope)} className="btn btn-secondary btn-sm whitespace-nowrap">
-                    {t('admin.home_action_open', {}, 'Handle')} →
+                    {item.scope.startsWith('commercial.') ? t('admin.home_open_service_status', {}, 'Open service status') : t('admin.home_action_open', {}, 'Handle')} →
                   </Link>
                 </div>
               </div>

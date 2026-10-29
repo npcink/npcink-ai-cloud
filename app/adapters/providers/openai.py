@@ -789,7 +789,7 @@ class OpenAIProviderAdapter:
         )
 
         base_url = self.base_url
-        if endpoint_variant == "ollama_chat" and base_url.endswith("/v1"):
+        if endpoint_variant in {"ollama_chat", "ollama_embeddings"} and base_url.endswith("/v1"):
             base_url = base_url[:-3]
         return httpx.Client(
             base_url=base_url,
@@ -804,6 +804,15 @@ class OpenAIProviderAdapter:
     ) -> tuple[str, dict[str, Any]]:
         options = self._resolve_request_options(request.input_payload)
         runtime_model_id = self._resolve_runtime_model_id(request.model_id)
+        if request.endpoint_variant == "ollama_embeddings":
+            image = request.input_payload.get("image_base64")
+            return "/api/embed", {
+                "model": runtime_model_id,
+                "input": {"image": image} if image else self._resolve_embedding_input(options),
+                "truncate": False,
+                "keep_alive": "2m",
+                "options": {"num_ctx": 8192},
+            }
         if request.endpoint_variant == "embeddings":
             embedding_payload: dict[str, Any] = {
                 "model": runtime_model_id,
@@ -944,12 +953,19 @@ class OpenAIProviderAdapter:
         response_json: dict[str, Any],
         latency_ms: int,
     ) -> ProviderExecutionResult:
-        if request.endpoint_variant == "embeddings":
+        if request.endpoint_variant in {"embeddings", "ollama_embeddings"}:
             data = response_json.get("data")
             first_embedding = data[0] if isinstance(data, list) and data else {}
             embedding = (
                 first_embedding.get("embedding") if isinstance(first_embedding, dict) else []
             )
+            if request.endpoint_variant == "ollama_embeddings":
+                vectors = response_json.get("embeddings")
+                embedding = vectors[0] if isinstance(vectors, list) and len(vectors) == 1 else []
+                response_json = {
+                    **response_json,
+                    "usage": {"prompt_tokens": response_json.get("prompt_eval_count", 0)},
+                }
             usage = response_json.get("usage", {})
             normalized_usage = normalize_openai_usage(
                 usage,

@@ -66,7 +66,7 @@ test('vector observability keeps scope and selected error URL-backed', async ({ 
   await expect(page.locator('[data-ui="vector-error-item"]')).toHaveCount(1);
   await expect(page.locator('#vector-error-inspector')).toContainText('vector_search_timeout');
   await page.locator('[data-ui="vector-error-item"]').click();
-  await expect(page).toHaveURL(/focus=vector_search_timeout/);
+  await expect(page).toHaveURL(/focus=search%3Avector_search_timeout/);
 
   await page.getByRole('button', { name: /^14 天$|^14 days$/ }).click();
   await expect(page).toHaveURL(/window=336/);

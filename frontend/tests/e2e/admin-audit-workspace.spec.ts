@@ -9,6 +9,29 @@ import {
   writeAdminVisualReceipt,
 } from './helpers/admin-visual-receipt';
 
+test('audit preserves failed and unknown outcomes and reports missing focused evidence', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1050 });
+  const requests = await installAuditBoundaryHarness(page, async (route, url) => {
+    await route.fulfill({ json: buildAdminApiEnvelope(url.searchParams.get('event_id') === '999' ? auditPage(0, 0) : auditPage(1, 0)) });
+  });
+  for (const outcome of ['failed', 'future-outcome']) {
+    await page.goto(`/admin/audit?outcome=${outcome}&site_id=bounded-site&focus=999`);
+    const absent = page.locator('[data-ui="admin-audit-focus-absent"]');
+    await expect(absent).toContainText('999');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(900);
+    await page.screenshot({ path: testInfo.outputPath(`audit-absent-${outcome}-900.png`), fullPage: true, animations: 'disabled' });
+    await page.getByText(/More filters|更多筛选/, { exact: true }).click();
+    await expect(page.locator('select[name="outcome"]')).toHaveValue(outcome);
+    await page.getByRole('button', { name: /Apply filters|应用筛选/, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`outcome=${outcome}`));
+    await page.goto(`/admin/audit?outcome=${outcome}&site_id=bounded-site&focus=999`);
+    await page.getByRole('button', { name: /Find this exact event|精确查找此事件/ }).click();
+    await expect.poll(() => requests.at(-1)?.searchParams.get('event_id')).toBe('999');
+    expect(requests.at(-1)?.searchParams.get('site_id')).toBe('bounded-site');
+    expect(requests.at(-1)?.searchParams.get('outcome')).toBe(outcome);
+  }
+});
+
 test('audit workspace keeps exact evidence URL-backed and excludes raw payloads', async ({ page }, testInfo) => {
   const browserEvidence = observeAdminBrowserEvidence(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });

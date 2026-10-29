@@ -481,12 +481,12 @@ function PlansContent() {
               <table className="w-full min-w-[48rem] table-fixed text-left text-xs" aria-label={t('admin.plans.list_label', {}, 'Package list')}>
                 <thead className="bg-slate-50/70 text-slate-500 dark:bg-slate-900/35 dark:text-slate-400">
                   <tr>
-                    <th scope="col" className="w-[16%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
-                    <th scope="col" className="w-[30%] px-3 py-2 font-semibold">{t('common.status')}</th>
-                    <th scope="col" className="w-[11%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
+                    <th scope="col" className="w-[14%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
+                    <th scope="col" className="w-[17%] px-3 py-2 font-semibold">{t('common.status')}</th>
+                    <th scope="col" className="w-[22%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
                     <th scope="col" className="w-[13%] px-3 py-2 text-right font-semibold">{t('admin.included_points', {}, 'Package AI credits')}</th>
                     <th scope="col" className="w-[22%] px-3 py-2 font-semibold">{t('common.limit', {}, 'Limits')}</th>
-                    <th scope="col" className="w-[8%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
+                    <th scope="col" className="w-[12%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -504,7 +504,7 @@ function PlansContent() {
                         ? t('admin.plans.reason_unpublished', {}, 'The package exists but has no published version for subscription assignment.')
                         : null;
                     const planId = item?.plan?.plan_id || '';
-                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}`;
+                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}&risk=all`;
                     return (
                       <tr
                         key={shell.tier_id}
@@ -527,33 +527,32 @@ function PlansContent() {
                           {attentionReason ? <p className="mt-1 line-clamp-2 leading-4 text-slate-600 dark:text-slate-300">{attentionReason}</p> : null}
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
+                          <p>{formatInteger(item?.subscription_counts?.active || 0)}</p>
                           {planId ? (
                             <Link
                               href={subscriptionsHref}
-                              aria-label={`${t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')} · ${packageAlias}`}
-                              className="inline-flex min-w-8 cursor-pointer items-center justify-end gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                              aria-label={`${t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })} · ${packageAlias}`}
+                              className="inline-flex cursor-pointer items-center justify-end gap-1 whitespace-nowrap rounded px-1 py-0.5 text-xs font-medium text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
                             >
-                              {formatInteger(item?.subscription_counts?.active || 0)}
+                              {t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })}
                               <span aria-hidden="true">›</span>
                             </Link>
-                          ) : formatInteger(item?.subscription_counts?.active || 0)}
+                          ) : null}
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
                           {formatInteger(latestMetadataValue(latestVersion, sourceTier.monthly_included_points, 'monthly_included_points'))}
                         </td>
                         <td className="px-3 py-2.5">
-                          <p className="whitespace-nowrap text-[0.68rem] text-slate-600 dark:text-slate-300">
-                            <span>{t('admin.site_limit', {}, 'Sites')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</strong></span>
-                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
-                            <span>{t('admin.concurrency', {}, 'Concurrency')} <strong className="text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</strong></span>
-                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
-                            <span>{t('admin.batch_ceiling', {}, 'Batch')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.max_batch_items, 'max_batch_items'))}</strong></span>
+                          <p className="flex flex-wrap gap-x-3 gap-y-1 text-[0.68rem] text-slate-600 dark:text-slate-300">
+                            <span className="whitespace-nowrap">{t('admin.site_limit', {}, 'Sites')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</strong></span>
+                            <span className="whitespace-nowrap">{t('admin.concurrency', {}, 'Concurrency')} <strong className="text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</strong></span>
+                            <span className="whitespace-nowrap">{t('admin.batch_ceiling', {}, 'Batch')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.max_batch_items, 'max_batch_items'))}</strong></span>
                           </p>
                         </td>
-                        <td className="px-3 py-2.5 text-right">
+                        <td className="px-1 py-2.5 text-right">
                           <button
                             type="button"
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary btn-sm max-w-full whitespace-normal"
                             aria-label={planId
                               ? t('admin.plans.manage_title', { package: packageAlias }, `Manage ${packageAlias}`)
                               : undefined}

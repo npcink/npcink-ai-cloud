@@ -64,6 +64,12 @@ class SiteKnowledgeVectorProfileAdminService:
     settings: Settings
 
     def get_profile(self) -> dict[str, Any]:
+        runtime_settings = self.settings.model_copy(deep=True)
+        apply_provider_connection_runtime_settings(runtime_settings)
+        runtime_space = (
+            f"{runtime_settings.site_knowledge_embedding_provider}:"
+            f"{runtime_settings.site_knowledge_embedding_model}"
+        )
         with get_session(self.database_url) as session:
             connection = session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_CONNECTION_ID)
             vector_store_connection = session.get(
@@ -76,6 +82,11 @@ class SiteKnowledgeVectorProfileAdminService:
             chunk_count = int(
                 session.scalar(select(func.count()).select_from(SiteKnowledgeChunk)) or 0
             )
+            runtime_chunk_count = int(session.scalar(
+                select(func.count()).select_from(SiteKnowledgeChunk).where(
+                    SiteKnowledgeChunk.embedding_model == runtime_space,
+                )
+            ) or 0)
             latest_search = session.scalar(
                 select(SiteKnowledgeSearchMetric)
                 .where(
@@ -113,6 +124,7 @@ class SiteKnowledgeVectorProfileAdminService:
         elif validation["index"]["status"] in {
             "reindex_required",
             "rebuilding",
+            "awaiting_site_sync",
             "failed",
         }:
             status = validation["index"]["status"]
@@ -128,6 +140,17 @@ class SiteKnowledgeVectorProfileAdminService:
             "production_backend": SITE_KNOWLEDGE_VECTOR_PRODUCTION_BACKEND,
             "local_test_backend": SITE_KNOWLEDGE_VECTOR_LOCAL_TEST_BACKEND,
             "active_backend": active_backend,
+            "runtime": {
+                "environment": runtime_settings.environment,
+                "provider_id": runtime_settings.site_knowledge_embedding_provider,
+                "model_id": runtime_settings.site_knowledge_embedding_model,
+                "dimensions": runtime_settings.site_knowledge_embedding_dimensions,
+                "backend": runtime_settings.site_knowledge_vector_backend,
+                "index_status": (
+                    "empty" if not chunk_count else
+                    "ready" if runtime_chunk_count == chunk_count else "reindex_required"
+                ),
+            },
             "status": status,
             "provider": provider,
             "vector_store": vector_store,

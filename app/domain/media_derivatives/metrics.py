@@ -717,6 +717,9 @@ class MediaDerivativeObservabilityService:
             timeline.append(
                 {
                     "bucket_start_at": self._format_datetime(bucket_start),
+                    "bucket_end_at": self._format_datetime(
+                        min(end_at, bucket_start + timedelta(seconds=bucket_seconds))
+                    ),
                     "jobs_total": bucket["jobs_total"],
                     "failed_total": bucket["failed_total"],
                     "bytes_saved_total": (
