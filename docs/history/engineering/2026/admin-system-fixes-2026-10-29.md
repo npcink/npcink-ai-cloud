@@ -115,3 +115,9 @@ PR #1312 的 frontend job 在原有预算投影单测中复现失败：测试仍
 本地完整 Vitest 为 60 files / **673 passed**，日志 `/tmp/admin-integration-unit-fixed.log`。
 此测试修正是交接之后的集成补修，原始交接分支的应用代码保持不变；CI 以本次
 更新后的 PR head 为准，不将前一次失败算为通过。
+
+第二轮 frontend contracts 发现 `RecommendationQuality` 的动态翻译前缀未登记。
+在既有 `FAMILY_SOURCES` 中补充受限 metrics/families 的来源说明；保留双向扫描
+和目录存在校验。本地使用项目已有 Python 运行环境执行完整 `test:contracts`
+通过，日志 `/tmp/admin-integration-contracts.log`。首次本地运行误用了系统旧版
+Python，在 `zip(strict=True)` 停止；切换项目环境后通过，未改契约以适配旧环境。
