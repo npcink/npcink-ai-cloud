@@ -407,15 +407,14 @@ function SubscriptionDetailContent() {
         summaryItems={[
           { label: t('common.status', {}, 'Status'), value: <BackofficeStatusBadge status={normalized.status} label={statusValue} /> },
           { label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'), value: <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} /> },
-          { label: t('common.account', {}, 'Customer'), value: normalized.accountName || t('admin.accounts.unnamed_customer', {}, 'Unnamed customer') },
           { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: formatInteger(normalized.relatedSites.length) },
         ]}
       />
 
       <BackofficeSectionPanel>
         <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.period_boundary', {}, 'Period end is not payment evidence.')}{normalized.planId === 'free' ? ` ${t('admin.subscription_detail.free_record', {}, 'Free also has a subscription record.')}` : ''}{normalized.relatedSites.some(site => site.status === 'removed') ? ` ${t('admin.subscription_detail.removed_history', {}, 'Removed sites remain in history and do not require current statistics maintenance.')}` : ''}</p>
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
-          <div className="flex min-w-0 flex-col justify-between gap-4">
+        <section className="mt-2 grid items-start gap-4 min-[850px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div className="flex min-w-0 flex-col gap-3">
             <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               {t('admin.subscription_detail.current_follow_up', {}, 'Current conclusion')}
@@ -459,14 +458,14 @@ function SubscriptionDetailContent() {
             />
             </div>
           </div>
-          <div data-ui="subscription-summary-card" className="rounded-xl bg-slate-50/80 px-4 py-3 dark:bg-slate-900/45" aria-labelledby="subscription-facts-heading">
+          <div data-ui="subscription-summary-card" className="min-w-0 rounded-xl bg-slate-50/80 px-3 py-2 dark:bg-slate-900/45" aria-labelledby="subscription-facts-heading">
             <h2 id="subscription-facts-heading" className="text-sm font-semibold text-slate-950 dark:text-white">
               {t('admin.subscription_detail.basic_information', {}, 'Subscription facts')}
             </h2>
-            <dl className="mt-2 grid gap-x-6 sm:grid-cols-2">
+            <dl className="mt-1 grid gap-x-4 sm:grid-cols-2">
               <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
                 <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('common.account', {}, 'Customer')}</dt>
-                <dd className="mt-1 text-sm font-medium text-slate-950 dark:text-white">
+                <dd className="mt-1 break-words text-sm font-medium text-slate-950 dark:text-white [overflow-wrap:anywhere]">
                   {normalized.accountName || t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')}
                   {normalized.accountId ? (
                     <Link href={`/admin/accounts/${normalized.accountId}`} className="ml-2 text-blue-600 hover:underline dark:text-blue-300">
@@ -481,10 +480,10 @@ function SubscriptionDetailContent() {
               </div>
               <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
                 <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.billing_period', {}, 'Billing period')}</dt>
-                <dd className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                  {normalized.currentPeriodStart ? formatDate(normalized.currentPeriodStart) : t('common.not_available', {}, 'N/A')}
+                <dd className="mt-1 text-sm tabular-nums text-slate-700 dark:text-slate-200">
+                  <span className="inline-block">{normalized.currentPeriodStart ? formatDate(normalized.currentPeriodStart) : t('common.not_available', {}, 'N/A')}</span>
                   {' – '}
-                  {normalized.currentPeriodEnd ? formatDate(normalized.currentPeriodEnd) : t('common.not_available', {}, 'N/A')}
+                  <span className="inline-block">{normalized.currentPeriodEnd ? formatDate(normalized.currentPeriodEnd) : t('common.not_available', {}, 'N/A')}</span>
                 </dd>
               </div>
               <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
@@ -537,7 +536,7 @@ function SubscriptionDetailContent() {
               label={t('admin.subscription_detail.usage_table_region_label', {}, 'Budget and usage')}
               hint={t('admin.table_scroll_hint', {}, 'Swipe horizontally to see more columns.')}
             >
-              <table className="w-full min-w-[36rem] text-left text-sm">
+              <table className="w-full min-w-[36rem] text-left text-sm [&_td:not(:first-child)]:text-right [&_th:not(:first-child)]:text-right">
                 <thead className="text-xs text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="py-2 font-semibold">{t('admin.subscription_detail.metric_label', {}, 'Metric')}</th>

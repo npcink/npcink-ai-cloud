@@ -635,7 +635,7 @@ export default function VectorSettingsPage() {
         </p>
       ) : null}
 
-      <BackofficeSectionPanel data-vector-section="configuration">
+      <BackofficeSectionPanel data-vector-section="configuration" className="!shadow-none">
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-1">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
@@ -655,8 +655,9 @@ export default function VectorSettingsPage() {
           </div>
           <BackofficeStatusBadge label={status.label} status={status.tone} />
         </div>
-        <fieldset disabled={actionBusy} className="mt-4 min-w-0" data-vector-section="fixed-profile">
+        <fieldset disabled={actionBusy} className="mt-3 min-w-0" data-density="compact" data-vector-section="fixed-profile">
           <AdminConfigurationTable
+            density="compact"
             ariaLabel={copy(
               'admin.vector_settings.configuration_table',
               '向量配置表',

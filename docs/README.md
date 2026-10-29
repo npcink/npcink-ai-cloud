@@ -71,7 +71,7 @@ product work or override the current Phase 1 expansion freeze.
 | 修改运行观测页面 | [运行观测 UI 开发规范](cloud-admin-runtime-observation-ui-development-standard-v1.md) |
 | 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
 | 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
-| 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract) — 常显/按需/技术证据/去重；§8–10 归纳历批 27 路由取舍、状态保护和来源，供后续 AI 防回退；[逐页落实台账](admin-information-hierarchy-implementation-ledger.md) 记录每项处置和证据；[2026-10-29 逐页审查](history/admin/2026/records/admin-information-hierarchy-audit-2026-10-29.md) 是定点建议，不是已完成的界面改造 |
+| 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract) — 常显/按需/技术证据/去重；§8–11 归纳历批 27 路由取舍、状态保护、来源与布局选型，供后续 AI 防回退；[逐页落实台账](admin-information-hierarchy-implementation-ledger.md) 记录每项处置和证据；[2026-10-29 逐页审查](history/admin/2026/records/admin-information-hierarchy-audit-2026-10-29.md) 是定点建议，不是已完成的界面改造 |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
 | 查工程债与暂缓清理队列 | [工程跟进队列](engineering-follow-up-queue-v1.md) — 低收益项的触发条件与已完成整改索引 |
 | 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
