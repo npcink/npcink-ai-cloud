@@ -114,6 +114,74 @@ test('capacity attention stays readable in a dark narrow PC dialog', async ({ pa
   await page.screenshot({ path: testInfo.outputPath('quota-capacity-dark-narrow-pc.png') });
 });
 
+for (const theme of ['light', 'dark']) {
+  test(`quota refresh failure preserves its dialog and selected tab in ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 900, height: 800 });
+    await openQuotaScenario(page, healthyResources, 'near_limit');
+    if (theme === 'dark') {
+      await page.getByRole('button', { name: /Toggle theme|切换主题/i }).click();
+    }
+    const trigger = page.getByRole('button', { name: /View quota details|查看额度详情/i });
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+    await dialog.getByRole('tab', { name: /Advanced quota information|高级额度信息/i }).click();
+    let failedReads = 0;
+    let failQuotaRead = true;
+    const methods: string[] = [];
+    await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => {
+      methods.push(route.request().method());
+      if (failQuotaRead) {
+        failedReads += 1;
+        return route.fulfill({ status: 503, json: { status: 'error', error_code: 'admin.e2e_request_failed', message: 'quota evidence unavailable', data: {} } });
+      }
+      return route.fulfill({ json: buildAdminApiEnvelope({ status: 'ok', ai_credits: quotaResource('ai_credits', 2522, 150000), resource_limits: healthyResources }) });
+    });
+    await dialog.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+    await expect.poll(() => failedReads).toBeGreaterThan(0);
+    const retry = dialog.getByRole('button', { name: /^Retry$|^重试$/ });
+    await expect(retry).toBeVisible();
+    await expect(dialog.getByRole('alert')).toContainText(/Retry this bounded customer read|可在不离开当前运营路径/);
+    await expect(dialog.locator('[data-ui="account-quota-detail-tabs"]')).toHaveCount(0);
+    await expect(dialog.locator('[data-ui="account-advanced-quota"]')).toHaveCount(0);
+    await expect(dialog.getByText(/^Error$|^错误$/)).toBeVisible();
+    await expect(retry).toBeFocused();
+    const screenshot = testInfo.outputPath(`quota-refresh-failure-${theme}-pc.png`);
+    await page.screenshot({ path: screenshot });
+    await testInfo.attach(`quota-refresh-failure-${theme}-pc`, { path: screenshot, contentType: 'image/png' });
+    failQuotaRead = false;
+    await retry.click();
+    const selectedTab = dialog.getByRole('tab', { name: /Advanced quota information|高级额度信息/i });
+    await expect(selectedTab).toHaveAttribute('aria-selected', 'true');
+    await expect(selectedTab).toBeFocused();
+    await expect(dialog.locator('[data-ui="account-quota-attention"]')).toHaveCount(0);
+    expect(methods.every(method => method === 'GET')).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+}
+
+test('initial quota read failure can retry inside the opened detail dialog', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => route.fulfill({ status: 503, json: { status: 'error', error_code: 'admin.e2e_request_failed', message: 'quota evidence unavailable', data: {} } }));
+  await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+  await page.getByRole('tab', { name: /Credits and usage|积分与用量/i }).click();
+  await expect(page.locator('#quota-posture').getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.getByRole('button', { name: /^Retry$|^重试$/ })).toBeVisible();
+  await expect(dialog.getByText(/^Error$|^错误$/)).toBeVisible();
+  await expect(dialog.locator('[data-ui="account-resource-limits"]')).toHaveCount(0);
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json: buildAdminApiEnvelope({ status: 'ok', ai_credits: quotaResource('ai_credits', 2522, 150000), resource_limits: healthyResources }) });
+  });
+  await dialog.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(dialog.locator('[data-ui="account-resource-limits"]')).toBeVisible();
+  await expect(dialog.locator('[data-quota-key="active_api_key_sites"]')).toHaveAttribute('data-quota-status', 'ok');
+});
+
 test('resource pressure leads to quota evidence while available credits keep top-up secondary', async ({ page }, testInfo) => {
   const errors: string[] = [];
   const networkFailures: string[] = [];
