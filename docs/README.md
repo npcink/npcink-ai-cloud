@@ -19,6 +19,7 @@ product work or override the current Phase 1 expansion freeze.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
+| 接续A01–E01历史、核销旧PR并查下一步 | [五会话综合对账与接续建议 — 2026-10-30](history/engineering/2026/five-chat-synthesis-and-next-stage-2026-10-30.md) — 精确会话身份、后继交付、证据缺口、价值优先顺序及归档回执；方法见[收尾规范§6](engineering/zero-backlog-closeout-efficiency-standard-v1.md#6-会话历史对账与经验入库)，不是新的生产或功能扩张授权 |
 | 判断是否走偏、哪些开发应暂停、何时恢复 | [Phase 1 编辑价值优先决定（2026-10-27）](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27) — 当前问题、继续维护、新增开发冻结清单与恢复条件；保留既有销售/试用例外，不改变运行可用性 |
 | 查白天模型接入优化的历史处置、真实编辑器证据与经验 | [模型接入与编辑器闭环收尾 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 目录/参考来源、保存反馈、真实 Ollama 与 WordPress、费用和选择检查；保留中文质量及人类价值缺口，不代表生产或全历史清零 |
 | 接续资源及总规划的有界收尾 | [资源与总规划收尾 — 2026-10-27](history/repository-hygiene/2026/resource-and-planning-closeout-2026-10-27.md) — 两个依赖 PR、冻结规范交付、资源保留/退休条件与外部缺证；不是全仓清空或生产验收 |

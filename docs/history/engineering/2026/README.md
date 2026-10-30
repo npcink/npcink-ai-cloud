@@ -10,6 +10,7 @@ specific history collection. Migrated from the `docs/` root on
 
 - [本地开发生图与 WordPress 闭环验证（2026-10-28）](development-image-wordpress-loop-2026-10-28.md)
 - [M4 视觉 ALT 接入修正（2026-10-29）](m4-vision-alt-verification-2026-10-29.md)
+- [A01–E01五会话综合对账、开发经验与接续建议（2026-10-30）](five-chat-synthesis-and-next-stage-2026-10-30.md)
 
 - [account entitlement site relink and frontend release retrospective 2026 07 26](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [admin ia v2 consolidation closeout and development retrospective 2026 10 23](admin-ia-v2-consolidation-closeout-and-development-retrospective-2026-10-23.md)
