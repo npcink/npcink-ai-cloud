@@ -1,7 +1,118 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import type { AccountQuotaMetric } from '@/features/admin/accounts/account-credit-evidence';
 import { LONG_ACCOUNT_ID, buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+
+function quotaResource(key: string, used: number, limit: number, status = 'ok'): AccountQuotaMetric {
+  return { key, used, limit, remaining: Math.max(0, limit - used), usage_ratio: limit > 0 ? used / limit : 0, unlimited: limit <= 0, status, unit: 'site' };
+}
+
+const healthyResources = [
+  quotaResource('bound_sites', 1, 75), quotaResource('active_sites', 1, 25),
+  quotaResource('active_api_key_sites', 1, 1), quotaResource('concurrent_runs', 0, 20),
+  quotaResource('batch_items', 0, 100), quotaResource('vector_documents', 2063, 10000),
+  quotaResource('media_images', 69, 25000), quotaResource('vector_chunks', 2364, 200000),
+  quotaResource('vector_sync_documents_per_run', 0, 500), quotaResource('vector_sync_chunks_per_run', 0, 5000),
+];
+
+async function openQuotaScenario(page: Page, resources: AccountQuotaMetric[], status = 'ok', credits = quotaResource('ai_credits', 2522, 150000)) {
+  await installAdminMocks(page);
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => route.fulfill({
+    json: buildAdminApiEnvelope({ status, ai_credits: credits, resource_limits: resources }),
+  }));
+  await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+  await page.getByRole('tab', { name: /Credits and usage|积分与用量/i }).click();
+  await expect(page.locator('[data-ui="account-credit-summary"]')).toBeVisible();
+}
+
+test('complete API-key coverage does not create a capacity warning', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await openQuotaScenario(page, healthyResources);
+  await expect(page.getByText(/Quota needs attention|额度需关注/i)).toHaveCount(0);
+  await expect(page.locator('[data-ui="account-resource-alerts"]')).toHaveCount(0);
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toHaveCount(0);
+  const keyRow = dialog.locator('[data-quota-key="active_api_key_sites"]');
+  await expect(keyRow).toHaveAttribute('data-quota-status', 'ok');
+  await expect(keyRow).toContainText(/full coverage is healthy|全部覆盖表示正常/);
+  await page.screenshot({ path: testInfo.outputPath('quota-complete-coverage-pc.png') });
+});
+
+test('a real API-key coverage gap is identified above the detail table', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await openQuotaScenario(page, healthyResources.map(metric => metric.key === 'active_api_key_sites' ? quotaResource(metric.key, 0, 1, 'limited') : metric), 'limited');
+  const trigger = page.getByRole('button', { name: /View quota details|查看额度详情/i });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  const attention = dialog.locator('[data-ui="account-quota-attention"]');
+  await expect(attention).toContainText(/Key coverage gap|密钥覆盖不足/);
+  await expect(attention).toContainText('0 / 1');
+  const box = await attention.boundingBox();
+  expect(box!.y + box!.height).toBeLessThan(800);
+  await expect(dialog.locator('[data-quota-key="active_api_key_sites"]')).toHaveAttribute('data-quota-status', 'limited');
+  await page.screenshot({ path: testInfo.outputPath('quota-key-gap-narrow-pc.png') });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('a capacity threshold uses the same warning in the entry and detail row', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await openQuotaScenario(page, [...healthyResources.filter(metric => metric.key !== 'vector_documents'), quotaResource('vector_documents', 8500, 10000)]);
+  await expect(page.locator('[data-ui="account-resource-alerts"]')).toContainText(/Near limit|接近上限/);
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText(/8,500.*10,000/);
+  const row = dialog.locator('[data-quota-key="vector_documents"]');
+  await expect(row).toHaveAttribute('data-quota-status', 'near_limit');
+  await expect(row).toContainText(/Near limit|接近上限/);
+  await expect(row).toHaveClass(/bg-amber/);
+  await page.screenshot({ path: testInfo.outputPath('quota-capacity-attention-pc.png') });
+});
+
+test('credit-only attention remains visible when the resource table is healthy', async ({ page }) => {
+  await openQuotaScenario(page, healthyResources, 'near_limit', quotaResource('ai_credits', 900, 1000, 'near_limit'));
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText(/AI credits|AI 积分/i);
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText('900 / 1,000');
+  await expect(dialog.locator('[data-quota-status="near_limit"]')).toHaveCount(0);
+});
+
+test('an unexplained server warning remains unresolved instead of inventing an affected resource', async ({ page }) => {
+  await openQuotaScenario(page, healthyResources, 'near_limit');
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText(/without an identified item|未返回对应异常项/);
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText(/Refresh|刷新/);
+  await expect(dialog.locator('[data-quota-status="limited"], [data-quota-status="near_limit"]')).toHaveCount(0);
+  let refreshReads = 0;
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => {
+    expect(route.request().method()).toBe('GET');
+    refreshReads += 1;
+    return route.fulfill({ json: buildAdminApiEnvelope({ status: 'ok', ai_credits: quotaResource('ai_credits', 2522, 150000), resource_limits: healthyResources }) });
+  });
+  await dialog.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  expect(refreshReads).toBe(1);
+});
+
+test('capacity attention stays readable in a dark narrow PC dialog', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await openQuotaScenario(page, [quotaResource('vector_documents', 8500, 10000)]);
+  await page.getByRole('button', { name: /Toggle theme|切换主题/i }).click();
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+  await expect(dialog.locator('[data-ui="account-quota-attention"]')).toContainText(/8,500.*10,000/);
+  await expect(dialog.locator('[data-quota-key="vector_documents"]')).toHaveClass(/dark:bg-amber/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('quota-capacity-dark-narrow-pc.png') });
+});
 
 test('resource pressure leads to quota evidence while available credits keep top-up secondary', async ({ page }, testInfo) => {
   const errors: string[] = [];

@@ -210,7 +210,7 @@ assert.match(
 );
 assert.match(
   source,
-  /metric\.status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
+  /quotaMetricDisplayStatus\(metric\)[\s\S]*status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
   'API-key coverage gaps must not be mislabeled as exhausted numeric quota'
 );
 assert.match(

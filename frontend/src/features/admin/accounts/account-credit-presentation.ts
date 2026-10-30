@@ -86,10 +86,11 @@ export function quotaMetricToneClass(
   if (!metric) {
     return undefined;
   }
-  if (metric.status === 'limited' || (!metric.unlimited && metric.usage_ratio >= 1)) {
+  const status = quotaMetricDisplayStatus(metric);
+  if (status === 'limited') {
     return 'text-red-600 dark:text-red-400';
   }
-  if (metric.status === 'near_limit' || (!metric.unlimited && metric.usage_ratio >= 0.8)) {
+  if (status === 'near_limit') {
     return 'text-amber-700 dark:text-amber-300';
   }
   return undefined;
@@ -113,9 +114,21 @@ export function metricToBudgetSummary(
   };
 }
 
+export function quotaMetricDisplayStatus(metric: AccountQuotaMetric): 'ok' | 'near_limit' | 'limited' | 'unknown' {
+  if (metric.status === 'limited' || metric.status === 'near_limit') return metric.status;
+  if (metric.status !== 'ok') return 'unknown';
+  // This metric measures sites with keys / sites needing coverage, not consumed capacity.
+  if (metric.key === 'active_api_key_sites') return 'ok';
+  if (!metric.unlimited && metric.limit > 0) {
+    if (metric.usage_ratio >= 1) return 'limited';
+    if (metric.usage_ratio >= 0.8) return 'near_limit';
+  }
+  return 'ok';
+}
+
 export function quotaMetricNeedsAttention(metric: AccountQuotaMetric): boolean {
-  return metric.status === 'limited' || metric.status === 'near_limit' ||
-    (!metric.unlimited && metric.limit > 0 && metric.usage_ratio >= 0.8);
+  const status = quotaMetricDisplayStatus(metric);
+  return status === 'limited' || status === 'near_limit';
 }
 
 export function quotaMetricLabel(
