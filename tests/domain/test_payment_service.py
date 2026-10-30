@@ -146,6 +146,7 @@ def test_admin_payment_and_credit_pack_currency_is_cny_only(tmp_path: Path) -> N
 
     with pytest.raises(CommercialValidationError) as catalog_error:
         service.update_admin_credit_pack_catalog(
+            expected_revision=str(service.get_admin_credit_pack_catalog()["revision"]),
             items=[
                 {
                     "pack_id": "pack_small",
@@ -1231,6 +1232,7 @@ def test_admin_credit_pack_catalog_override_changes_future_orders(tmp_path: Path
     ] == ["pro", "agency"]
 
     updated = service.update_admin_credit_pack_catalog(
+        expected_revision=str(service.get_admin_credit_pack_catalog()["revision"]),
         items=[
             {
                 "pack_id": "pack_small",

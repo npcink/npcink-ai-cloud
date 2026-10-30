@@ -10,7 +10,7 @@ assert.match(source, /BackofficePageHeader[\s\S]*secondaryAction=\{[\s\S]*summar
 assert.doesNotMatch(source, /BackofficeMetricStrip|BackofficeLayer|BackofficePrimaryPanel|BackofficeStackCard/, 'subscription queue must not regress to a section header, metric cards, or a landing-page hero');
 
 assert.match(source, /usePathname[\s\S]*useRouter[\s\S]*useSearchParams/, 'queue state must be addressable from the route');
-for (const parameter of ['risk', 'status', 'account_id', 'plan_id', 'expires_before', 'sort', 'offset', 'focus']) {
+for (const parameter of ['risk', 'status_group', 'status', 'account_id', 'plan_id', 'expires_before', 'sort', 'offset', 'focus']) {
   assert.match(source, new RegExp(`searchParams\\.get\\('${parameter}'\\)|${parameter}:`), `${parameter} must participate in route-backed queue state`);
 }
 
@@ -23,7 +23,7 @@ assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, '
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
 assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the existing explicit search toolbar');
 assert.match(source, /const PAGE_SIZE = 10;/, 'subscription pages have a fixed ten-row limit');
-assert.match(source, /BackofficeFilterPill[\s\S]*aria-pressed=\{appliedRisk === risk\}[\s\S]*aria-pressed=\{appliedStatus === status\}/, 'each named filter group preserves its independent selected state');
+assert.match(source, /BackofficeFilterPill[\s\S]*aria-pressed=\{appliedRisk === risk\}[\s\S]*aria-pressed=\{!appliedStatusGroup && appliedStatus === status\}/, 'each named filter group preserves its independent selected state');
 assert.match(source, /setLoadedRequestKey\(requestKey\)[\s\S]*new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'displayed range belongs to the last successful request');
 assert.match(source, /loadedQuery\.delete\('offset'\)[\s\S]*requestedQuery\.delete\('offset'\)[\s\S]*const isRetainingDifferentQuery = hasLoaded && loadedQuery\.toString\(\) !== requestedQuery\.toString\(\)/, 'retained pagination must distinguish offset-only navigation from changed query dimensions');
 assert.match(source, /if \(isRetainingDifferentQuery\) return;/, 'old result offsets must never paginate a different requested query');

@@ -23,7 +23,7 @@ assert.match(
   'AI credit pack routes must stay inside the commercial workspace tabs'
 );
 assert.match(editorSurface, /open=\{Boolean\(draft\)\}[\s\S]*isDraftDirty[\s\S]*handleSaveDraft[\s\S]*AdminConfigurationTable/, 'The shared workbench must use a configuration table and save only an explicitly changed selected pack');
-assert.match(source, /items\.map\(\(item\) => item\.pack_id === draft\.pack_id \? normalizeItem\(draft\) : normalizeItem\(item\)\)[\s\S]*saveCatalog\(nextItems\)/, 'One-pack editing must preserve the atomic complete-catalog PATCH contract');
+assert.match(source, /draftBase\.items\.map\(\(item\) => item\.pack_id === draft\.pack_id \? normalizeItem\(draft\) : normalizeItem\(item\)\)[\s\S]*saveCatalog\(nextItems, draftBase\.revision\)/, 'One-pack editing must preserve the atomic complete-catalog PATCH contract');
 assert.match(source, /useToast\(\)[\s\S]*toast\.success/, 'Successful pack updates must use non-shifting global Toast feedback');
 assert.match(source, /credit_packs_edit_boundary[\s\S]*future customer purchases only[\s\S]*Existing payment orders and package entitlement remain unchanged/, 'The workbench must explain purchase snapshot and ownership boundaries');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeMetricStrip|BackofficeStackCard/, 'The credit pack configuration page must not regress to a hero metric panel or editable card wall');

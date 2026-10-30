@@ -225,7 +225,8 @@ function SubscriptionsContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const appliedStatus = normalizeStatus(searchParams.get('status'));
+  const appliedStatusGroup = searchParams.get('status_group') === 'active' ? 'active' : '';
+  const appliedStatus = appliedStatusGroup ? '' : normalizeStatus(searchParams.get('status'));
   const appliedAccountId = searchParams.get('account_id') || '';
   const appliedCustomer = searchParams.get('customer') || '';
   const appliedPlanId = searchParams.get('plan_id') || '';
@@ -261,6 +262,7 @@ function SubscriptionsContent() {
 
   const requestKey = useMemo(() => {
     const params = new URLSearchParams();
+    if (appliedStatusGroup) params.set('status_group', appliedStatusGroup);
     if (appliedStatus) params.set('status', appliedStatus);
     if (appliedAccountId) params.set('account_id', appliedAccountId);
     if (appliedCustomer) params.set('customer', appliedCustomer);
@@ -271,7 +273,7 @@ function SubscriptionsContent() {
     params.set('limit', String(PAGE_SIZE));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, offset, sort]);
+  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, appliedStatusGroup, offset, sort]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
@@ -422,6 +424,7 @@ function SubscriptionsContent() {
     setDraftFilters({ customer: '', plan_id: '', expires_before: '' });
     updateQueueUrl({
       status: null,
+      status_group: null,
       risk: null,
       account_id: null,
       customer: null,
@@ -584,12 +587,19 @@ function SubscriptionsContent() {
               </div>
               <div role="group" aria-label={t('admin.subscriptions.status_filter_label')} className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.status_filter_label')}</span>
+                <BackofficeFilterPill
+                  active={appliedStatusGroup === 'active'}
+                  aria-pressed={appliedStatusGroup === 'active'}
+                  onClick={() => updateQueueUrl({ status_group: 'active', status: null, offset: null, focus: null })}
+                >
+                  {t('admin.subscriptions.active_status_group')}
+                </BackofficeFilterPill>
                 {statusFilters.map((status) => (
                   <BackofficeFilterPill
                     key={status || 'all'}
-                    active={appliedStatus === status}
-                    aria-pressed={appliedStatus === status}
-                    onClick={() => updateQueueUrl({ status: status || null, offset: null, focus: null })}
+                    active={!appliedStatusGroup && appliedStatus === status}
+                    aria-pressed={!appliedStatusGroup && appliedStatus === status}
+                    onClick={() => updateQueueUrl({ status: status || null, status_group: null, offset: null, focus: null })}
                   >
                     {status ? t(`status.${status}`, undefined, status) : t('admin.subscriptions.all_statuses')}
                   </BackofficeFilterPill>
@@ -599,6 +609,7 @@ function SubscriptionsContent() {
                 ) : null}
               </div>
             </div>
+            {appliedStatusGroup ? <p className="px-1 text-xs text-slate-600 dark:text-slate-300" data-ui="subscription-status-group-scope">{t('admin.subscriptions.active_status_group_scope')}</p> : null}
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}

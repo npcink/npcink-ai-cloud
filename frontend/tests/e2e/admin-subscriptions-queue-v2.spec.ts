@@ -555,6 +555,7 @@ async function installDirectoryMocks(page: Page, subscriptions = directorySubscr
     }
     const customer = (params.get('customer') || '').toLowerCase();
     const matches = subscriptions.filter(item =>
+      (!params.get('status_group') || ['trialing', 'active', 'past_due', 'suspended'].includes(item.subscription.status)) &&
       (!params.get('status') || item.subscription.status === params.get('status')) &&
       (!params.get('account_id') || item.subscription.account_id === params.get('account_id')) &&
       (!customer || `${item.account.name} ${item.subscription.account_id}`.toLowerCase().includes(customer)) &&
@@ -827,4 +828,45 @@ test('subscription Quiet PC preview keeps header list footer controls and inspec
   await page.locator('[data-ui="subscription-queue-item"]').nth(1).getByRole('button', { name: 'Inspect', exact: true }).click();
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toContainText('Directory customer 01');
   await page.screenshot({ path: testInfo.outputPath('subscriptions-inspector-en-dark-1280.png'), fullPage: true, animations: 'disabled' });
+});
+
+
+test('subscription active set survives refresh and pagination and clears on exact status selection', async ({ page }, testInfo) => {
+  const items = directorySubscriptions(24).map((item, index) => ({
+    ...item,
+    subscription: { ...item.subscription, status: ['trialing', 'active', 'past_due', 'suspended', 'canceled', 'expired'][index % 6] },
+  }));
+  const mocks = await installDirectoryMocks(page, items);
+  await page.goto('/admin/subscriptions?plan_id=plus&risk=all&status_group=active');
+  await expectRange(page, 1, 10, 16);
+  const activeSet = statusGroup(page).getByRole('button', { name: /^Active set$|^活跃集合$/ });
+  await expect(activeSet).toHaveAttribute('aria-pressed', 'true');
+  await expect(statusGroup(page).getByRole('button', { pressed: true })).toHaveCount(1);
+  await expect(page.locator('[data-ui="subscription-status-group-scope"]')).toBeVisible();
+  await page.getByRole('button', { name: /^Next page$|^下一页$/ }).click();
+  await expectRange(page, 11, 16, 16);
+  expect(mocks.requests.at(-1)?.get('status_group')).toBe('active');
+  await page.reload();
+  await expectRange(page, 11, 16, 16);
+  await page.getByRole('combobox', { name: /^Sort$|^排序$/ }).selectOption('customer');
+  await expectRange(page, 1, 10, 16);
+  expect(mocks.requests.at(-1)?.get('status_group')).toBe('active');
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(activeSet).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const screenshotPath = testInfo.outputPath(`active-set-pc-${width}.png`);
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach(`active-set-pc-${width}`, { path: screenshotPath, contentType: 'image/png' });
+  }
+  await statusGroup(page).getByRole('button', { name: /^Active$|^活跃$/ }).click();
+  await expectRange(page, 1, 4, 4);
+  expect(mocks.requests.at(-1)?.get('status')).toBe('active');
+  expect(mocks.requests.at(-1)?.has('status_group')).toBe(false);
+  await activeSet.click();
+  await expectRange(page, 1, 10, 16);
+  await statusGroup(page).getByRole('button', { name: /^All subscription states$|^全部订阅状态$/ }).click();
+  await expectRange(page, 1, 10, 24);
+  expect(mocks.requests.at(-1)?.has('status_group')).toBe(false);
+  expect(mocks.requests.at(-1)?.has('status')).toBe(false);
 });

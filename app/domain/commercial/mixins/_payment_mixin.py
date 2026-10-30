@@ -7,6 +7,10 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.credit_pack_catalog_repository import (
+    catalog_revision,
+    replace_catalog,
+)
 from app.core.db import get_session
 from app.core.models import (
     CREDIT_LEDGER_EVENT_ADJUSTMENT,
@@ -104,6 +108,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "grant_event_type": CREDIT_LEDGER_EVENT_GRANT,
                 "items": items,
                 "configured": row is not None,
+                "revision": catalog_revision(row),
                 "updated_at": service._serialize_datetime(getattr(row, "updated_at", None)),
             }
 
@@ -111,6 +116,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         self,
         *,
         items: list[dict[str, object]],
+        expected_revision: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -134,39 +140,41 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             seen_pack_ids.add(pack_id)
         with get_session(service.database_url) as session:
             repository = CommercialRepository(session)
-            row = session.get(ServiceSetting, SERVICE_SETTING_CREDIT_PACK_CATALOG)
-            if row is None:
-                row = ServiceSetting(
-                    setting_id=SERVICE_SETTING_CREDIT_PACK_CATALOG,
-                    setting_kind=SERVICE_SETTING_KIND_COMMERCIAL,
-                    enabled=True,
-                    config_json={},
-                    secret_ciphertext_json={},
-                    status="ready",
-                    last_tested_at=None,
-                    last_error_code=None,
-                    last_error_message=None,
-                    metadata_json={},
+            if not expected_revision:
+                raise CommercialConflictError(
+                    "service.credit_pack_catalog_revision_required",
+                    "reload the catalog before saving; expected_revision is required",
                 )
-                session.add(row)
-            row.setting_kind = SERVICE_SETTING_KIND_COMMERCIAL
-            row.enabled = True
-            row.config_json = {
-                "catalog_version": CREDIT_PACK_CATALOG_VERSION,
-                "period_policy": CREDIT_PACK_PERIOD_POLICY,
-                "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
-                "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
-                "items": normalized_items,
-            }
-            row.status = "ready"
-            row.last_error_code = None
-            row.last_error_message = None
-            row.metadata_json = {
-                "source": "admin_credit_pack_catalog",
-                "updated_by": audit_context.actor_ref if audit_context is not None else "",
-            }
-            row.updated_at = now
-            session.flush()
+            revision = uuid4().hex
+            replaced = replace_catalog(
+                session,
+                expected_revision=expected_revision,
+                values={
+                    "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
+                    "enabled": True,
+                    "config_json": {
+                        "catalog_version": CREDIT_PACK_CATALOG_VERSION,
+                        "revision": revision,
+                        "period_policy": CREDIT_PACK_PERIOD_POLICY,
+                        "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
+                        "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
+                        "items": normalized_items,
+                    },
+                    "status": "ready",
+                    "last_error_code": None,
+                    "last_error_message": None,
+                    "metadata_json": {
+                        "source": "admin_credit_pack_catalog",
+                        "updated_by": audit_context.actor_ref if audit_context else "",
+                    },
+                    "updated_at": now,
+                },
+            )
+            if not replaced:
+                raise CommercialConflictError(
+                    "service.credit_pack_catalog_revision_conflict",
+                    "the catalog changed; reload and review the latest catalog before saving",
+                )
             result = {
                 "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
                 "catalog_version": CREDIT_PACK_CATALOG_VERSION,
@@ -179,6 +187,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     include_inactive=True,
                 ),
                 "configured": True,
+                "revision": revision,
                 "updated_at": service._serialize_datetime(now),
             }
             service._record_service_audit_in_session(

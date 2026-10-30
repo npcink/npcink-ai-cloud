@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { ADMIN_CURRENCY } from '@/lib/currency';
-import { resolveUiErrorMessage } from '@/lib/errors';
+import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 
 type CreditPackItem = {
@@ -34,6 +34,7 @@ type CreditPackItem = {
 };
 
 type CreditPackCatalogPayload = {
+  revision: string;
   catalog_version: string;
   period_policy: string;
   expiry_policy: string;
@@ -75,10 +76,10 @@ async function fetchCatalog(): Promise<CreditPackCatalogPayload> {
   return (await creditPacksClient.request<CreditPackCatalogPayload>('/api/admin/credit-packs')).data;
 }
 
-async function saveCatalog(items: CreditPackItem[]): Promise<CreditPackCatalogPayload> {
+async function saveCatalog(items: CreditPackItem[], expectedRevision: string): Promise<CreditPackCatalogPayload> {
   return (await creditPacksClient.request<CreditPackCatalogPayload>('/api/admin/credit-packs', {
     method: 'PATCH',
-    body: { items },
+    body: { items, expected_revision: expectedRevision },
   })).data;
 }
 
@@ -93,6 +94,8 @@ export default function AdminCreditPacksPage() {
   const [catalog, setCatalog] = useState<CreditPackCatalogPayload | null>(null);
   const [items, setItems] = useState<CreditPackItem[]>([]);
   const [draft, setDraft] = useState<CreditPackItem | null>(null);
+  const [draftBase, setDraftBase] = useState<{ revision: string; items: CreditPackItem[] } | null>(null);
+  const [draftConflict, setDraftConflict] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -129,7 +132,8 @@ export default function AdminCreditPacksPage() {
     try {
       const payload = await fetchCatalog();
       if (sequence !== requestSequenceRef.current) return;
-      setCatalogFresh(true);
+      setCatalogFresh(Boolean(payload.revision));
+      if (!payload.revision) setError(translationRef.current('admin.credit_packs_revision_missing'));
       setCatalog(payload);
       setItems((payload.items || []).map(normalizeItem));
       setLoadedAt(new Date());
@@ -157,13 +161,15 @@ export default function AdminCreditPacksPage() {
     [items, statusFilter]
   );
   const selectedItem = (focusedPackId ? filteredItems.find((item) => item.pack_id === focusedPackId) : filteredItems[0]) || null;
-  const savedItemForDraft = draft ? items.find((item) => item.pack_id === draft.pack_id) || null : null;
+  const savedItemForDraft = draft ? draftBase?.items.find((item) => item.pack_id === draft.pack_id) || null : null;
   const isDraftDirty = Boolean(draft && savedItemForDraft && JSON.stringify(normalizeItem(draft)) !== JSON.stringify(normalizeItem(savedItemForDraft)));
 
   const openEditor = (item: CreditPackItem) => {
-    if (!catalogFresh || savingRef.current) return;
+    if (!catalogFresh || !catalog?.revision || savingRef.current) return;
     updateCatalogUrl({ focus: item.pack_id });
     setEditorError(null);
+    setDraftConflict(false);
+    setDraftBase({ revision: catalog.revision, items });
     setDraft(normalizeItem({ ...item, recommended_for_tiers: [...item.recommended_for_tiers] }));
   };
 
@@ -171,6 +177,8 @@ export default function AdminCreditPacksPage() {
     if (!isSaving) {
       setEditorError(null);
       setDraft(null);
+      setDraftBase(null);
+      setDraftConflict(false);
     }
   };
 
@@ -185,24 +193,32 @@ export default function AdminCreditPacksPage() {
   };
 
   const handleSaveDraft = async () => {
-    if (!draft || !isDraftDirty || !catalogFresh || savingRef.current) return;
+    if (!draft || !draftBase || draftConflict || !isDraftDirty || !catalogFresh || savingRef.current) return;
     savingRef.current = true;
     setIsSaving(true);
     setEditorError(null);
     try {
-      const nextItems = items.map((item) => item.pack_id === draft.pack_id ? normalizeItem(draft) : normalizeItem(item));
-      const payload = await saveCatalog(nextItems);
-      setCatalogFresh(true);
+      const nextItems = draftBase.items.map((item) => item.pack_id === draft.pack_id ? normalizeItem(draft) : normalizeItem(item));
+      const payload = await saveCatalog(nextItems, draftBase.revision);
+      setCatalogFresh(Boolean(payload.revision));
+      if (!payload.revision) setError(t('admin.credit_packs_revision_missing'));
       setCatalog(payload);
       setItems((payload.items || []).map(normalizeItem));
       setLoadedAt(new Date());
       setDraft(null);
+      setDraftBase(null);
       toast.success(
         t('admin.credit_packs_saved_notice', {}, 'AI credit pack catalog saved.'),
         t('admin.credit_packs_saved_title', {}, 'AI credit pack updated')
       );
     } catch (err) {
-      setEditorError(resolveUiErrorMessage(err, t('error.failed_save')));
+      if (err instanceof ApiError && err.statusCode === 409 &&
+          ['service.credit_pack_catalog_revision_conflict', 'service.credit_pack_catalog_revision_required'].includes(err.errorCode)) {
+        setDraftConflict(true);
+        setCatalogFresh(false);
+        setEditorError(t('admin.credit_packs_revision_conflict'));
+        setError(t('admin.credit_packs_catalog_changed'));
+      } else setEditorError(resolveUiErrorMessage(err, t('error.failed_save')));
     } finally {
       savingRef.current = false;
       setIsSaving(false);
@@ -217,7 +233,7 @@ export default function AdminCreditPacksPage() {
         <BackofficeEmptyState
           title={t('admin.credit_packs_unavailable_title', {}, 'AI credit pack catalog unavailable')}
           description={error || t('error.failed_load')}
-          action={<button type="button" className="btn btn-primary" onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
+          action={<button type="button" className="btn btn-primary" disabled={Boolean(draft)} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
         />
       </BackofficePageStack>
     );
@@ -233,7 +249,7 @@ export default function AdminCreditPacksPage() {
           'Review the customer purchase catalog first. Edit one pack only when price, credits, validity, visibility, or package fit must change.'
         )}
         secondaryAction={(
-          <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving}>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving || Boolean(draft)}>
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
@@ -247,7 +263,7 @@ export default function AdminCreditPacksPage() {
       {error ? (
         <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
           <span>{error}{items.length > 0 ? <span className="mt-1 block text-xs">{t('admin.credit_packs_retained_notice', {}, 'Showing the last successfully loaded AI credit pack catalog.')}</span> : null}</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(draft)} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
         </div>
       ) : null}
 
@@ -370,7 +386,8 @@ export default function AdminCreditPacksPage() {
         footerActions={(
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary btn-sm" disabled={isSaving} onClick={closeEditor}>{t('common.cancel', {}, 'Cancel')}</button>
-            <button type="button" className="btn btn-primary btn-sm" disabled={isSaving || !catalogFresh || !isDraftDirty} onClick={() => void handleSaveDraft()}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
+            {draftConflict ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { closeEditor(); void loadCatalog(true); }}>{t('admin.credit_packs_reload_discard')}</button> : null}
+            <button type="button" className="btn btn-primary btn-sm" disabled={isSaving || draftConflict || !catalogFresh || !isDraftDirty} onClick={() => void handleSaveDraft()}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
           </div>
         )}
         width="compact"
