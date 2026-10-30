@@ -21,7 +21,7 @@ assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\
 
 assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
-assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the existing explicit search toolbar');
+assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the Quiet search toolbar');
 assert.match(source, /const PAGE_SIZE = 10;/, 'subscription pages have a fixed ten-row limit');
 assert.match(source, /BackofficeFilterPill[\s\S]*aria-pressed=\{appliedRisk === risk\}[\s\S]*aria-pressed=\{!appliedStatusGroup && appliedStatus === status\}/, 'each named filter group preserves its independent selected state');
 assert.match(source, /setLoadedRequestKey\(requestKey\)[\s\S]*new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'displayed range belongs to the last successful request');
@@ -33,7 +33,21 @@ assert.match(source, /nextOffset === offset[\s\S]*updateQueueUrl\(\{ focus: null
 assert.match(source, /ListPagination[\s\S]*offset=\{loadedOffset\}[\s\S]*subscription-queue-range[\s\S]*common.pagination_summary/, 'shared multi-page pagination and honest zero/single ranges remain');
 assert.match(source, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages offer explicit bounded recovery');
 assert.doesNotMatch(source, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination/, 'no URL page-size contract or copied pager');
-for (const key of ['summary_critical_metric', 'summary_warning_metric', 'summary_monitor_metric', 'summary_stable_metric', 'common.updated_at']) assert.ok(source.includes(key), `preserve summary/freshness ${key}`);
+
+// Quiet §2.2: ≤2 action summary metrics; fold total into title; freshness below the queue.
+assert.match(source, /hasLoaded \? ` · \$\{formatInteger\(total\)\}`/, 'successful subscription total appears in the title');
+assert.match(source, /summary_critical_metric[\s\S]*summary_warning_metric/, 'summary keeps at most critical and warning action metrics');
+assert.doesNotMatch(
+  source,
+  /summary_monitor_metric|summary_stable_metric/,
+  'Quiet summary must not keep the decorative monitor/stable risk wall that overlaps pills'
+);
+assert.match(source, /loadedAt[\s\S]*common\.updated_at/, 'successful read freshness must remain visible');
+assert.match(source, /setTimeout\([\s\S]*updateQueueUrl\([\s\S]*customer:/, 'customer/plan/expiry drafts also apply through a short debounce');
+assert.match(source, /onSubmit=\{applyFilters\}[\s\S]*onChange=\{\(event\) => setDraftFilters/, 'search keeps a local draft with Enter submit');
+assert.match(source, /button type="submit" className="sr-only"/, 'primary Apply control is demoted from a blue button');
+assert.match(source, /underline-offset-2[\s\S]*common\.clear_filters/, 'clear filters is a text link, not an icon or secondary button');
+assert.match(source, /queue_list_title[\s\S]*className="sr-only"|className="sr-only"[\s\S]*queue_list_title/, 'nested queue title is sr-only when it would stack with the page h1');
 
 assert.doesNotMatch(source, /function subscriptionRiskLevel|function subscriptionPriority|subscriptions\]\.sort|subscriptions\)\.sort/, 'the browser must not rebuild subscription risk or global ordering');
 assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'subscriptions must render as a responsive task list');

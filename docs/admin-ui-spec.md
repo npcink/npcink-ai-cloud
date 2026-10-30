@@ -24,7 +24,7 @@ Status: current contract index; #1292（壳层 workspace tab + 账号 Quiet）�
 | --- | --- | --- |
 | [Support](../frontend/tests/unit/admin-support-requests-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 单一互斥 view-pills；显式 Apply（Enter 提交表单）；Inspect 为可见行操作 |
 | [Accounts](../frontend/tests/unit/admin-accounts-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | Quiet 样板：客户总数并入标题，边界说明收进标题帮助；搜索/状态/排序宽屏同行、窄屏换行；账户状态与登录身份分列；目录保留站点数，订阅数留在详情；详情为文字链接；搜索 250ms debounce + Enter；大蓝「搜索」降为 sr-only；清除筛选用文字链；表框标题与页标题同义时 `headerVisibility="sr-only"`；不承接服务风险队列职责 |
-| [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | 响应式任务 list；独立命名的风险/生命周期等筛选、drawer 与 URL focus；**下一轮 Quiet 目标**见 §2.2（摘要收敛、工具条减 label/减大蓝 Apply、清除筛选文字链），不丢掉风险/生命周期 URL/focus/drawer 所有权 |
+| [Subscriptions](../frontend/tests/unit/admin-subscriptions-queue-v2-contract.mjs) | 固定 10；不读取 URL `limit` | Quiet（对齐账号 §2.2）：响应式任务 list；独立命名风险/生命周期 pills、drawer 与 URL focus；总数并入标题；摘要仅 Critical/Warning；搜索/套餐/到期 250ms debounce + Enter；大蓝 Apply 降为 sr-only；清除筛选用文字链；嵌套队列标题 sr-only；不丢掉风险/生命周期 URL/focus/drawer 所有权 |
 | [Coverage](../frontend/tests/unit/admin-coverage-workspace-contract.mjs) | 默认 10；保留 URL `limit` 的 `1..500`（队列里唯一 URL limit 例外） | 保留状态 pills、250ms 搜索 debounce 与服务端排序/分页；分页展示与共享 `ListPagination` 对齐见 §2.2 |
 | [Audit](../frontend/tests/unit/admin-audit-workspace-contract.mjs) | 固定 10；不读取 URL `limit` | 只读 diagnostic 证据；11 个 URL 筛选与语义表同一工作区，显式 Apply；范围来自成功响应，深页恢复遵循服务端 `last_offset`；非 Quiet 客户队列主战场 |
 
