@@ -118,6 +118,13 @@ ADMIN_SUBSCRIPTION_RISK_RANK = {
     "monitor": 2,
     "stable": 3,
 }
+# The plan directory count and its drilldown must use this exact lifecycle set.
+ADMIN_ACTIVE_SUBSCRIPTION_STATUSES = (
+    SUBSCRIPTION_STATUS_TRIALING,
+    SUBSCRIPTION_STATUS_ACTIVE,
+    SUBSCRIPTION_STATUS_PAST_DUE,
+    SUBSCRIPTION_STATUS_SUSPENDED,
+)
 ADMIN_SUBSCRIPTION_SORTS = frozenset({"priority", "expiry", "customer"})
 ADMIN_SUBSCRIPTION_RISK_FILTERS = frozenset(
     {"all", "needs_action", "critical", "warning", "monitor", "stable"}
@@ -754,12 +761,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             for subscription in subscriptions
             if subscription.plan_id
             and subscription.status
-            in {
-                SUBSCRIPTION_STATUS_TRIALING,
-                SUBSCRIPTION_STATUS_ACTIVE,
-                SUBSCRIPTION_STATUS_PAST_DUE,
-                SUBSCRIPTION_STATUS_SUSPENDED,
-            }
+            in ADMIN_ACTIVE_SUBSCRIPTION_STATUSES
         )
         items = []
         for plan in plans:
@@ -927,6 +929,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         self,
         *,
         status: str | None = None,
+        status_group: str | None = None,
         account_id: str | None = None,
         customer_query: str | None = None,
         plan_id: str | None = None,
@@ -936,6 +939,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, object]:
+        if status_group not in (None, "", "active") or (status_group and status):
+            raise CommercialValidationError(
+                "service.admin_subscription_status_group_invalid",
+                "status_group must be active and cannot be combined with status",
+            )
+        statuses = list(ADMIN_ACTIVE_SUBSCRIPTION_STATUSES) if status_group else None
         normalized_offset = max(0, int(offset or 0))
         resolved_limit = max(1, int(limit or 100))
         normalized_sort = str(sort or "priority").strip().lower()
@@ -955,6 +964,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             total = repository.count_subscriptions(
                 status=status,
+                statuses=statuses,
                 account_id=account_id,
                 customer_query=customer_query,
                 plan_id=plan_id,
@@ -967,6 +977,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 )
             subscriptions = repository.list_subscriptions(
                 status=status,
+                statuses=statuses,
                 account_id=account_id,
                 customer_query=customer_query,
                 plan_id=plan_id,
@@ -1115,6 +1126,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         return {
             "filters": {
                 "status": status or "",
+                "status_group": status_group or "",
                 "account_id": account_id or "",
                 "customer": customer_query or "",
                 "plan_id": plan_id or "",

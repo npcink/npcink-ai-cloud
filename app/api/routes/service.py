@@ -633,6 +633,7 @@ class CreditPackCatalogItemPayload(BaseModel):
 
 
 class CreditPackCatalogPayload(BaseModel):
+    expected_revision: str | None = Field(default=None, max_length=128)
     items: list[CreditPackCatalogItemPayload] = Field(default_factory=list)
 
 
@@ -2712,6 +2713,7 @@ async def update_admin_credit_pack_catalog(
         result = await run_in_threadpool(
             service.update_admin_credit_pack_catalog,
             items=payload_items,
+            expected_revision=payload.expected_revision,
             audit_context=audit_context,
         )
     except CommercialServiceError as error:

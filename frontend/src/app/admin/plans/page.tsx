@@ -525,7 +525,15 @@ function PlansContent() {
                           {attentionReason ? <p className="mt-1 line-clamp-2 leading-4 text-slate-600 dark:text-slate-300">{attentionReason}</p> : null}
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
-                          <p>{formatInteger(item?.subscription_counts?.active || 0)}</p>
+                          {planId ? (
+                            <Link
+                              href={`${subscriptionsHref}&status_group=active`}
+                              aria-label={`${t('admin.plans.active_subscriptions_action', { count: formatInteger(item?.subscription_counts?.active || 0) })} · ${packageAlias}`}
+                              className="ml-auto flex w-fit items-center gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
+                            >
+                              {formatInteger(item?.subscription_counts?.active || 0)}<span aria-hidden="true">›</span>
+                            </Link>
+                          ) : <p>{formatInteger(item?.subscription_counts?.active || 0)}</p>}
                           {planId ? (
                             <Link
                               href={subscriptionsHref}

@@ -179,6 +179,7 @@ async def update_admin_plan_sales_status(
 async def list_admin_subscriptions(
     request: Request,
     status: str | None = Query(default=None),
+    status_group: Literal["active"] | None = Query(default=None),
     account_id: str | None = Query(default=None),
     customer: str | None = Query(default=None, max_length=191),
     plan_id: str | None = Query(default=None),
@@ -196,6 +197,7 @@ async def list_admin_subscriptions(
     try:
         result = _get_commercial_service(request).list_admin_subscriptions(
             status=status,
+            status_group=status_group,
             account_id=account_id,
             customer_query=customer,
             plan_id=plan_id,

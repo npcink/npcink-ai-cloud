@@ -126,7 +126,9 @@ test('package subscription drilldown labels its total separately from the active
 
   const row = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
   const countCell = row.locator('td').nth(2);
-  await expect(countCell.locator('p')).toHaveText('3');
+  const activeSubscriptions = countCell.getByRole('link', { name: /Active subscriptions.*3.*Free|活跃集合订阅.*3.*Free/ });
+  await expect(activeSubscriptions).toContainText('3');
+  await expect(activeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all&status_group=active');
   const allSubscriptions = countCell.getByRole('link', { name: /All subscriptions.*5.*Free|全部订阅.*5.*Free/ });
   await expect(allSubscriptions).toBeVisible();
   await expect(allSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
@@ -158,6 +160,15 @@ test('package subscription drilldown labels its total separately from the active
   expect(query.get('risk')).toBe('all');
   expect(query.has('status')).toBe(false);
   await expect(page).toHaveURL('/admin/subscriptions?plan_id=free&risk=all');
+  await page.goBack();
+  const activeRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');
+  await page.getByRole('link', { name: /Active subscriptions.*3.*Free|活跃集合订阅.*3.*Free/ }).click();
+  const activeQuery = new URL((await activeRequest).url()).searchParams;
+  expect(activeQuery.get('status_group')).toBe('active');
+  expect(activeQuery.get('plan_id')).toBe('free');
+  expect(activeQuery.get('risk')).toBe('all');
+  expect(activeQuery.has('status')).toBe(false);
+  await expect(page.locator('[data-ui="subscription-status-group-scope"]')).toBeVisible();
 });
 
 test('package initialization reports mixed results and retries only failed tiers', async ({ page }) => {

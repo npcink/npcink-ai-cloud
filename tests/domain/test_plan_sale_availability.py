@@ -158,9 +158,12 @@ def test_withdrawn_credit_pack_hides_and_preserves_existing_order_snapshot(tmp_p
     created = service.create_credit_pack_payment_order(
         account_id="acct_sale", pack_id="pack_small", audit_context=_audit("pack-before")
     )
-    service.update_admin_credit_pack_catalog(items=[{
-        "pack_id": "pack_small", "amount": 119, "ai_credits": 12000, "active": False,
-    }])
+    service.update_admin_credit_pack_catalog(
+        expected_revision=str(service.get_admin_credit_pack_catalog()["revision"]),
+        items=[{
+            "pack_id": "pack_small", "amount": 119, "ai_credits": 12000, "active": False,
+        }],
+    )
     assert "pack_small" not in [p["pack_id"] for p in service.list_credit_packs()["items"]]
     with pytest.raises(CommercialValidationError):
         service.create_credit_pack_payment_order(
@@ -208,7 +211,10 @@ def test_emergency_recovery_keeps_withdrawn_offers_and_packs_unavailable(tmp_pat
         account_id="acct_sale", offer_id="plus_monthly_v1", audit_context=_audit("before-stop")
     )
     service.update_admin_plan_sales_status(plan_id="plus", status="retired")
-    service.update_admin_credit_pack_catalog(items=[{"pack_id": "pack_small", "active": False}])
+    service.update_admin_credit_pack_catalog(
+        expected_revision=str(service.get_admin_credit_pack_catalog()["revision"]),
+        items=[{"pack_id": "pack_small", "active": False}],
+    )
     service.settings.commercial_emergency_stop = True
     assert service.list_account_plan_offers(account_id="acct_sale")["items"] == []
     assert service.list_credit_packs()["items"] == []
