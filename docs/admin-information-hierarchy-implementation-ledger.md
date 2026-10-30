@@ -354,3 +354,68 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 既有取舍，再限定页面修改。积分包并发保护、套餐活跃集合下钻由对应会话在
 最新 master 上另行落实，不混入本批外观交付。并行内容链路的 local-ready
 另有所有者，未纳入 #1315。回退本批采用 reviewed revert，无数据迁移。
+
+## 客户额度告警与详情定位修复（2026-10-30，后续反馈）
+
+操作者截图：AI 积分充足，密钥 1/1 触发额度警告；详情资源全部正常，无法定位
+需要处理的内容。后端 `active_api_key_sites` 是「有活跃密钥站点 / 绑定站点」，
+显式状态为正常；前端却把 100% 覆盖按容量阈值判为告警，详情行只读服务端
+状态，造成入口、颜色与详情三种口径。属于前端呈现判定错误，不改后端额度。
+
+| 内容层级 | 本次处置 |
+| --- | --- |
+| 常显 | 真实告警的触发项、状态、当前/上限值；详情各页签前的原因摘要及异常行；来源未定位和只读刷新 |
+| 按需 | 正常资源明细、积分构成、高级额度证据，沿用原弹窗与页签 |
+| 技术证据 | 原账户、站点、额度来源与高级证据入口，不新增业务请求或写入 |
+| 删除重复 / 误报 | 完整密钥覆盖不再作为容量告警；三处呈现共用分类，不通过隐藏真实告警消除矛盾 |
+
+当前为 builder 本地验证阶段。`目标规划` 会话继续持有 merge/shared-M4 lane；
+本修复不自行发布 PR 或同步 M4，待 local-ready 后交接。新增英文/中文三组文案
+已完成并交还 i18n 编辑域；不占用商业修复会话的目录 fixture。
+
+本地验证回执（2026-10-30）：
+
+| 状态 | 本次证据 |
+| --- | --- |
+| 修复前复现 | 定向 helper 单测 1 failed / 8 passed，完整密钥覆盖被误判 |
+| 本地静态与单元 | 修复后 13 项 helper 单测、`check:admin-ui`（含类型检查）、定向 ESLint、i18n 契约、文档可达性、release-policy 均通过 |
+| 本地浏览器 | 两个客户详情 spec 共 16 项，首次 15 passed / 1 预期 golden 差异；接受截图并更新 Darwin 基线后，该项定向重跑 1 passed。完整覆盖不告警、真实密钥缺口、容量阈值、仅积分告警、未定位原因的 GET 刷新、Escape/焦点恢复均通过 |
+| PC 人工检查 | 代理已核对 1440×1050 明色及 900×800 明暗截图：顶部原因可读、对应异常行明确；操作者明确回复「接受，更新基线并继续交付」，接受本次展示的额度弹窗改动，不扩展为全后台视觉接受 |
+| Golden | 额度弹窗新增原因摘要，原 1152×237 对比实际 1152×311；actual/expected/diff 保留。人工接受后仅将展示过的 Darwin actual 原样更新为该平台基线，SHA256 `b1932e88c2749ccbad30c7a26b90eee6abe2df9b55e576b248e0d4c67d6d64c4`；Linux 尚未取证，不能以 Darwin 图片替代 |
+| CI / 合并 / M4 | 本修复尚未发布 PR、合并或同步共享 M4；当前 18010 不据此视为已修复 |
+| Production | 未部署、未晋级、未执行真实配置写入或模型调用 |
+
+本地证据在本工作区 `.tmp/quota-warning/`：`unit-final.log`、
+`admin-final.log`、`lint-final.log`、`i18n.log`、`docs.log`、`policy.log`、
+`browser-final.log` 及 `browser-final/`；截图是可控 fixture 的本地生产构建结果，
+不冒充截图账户的实时数据或 M4 验收。
+接受后的单项复验在 `accepted-baseline.log`；用于人工接受的前后对比是
+`quota-dialog-before-after.png`。实现提交为 `d5920c50`，后续基线/回执提交单独交接。
+
+并行商业修复：`排查观测总览各个 TAB` 会话在独立分支新增
+`docs/admin-commercial-consistency-contract-v1.md`，约束积分包数据库 CAS 和
+`status_group=active` 的套餐精确下钻。目前仍在本地验证，未合并；该文件尚不在
+本分支，集成时由 integrator 将其关联到既有积分包/套餐条目，不能记为已交付。
+
+
+### Integrator 验证补充（2026-10-30，PR #1319）
+
+本节接续上述 builder 回执，不改写其当时状态。实现已叠加至最新 master
+`24f7d387`，候选 source/frontend 均为 `0c12a84f`，`source_dirty=false`。
+
+- 集成本地：13 项 helper 单测、Admin 静态/类型/ESLint、国际化、文档可达性
+  600/600、release-policy 通过。复用与本分支 frontend Git tree 完全一致的
+  builder 生产构建，两份客户详情 spec 严格运行 16/16 通过；首次服务已停止
+  导致连接拒绝，恢复服务后重跑，无产品改动或放宽断言。
+- CI `40995927060`：后端相关及静态门禁通过；Linux 注册视觉矩阵 194/195
+  通过，唯一差异为同一已获操作者接受的原因摘要（1152×237 → 1152×311）。
+  已下载并目视核对 actual / expected / diff，首次和 retry actual 字节一致，
+  仅用 Linux actual 更新 Linux 专用 golden，SHA256 `f7df284b0161dcbf44bad1daf4e48a59884e4c9382a5d948752b692434da8943`。
+  未复制 Darwin 图片，未修改阈值；原 artifact 和日志保留。更新后 CI 待完成。
+- M4 candidate 实页只读核对：实际完整密钥覆盖 1/1 的客户入口与详情正常；
+  另一实际 0/1 客户入口明确「密钥覆盖不足」，详情摘要与异常行相符，切换
+  积分构成 tab 后原因仍常显。1280×720，未改配置、未调用 Provider。
+- 本分支证据 `.tmp/quota-integration/` 与 `/tmp/quota-integration-m4-*`；
+  builder 工作区和受审原图保留。M4 candidate 不等于 merged/accepted。
+- 生产发布分类为 `frontend`（无 backend image、迁移或 runtime 配置改动）；
+  未部署生产。商业 `601ed2cf` 继续排队，不混入此 PR。

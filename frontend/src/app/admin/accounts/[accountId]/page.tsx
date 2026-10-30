@@ -47,6 +47,7 @@ import {
   formatUsageRatio,
   metricToBudgetSummary,
   quotaMetricLabel,
+  quotaMetricDisplayStatus,
   quotaMetricNeedsAttention,
   quotaMetricToneClass,
   quotaToneClass,
@@ -1157,6 +1158,30 @@ function AccountDetailContent() {
   };
   const resourceRows = quotaSummary?.resource_limits || [];
   const internalLimitRows = quotaSummary?.internal_limits || [];
+  const quotaMetricStatusLabel = (metric: AccountQuotaMetric): string => {
+    const status = quotaMetricDisplayStatus(metric);
+    return status === 'limited' && metric.key === 'active_api_key_sites'
+      ? t('admin.account_detail.key_coverage_gap_status', undefined, 'Key coverage gap')
+      : status === 'limited'
+        ? t('admin.account_detail.limit_reached_status', undefined, 'Limit reached')
+        : status === 'near_limit'
+          ? t('admin.account_detail.near_limit_status', undefined, 'Near limit')
+          : translateStatusLabel(status, t);
+  };
+  const quotaAttentionItems = [
+    ...(creditNeedsAttention && creditMetric ? [creditMetric] : []),
+    ...resourceAlerts,
+  ].map((metric) => `${quotaMetricLabel(metric, t)} · ${quotaMetricStatusLabel(metric)} · ${formatQuotaMetricValue(metric)} / ${formatQuotaMetricLimit(metric)}`);
+  if (hasSiteLimitPressure && !resourceAlerts.some((metric) => metric.key === 'bound_sites')) {
+    quotaAttentionItems.push(`${t('admin.account_detail.bound_sites_label', undefined, 'Bound sites')} · ${formatInteger(account.site_count)} / ${formatInteger(accountSiteLimit)} · ${t('admin.account_detail.recommend_site_limit', undefined, 'Confirm the package site limit before binding another WordPress site to this customer.')}`);
+  }
+  if (hasApiKeyGap && !resourceAlerts.some((metric) => metric.key === 'active_api_key_sites')) {
+    quotaAttentionItems.push(`${t('admin.account_detail.active_api_keys_label', undefined, 'Active API keys')} · ${formatInteger(activeKeySiteCount)} / ${formatInteger(account.site_count)} · ${t('admin.account_detail.recommend_key_gap', undefined, 'Issue or restore active Cloud API key coverage for every bound site before trial traffic.')}`);
+  }
+  const quotaAttentionUnresolved = quotaNeedsAttention && quotaAttentionItems.length === 0;
+  if (quotaAttentionUnresolved) {
+    quotaAttentionItems.push(t('admin.account_detail.quota_attention_unresolved', undefined, 'The quota summary reports a warning without an identified item. Refresh the quota evidence before deciding what needs action.'));
+  }
   const creditLedgerItems = creditLedger?.items || [];
   const creditLedgerNetUsed = Number(
     creditLedger?.summary?.net_used_ai_credits ??
@@ -2214,9 +2239,9 @@ function AccountDetailContent() {
         {topUpDialog}
         {creditAdjustmentDialog}
 
-        {resourceAlerts.length > 0 ? (
+        {quotaNeedsAttention && creditEvidenceReady ? (
           <p className="text-sm text-amber-800 dark:text-amber-200" data-ui="account-resource-alerts">
-            {resourceAlerts.map((metric) => `${quotaMetricLabel(metric, t)}: ${formatInteger(metric.used)} / ${formatInteger(metric.limit)}`).join(' · ')}
+            {quotaAttentionItems.join(' · ')}
           </p>
         ) : null}
 
@@ -2415,6 +2440,15 @@ function AccountDetailContent() {
             onClose={() => setQuotaDetailsOpen(false)}
             onSubmit={() => undefined}
           >
+            {quotaNeedsAttention && creditEvidenceReady ? (
+              <div data-ui="account-quota-attention" className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
+                <p className="font-semibold">{t('admin.account_detail.quota_attention_items', undefined, 'What needs attention')}</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {quotaAttentionItems.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+                {quotaAttentionUnresolved ? <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={creditEvidenceQuery.quotaQuery.isFetching} onClick={() => void creditEvidenceQuery.quotaQuery.refetch()}>{t('common.refresh')}</button> : null}
+              </div>
+            ) : null}
             <div
               role="tablist"
               aria-label={t('admin.account_detail.quota_detail_tabs_label', undefined, 'Quota detail sections')}
@@ -2487,15 +2521,17 @@ function AccountDetailContent() {
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {resourceRows.map((metric) => {
+                    const metricStatus = quotaMetricDisplayStatus(metric);
                     const remaining = metric.unlimited
                       ? unlimitedLabel
                       : metric.unit === 'cny'
                         ? formatAdminCurrency(Math.max(0, Number(metric.limit || 0) - Number(metric.used || 0)))
                         : formatInteger(Math.max(0, Math.round(Number(metric.limit || 0) - Number(metric.used || 0))));
                     return (
-                      <tr key={metric.key}>
+                      <tr key={metric.key} data-quota-key={metric.key} data-quota-status={metricStatus} className={cn(metricStatus === 'limited' ? 'bg-rose-50/60 dark:bg-rose-950/15' : metricStatus === 'near_limit' ? 'bg-amber-50/60 dark:bg-amber-950/15' : undefined)}>
                         <td className="px-4 py-3 font-medium text-slate-950 dark:text-white">
                           {quotaMetricLabel(metric, t)}
+                          {metric.key === 'active_api_key_sites' ? <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">{t('admin.account_detail.key_coverage_metric_desc', undefined, 'Sites with active keys / bound sites; full coverage is healthy.')}</p> : null}
                         </td>
                         <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                           {formatQuotaMetricValue(metric)}
@@ -2507,21 +2543,13 @@ function AccountDetailContent() {
                         <td className="px-4 py-3">
                           <BackofficeStatusBadge
                             status={
-                              metric.status === 'limited'
+                              metricStatus === 'limited'
                                 ? 'error'
-                                : metric.status === 'near_limit'
+                                : metricStatus === 'near_limit'
                                   ? 'warning'
-                                  : 'ok'
+                                  : metricStatus
                             }
-                            label={
-                              metric.status === 'limited' && metric.key === 'active_api_key_sites'
-                                ? t('admin.account_detail.key_coverage_gap_status', undefined, 'Key coverage gap')
-                                : metric.status === 'limited'
-                                  ? t('admin.account_detail.limit_reached_status', undefined, 'Limit reached')
-                                : metric.status === 'near_limit'
-                                  ? t('admin.account_detail.near_limit_status', undefined, 'Near limit')
-                                  : translateStatusLabel('ok', t)
-                            }
+                            label={quotaMetricStatusLabel(metric)}
                           />
                         </td>
                       </tr>

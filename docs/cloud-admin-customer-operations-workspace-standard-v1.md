@@ -193,6 +193,17 @@ exceeded instead of performing unbounded enrichment.
 - Low AI credits can lead to existing top-up options. Resource limits or missing
   site access lead to quota and site evidence; adding credits does not repair
   those conditions. Missing evidence remains unknown rather than a healthy zero.
+- `active_api_key_sites` measures sites with active keys / bound sites, not
+  consumed capacity. Complete coverage (including 1/1) is healthy; use its
+  explicit coverage status instead of applying the 80%/100% capacity thresholds.
+  Entry warnings, metric colors, and detail-row badges share one presentation
+  classification. Preserve real capacity pressure and explicit coverage gaps.
+- A quota warning must identify its item and current values before the detail
+  tabs, including when the current tab contains healthy resources. Highlight
+  affected rows with text and a matching status. Do not show a warning header
+  over an unexplained all-normal table. If the server summary warns without an
+  identified item, state that the cause is unresolved and offer a bounded read
+  refresh; do not invent a cause or dismiss the server warning.
 - Missing or conflicting owner identity follows this sequence: confirm the
   intended owner and login email; have an authorized maintainer reconcile the
   existing Principal and owner Membership using the identity authority's
