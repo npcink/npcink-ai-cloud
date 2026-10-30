@@ -5,14 +5,19 @@ from dataclasses import replace
 from hashlib import sha256
 from typing import Any
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
 from app.core.db import get_session
 from app.core.models import PaymentOrder, PaymentRefund
 from app.domain.commercial.errors import CommercialConflictError, CommercialNotFoundError
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 
 
-def _scoped_order(repository: CommercialRepository, account_id: str, order_id: str) -> PaymentOrder:
+def _scoped_order(
+    repository: CommercialSubscriptionLifecycleRepository, account_id: str, order_id: str,
+) -> PaymentOrder:
     order = repository.get_payment_order(order_id)
     if order is None or order.account_id != account_id:
         raise CommercialNotFoundError("service.payment_order_not_found", "payment order not found")
@@ -31,7 +36,8 @@ def _refund_data(service: CommercialService, refund: PaymentRefund) -> dict[str,
 
 
 def _blocker(
-    service: CommercialService, repository: CommercialRepository, order: PaymentOrder,
+    service: CommercialService, repository: CommercialSubscriptionLifecycleRepository,
+    order: PaymentOrder,
     refunds: list[PaymentRefund], *, gateway_ready: bool,
 ) -> str:
     if refunds:
@@ -52,7 +58,9 @@ def _blocker(
     except CommercialConflictError:
         return "later_package_order"
     if service._payment_order_purchase_kind(order) == "credit_pack":
-        grant = repository.get_paid_credit_grant_by_order(order.order_id)
+        grant = CommercialCreditRepository(repository.session).get_paid_credit_grant_by_order(
+            order.order_id,
+        )
         if grant is None:
             return "credit_grant_missing"
         consumed = (
@@ -78,7 +86,7 @@ def list_admin_account_payment_orders(
 ) -> dict[str, Any]:
     gateway_ready = _gateway_ready(service)
     with get_session(service.database_url) as session:
-        repository = CommercialRepository(session)
+        repository = CommercialSubscriptionLifecycleRepository(session)
         if repository.get_account(account_id) is None:
             raise CommercialNotFoundError("service.account_not_found", "account not found")
         total = sum(repository.count_payment_orders_by_status(account_id=account_id).values())
@@ -113,7 +121,7 @@ def request_admin_full_refund(
     # operator tabs. The HTTP request key still protects request-body replay.
     stable_key = admin_full_refund_key(order_id)
     with get_session(service.database_url) as session:
-        repository = CommercialRepository(session)
+        repository = CommercialSubscriptionLifecycleRepository(session)
         order = _scoped_order(repository, account_id, order_id)
         existing = repository.get_payment_refund_by_idempotency_key(stable_key)
         if existing is not None:

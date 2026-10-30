@@ -14,7 +14,7 @@ from app.domain.commercial.payment_gateways import (
 from app.domain.commercial.service import CommercialService
 from tests.api.service_routes_test_support import _build_client
 from tests.conftest import build_internal_headers
-from tests.domain.test_subscription_commerce import _account, _pay, _service
+from tests.domain.test_subscription_commerce import _account, _audit, _pay, _service
 
 
 def _setup(tmp_path: Path):
@@ -133,3 +133,29 @@ def test_admin_refund_projection_and_post_both_enforce_blockers(tmp_path, monkey
                            headers=build_internal_headers(idempotency_key=f"blocked-{blocked}"))
     assert response.status_code == 409
     assert response.json()["error_code"] == f"admin.payment_refund.{blocked}"
+
+
+def test_admin_credit_pack_projection_blocks_consumed_credits(tmp_path, monkeypatch):
+    database_url, client, service, _, path = _setup(tmp_path)
+    _enable(monkeypatch)
+    order = service.create_credit_pack_payment_order(
+        account_id="acct_refund_admin", pack_id="pack_small", audit_context=_audit("admin-pack"),
+    )
+    order_id = str(order["order_id"])
+    service.mark_payment_order_paid(
+        order_id=order_id, amount=float(order["amount"]), provider_event_id="admin-pack-paid",
+        audit_context=_audit("admin-pack-paid"),
+    )
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        assert repository.consume_paid_credit_grants(
+            account_id="acct_refund_admin", ai_credits=1.0, now=datetime.now(UTC),
+        ) == 1.0
+        session.commit()
+    read = client.get(path, headers=build_internal_headers()).json()["data"]
+    projected = next(item for item in read["items"] if item["order_id"] == order_id)
+    assert projected["refund_blocker"] == "credits_consumed"
+    response = client.post(f"{path}/{order_id}/refunds", json={"reason": "test consumed pack"},
+                           headers=build_internal_headers(idempotency_key="admin-pack-refund"))
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "admin.payment_refund.credits_consumed"
