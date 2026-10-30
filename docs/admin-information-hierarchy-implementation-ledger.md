@@ -284,3 +284,24 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 `states/`、`states-final.log` 为六种复杂状态及 receipt，`docs.log` 为文档检查。
 `pc-layout-comparison.png` 汇集 900×800 订阅队列与详情的前后对照，供人工查看。
 本阶段尚无 CI、merged、M4 candidate/accepted、生产或新增人工视觉验收证据。
+
+## 本批交付进度（2026-10-30）
+
+以下补充前两批的交付状态，不将本地检查替代 CI、M4 或人工验收：
+
+- PR [#1315](https://github.com/npcink/npcink-ai-cloud/pull/1315) 已发布；
+  候选源码 `ea644170`，本地工作区干净。尚未合并。
+- M4 candidate 已同步该版本，前后端版本一致，`source_dirty=false`。
+  12 个列表/配置页、2 个详情与登录页在 1440×1050、900×800 的真实浏览器
+  只读核对通过：无整页横向溢出、单一主标题、无稳定观察期浏览器错误或 5xx。
+  附件键盘展开/收起、QQ/SMTP 双列和向量暗色另作定向检查。
+  未保存配置、上传、发送邮件或调用付费 Provider。
+- 首次 Linux CI 的注册矩阵为 192 passed、2 failed、1 flaky；插件观测筛选
+  首次超时、重试通过。两处确定失败为外部服务目录、服务设置的旧 Linux golden；
+  前批只更新了人工接受的 Darwin 图。其余已执行门禁通过，合并仍由 CI 阻止。
+- CI 原先未保留这些失败图片；补充仅失败时上传 `frontend/test-results/**/*.png`
+  （保留 7 天），不上传 trace、认证存储或请求内容，不放宽断言或截图阈值。
+  Linux 实际图和差异图需先核对，再依 UI Standard 完成适用人工验收后提交基线。
+- 证据：本工作区 `.tmp/admin-merge/candidate-receipt.json`、`candidate/`、
+  `candidate-status.log`、`frontend-failed.log`；首次 CI run `40987809801`。
+  尚无本批 merged、M4 accepted、生产或新增人工全量视觉验收结论。
