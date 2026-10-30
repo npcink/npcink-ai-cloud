@@ -54,6 +54,7 @@ product work or override the current Phase 1 expansion freeze.
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
 | 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
+| 实现文章中文检查只读提示 | [语言检查 runtime v1](article-review-language-runtime-v1.md) — 后端候选；精确引文定位、pii/no_store、作者修改；Addon/Toolbox 接入待后续 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |

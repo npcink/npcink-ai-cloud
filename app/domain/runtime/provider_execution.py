@@ -20,6 +20,7 @@ from app.adapters.providers.compatibility import assess_context_budget
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.error_taxonomy import get_error_taxonomy
 from app.core.models import ProviderCallRecord, RunRecord
+from app.domain.article_review.identity import ABILITY as ARTICLE_REVIEW_ABILITY
 from app.domain.runtime.provider_budget import (
     ProviderBudgetClaimReceipt,
 )
@@ -405,6 +406,7 @@ class RuntimeProviderExecutionService:
                             request=provider_request,
                         )
                     except ProviderExecutionError as error:
+                        self._sanitize_review_error(run, error)
                         last_error_code = error.error_code
                         last_error_message = error.message
                         taxonomy = get_error_taxonomy(error.error_code)
@@ -433,6 +435,7 @@ class RuntimeProviderExecutionService:
                         provider_request
                     )
                 except ProviderExecutionError as error:
+                    self._sanitize_review_error(run, error)
                     if preflight_usage_context:
                         error.usage_context = {
                             **preflight_usage_context,
@@ -566,6 +569,13 @@ class RuntimeProviderExecutionService:
             instance_id=last_instance_id or None,
             fallback_used=last_fallback_used,
         )
+
+    @staticmethod
+    def _sanitize_review_error(run: RunRecord, error: ProviderExecutionError) -> None:
+        if run.ability_name == ARTICLE_REVIEW_ABILITY:
+            # Upstream error prose/metadata may echo the submitted article.
+            error.message = "article review provider request failed"
+            error.usage_context = {}
 
     def _record_attempt_error(
         self,
