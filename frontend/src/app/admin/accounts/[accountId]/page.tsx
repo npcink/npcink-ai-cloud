@@ -301,6 +301,8 @@ function AccountDetailContent() {
   const [creditAdjustmentOpen, setCreditAdjustmentOpen] = useState(false);
   const [quotaDetailsOpen, setQuotaDetailsOpen] = useState(false);
   const [quotaDetailTab, setQuotaDetailTab] = useState<QuotaDetailTab>('resources');
+  const quotaRecoveryRef = useRef<HTMLDivElement>(null);
+  const quotaTabsRef = useRef<HTMLDivElement>(null);
   const [activeDrawer, setActiveDrawer] = useState<AccountDetailDrawer>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
@@ -330,6 +332,14 @@ function AccountDetailContent() {
     creditEvidenceQuery.ledgerQuery.isError;
   const creditEvidenceReady =
     Boolean(quotaSummary) && Boolean(creditLedger) && !creditEvidenceError;
+  useEffect(() => {
+    if (!quotaDetailsOpen || creditEvidencePending || document.activeElement !== document.body) return;
+    if (creditEvidenceError || !creditEvidenceReady) {
+      quotaRecoveryRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    } else {
+      quotaTabsRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
+    }
+  }, [quotaDetailsOpen, creditEvidencePending, creditEvidenceError, creditEvidenceReady]);
   const siteRuntimeData = siteRuntimeQuery.isError
     ? {}
     : siteRuntimeQuery.data?.items || {};
@@ -1008,6 +1018,13 @@ function AccountDetailContent() {
     resourceAlerts.length > 0 ||
     hasSiteLimitPressure ||
     hasApiKeyGap;
+  const creditEvidenceBadge = (() => {
+    if (creditEvidencePending) return <BackofficeStatusBadge status="pending" label={t('common.loading')} />;
+    if (creditEvidenceError) return <BackofficeStatusBadge status="error" label={t('common.error')} />;
+    if (!creditEvidenceReady) return <BackofficeStatusBadge status="unknown" label={t('common.unknown')} />;
+    if (quotaNeedsAttention) return <BackofficeStatusBadge status="warning" label={translateStatusLabel('warning', t)} />;
+    return <BackofficeStatusBadge status="ok" label={translateStatusLabel('ok', t)} />;
+  })();
 
   const riskySubscriptions = account.subscriptions.filter((sub) => sub.status !== 'active');
   const primarySubscription = selectPrimarySubscription(account);
@@ -2149,30 +2166,7 @@ function AccountDetailContent() {
               {t('admin.account_detail.credit_operations_desc', undefined, 'Review current-period headroom and open only the operation you need.')}
             </p>
           </div>
-          <BackofficeStatusBadge
-            status={
-              creditEvidencePending
-                ? 'pending'
-                : creditEvidenceError
-                  ? 'error'
-                  : !creditEvidenceReady
-                    ? 'unknown'
-                    : quotaNeedsAttention
-                      ? 'warning'
-                      : 'ok'
-            }
-            label={
-              creditEvidencePending
-                ? t('common.loading')
-                : creditEvidenceError
-                  ? t('common.error')
-                  : !creditEvidenceReady
-                    ? t('common.unknown')
-                    : quotaNeedsAttention
-                      ? translateStatusLabel('warning', t)
-                      : translateStatusLabel('ok', t)
-            }
-          />
+          {creditEvidenceBadge}
         </div>
 
         <div
@@ -2423,6 +2417,10 @@ function AccountDetailContent() {
               </div>
             </div>
           </BackofficeStackCard>
+        </div>
+        </div>
+          </>
+        )}
           <AdminWorkbenchDialog
             open={quotaDetailsOpen}
             title={t('admin.account_detail.quota_details_title', undefined, 'Quota details')}
@@ -2436,10 +2434,28 @@ function AccountDetailContent() {
             hideFooterActions
             width="wide"
             density="compact"
-            headerAccessory={<BackofficeStatusBadge status={quotaNeedsAttention ? 'warning' : 'ok'} label={quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t)} />}
+            headerAccessory={creditEvidenceBadge}
             onClose={() => setQuotaDetailsOpen(false)}
             onSubmit={() => undefined}
           >
+            {creditEvidencePending ? (
+              <LoadingFallback />
+            ) : creditEvidenceError || !creditEvidenceReady ? (
+              <div ref={quotaRecoveryRef} data-ui="account-quota-read-recovery">
+                <BackofficeDiagnosticNotice
+                  message={t('admin.account_detail.load_error_desc', undefined, 'Retry this bounded customer read without leaving the current operator route.')}
+                  retryLabel={creditEvidenceQuery.quotaQuery.isFetching || creditEvidenceQuery.ledgerQuery.isFetching ? t('common.loading') : t('common.retry')}
+                  onRetry={() => {
+                    if (creditEvidenceQuery.quotaQuery.isFetching || creditEvidenceQuery.ledgerQuery.isFetching) return;
+                    void Promise.all([
+                      creditEvidenceQuery.quotaQuery.refetch(),
+                      creditEvidenceQuery.ledgerQuery.refetch(),
+                    ]);
+                  }}
+                />
+              </div>
+            ) : (
+            <>
             {quotaNeedsAttention && creditEvidenceReady ? (
               <div data-ui="account-quota-attention" className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
                 <p className="font-semibold">{t('admin.account_detail.quota_attention_items', undefined, 'What needs attention')}</p>
@@ -2450,6 +2466,7 @@ function AccountDetailContent() {
               </div>
             ) : null}
             <div
+              ref={quotaTabsRef}
               role="tablist"
               aria-label={t('admin.account_detail.quota_detail_tabs_label', undefined, 'Quota detail sections')}
               data-ui="account-quota-detail-tabs"
@@ -2591,11 +2608,9 @@ function AccountDetailContent() {
             </div>
               </div>
             ) : null}
+            </>
+            )}
           </AdminWorkbenchDialog>
-        </div>
-        </div>
-          </>
-        )}
       </BackofficeSectionPanel>
       ) : null}
 
