@@ -182,6 +182,31 @@ test('initial quota read failure can retry inside the opened detail dialog', asy
   await expect(dialog.locator('[data-quota-key="active_api_key_sites"]')).toHaveAttribute('data-quota-status', 'ok');
 });
 
+for (const retainCloseFocus of [false, true]) {
+  test(`quota recovery waits for the remaining read and respects retained focus: ${retainCloseFocus}`, async ({ page }) => {
+    await installAdminMocks(page);
+    let releaseLedger!: () => void;
+    const ledgerReady = new Promise<void>(resolve => { releaseLedger = resolve; });
+    await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger?*`, async route => {
+      await ledgerReady;
+      await route.fallback();
+    });
+    await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => route.fulfill({ status: 403, json: { status: 'error', error_code: 'admin.e2e_request_failed', message: 'quota evidence unavailable', data: {} } }));
+    await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+    await page.getByRole('tab', { name: /Credits and usage|积分与用量/i }).click();
+    await page.getByRole('button', { name: /View quota details|查看额度详情/i }).click();
+    const dialog = page.getByRole('dialog', { name: /Quota details|额度详情/i });
+    const close = dialog.getByRole('button', { name: /^Close$|^关闭$/ });
+    await expect(close).toBeFocused();
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    if (!retainCloseFocus) await close.evaluate(element => element.blur());
+    releaseLedger();
+    const retry = dialog.getByRole('button', { name: /^Retry$|^重试$/ });
+    await expect(retry).toBeVisible();
+    await expect(retainCloseFocus ? close : retry).toBeFocused();
+  });
+}
+
 test('resource pressure leads to quota evidence while available credits keep top-up secondary', async ({ page }, testInfo) => {
   const errors: string[] = [];
   const networkFailures: string[] = [];

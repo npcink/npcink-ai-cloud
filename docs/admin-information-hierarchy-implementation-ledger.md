@@ -546,3 +546,39 @@ CI、合并、M4 和人工视觉接受均不由本地结果代签，生产未部
 验证日志：`.tmp/quota-recovery/green.log`、`initial-final.log`、`admin.log`、
 `lint-final.log`、`docs.log`、`policy.log`；`green/` 保留实际明暗截图与附件。
 本批仅完成 local-ready 交接，待集成方接收后另行记录交付状态。
+
+后续源码交付已重新委派给本会话，持有此单一 Cloud PR 的合并通道；共享 M4、
+18010、Local WordPress 和生产不在本批操作范围。原提交 `42eb3c15` 的三文件
+差异基于最新 master `36e16e75`，源码未改变，复用上面的 19 项和初次失败
+复验结果，不无故重复构建。合并后另交「目标规划」进行 M4 定向验收。
+
+最终差异模型审查使用配置中的 `qwen-shared / qwen3.8-max`，先 preview，
+再以单并发、low、80K 总预算和 8 分钟上限调用本地 OCR CLI。CLI 调用配置中的
+Qwen API，不是本机 Ollama。默认仅选择账户详情页；测试和 Markdown 被默认
+规则排除，由代理人工核对。该轮触及软预算（87,981 > 80,000）后停止继续
+工具轮次，最终宽限提交总计 115,632 token，输出三条意见但仍标记 incomplete，
+不可称通过；不重复该 agentic 调用或提升预算。原始日志在
+`.tmp/quota-recovery/qwen-preview.log`、`qwen-review.log`。
+后续 CI 模型审查与确定性门禁另行记录，不能用此不完整结果代替完整 CI。
+
+三条已交付意见逐项处置：
+
+- 状态徽章重复 / 深层条件（medium）：修复为外层和弹窗共用一个状态徽章；
+  现有翻译键由 i18n 完整性契约保障，不新增平行文案或兜底。
+- 焦点依赖遗漏和抢焦点（medium）：确认并修复；增加 pending 依赖及检查，
+  仅当当前焦点在 body 时移动。补两个请求先后结束、仍有焦点时不抢夺的用例。
+- 恢复区复用建议（low）：接受现有局部重复，不再抽取渲染层。外层供未打开
+  详情时恢复，内层保留弹窗工作上下文；两处使用同一现有诊断组件和查询所有者。
+  本次只对内层防重复重试，不扩大为外层行为整理。
+
+集成方随后指出中央活动规范已采用 bounded local Qwen receipt。最终提交将复用
+Toolbox 现有 `scripts/local-qwen-review.py` 对完整精确 diff 发起单次有界审查，
+覆盖三个文件，保留 receipt 和逐项 triage 并写入 PR 正文；不在 Cloud 新增审查
+工具，不用前述不完整 OCR 替代该 receipt。源码与测试的后续改动另有定向复验，
+已有未受影响证据仍保留。
+
+处置后的最终应用差异已重新构建并复验：两份客户详情 spec 共 **21/21** 通过，
+含两个请求先后结束和保留关闭按钮焦点的新增用例；原正常 golden 仍不变。
+`check:admin-ui` / 类型检查及定向 lint 通过。日志分别为
+`.tmp/quota-recovery/review-fixed.log`、`admin-review-fixed.log`、
+`lint-review-fixed.log`。共享环境、CI 与合并状态在发布回执中另列。
