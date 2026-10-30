@@ -305,3 +305,21 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 - 证据：本工作区 `.tmp/admin-merge/candidate-receipt.json`、`candidate/`、
   `candidate-status.log`、`frontend-failed.log`；首次 CI run `40987809801`。
   尚无本批 merged、M4 accepted、生产或新增人工全量视觉验收结论。
+
+### Linux 基线补齐与审查
+
+- 第二次 CI run `40989383176` 为 193 passed、2 failed，未再出现插件观测超时。
+  失败仍仅为上述两张旧 Linux golden，像素差与首次运行相同。
+- 从该 run 的 `frontend-failed-screenshots` artifact 取得两组 expected/actual/diff，
+  分别查看实际图、差异图及与已人工接受 Darwin 图的对照；两项重试 actual
+  分别字节一致。确认是同一已接受的视觉变更，没有额外版式改动：
+  服务目录降低配置按钮强调、去重复启停，保留未验证与实际运行两个事实；
+  服务设置去页头正常汇总，左侧目录与当前表单完整保留。
+- 沿用操作者对这两页前后对比的既有接受，仅将两张经审查的 Linux actual
+  写入对应 Linux golden；没有复制 Darwin PNG，没有更新配置弹窗等其他基线，
+  没有放宽阈值、修改断言或新增人工全量验收声明。
+- 文件 SHA-256：服务目录 `6056c7b7a55ff2cc9fdf92f2f3aeae3a41d753bef650da386490625930de66a1`；
+  服务设置 `0b1a482352ce7ad507d35ed43f1513f6162d17c123332ea8fec3991eee72825e`。
+  原 actual/diff、平台对照与 `receipt.json` 保留在
+  `.tmp/admin-merge/linux-review/`；规范第 8 节增加已跟踪平台变体的交付核对要求。
+  基线更新后的严格 Linux CI 仍须通过，不能以此次图片审查代替门禁。
