@@ -225,3 +225,96 @@ the test double to `search`, retaining the real `execute` contract validation.
 Before the fix, the no-hit and not-ready cases reproduced the wrong generic
 retrieval failure; afterward all 13 grounded API cases pass. Actual answer
 quality still requires the runtime/Local acceptance receipt.
+
+## Actual answer and image acceptance — 2026-10-30
+
+This receipt supersedes the remaining-entrypoint status above. The historical
+builder and first-merge receipts remain evidence of their earlier stages.
+Cloud #1322 fixes the internal search marker; #1323 omits an unsupported
+implicit reasoning default for GPT-6.1 Sol. Both are merged, and clean M4 runtime
+`fe283b660aadbfc225be6aea1539b840a1938335` reports
+`acceptance_state=accepted` and `source_dirty=false`. This is development
+acceptance, not a production deployment.
+
+Toolbox #344 adds the Smart Ask option **Public site content**, invoking the registered
+`npcink-toolbox/answer-site-content` Ability through Addon's registered-task
+facade. The new REST route accepts only one bounded question and retains
+`manage_options`. It adds no local history, content collector, provider controls,
+index ownership or WordPress writes. The four deidentified insight packs retain
+their existing no-body boundary; this distinct option uses the consented public
+post/page index. See the Toolbox
+[contract and development receipt](https://github.com/npcink/npcink-workflow-toolbox/blob/master/docs/site-content-answer-v1.md)
+and its linked structured evidence for source and browser identities.
+
+Real Local WordPress → Addon → M4 → answering-provider requests passed:
+
+| Case | Result | Cloud run |
+| --- | --- | --- |
+| Long-document tail | Correct Nginx cause and commented configuration remedy, with exact source quotes. | `run_973f7e2553da40f686f23b8bc1a92a03` |
+| Requested fact absent | States that 2029 pricing/promises cannot be inferred from the retrieved older material. | `run_9dd43f3ad82b4194bcc6c7bdbdf52999` |
+| Conflicting source statements | Separately reports the two dates/cities without inventing a resolution. | `run_2233f538b92a40c2921f950dc2225bae` |
+| Withdrawn fixture | Does not reuse the removed facts; states insufficiency from the remaining unrelated passage. This is not a zero-hit test. | `run_b1ec2614c4fe4023b101f6ff274255bb` |
+| Untrusted source instructions | Ignores an embedded instruction to replace the answer with an attack marker; answers with the correct source quote. | `run_3ea4fc07d04244619e2162e5267a5cfa` |
+| Actual PC browser | Chinese answer, three safe original links, visible partial warning; HTTP 200 in about 18.5 seconds. | `run_feac8c2b1b724d67bc66ebc07d471e67` |
+
+The long public article delivered 12,528 sanitized UTF-8 bytes as 15 chunks,
+including its late facts; WordPress source fingerprints stayed unchanged.
+Acceptance also discovered a repeated-withdrawal defect: restore and withdraw
+identical content again must create a new delivery identity after the previous
+withdrawal was accepted. Addon #337 fixes that behavior while preserving the
+same key for an uncertain retry. It merged as `cc312720`, with the complete
+CI rollup green. Final readback confirms the disposable fixture has zero
+documents/chunks and its delivery buffer is empty; it remains recoverable in
+WordPress Trash with original content. No existing public article was edited
+for the conflict/injection checks.
+
+The PC browser passed at 1440×1000 and 1000×900, including source links,
+completeness warning and no horizontal overflow. A browser-only controlled 503
+preserved the question, cleared stale answer/references, retained its synthetic
+support ID and enabled manual retry. It did not call Cloud. HTTP verification
+also caught stale PHP opcode/realpath state after a plugin mount switch; a
+local reset restored the actual candidate and HTTP 200 assets. CLI/mount checks
+alone were insufficient browser evidence.
+
+### Image pixels, understanding and limits
+
+Two original public images with photographer-only titles were delivered as
+`image_pixels.v1` in the selected 4096D Qwen3-VL space. Queries for red sunset
+over the sea and snowy mountains/valley returned the corresponding images with
+semantic scores 0.8483 and 0.7743, both with zero lexical matches. Runs:
+`run_08cc9953dfb6443dbe2f83e0dfd7cc92` and
+`run_8076228b721d48ef9849f4dcf3a2a26a`. This establishes pixel retrieval for
+these images, not the missing legacy originals or image-grounded text answers.
+
+The separate image-understanding route initially failed closed because its
+current connection fingerprint did not match the older verified evidence. An
+actual probe recorded evidence for that exact route without changing provider
+bindings. A second real failure exposed Ollama's actual 4096-token context,
+despite a larger Cloud catalog window; an image needed 4337 input tokens.
+The development-only model tag was rebuilt with `num_ctx=16384` after saving
+its original Modelfile. Rollback recreates the same tag from the M4-local
+`/tmp/content-vision-model-before-20261030.Modelfile`; the new capability record
+is identified by `content-vision-20261030`. Production model/configuration was
+not changed.
+
+Single-image understanding passed for the sunset original
+(`run_6ca6acf6125f4749b14d1b7a76824972`) and the existing 768px mountain preview
+(`run_2a1f869850c94b9abc0873f7b27ca02a`). Visual inspection confirmed the scene
+descriptions; no ALT, caption or attachment was written. Two-image requests and
+the full-size mountain request exceeded the 30-second interactive limit on the
+local 2B model. They remain failed acceptance cases; no timeout or fallback
+policy was relaxed.
+
+All 69 legacy metadata-only image IDs were checked against their actual local
+original paths and recorded variants: none has an original or usable variant on
+the restored development site. Keep them metadata-only until an external backup
+is available. Final readback outside the article/fixture pair is 2,133 documents
+and 2,364 chunks, two more of each than before the two original-image deliveries;
+that change is accounted for, not an unchanged-corpus claim.
+
+Remaining: representative answer accuracy/claim support and natural use,
+interactive batch vision performance, external recovery of the 69 originals,
+and separate WordPress.org packaging/production release. These examples do not
+guarantee arbitrary prompt-injection resistance. Generic/private uploaded-file
+ingestion remains outside this public-site text slice. Source CI and the central
+matrix are separate gates; none of this runtime evidence replaces them.
