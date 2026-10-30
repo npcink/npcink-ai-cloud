@@ -789,8 +789,12 @@ def test_openai_adapter_request_extra_overrides_provider_default_reasoning_effor
     )
 
 
-@pytest.mark.parametrize("model_id", ["gpt-6.1-sol", "gpt-6.1-sol-2026-10-29", "mqzj/gpt-6.1-sol"])
-@pytest.mark.parametrize("default_effort,expected", [("none", "low"), ("high", "high"), (None, None)])
+@pytest.mark.parametrize(
+    "model_id", ["gpt-6.1-sol", "gpt-6.1-sol-2026-10-29", "mqzj/gpt-6.1-sol"],
+)
+@pytest.mark.parametrize(
+    "default_effort,expected", [("none", "low"), ("high", "high"), (None, None)],
+)
 def test_gpt61_sol_uses_supported_connection_reasoning_default(
     model_id: str, default_effort: str | None, expected: str | None,
 ) -> None:
