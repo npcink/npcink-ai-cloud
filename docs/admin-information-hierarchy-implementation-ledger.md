@@ -1,6 +1,9 @@
 # Admin 信息层级逐页落实台账
 
-Status: active implementation ledger, 2026-10-29.
+Status: active implementation ledger, updated 2026-10-30.
+
+本批交付结果见末节「合并版交付核验」。前文保留各阶段当时的状态与证据，
+不能把历史的本地通过、候选或待验收描述当作当前运行身份。
 
 观测批次已在 [#1314](https://github.com/npcink/npcink-ai-cloud/pull/1314) 通过 CI
 并合入 `d1cbf463`；以下后续页面从该 master 基线逐页落实。
@@ -323,3 +326,31 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
   原 actual/diff、平台对照与 `receipt.json` 保留在
   `.tmp/admin-merge/linux-review/`；规范第 8 节增加已跟踪平台变体的交付核对要求。
   基线更新后的严格 Linux CI 仍须通过，不能以此次图片审查代替门禁。
+
+### 合并版交付核验（2026-10-30）
+
+| 证据状态 | 结果与限制 |
+| --- | --- |
+| 本地 | 前两批定向行为、构建、静态契约及 Darwin 注册矩阵通过，详见上文；真实写入未测试 |
+| CI | [run 40990410181](https://github.com/npcink/npcink-ai-cloud/actions/runs/40990410181) 全部必需检查通过。前端单元 673、关键路径 50、严格注册视觉矩阵 195/195、Portal 路径 4、TOTP 契约 9 通过；本轮未出现截图失败或 flaky |
+| merged | [#1315](https://github.com/npcink/npcink-ai-cloud/pull/1315)，2026-10-30 02:22 UTC，master `a813b7294c455cbaf3ed162ff94fca8ca46f41a8`；30 个文件，含两页各自的 Darwin/Linux 基线 |
+| M4 candidate | `ea644170` 已完成 15 页 PC 双宽与对应交互核对；最终合并版应用源码与该候选一致，后续只补基线、CI 证据和文档 |
+| M4 accepted | 从干净 master 推广 #1315，02:23:50 UTC 状态为 `accepted`、`promotion_pr=1315`、`source_branch=master`、`source_dirty=false`；前后端均为 `a813b729` |
+| 合并后浏览器 | 02:25 UTC：订阅 900×800、外部服务 1440×1050、服务设置 900×800 均 HTTP 200、单一 h1、无整页横向溢出。会话与健康接口 200，前端完整 revision、后端 revision 前缀均匹配合并版；无浏览器异常、5xx 或非 GET 请求 |
+| 人工 | 两页对比已有接受，Linux 差异经核对属于同一变更；最新 PC 排版及其余页面仍待操作者视觉验收，不代签全量接受 |
+| production | 未部署、未晋级，未进行真实配置保存、附件上传、邮件、模型或交易测试 |
+
+推广使用 source sync，未冷构建镜像；操作日志首尾约 49 秒，非精确人工耗时。
+候选启动窗口曾有两次手动导航 502，恢复后才开始稳定浏览器取证；accepted
+稳定检查非健康页面 502 为 0。未发现 M4 特有应用缺陷。合并后取证脚本首次
+误要求 900px 隐藏侧栏可见，改为等待挂载后重跑通过；未改应用来迎合脚本。
+
+合并版证据位于本工作区 `.tmp/admin-merge/accepted-status-1315.log`、
+`m4-promote-1315.log`、`frontend-final.log`、`ci-final.json` 与 `accepted/`。
+本节是上述时间点的交付记录；以后核对实时版本仍以 Git、M4 status 和浏览器
+健康接口为准，不能把此 dated receipt 作为永久当前真相。
+
+后续工作：操作者查看最新 PC 排版；若有新反馈，先核对规范第 8–11 节与本表
+既有取舍，再限定页面修改。积分包并发保护、套餐活跃集合下钻由对应会话在
+最新 master 上另行落实，不混入本批外观交付。并行内容链路的 local-ready
+另有所有者，未纳入 #1315。回退本批采用 reviewed revert，无数据迁移。
