@@ -65,8 +65,8 @@ PC 检查围绕 1440×1050 和受影响的 900px 窗口；不扩展移动端任�
 | `/admin/runtime-profiles` | 主表、可选兜底/正常状态、具体 disclosure | 整改并验证（本地）：仅在已配置时显示可选兜底；主表/暂停/历史入口保留；注册 runtime-profiles spec 通过，PC 双宽复查通过 |
 | `/admin/service-settings` | 顶部只汇总缺口、保留单一设置面 | 整改并验证（本地）：页头仅汇总缺失/错误，数量和缺口名称常显，组内值保留原目录/激活面；功能定向通过。操作者已接受展示的对比图，Darwin golden 已按该图更新；原 actual/diff 保留，见本批验收记录 |
 | `/admin/site-compliance` | 尚未发布、草稿/公开、阻塞/确认常显 | 整改并验证（本地）：显式尚未发布，脏草稿才显示切换教学；注册 spec 与 PC 双宽复查通过；未真实发布 |
-| `/admin/plans` | 比较表、就绪/计数重复、高级限制 | 整改并验证（本地）：去重复就绪汇总，保留套餐比较/管理；定向 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮集成验证中 |
-| `/admin/credit-packs` | 价格/积分/有效期/可见性，ID/公式按需 | 整改并验证（本地）：技术 ID 留编辑详情、重名仍常显，去首屏策略公式；价格/积分/有效期/可见性保留；注册 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮集成验证中 |
+| `/admin/plans` | 比较表、就绪/计数重复、高级限制 | 整改并验证（本地）：去重复就绪汇总，保留套餐比较/管理；定向 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮本地/PG/候选验证通过，CI 与 merged/accepted 仍待完成 |
+| `/admin/credit-packs` | 价格/积分/有效期/可见性，ID/公式按需 | 整改并验证（本地）：技术 ID 留编辑详情、重名仍常显，去首屏策略公式；价格/积分/有效期/可见性保留；注册 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮本地/PG/候选验证通过，CI 与 merged/accepted 仍待完成 |
 | `/admin/economics` | 成本限制常显、实现/收入分解按需 | 整改并验证（本地）：本地/共用边界常显，实现帮助及收入分解按需；5 项定向检查（含失败恢复和账单不上传）与 PC 双宽通过 |
 | `/admin/login` | 单表单、边界/错误保留、重复会话解释 | 整改并验证（本地）：去重复眉题，边界/会话/密钥/错误保持；3 项恢复检查与 PC 双宽通过 |
 
@@ -446,3 +446,29 @@ Linux 注册矩阵、Portal 和 TOTP/BFF 终检通过。一次被后续 edited �
 
 当前为集成验证阶段；本地、真实 PostgreSQL、CI、merged 与 M4 结果在完成后
 分别记录。不在实际客户目录制造冲突，不执行生产配置写入或真实支付。
+
+
+### 商业集成验证回执（提交前）
+
+- 来源：最新 master `b8e84915` + builder `601ed2cf`，集成候选 `178bac9f`。
+  保留额度三组英中文案；新增商业文案七组独立键。无截图 golden 修改。
+- 本地 66 项后端、完整 Ruff、5 源文件 mypy、changed-Python quality、
+  Admin 结构/类型/ESLint、国际化、anti-drift、release-policy、文档可达性
+  601/601 与 diff 检查通过。
+- 三页生产构建浏览器 28/28，通过冲突保留草稿、禁写、显式重新加载、取消
+  后保留原因并通过刷新恢复、无版本禁写、精确集合、分页/筛选/排序保持。
+  900×800 / 1440×800 PC 截图已核对；模拟写入，不冒充实际客户目录写入。
+- 第一次本机构建因跨工作区 node_modules symlink 超出 Turbopack 根目录失败；
+  仅移除本会话自建链接，按冻结锁文件离线安装同版本依赖后通过，无产品或锁文件改动。
+- M4 真实 PostgreSQL：`test_admin_credit_pack_postgres.py` 的未配置、旧目录、
+  已有版本三场景全部通过（均恰好一胜一冲突，检查版本/目录/唯一成功审计），
+  加一项已有 Portal 隔离夹具基础检查共 4 passed / 3.24s。使用受保护 runner
+  的已登记 Portal PG target 激活原夹具，实际写入仅在唯一临时 schema，结束清理；
+  不放宽环境/主机保护，不在真实目录造冲突。首次 `-k` 参数被 runner 拒绝，
+  改用明确节点路径后执行，无测试跳过或 guard 修改。
+- M4 candidate 实页：Free 套餐活跃计数 2 → 精确集合总数 2，URL 保留
+  `plan_id=free&risk=all&status_group=active`，四状态说明常显；实际积分包
+  目录加载 3/3，打开编辑器原 Small 价格为 ¥99，未改值时保存禁用，取消
+  回到原触发器。1280×720 只读；未修改实际价格/权益/配置或调用 Provider。
+- 本地证据 `.tmp/commercial-integration/`，PG 和 M4 同步日志在
+  `/tmp/commercial-integration-*`。CI、merged、M4 accepted 和生产状态仍分开记录。
