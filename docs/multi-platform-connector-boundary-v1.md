@@ -42,6 +42,50 @@ validator, fixture, or compatibility path. WordPress task/profile semantics
 remain explicitly WordPress-specific, while transport identity and execution
 stay in the neutral envelope.
 
+## Bounded Maintenance Decision (2026-10-30)
+
+The source review used master `36e16e75`, including the GPT-6.1 Sol parameter
+default fix in #1323. The neutral envelope is an existing foundation, not proof
+that another platform can connect without further work. Current validation,
+site connection, task sources, hosted profiles, and editor-channel admission
+remain WordPress-specific.
+
+Keep the existing WordPress contract validator and input preparation entry
+points. Their current callers do not justify a platform registry, generic
+dispatch framework, or another wrapper. Consolidate output normalization and
+accept/reject rules in `WordPressOperationRuntime.prepare_provider_output`,
+using the existing `ProviderOutputDecision`. This removes the generic Runtime
+service's need to assemble WordPress title and empty-output rules. The service
+still supplies the transient Cloud-owned grounding snapshot and persists or
+clears bounded quality diagnostics; the operation method does not own run state.
+
+Retain the narrowly scoped DeepSeek title reasoning fallback in the OpenAI
+adapter for this change. It currently combines connector/task admission with
+model and endpoint dialect handling and explicit-option precedence. Moving it
+now would require a new internal execution-option handoff for one case. This is
+a known coupling to revisit when a second actual consumer needs it, not a
+pattern to copy for each future platform. GPT-6.1 Sol's inherited-default
+adaptation is model compatibility and remains Provider-owned.
+
+Acceptance for this maintenance slice:
+
+- Preserve WordPress result shapes, quality error codes/messages, non-blocking
+  title review evidence, fallback behavior, and Cloud-owned grounding checks.
+- Preserve current DeepSeek title and GPT-6.1 Sol parameter behavior with the
+  existing MockTransport regressions; do not make paid observation calls.
+- Keep public contracts, allowed platforms/channels/task sources, authentication,
+  idempotency, billing, database, and run lifecycle unchanged.
+- Use source/unit and Fake API checks for local evidence. M4, CI, merge,
+  production, and human acceptance remain separate evidence states.
+
+Future platform work must supply its own local permissions, context, review,
+apply, and audit integration while reusing Cloud execution. File-backed hosts
+also require real validation of Markdown/MDX/front matter and content-hash
+revision semantics; current Gutenberg/HTML checks do not establish that support.
+Do not pre-open platform enums, rename WordPress contracts as universal ones,
+or extract an SDK solely to anticipate those cases. Phase 1's value-first scope
+continues to govern when a second-platform validation may start.
+
 ## Two Orthogonal Axes
 
 | Axis | Values and examples | Ownership rule |

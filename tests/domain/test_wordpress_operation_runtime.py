@@ -1066,6 +1066,71 @@ def test_registered_task_provider_input_projects_profile_metadata() -> None:
     assert provider_input["max_tokens"] == 160
 
 
+@pytest.mark.parametrize(
+    ("task", "provider_text", "accepted", "quality_evidence"),
+    [
+        ("content_summary", "OneBlog 主题部署方法。", True, {}),
+        ("content_summary", "", False, {"output_quality_reason": "empty_output_text"}),
+        ("title_generation", "现有标题", False, {"output_quality_reason": "title_unchanged"}),
+        (
+            "title_generation",
+            "OneBlog Typecho Theme Deployment Guide 部署指南",
+            True,
+            {"title_quality_reasons": ["title_mixed_language"]},
+        ),
+    ],
+)
+def test_operation_output_decision_preserves_blocking_and_review_only_evidence(
+    task: str,
+    provider_text: str,
+    accepted: bool,
+    quality_evidence: dict[str, object],
+) -> None:
+    input_payload = {
+        "metadata": {"task": task, "existing_title": "现有标题"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+    provider_output = {"output_text": provider_text}
+    original_input = json.dumps(input_payload, ensure_ascii=False)
+    original_output = dict(provider_output)
+
+    decision = _runtime().prepare_provider_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+
+    assert decision.accepted is accepted
+    assert decision.usage_context == quality_evidence
+    assert decision.error_code == ("" if accepted else "provider.output_quality_rejected")
+    if accepted:
+        assert decision.error_message == ""
+        assert decision.output["output_text"] == provider_text
+    else:
+        assert decision.error_message == (
+            "provider returned the existing title instead of a new suggestion"
+            if task == "title_generation"
+            else "provider returned no usable WordPress AI connector text"
+        )
+    assert json.dumps(input_payload, ensure_ascii=False) == original_input
+    assert provider_output == original_output
+
+
+def test_operation_output_decision_ignores_grounding_supplied_in_provider_input() -> None:
+    # Only the service's separate Cloud-owned snapshot may supply grounding.
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "metadata": {"task": "content_summary"},
+            "text": "OneBlog 主题部署方法。",
+            "_grounded_context": {"untrusted": True},
+        },
+        provider_output={"output_text": "OneBlog 主题部署方法。"},
+    )
+
+    assert decision.accepted
+    assert decision.output["output_text"] == "OneBlog 主题部署方法。"
+    assert decision.usage_context == {}
+
+
 def test_provider_output_normalizes_title_summary_and_classification() -> None:
     runtime = _runtime()
 

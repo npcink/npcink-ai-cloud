@@ -21,6 +21,7 @@ from app.adapters.providers.base import (
 from app.core.config import Settings
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 from app.domain.runtime.errors import RuntimeExecutionContractError
+from app.domain.runtime.provider_execution import ProviderOutputDecision
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_CONTRACTS,
     SITE_KNOWLEDGE_SEARCH_ABILITY,
@@ -766,6 +767,57 @@ class WordPressOperationRuntime:
             "input": render_evidence_pack(pack) + "\n\n" + str(provider_input.get("input") or ""),
             "_grounded_context": pack,
         }
+
+    def prepare_provider_output(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+        grounded_context: dict[str, Any] | None = None,
+    ) -> ProviderOutputDecision:
+        """Judge WordPress output without mutating run state or persisting diagnostics."""
+        normalization_input = {**input_payload}
+        normalization_input.pop("_grounded_context", None)
+        if grounded_context is not None:
+            normalization_input["_grounded_context"] = grounded_context
+        normalized_output = self.normalize_provider_output(
+            provider_output,
+            input_payload=normalization_input,
+        )
+        title_quality_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_title_quality_reasons = self.blocking_title_quality_reasons(title_quality_reasons)
+        if blocking_title_quality_reasons or self.is_empty_text_output(
+            input_payload=input_payload,
+            provider_output=normalized_output,
+        ):
+            quality_reason = self.output_quality_reason(
+                input_payload=input_payload,
+                provider_output=provider_output,
+            )
+            error_message = (
+                "provider returned the existing title instead of a new suggestion"
+                if "title_unchanged" in blocking_title_quality_reasons
+                else "provider returned no usable WordPress AI connector text"
+            )
+            return ProviderOutputDecision(
+                accepted=False,
+                output=normalized_output,
+                error_code="provider.output_quality_rejected",
+                error_message=error_message,
+                usage_context={"output_quality_reason": quality_reason},
+            )
+        return ProviderOutputDecision(
+            accepted=True,
+            output=normalized_output,
+            usage_context=(
+                {"title_quality_reasons": list(title_quality_reasons)}
+                if title_quality_reasons
+                else {}
+            ),
+        )
 
     def normalize_provider_output(
         self,
