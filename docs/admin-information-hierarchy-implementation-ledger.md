@@ -396,3 +396,26 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 `docs/admin-commercial-consistency-contract-v1.md`，约束积分包数据库 CAS 和
 `status_group=active` 的套餐精确下钻。目前仍在本地验证，未合并；该文件尚不在
 本分支，集成时由 integrator 将其关联到既有积分包/套餐条目，不能记为已交付。
+
+
+### Integrator 验证补充（2026-10-30，PR #1319）
+
+本节接续上述 builder 回执，不改写其当时状态。实现已叠加至最新 master
+`24f7d387`，候选 source/frontend 均为 `0c12a84f`，`source_dirty=false`。
+
+- 集成本地：13 项 helper 单测、Admin 静态/类型/ESLint、国际化、文档可达性
+  600/600、release-policy 通过。复用与本分支 frontend Git tree 完全一致的
+  builder 生产构建，两份客户详情 spec 严格运行 16/16 通过；首次服务已停止
+  导致连接拒绝，恢复服务后重跑，无产品改动或放宽断言。
+- CI `40995927060`：后端相关及静态门禁通过；Linux 注册视觉矩阵 194/195
+  通过，唯一差异为同一已获操作者接受的原因摘要（1152×237 → 1152×311）。
+  已下载并目视核对 actual / expected / diff，首次和 retry actual 字节一致，
+  仅用 Linux actual 更新 Linux 专用 golden，SHA256 `f7df284b0161dcbf44bad1daf4e48a59884e4c9382a5d948752b692434da8943`。
+  未复制 Darwin 图片，未修改阈值；原 artifact 和日志保留。更新后 CI 待完成。
+- M4 candidate 实页只读核对：实际完整密钥覆盖 1/1 的客户入口与详情正常；
+  另一实际 0/1 客户入口明确「密钥覆盖不足」，详情摘要与异常行相符，切换
+  积分构成 tab 后原因仍常显。1280×720，未改配置、未调用 Provider。
+- 本分支证据 `.tmp/quota-integration/` 与 `/tmp/quota-integration-m4-*`；
+  builder 工作区和受审原图保留。M4 candidate 不等于 merged/accepted。
+- 生产发布分类为 `frontend`（无 backend image、迁移或 runtime 配置改动）；
+  未部署生产。商业 `601ed2cf` 继续排队，不混入此 PR。
