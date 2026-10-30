@@ -65,8 +65,8 @@ PC 检查围绕 1440×1050 和受影响的 900px 窗口；不扩展移动端任�
 | `/admin/runtime-profiles` | 主表、可选兜底/正常状态、具体 disclosure | 整改并验证（本地）：仅在已配置时显示可选兜底；主表/暂停/历史入口保留；注册 runtime-profiles spec 通过，PC 双宽复查通过 |
 | `/admin/service-settings` | 顶部只汇总缺口、保留单一设置面 | 整改并验证（本地）：页头仅汇总缺失/错误，数量和缺口名称常显，组内值保留原目录/激活面；功能定向通过。操作者已接受展示的对比图，Darwin golden 已按该图更新；原 actual/diff 保留，见本批验收记录 |
 | `/admin/site-compliance` | 尚未发布、草稿/公开、阻塞/确认常显 | 整改并验证（本地）：显式尚未发布，脏草稿才显示切换教学；注册 spec 与 PC 双宽复查通过；未真实发布 |
-| `/admin/plans` | 比较表、就绪/计数重复、高级限制 | 整改并验证（本地）：去重复就绪汇总，保留套餐比较/管理；定向 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮本地/PG/候选验证通过，CI 与 merged/accepted 仍待完成 |
-| `/admin/credit-packs` | 价格/积分/有效期/可见性，ID/公式按需 | 整改并验证（本地）：技术 ID 留编辑详情、重名仍常显，去首屏策略公式；价格/积分/有效期/可见性保留；注册 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，本轮本地/PG/候选验证通过，CI 与 merged/accepted 仍待完成 |
+| `/admin/plans` | 比较表、就绪/计数重复、高级限制 | 整改并验证（本地）：去重复就绪汇总，保留套餐比较/管理；定向 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，已完成 CI、合并与 M4 接受，见[最终交付回执](#最终交付回执2026-10-30) |
+| `/admin/credit-packs` | 价格/积分/有效期/可见性，ID/公式按需 | 整改并验证（本地）：技术 ID 留编辑详情、重名仍常显，去首屏策略公式；价格/积分/有效期/可见性保留；注册 spec 与 PC 双宽通过；并发与下钻修复见[商业一致性契约](admin-commercial-consistency-contract-v1.md)，已完成 CI、合并与 M4 接受，见[最终交付回执](#最终交付回执2026-10-30) |
 | `/admin/economics` | 成本限制常显、实现/收入分解按需 | 整改并验证（本地）：本地/共用边界常显，实现帮助及收入分解按需；5 项定向检查（含失败恢复和账单不上传）与 PC 双宽通过 |
 | `/admin/login` | 单表单、边界/错误保留、重复会话解释 | 整改并验证（本地）：去重复眉题，边界/会话/密钥/错误保持；3 项恢复检查与 PC 双宽通过 |
 
@@ -444,8 +444,8 @@ Linux 注册矩阵、Portal 和 TOTP/BFF 终检通过。一次被后续 edited �
 页面临时持有编辑草稿及其读取时的目录快照。冲突不自动重试或换用新版本提交旧草稿。
 保留额度三组英中文案，商业键独立追加；不修改前序额度页或其截图基线。
 
-当前为集成验证阶段；本地、真实 PostgreSQL、CI、merged 与 M4 结果在完成后
-分别记录。不在实际客户目录制造冲突，不执行生产配置写入或真实支付。
+本节以下保留提交前验证状态；最终 CI、merged 与 M4 accepted 见
+[最终交付回执](#最终交付回执2026-10-30)。不在实际客户目录制造冲突，不执行生产配置写入或真实支付。
 
 
 ### 商业集成验证回执（提交前）
@@ -472,3 +472,33 @@ Linux 注册矩阵、Portal 和 TOTP/BFF 终检通过。一次被后续 edited �
   回到原触发器。1280×720 只读；未修改实际价格/权益/配置或调用 Provider。
 - 本地证据 `.tmp/commercial-integration/`，PG 和 M4 同步日志在
   `/tmp/commercial-integration-*`。CI、merged、M4 accepted 和生产状态仍分开记录。
+
+
+## 最终交付回执（2026-10-30）
+
+本节接续上文历史 builder 与提交前记录，作为本批交还依据；以后确认当前版本
+仍须读取 Git、M4 status 和实际页面，不把本日期记录当作永久运行真相。
+
+| 批次与状态 | 结果与限制 |
+| --- | --- |
+| 额度修复 merged / CI | [#1319](https://github.com/npcink/npcink-ai-cloud/pull/1319) 合入 `b8e8491529e1ea3b9a2992a254fa338cc9595813`；完整 [CI 40996998937](https://github.com/npcink/npcink-ai-cloud/actions/runs/40996998937) 通过。Linux golden 经 actual/expected/diff 核对后原样更新，最终注册视觉矩阵通过，未放宽阈值。 |
+| 额度 M4 accepted | clean master 推广 #1319，source `b8e84915`、frontend `509ea256`、`source_dirty=false`。真实客户 1/1 密钥覆盖正常，0/1 原因与异常行一致，切换 tab 后原因保留。 |
+| 商业修复 merged / CI | [#1320](https://github.com/npcink/npcink-ai-cloud/pull/1320) 合入 `71cef1bd05383a50ed19f30a2a764a53f80bfa7e`；最终 source `af5e985b` 的完整 [CI 40999318446](https://github.com/npcink/npcink-ai-cloud/actions/runs/40999318446) 通过，相关检查无失败。前端单测 681、关键路径 50、注册视觉矩阵 198/198、Portal 4、TOTP/BFF 9 通过；无 golden 修改。 |
+| 商业本地 / PG | 上文 66 项后端、28 项 PC 浏览器和真实 PostgreSQL 三种目录状态并发证据保留。PG 写入仅在隔离临时 schema，清理完成；不把模拟浏览器写入或 PG 夹具称为真实客户目录写入。 |
+| 商业 M4 accepted | 约 04:00 UTC 从干净 master 推广 #1320，`acceptance_state=accepted`、`promotion_pr=1320`、`source_branch=master`、`source_dirty=false`。source `71cef1bd`，frontend `178bac9f`；运行/前端代码与受验候选相同，后续差异只有文档与合并身份。八个服务运行，`/` 与 `/health/live` 均 200。 |
+| 合并后真实 PC 页面 | 1280×720：部署身份为 `71cef1bd`；积分包 3/3、Small ¥99 原价可读；Free 活跃入口 2 → 精确集合总数 2，URL 保留 `plan_id=free&risk=all&status_group=active`，四状态说明常显。只读核对，无真实配置保存、支付或 Provider 调用。 |
+| 人工 / production | 额度展示接受仅覆盖原操作者明确接受的弹窗；商业复用现有样式且无新基线，代理已核对 PC 截图，不代签全后台人工验收。未部署生产；前后端仍须成套发布，旧缓存客户端遇 409 须刷新。 |
+
+证据：集成工作区 `.tmp/quota-integration/`、`.tmp/commercial-integration/`，
+`/tmp/commercial-integration-ci-final.log`、`commercial-integration-pr-final.json`、
+`commercial-integration-postgres-final.log`、`commercial-integration-m4-promote.log`
+与 `commercial-integration-m4-accepted-status.log`；关键结果也保留在两份 PR 正文。
+
+本次只修复既有正确性，未改变价格、权益、试用、订单快照、队列 500 条限制或
+跨请求实时数据语义；没有公共 WordPress/runtime 契约或兼容推荐下限变更。
+回退采用整批 reviewed revert，商业前后端一起回退，无迁移。
+
+收尾后释放额度、商业、i18n 与台账编辑域；两个 builder 工作区和已接受原图保留。
+后续会话从最新 master 核对真实新缺口，避免再次改写已落实取舍。内容处理链路另见
+[开发交付回执](content-evidence-loop-v1.md)：69 张历史图片原图恢复、回答语义质量、
+自然采用与共享 WordPress 的 Addon 安装仍未完成，不由本商业回执补成已验收。

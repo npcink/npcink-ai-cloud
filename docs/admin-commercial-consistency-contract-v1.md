@@ -78,3 +78,17 @@
 待集成方完成：刷新最新 master，叠加保留客户额度翻译与台账，运行隔离 PostgreSQL
 三场景并发用例、CI 和 M4 候选/接受验证，提交合并结果。上述本地证据不代表这些状态已完成，
 也不代表操作者视觉接受或生产已部署。
+
+
+## 集成完成记录（2026-10-30）
+
+上述 builder 记录保留其交接时点状态。集成后 [#1320](https://github.com/npcink/npcink-ai-cloud/pull/1320)
+已合入 `71cef1bd05383a50ed19f30a2a764a53f80bfa7e`，最终 source `af5e985b`
+完整 CI `40999318446` 通过。真实 PostgreSQL 三场景各一胜一冲突、唯一成功审计
+通过；本地 28 项 PC 浏览器和 CI 注册矩阵 198/198 通过，无新 golden。
+
+clean master 推广 #1320 后 M4 为 accepted、source `71cef1bd`、frontend
+`178bac9f`、`source_dirty=false`；实际套餐 2 → 2 与目录读取只读复验通过。
+[Admin 台账最终回执](admin-information-hierarchy-implementation-ledger.md#最终交付回执2026-10-30)
+记录完整状态、证据入口、协作交还与回退。未在真实目录制造冲突，未部署生产；
+旧页面 409 后显式刷新、前后端成套发布、原队列上限与实时数据限制仍适用。
