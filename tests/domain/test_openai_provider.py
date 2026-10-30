@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -786,6 +787,55 @@ def test_openai_adapter_request_extra_overrides_provider_default_reasoning_effor
             },
         )
     )
+
+
+@pytest.mark.parametrize(
+    "model_id", ["gpt-6.1-sol", "gpt-6.1-sol-2026-10-29", "mqzj/gpt-6.1-sol"],
+)
+@pytest.mark.parametrize(
+    "default_effort,expected", [("none", "low"), ("high", "high"), (None, None)],
+)
+def test_gpt61_sol_uses_supported_connection_reasoning_default(
+    model_id: str, default_effort: str | None, expected: str | None,
+) -> None:
+    adapter = OpenAIProviderAdapter(
+        default_reasoning_effort=default_effort, model_namespace_prefix="mqzj",
+    )
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id=model_id,
+        input_payload={"messages": [{"role": "user", "content": "Answer from evidence"}]},
+    ))
+    assert payload.get("reasoning_effort") == expected
+
+
+@pytest.mark.parametrize("explicit", [
+    {"extra": {"reasoning_effort": "none"}},
+    {"extra": {"reasoning_effort": "high"}},
+    {"extra": {"reasoning": {"effort": "medium"}}},
+    {"thinking": {"budget": "medium"}},
+])
+def test_gpt61_sol_preserves_explicit_reasoning_choices(explicit: dict[str, Any]) -> None:
+    adapter = OpenAIProviderAdapter(default_reasoning_effort="none")
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id="gpt-6.1-sol",
+        input_payload={"messages": [{"role": "user", "content": "Answer"}], "params": explicit},
+    ))
+    extra = explicit.get("extra", {})
+    if "reasoning_effort" in extra:
+        assert payload["reasoning_effort"] == extra["reasoning_effort"]
+    else:
+        assert "reasoning_effort" not in payload
+        assert payload["reasoning"]["effort"] == "medium"
+
+
+@pytest.mark.parametrize("model_id", ["gpt-5.5", "gpt-6-sol", "gpt-6.1-sol-custom"])
+def test_gpt61_sol_default_does_not_change_other_models(model_id: str) -> None:
+    adapter = OpenAIProviderAdapter(default_reasoning_effort="none")
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id=model_id,
+        input_payload={"messages": [{"role": "user", "content": "Answer"}]},
+    ))
+    assert payload["reasoning_effort"] == "none"
 
 
 def test_openai_adapter_rejects_unknown_default_reasoning_effort() -> None:

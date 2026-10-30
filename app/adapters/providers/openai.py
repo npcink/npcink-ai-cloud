@@ -1536,7 +1536,18 @@ class OpenAIProviderAdapter:
             and self.default_reasoning_effort
             and "reasoning_effort" not in payload
         ):
-            payload["reasoning_effort"] = self.default_reasoning_effort
+            effort = self.default_reasoning_effort
+            # GPT-6.1 Sol rejects the connection-wide non-reasoning default.
+            # Adapt only that inherited default; explicit request choices must
+            # remain visible to the upstream, including invalid choices.
+            is_gpt61_sol = re.fullmatch(
+                r"gpt-6\.1-sol(?:-\d{4}-\d{2}-\d{2})?", str(payload.get("model", ""))
+            ) is not None
+            explicit_mode = options.get("thinking") is not None or any(
+                key in payload for key in ("reasoning", "thinking")
+            )
+            if not (is_gpt61_sol and explicit_mode):
+                payload["reasoning_effort"] = "low" if is_gpt61_sol and effort == "none" else effort
         if "parallel_tool_calls" in options:
             payload["parallel_tool_calls"] = bool(options.get("parallel_tool_calls"))
         if isinstance(options.get("max_completion_tokens"), int):
