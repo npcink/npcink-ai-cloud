@@ -582,3 +582,43 @@ Toolbox 现有 `scripts/local-qwen-review.py` 对完整精确 diff 发起单次�
 `check:admin-ui` / 类型检查及定向 lint 通过。日志分别为
 `.tmp/quota-recovery/review-fixed.log`、`admin-review-fixed.log`、
 `lint-review-fixed.log`。共享环境、CI 与合并状态在发布回执中另列。
+
+### 额度读取恢复：源码交付与 M4 定向验收（2026-10-30）
+
+本节补齐上面的 local-ready 记录，不把早期未发布状态作为当前状态。
+源码 PR [#1325](https://github.com/npcink/npcink-ai-cloud/pull/1325) 已合并：
+精确 source head `86478b720d89d9b7e2d32bf5357005773b7fe28c`，squash merge
+`8a6a978893f46a4c4b129cc9bceb9327cf6d312a`。完整检查为 20 SUCCESS、
+11 项按变更范围 SKIPPED，没有 pending/failure；跳过项不作为执行证据。
+最终 bounded local Qwen receipt 覆盖三个文件，完整 diff 身份与逐项 triage
+验证通过；原不完整 OCR 仍只保留为失败审查尝试。21/21 本地生产构建浏览器
+回归、Admin/type/lint/docs 均通过，既有正常 golden 未改变。
+
+「目标规划」随后从干净且等于 origin/master 的 M4 运维工作区推广 #1325：
+`acceptance_state=accepted`、`promotion_pr=1325`、`source_dirty=false`，
+source 与 compiled frontend revision 均为 `8a6a9788`。八个服务运行，
+frontend/API/proxy 健康，`/` 与 `/health/live` 均为 200；worker source 未变，
+同步按指纹跳过 worker 重启。本次未操作 Local WordPress、生产或真实客户额度。
+
+浏览器加载 18010 上实际 M4 编译前端，在浏览器内用既有客户 fixture 模拟
+quota/ledger 响应及 503/403；这验证部署后的前端行为，不是真实后端故障演练。
+900×800 PC 定向结果：
+
+- 明暗两种主题下，弹窗内刷新 503 后弹窗保留、错误/重试可见；旧额度表和正常
+  结论不显示。GET 重试成功后原高级页签及焦点恢复，Escape 关闭并返回入口，
+  无横向溢出。
+- 首次额度读取 503 时可以打开详情并在弹窗内重试；恢复后显示新读取的额度。
+- quota 先失败、ledger 仍 pending 时不提前显示错误；ledger 结束后，仅 body
+  失焦时移到重试按钮，已有关闭按钮焦点不被抢夺。
+- 最终两组浏览器脚本共五个场景完成、零 pageerror。故意注入的 HTTP 错误不作
+  JavaScript 崩溃。临时验收脚本早期曾过早断言焦点、并误把关闭图标文字当作
+  无障碍名称；核对实际 DOM 焦点后改用元素身份等待，失败日志保留，不改产品。
+
+M4 前后状态、推广日志、最终脚本回执、明暗及恢复截图与 SHA-256 清单保存于
+本任务工作区外的私有 `quota-m4-acceptance` 证据目录；原 builder `.tmp` 和
+私有归档继续保留，清理不得丢失唯一证据。代理已目检两张 M4 错误态截图：
+状态、提示、重试和焦点可见，无裁切。**人工视觉接受仍 pending**；不新增或
+更新 golden，也不把代理检查当作操作者接受。
+
+本节仅为开发交付回执。生产未部署；生产发布、正式用户效果及其他内容链路
+不由本次 quota 验收代签。后续文档合入不需要重复同步 M4。
