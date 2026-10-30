@@ -1,8 +1,9 @@
-# Content evidence loop — local implementation candidate
+# Content evidence loop — development delivery
 
-Status: builder candidate dated 2026-10-30. This document specifies the bounded
-text/evidence changes on `codex/content-evidence-loop-20261030`, paired with the
-same Addon branch. It does not record merged, M4 accepted or production evidence.
+Status: Cloud [#1317](https://github.com/npcink/npcink-ai-cloud/pull/1317) and Addon
+[#336](https://github.com/npcink/npcink-cloud-addon/pull/336) merged on 2026-10-30.
+Cloud runtime `62a9443e` is accepted on M4. The receipt below separates source,
+runtime, packaging and remaining customer acceptance. No production deployment.
 
 ## Product and ownership
 
@@ -20,7 +21,7 @@ local contract. There is no new task registry, chat endpoint, CMS or write path.
 | Text delivery | Addon post/page `content_excerpt` carries sanitized body up to 48,000 UTF-8 bytes with v2 byte/character counters. Legacy v1 1,800-byte evidence remains readable. Wire batching uses escaped JSON bytes; dispatch retains its final 900,000-byte guard. Bodies beyond the cap explicitly remain partial. |
 | Factual answering | Locally registered custom tasks may declare `site_knowledge_evidence`, distinct from optional `site_style_profile`. They require enabled `site_factual_evidence` references, `json_object` and `source_grounded` constraints, and an answer/citations schema. |
 | Existing ingestion/lifecycle | Public post/page, approved comments and eligible images retain their existing scoped delivery, explicit withdrawal, exclusion/restore and preserve-on-failed-refresh paths. Known run identities release duplicate payload snapshots; lost responses retain exact replay bytes. This does not add PDF/Word/video or private upload support. |
-| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. Full M4 index migration remains pending shared-environment access and capacity checks. |
+| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. M4 inventory now has 2,364 matching 4096D chunks; 69 legacy media chunks remain explicitly metadata-only because their originals were unavailable. They are not pixel-retrieval success. |
 | Evidence outcomes | `available` / `partial` on usable factual context; `grounded_answer.no_evidence`, `.retrieval_unavailable`, `.retrieval_failed` are independent failed-run outcomes before the answering provider. Optional style behavior remains unchanged. |
 | Quality evidence | Deterministic long-tail retrieval, UTF-8/wire bounds, current-chunk/hash checks, wrong-site metadata exclusion, missing evidence, forged quotes/IDs, queued failure and no-store coverage. Existing multimodal and refresh safety suites are reused. Run IDs, usage and bounded feedback remain the correlation path; no paid calls manufacture observations. |
 
@@ -121,16 +122,16 @@ to prompt injection still require a representative evaluation and human review.
 4. The local Ability owner selects any actual product entrypoint and schema. This
    batch adds capability transport/execution; it does not register a new customer
    UI, resume paused features or prove natural adoption.
-5. Shared merge/M4 lane stays with the Admin delivery chat until explicit release.
-   Local tests are not M4 acceptance. Production requires exact human deployment
-   authorization. Keep real relevance and natural editor adoption as separate
-   evidence from deterministic regression gates.
+5. The Admin chat released the shared lane before this integration. Cloud then
+   landed before Addon and was promoted from clean master. Production still
+   requires exact human deployment authorization. Keep real relevance and
+   natural editor adoption separate from deterministic regression gates.
 
 Rollback: revert the Addon producer first if necessary; Cloud can retain the
 additive v1/v2 reader. Stop invoking the new locally declared evidence context to
 roll back factual answering. Existing content/indexes are not deleted by rollback.
 
-## Builder verification receipt
+## Historical builder verification receipt
 
 Local evidence on 2026-10-30:
 
@@ -157,3 +158,57 @@ for Cloud `39fe5ab7` and Addon `1f66aa9`: both were clean; Addon gates passed;
 Cloud was `blocked_environment` (exit 75) because exact-SHA GitHub CI evidence was
 unavailable for the unpublished source commit. No M4 gate was requested. This
 is an outstanding source-delivery gate, not a passing cross-repo closeout.
+
+
+## Merged development receipt — 2026-10-30
+
+- Cloud #1317 merged as `62a9443e54fa2d129e5ce7ec9c08454eb8d85a5b`.
+  Exact source head `9e2fbdcd7b1a6aa879ec7bdf4fa5a6ce4a6499a7` passed the
+  complete GitHub rollup, including all targeted backend contract shards,
+  impacted tests, static analysis and security checks. Initial CI found twelve
+  line-length violations missed by the narrow local subset; formatting was
+  corrected, full-repository Ruff passed and the final head was reviewed again.
+- Addon #336 merged as `f0c6bd276a418ace73b28c716cb2692d1c4183de`.
+  Exact source head `0a500f576ef106965126d6c010c64ac4c1c14ccc` passed all PHP
+  contracts, PHPStan, WordPress AI blocking compatibility lanes and Release
+  static gates. Local Qwen reviews for both repositories were triaged in their
+  PR bodies against exact committed diffs. No required checks were bypassed.
+- Candidate M4 connector/grounding/source-evidence tests: 274 passed in 64.56s.
+  Clean-master promotion for #1317 reports `acceptance_state=accepted`,
+  `source_dirty=false`, runtime `62a9443e`; unchanged frontend remains
+  `a813b729`. All eight services run and `/` plus `/health/live` return 200.
+- A real Addon PHP projection delivered 5,847 UTF-8 bytes, including a late
+  Chinese fact beyond the old 1,800-byte cap. M4's actual PostgreSQL and local
+  Qwen3-VL embedded it into three 4096D chunks and retrieved that late fact.
+  Current-source exact citations passed, invented quotes were rejected and
+  another site returned no passages. The transaction was rolled back and source
+  counts restored. Candidate probe: 16.56s; accepted-master probe: 13.31s.
+  These probes called the real embedding provider and deterministic output
+  validation; they did not call an answering model or measure human relevance.
+- Read-only M4 inventory: 2,132 documents / 2,364 chunks, all in the selected
+  Qwen3-VL 4096D space. Of these, 2,295 text chunks use `text.v1`; 69 media
+  chunks use `metadata_text.v1` / `unavailable_legacy_source`. Original recovery
+  and pixel upgrade for those 69 remain outstanding. Existing pixel ingestion,
+  same-space upgrade and preserve-on-source-failure behavior remain covered;
+  matching dimensions alone are not proof of image-pixel retrieval.
+- Central Toolbox `quality:matrix:run`, with explicit clean Cloud/AddOn source
+  worktrees at `9e2fbdcd` / `0a500f5`, returned zero failures: exact-SHA GitHub
+  Cloud checks and Addon `composer test:all` passed. M4 acceptance is evidenced
+  separately above; the optional full M4 matrix mode was not repeated.
+- Addon package and manifest verification passed for 54 files; ZIP SHA-256
+  `48637a60296639a5c84f94c4b0d83a9dc02e24814c61e9585006e291a8c508b4`.
+  POT/PO source references were refreshed, retaining all 710 active translations.
+  This receipt does not claim that package is installed: the shared Local
+  WordPress mount still points to the separate source checkout at `fc9bdc8`.
+- Addon HTTPS transfer failed and the available SSH deploy key was read-only.
+  After publisher attempts, the documented Git Data API recovery replayed the
+  exact source commits with identical SHAs, then the completed template body and
+  head-matched protected squash auto-merge were used. No source or CI gate was
+  weakened for the transport recovery.
+
+Remaining product acceptance: register/choose the factual-answer entrypoint in
+its local Ability owner, evaluate actual answering-model relevance and claim
+support with representative content, recover the 69 original images, and verify
+natural customer/editor adoption. Generic/private document ingestion remains
+outside this batch. Production vector selection and production deployment are
+unchanged and are not authorized by this development receipt.
