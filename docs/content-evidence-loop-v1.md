@@ -151,3 +151,9 @@ Local evidence on 2026-10-30:
 CI: not published. M4: not changed or accepted for this candidate. Production:
 not deployed. Human relevance/adoption: not established. Shared lane remains
 with the Admin hierarchy delivery until its explicit release receipt.
+
+Central cross-repo matrix was run from Toolbox with explicit worktree overrides
+for Cloud `39fe5ab7` and Addon `1f66aa9`: both were clean; Addon gates passed;
+Cloud was `blocked_environment` (exit 75) because exact-SHA GitHub CI evidence was
+unavailable for the unpublished source commit. No M4 gate was requested. This
+is an outstanding source-delivery gate, not a passing cross-repo closeout.
