@@ -18,6 +18,7 @@ from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.api.routes.admin_model_tests import router as admin_model_tests_router
+from app.api.routes.commercial_payments_admin import router as commercial_payments_admin_router
 from app.api.routes.commercial_subscriptions_admin import (
     router as commercial_subscriptions_admin_router,
 )
@@ -107,6 +108,7 @@ router = APIRouter(prefix="/internal/service", tags=["service"])
 router.include_router(admin_model_tests_router)
 router.include_router(site_compliance_admin_router)
 router.include_router(commercial_subscriptions_admin_router)
+router.include_router(commercial_payments_admin_router)
 logger = get_logger(__name__)
 RFC3339_TIMESTAMP_PATTERN = (
     r"(?i)^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$"

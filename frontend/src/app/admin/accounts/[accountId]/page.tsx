@@ -54,6 +54,7 @@ import {
   summarizeBudget,
 } from '@/features/admin/accounts/account-credit-presentation';
 import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
+import { AccountPaymentOrders } from '@/features/admin/accounts/AccountPaymentOrders';
 import {
   CustomerAccessPanel,
   type CustomerIdentityRelationshipState,
@@ -897,7 +898,7 @@ function AccountDetailContent() {
         setActiveDetailTab('access');
         return;
       }
-      if (window.location.hash === '#coverage-actions') {
+      if (window.location.hash === '#coverage-actions' || window.location.hash === '#payment-orders') {
         setActiveDetailTab('commercial');
       }
     };
@@ -1683,6 +1684,12 @@ function AccountDetailContent() {
           </BackofficeStackCard>
           ) : null}
           </div>
+          <AccountPaymentOrders
+            key={accountId}
+            accountId={accountId}
+            customerName={account.operator_display_name || account.name || accountId}
+            onRefreshAccount={() => void loadAccount('', true)}
+          />
           <BackofficeStackCard>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               {t('admin.account_detail.package_actions_eyebrow', undefined, 'Package actions')}

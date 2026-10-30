@@ -26,6 +26,10 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'admin.payments.status.':
+    'src/features/admin/accounts/AccountPaymentOrders.tsx; existing payment/refund status values with literal unknown fallback',
+  'admin.payments.block.':
+    'src/features/admin/accounts/AccountPaymentOrders.tsx; bounded refund blocker codes from admin_payments.py with literal unknown fallback',
   'admin.agent_feedback.recommendation_':
     'src/features/admin/agent-feedback/RecommendationQuality.tsx; bounded metric array and internal_links/related_articles family identifiers',
   'admin.economics.': 'src/app/admin/economics/page.tsx; table labels and backend family labels with literal unknown fallback',
