@@ -379,9 +379,9 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 | --- | --- |
 | 修复前复现 | 定向 helper 单测 1 failed / 8 passed，完整密钥覆盖被误判 |
 | 本地静态与单元 | 修复后 13 项 helper 单测、`check:admin-ui`（含类型检查）、定向 ESLint、i18n 契约、文档可达性、release-policy 均通过 |
-| 本地浏览器 | 两个客户详情 spec 共 16 项，15 passed / 1 预期 golden 差异；完整覆盖不告警、真实密钥缺口、容量阈值、仅积分告警、未定位原因的 GET 刷新、Escape/焦点恢复均通过 |
-| PC 人工检查 | 代理已核对 1440×1050 明色及 900×800 明暗截图：顶部原因可读、对应异常行明确；不代签操作者视觉接受 |
-| Golden | 额度弹窗新增原因摘要，原 1152×237 对比实际 1152×311；actual/expected/diff 保留，尚未更新基线。依 UI 规范须先获得本次人工视觉接受；Linux 尚未取证 |
+| 本地浏览器 | 两个客户详情 spec 共 16 项，首次 15 passed / 1 预期 golden 差异；接受截图并更新 Darwin 基线后，该项定向重跑 1 passed。完整覆盖不告警、真实密钥缺口、容量阈值、仅积分告警、未定位原因的 GET 刷新、Escape/焦点恢复均通过 |
+| PC 人工检查 | 代理已核对 1440×1050 明色及 900×800 明暗截图：顶部原因可读、对应异常行明确；操作者明确回复「接受，更新基线并继续交付」，接受本次展示的额度弹窗改动，不扩展为全后台视觉接受 |
+| Golden | 额度弹窗新增原因摘要，原 1152×237 对比实际 1152×311；actual/expected/diff 保留。人工接受后仅将展示过的 Darwin actual 原样更新为该平台基线，SHA256 `b1932e88c2749ccbad30c7a26b90eee6abe2df9b55e576b248e0d4c67d6d64c4`；Linux 尚未取证，不能以 Darwin 图片替代 |
 | CI / 合并 / M4 | 本修复尚未发布 PR、合并或同步共享 M4；当前 18010 不据此视为已修复 |
 | Production | 未部署、未晋级、未执行真实配置写入或模型调用 |
 
@@ -389,6 +389,8 @@ PC 截图及 `receipt.json`，`focused.log` / `focused-results/` 为定向浏览
 `admin-final.log`、`lint-final.log`、`i18n.log`、`docs.log`、`policy.log`、
 `browser-final.log` 及 `browser-final/`；截图是可控 fixture 的本地生产构建结果，
 不冒充截图账户的实时数据或 M4 验收。
+接受后的单项复验在 `accepted-baseline.log`；用于人工接受的前后对比是
+`quota-dialog-before-after.png`。实现提交为 `d5920c50`，后续基线/回执提交单独交接。
 
 并行商业修复：`排查观测总览各个 TAB` 会话在独立分支新增
 `docs/admin-commercial-consistency-contract-v1.md`，约束积分包数据库 CAS 和
