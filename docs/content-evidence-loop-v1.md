@@ -212,3 +212,16 @@ support with representative content, recover the 69 original images, and verify
 natural customer/editor adoption. Generic/private document ingestion remains
 outside this batch. Production vector selection and production deployment are
 unchanged and are not authorized by this development receipt.
+
+### Follow-up: real answer entry exposed an internal search contract gap
+
+The Local Toolbox answer entry's first actual runtime request,
+`run_bedcbe726dcc404881e29fe3be3f2b1b`, failed with
+`grounded_answer.retrieval_failed` before answering-provider execution. The
+factual-evidence path omitted the Site Knowledge boundary's mandatory
+`write_posture=suggestion_only`. The previous API tests replaced `execute`,
+which bypassed that boundary. The follow-up adds the required marker and moves
+the test double to `search`, retaining the real `execute` contract validation.
+Before the fix, the no-hit and not-ready cases reproduced the wrong generic
+retrieval failure; afterward all 13 grounded API cases pass. Actual answer
+quality still requires the runtime/Local acceptance receipt.

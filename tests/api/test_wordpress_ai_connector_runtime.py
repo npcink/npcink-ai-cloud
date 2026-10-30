@@ -5816,7 +5816,7 @@ def test_grounded_answer_fails_before_text_provider_and_retains_run(
         return {"status": "not_ready" if failure == "not_ready" else "ready",
                 "evidence_gate": {"status": "insufficient_evidence"}, "results": []}
 
-    monkeypatch.setattr(SiteKnowledgeService, "execute", search)
+    monkeypatch.setattr(SiteKnowledgeService, "search", search)
     response = _execute(client, _grounded_payload(), idempotency_key="grounded-" + failure)
     assert response.status_code == 200
     data = response.json()["data"]
@@ -5872,7 +5872,7 @@ def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(
         return ProviderExecutionResult(output={"output_text": text}, latency_ms=1,
             tokens_in=10, tokens_out=10, cost=0)
 
-    monkeypatch.setattr(SiteKnowledgeService, "execute", search)
+    monkeypatch.setattr(SiteKnowledgeService, "search", search)
     monkeypatch.setattr(provider, "execute", execute)
     payload = _grounded_payload()
     payload["storage_mode"] = storage_mode

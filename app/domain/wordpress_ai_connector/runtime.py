@@ -742,6 +742,7 @@ class WordPressOperationRuntime:
                 input_payload={
                     "query": str(scene_request.get("prompt") or "")[:1200],
                     "intent": "writing_context", "max_results": 6,
+                    "write_posture": "suggestion_only",
                     "result_granularity": "chunk",
                     "filters": {"post_types": ["post", "page"], "status": ["publish"],
                                 "source_types": ["post", "page"]},
