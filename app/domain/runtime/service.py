@@ -6239,7 +6239,8 @@ class RuntimeService:
         )
         # Grounding content is transient; providers cannot supply citation identities.
         setattr(  # noqa: B010 - per-execution evidence, never an ORM column.
-            run, "_wordpress_grounded_context", deepcopy(prepared_input.pop("_grounded_context", None)),
+            run, "_wordpress_grounded_context",
+            deepcopy(prepared_input.pop("_grounded_context", None)),
         )
         # Snapshot Cloud-owned evidence before the provider receives mutable input.
         setattr(  # noqa: B010 - transient evidence is not an ORM column.

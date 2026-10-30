@@ -5788,7 +5788,8 @@ def _grounded_payload():
             "output_schema": {"type": "object", "required": ["answer", "citations"],
                 "additionalProperties": False, "properties": {
                     "answer": {"type": "string"}, "citations": {"type": "array", "items": {
-                        "type": "object", "required": ["id", "quote"], "additionalProperties": False,
+                        "type": "object", "required": ["id", "quote"],
+                        "additionalProperties": False,
                         "properties": {"id": {"type": "string"}, "quote": {"type": "string"}},
                     }},
                 }},
@@ -5802,7 +5803,9 @@ def _grounded_payload():
     ("not_ready", "grounded_answer.retrieval_unavailable"),
     ("exception", "grounded_answer.retrieval_failed"),
 ])
-def test_grounded_answer_fails_before_text_provider_and_retains_run(tmp_path, monkeypatch, failure, code):
+def test_grounded_answer_fails_before_text_provider_and_retains_run(
+    tmp_path, monkeypatch, failure, code,
+):
     database_url, client, provider = _build_client(tmp_path)
 
     def search(self, **kwargs):
@@ -5827,12 +5830,15 @@ def test_grounded_answer_fails_before_text_provider_and_retains_run(tmp_path, mo
 
 @pytest.mark.parametrize("complete,forged", [(True, False), (False, False), (True, True)])
 @pytest.mark.parametrize("storage_mode", ["result_only", "no_store"])
-def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(tmp_path, monkeypatch, complete, forged, storage_mode):
+def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(
+    tmp_path, monkeypatch, complete, forged, storage_mode,
+):
     database_url, client, provider = _build_client(tmp_path)
     passage = "蓝鲸计划将在明年启动，首批覆盖三个城市。"
     with get_session(database_url) as session:
         settings = Settings(_env_file=None, environment="test", database_url=database_url,
-                            site_knowledge_embedding_provider="deterministic", site_knowledge_embedding_dimensions=32)
+                            site_knowledge_embedding_provider="deterministic",
+                            site_knowledge_embedding_dimensions=32)
         evidence = {"contract_version": "site_knowledge_delivery_evidence.v1",
             "projection_version": "wordpress_public_text_bytes.v2",
             "length_basis": "sanitized_public_text_before_byte_limit",
@@ -5844,9 +5850,12 @@ def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(tmp_pat
         if complete:
             document["delivery_evidence"] = evidence
         SiteKnowledgeService(session, settings=settings).sync(site_id="site_alpha",
-            input_payload={"sync_mode": "refresh", "documents": [document]}, run_id="seed-grounding")
+            input_payload={"sync_mode": "refresh", "documents": [document]},
+            run_id="seed-grounding")
         session.commit()
-        metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(site_id="site_alpha", post_ids=[42])
+        metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
+            site_id="site_alpha", post_ids=[42],
+        )
         chunk = metadata[42]["chunks"][0]
 
     def search(self, **kwargs):
@@ -5907,7 +5916,10 @@ def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypat
     database_url, client, provider = _build_client(tmp_path)
     payload = _grounded_payload()
     payload["execution_pattern"] = "whole_run_offload"
-    payload["task_backend"] = {"enabled": True, "mode": "queue", "callback_mode": "polling_preferred", "polling_interval_sec": 1}
+    payload["task_backend"] = {
+        "enabled": True, "mode": "queue", "callback_mode": "polling_preferred",
+        "polling_interval_sec": 1,
+    }
     monkeypatch.setattr(SiteKnowledgeService, "execute", lambda self, **kwargs: {
         "status": "ready", "evidence_gate": {"status": "insufficient_evidence"}, "results": []})
     response = _execute(client, payload, idempotency_key="grounded-queued")

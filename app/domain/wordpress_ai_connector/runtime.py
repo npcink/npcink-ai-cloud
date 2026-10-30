@@ -749,7 +749,9 @@ class WordPressOperationRuntime:
                                         "no_hit_policy": "abstain"},
                 },
             )
-            post_ids = [item["post_id"] for item in result.get("results", []) if isinstance(item, dict)]
+            post_ids = [
+                item["post_id"] for item in result.get("results", []) if isinstance(item, dict)
+            ]
             metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
                 site_id=site_id, post_ids=post_ids,
             )

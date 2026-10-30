@@ -648,7 +648,10 @@ class SiteKnowledgeRepository:
         ))
         for chunk in chunks:
             source = metadata[chunk.post_id]
-            if chunk.content_hash == source["content_hash"] and chunk.source_type == source["source_type"]:
+            if (
+                chunk.content_hash == source["content_hash"]
+                and chunk.source_type == source["source_type"]
+            ):
                 source.setdefault("chunks", {})[chunk.chunk_index] = chunk.chunk_text
         return metadata
 

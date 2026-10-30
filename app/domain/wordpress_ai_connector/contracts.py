@@ -600,7 +600,8 @@ def validate_site_knowledge_reference(
         citation_fields = items.get("properties", {}) if isinstance(items, dict) else {}
         citation_fields = citation_fields if isinstance(citation_fields, dict) else {}
         valid_citation_fields = all(
-            isinstance(citation_fields.get(key), dict) and citation_fields[key].get("type") == "string"
+            isinstance(citation_fields.get(key), dict)
+            and citation_fields[key].get("type") == "string"
             for key in ("id", "quote")
         )
         if (
@@ -615,7 +616,8 @@ def validate_site_knowledge_reference(
         ):
             raise WordPressOperationContractViolation(
                 "wordpress_operation.grounded_context_required",
-                "Evidence tasks require enabled factual references and an answer/citations JSON schema",
+                "Evidence tasks require enabled factual references "
+                "and an answer/citations JSON schema",
             )
     if reference is None:
         return
