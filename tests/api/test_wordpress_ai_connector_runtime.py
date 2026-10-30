@@ -5774,3 +5774,163 @@ def test_admin_text_usage_accepts_image_input_text_model_without_vision_probe(
     assert provider.requests == []
     with get_session(database_url) as session:
         assert session.scalars(select(CatalogCapabilityEvidence)).all() == []
+
+
+def _grounded_payload():
+    return _payload({"task": "site_answer", "request": {
+        "prompt": "蓝鲸计划何时启动？", "system_instruction": "根据站点资料回答并提供引用。",
+        "site_knowledge_reference": {"enabled": True, "mode": "site_factual_evidence"},
+        "task_contract": {
+            "contract_version": "ai_task_contract.v1", "ability_name": "example/site-answer",
+            "task": "site_answer", "task_family": "analysis",
+            "context_requirements": ["site_knowledge_evidence"],
+            "constraints": ["json_object", "source_grounded"],
+            "output_schema": {"type": "object", "required": ["answer", "citations"],
+                "additionalProperties": False, "properties": {
+                    "answer": {"type": "string"}, "citations": {"type": "array", "items": {
+                        "type": "object", "required": ["id", "quote"],
+                        "additionalProperties": False,
+                        "properties": {"id": {"type": "string"}, "quote": {"type": "string"}},
+                    }},
+                }},
+            "write_posture": "suggestion_only",
+        },
+    }})
+
+
+@pytest.mark.parametrize("failure,code", [
+    ("no_hit", "grounded_answer.no_evidence"),
+    ("not_ready", "grounded_answer.retrieval_unavailable"),
+    ("exception", "grounded_answer.retrieval_failed"),
+])
+def test_grounded_answer_fails_before_text_provider_and_retains_run(
+    tmp_path, monkeypatch, failure, code,
+):
+    database_url, client, provider = _build_client(tmp_path)
+
+    def search(self, **kwargs):
+        assert kwargs["site_id"] == "site_alpha"
+        assert kwargs["input_payload"]["evidence_policy"]["no_hit_policy"] == "abstain"
+        if failure == "exception":
+            raise RuntimeError("private provider diagnostic must not reach customer")
+        return {"status": "not_ready" if failure == "not_ready" else "ready",
+                "evidence_gate": {"status": "insufficient_evidence"}, "results": []}
+
+    monkeypatch.setattr(SiteKnowledgeService, "execute", search)
+    response = _execute(client, _grounded_payload(), idempotency_key="grounded-" + failure)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, data["run_id"])
+        assert run.error_code == code
+        assert "private provider" not in str(run.error_message)
+
+
+@pytest.mark.parametrize("complete,forged", [(True, False), (False, False), (True, True)])
+@pytest.mark.parametrize("storage_mode", ["result_only", "no_store"])
+def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(
+    tmp_path, monkeypatch, complete, forged, storage_mode,
+):
+    database_url, client, provider = _build_client(tmp_path)
+    passage = "蓝鲸计划将在明年启动，首批覆盖三个城市。"
+    with get_session(database_url) as session:
+        settings = Settings(_env_file=None, environment="test", database_url=database_url,
+                            site_knowledge_embedding_provider="deterministic",
+                            site_knowledge_embedding_dimensions=32)
+        evidence = {"contract_version": "site_knowledge_delivery_evidence.v1",
+            "projection_version": "wordpress_public_text_bytes.v2",
+            "length_basis": "sanitized_public_text_before_byte_limit",
+            "source_bytes": len(passage.encode()), "source_chars": len(passage),
+            "delivered_bytes": len(passage.encode()), "delivered_chars": len(passage),
+            "max_bytes": 48000, "truncated": False}
+        document = {"post_id": 42, "post_type": "post", "post_status": "publish",
+            "title": "蓝鲸计划", "url": "https://alpha.example.test/42", "content_excerpt": passage}
+        if complete:
+            document["delivery_evidence"] = evidence
+        SiteKnowledgeService(session, settings=settings).sync(site_id="site_alpha",
+            input_payload={"sync_mode": "refresh", "documents": [document]},
+            run_id="seed-grounding")
+        session.commit()
+        metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
+            site_id="site_alpha", post_ids=[42],
+        )
+        chunk = metadata[42]["chunks"][0]
+
+    def search(self, **kwargs):
+        return {"status": "ready", "evidence_gate": {"status": "passed"}, "results": [{
+            "post_id": 42, "source_type": "post", "chunk_index": 0, "chunk": chunk, "score": 0.9}]}
+
+    def execute(request):
+        provider.requests.append(request)
+        assert "_grounded_context" not in request.input_payload
+        assert passage in request.input_payload["input"]
+        source_id = re.search(r'sk:post:42:0:[0-9a-f]+', request.input_payload["input"]).group()
+        text = json.dumps({"answer": "蓝鲸计划明年启动。", "citations": [{
+            "id": "forged" if forged else source_id, "quote": passage}]}, ensure_ascii=False)
+        return ProviderExecutionResult(output={"output_text": text}, latency_ms=1,
+            tokens_in=10, tokens_out=10, cost=0)
+
+    monkeypatch.setattr(SiteKnowledgeService, "execute", search)
+    monkeypatch.setattr(provider, "execute", execute)
+    payload = _grounded_payload()
+    payload["storage_mode"] = storage_mode
+    response = _execute(client, payload, idempotency_key="grounded-answer")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == ("failed" if forged else "succeeded")
+    if not forged:
+        output = data["result"]["output"]
+        assert output["grounded_evidence"]["status"] == ("available" if complete else "partial")
+        source = output["grounded_evidence"]["sources"][0]
+        assert source["url"] == "https://alpha.example.test/42"
+        assert source["content_hash"]
+        assert "text" not in source
+        if storage_mode == "no_store":
+            with get_session(database_url) as session:
+                stored_run = session.get(RunRecord, data["run_id"])
+                assert stored_run.result_json["output"] == {"stored": False, "status": "omitted"}
+                assert "grounded_evidence" not in json.dumps(stored_run.result_json)
+
+
+@pytest.mark.parametrize("mutation", ["disabled", "missing", "bad_schema"])
+def test_grounded_contract_cannot_downgrade_to_optional_style(tmp_path, mutation):
+    _, client, provider = _build_client(tmp_path)
+    payload = _grounded_payload()
+    request = payload["input"]["operation_contract"]["request"]
+    if mutation == "disabled":
+        request["site_knowledge_reference"]["enabled"] = False
+    elif mutation == "missing":
+        request.pop("site_knowledge_reference")
+    else:
+        request["task_contract"]["output_schema"]["properties"]["answer"] = []
+    response = _execute(client, payload, idempotency_key="grounded-contract-" + mutation)
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "wordpress_operation.grounded_context_required"
+    assert not provider.requests
+
+
+
+def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypatch):
+    database_url, client, provider = _build_client(tmp_path)
+    payload = _grounded_payload()
+    payload["execution_pattern"] = "whole_run_offload"
+    payload["task_backend"] = {
+        "enabled": True, "mode": "queue", "callback_mode": "polling_preferred",
+        "polling_interval_sec": 1,
+    }
+    monkeypatch.setattr(SiteKnowledgeService, "execute", lambda self, **kwargs: {
+        "status": "ready", "evidence_gate": {"status": "insufficient_evidence"}, "results": []})
+    response = _execute(client, payload, idempotency_key="grounded-queued")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "queued"
+    settings = Settings(_env_file=None, environment="test", database_url=database_url,
+        admin_session_secret=TEST_ADMIN_SESSION_SECRET, portal_jwt_secret=TEST_PORTAL_JWT_SECRET)
+    worker = RuntimeService(database_url, settings=settings, providers={"openai": provider})
+    processed = worker.process_queued_runs(max_runs=1, timeout_seconds=0)
+    assert processed[0]["status"] == "failed"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        assert session.get(RunRecord, data["run_id"]).error_code == "grounded_answer.no_evidence"

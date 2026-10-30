@@ -117,6 +117,7 @@ AI_TASK_ALLOWED_CONTEXTS = frozenset(
     {
         "current_content",
         "site_style_profile",
+        "site_knowledge_evidence",
         "taxonomy_candidates",
         "none",
     }
@@ -563,6 +564,8 @@ def resolve_site_knowledge_reference_mode(
     task: str,
     task_contract: dict[str, Any] | None = None,
 ) -> str:
+    if task_contract and "site_knowledge_evidence" in task_contract.get("context_requirements", []):
+        return "site_factual_evidence"
     expected_mode = WP_AI_CONNECTOR_SITE_KNOWLEDGE_REFERENCE_MODES_BY_TASK.get(task, "")
     if expected_mode or not task_contract:
         return expected_mode
@@ -586,6 +589,36 @@ def validate_site_knowledge_reference(
     task_contract: dict[str, Any] | None = None,
 ) -> None:
     reference = request.get("site_knowledge_reference")
+    if task_contract and "site_knowledge_evidence" in task_contract.get("context_requirements", []):
+        schema = task_contract.get("output_schema", {})
+        schema = schema if isinstance(schema, dict) else {}
+        properties = schema.get("properties", {})
+        properties = properties if isinstance(properties, dict) else {}
+        answer = properties.get("answer", {})
+        citations = properties.get("citations", {})
+        items = citations.get("items", {}) if isinstance(citations, dict) else {}
+        citation_fields = items.get("properties", {}) if isinstance(items, dict) else {}
+        citation_fields = citation_fields if isinstance(citation_fields, dict) else {}
+        valid_citation_fields = all(
+            isinstance(citation_fields.get(key), dict)
+            and citation_fields[key].get("type") == "string"
+            for key in ("id", "quote")
+        )
+        if (
+            task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS
+            or not {"json_object", "source_grounded"}.issubset(task_contract.get("constraints", []))
+            or schema.get("type") != "object"
+            or not isinstance(answer, dict) or answer.get("type") != "string"
+            or not isinstance(citations, dict) or citations.get("type") != "array"
+            or not isinstance(items, dict) or items.get("type") != "object"
+            or not valid_citation_fields
+            or not isinstance(reference, dict) or reference.get("enabled") is not True
+        ):
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.grounded_context_required",
+                "Evidence tasks require enabled factual references "
+                "and an answer/citations JSON schema",
+            )
     if reference is None:
         return
     if not isinstance(reference, dict):

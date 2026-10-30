@@ -302,3 +302,44 @@ def test_operator_apply_refuses_production_before_provider_or_database_access(
     monkeypatch.setattr(source_evidence, "get_session", forbidden)
     with pytest.raises(ValueError, match="restricted"):
         source_evidence.main()
+
+
+@pytest.mark.parametrize("text", ["x" * 48000, "汉" * 16000, "x" * 47999 + "汉"])
+def test_full_body_delivery_projection_has_explicit_utf8_limit(text):
+    delivered = text.encode("utf-8")[:48000].decode("utf-8", errors="ignore")
+    evidence = {
+        **_evidence(),
+        "projection_version": "wordpress_public_text_bytes.v2",
+        "source_bytes": len(text.encode("utf-8")),
+        "source_chars": len(text),
+        "delivered_bytes": len(delivered.encode("utf-8")),
+        "delivered_chars": len(delivered),
+        "max_bytes": 48000,
+        "truncated": text != delivered,
+    }
+    assert normalize_delivery_evidence(evidence, delivered) == evidence
+    with pytest.raises(SiteKnowledgeContractViolation):
+        normalize_delivery_evidence({**evidence, "max_bytes": 100000}, delivered)
+
+
+def test_long_body_tail_is_searchable_and_completeness_is_retained(seeded):
+    settings, _ = seeded
+    text = "背景资料。" * 1800 + "尾部约定：蓝鲸计划将在明年启动。"
+    evidence = {
+        **_evidence(),
+        "projection_version": "wordpress_public_text_bytes.v2",
+        "source_bytes": len(text.encode("utf-8")), "source_chars": len(text),
+        "delivered_bytes": len(text.encode("utf-8")), "delivered_chars": len(text),
+        "max_bytes": 48000, "truncated": False,
+    }
+    with get_session(settings.database_url) as session:
+        service = SiteKnowledgeService(session, settings=settings)
+        service.sync(site_id="own", input_payload={"sync_mode": "refresh", "documents": [
+            {**_document(44, text), "delivery_evidence": evidence}
+        ]}, run_id="long-body")
+        result = service.search(site_id="own", input_payload={
+            "query": "蓝鲸计划", "intent": "writing_context", "max_results": 10,
+            "evidence_policy": {"min_score": 0, "required_sources": 1, "no_hit_policy": "abstain"},
+        }, run_id="tail-search")
+        assert any(row["post_id"] == 44 and "蓝鲸计划" in row["chunk"] for row in result["results"])
+        assert any(row["post_id"] == 44 and row["chunk_index"] > 1 for row in result["results"])
