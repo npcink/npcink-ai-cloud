@@ -551,6 +551,15 @@ export default function VectorSettingsPage() {
   const connectionReady = profile?.validation.connection.status === 'ready';
   const indexReady = profile?.validation.index.status === 'ready';
   const retrievalPassed = profile?.validation.retrieval.status === 'passed';
+  const retrievalStatusLabel = retrievalPassed
+    ? copy('common.ready', '已通过', 'Passed')
+    : profile.validation.retrieval.status === 'failed'
+      ? copy('common.failed', '失败', 'Failed')
+      : profile.validation.retrieval.status === 'no_hit'
+        ? copy('admin.vector_settings.retrieval_no_hit', '已检索，零命中', 'Searched, no hits')
+        : profile.validation.retrieval.status === 'pending'
+          ? copy('admin.vector_settings.pending_validation', '等待验证', 'Pending')
+          : copy('admin.vector_settings.status_unknown', '状态未知', 'Unknown state');
 
   return (
     <BackofficePageStack data-page-model="configuration">
@@ -576,18 +585,6 @@ export default function VectorSettingsPage() {
         }
         summaryItems={[
           {
-            label: localRuntime ? (zh ? '环境' : 'Environment') : 'Profile',
-            value: localRuntime
-              ? profile?.runtime?.environment || ''
-              : profile?.profile_id || 'site-knowledge.zh.v1'
-          },
-          {
-            label: copy('admin.vector_settings.model', '模型', 'Model'),
-            value: localRuntime
-              ? profile?.runtime?.model_id || ''
-              : profile?.model_id || 'BAAI/bge-m3'
-          },
-          {
             label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
             value: localRuntime ? runtimeStatusLabel : status.label,
             toneClassName: (localRuntime ? runtimeIndexStatus === 'ready' : status.tone === 'success')
@@ -595,17 +592,22 @@ export default function VectorSettingsPage() {
               : status.tone === 'warning' || status.tone === 'failed'
                 ? 'text-amber-700 dark:text-amber-300'
                 : undefined
-          }
+          },
+          {
+            label: copy('admin.vector_settings.retrieval_check', '真实检索', 'Live retrieval'),
+            value: retrievalStatusLabel,
+          },
         ]}
       />
 
-      {profile?.runtime ? (
-        <p className="text-sm text-slate-600 dark:text-slate-300" data-testid="vector-runtime-profile">
-          {zh ? '当前运行配置' : 'Current runtime'}: {profile.runtime.environment} ·{' '}
-          {profile.runtime.model_id} · {profile.runtime.dimensions}D ·{' '}
-          {formatBackend(profile.runtime.backend)} · {runtimeStatusLabel}
-        </p>
-      ) : null}
+      <div data-ui="vector-configuration-next-step" className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
+        <p>{copy('admin.vector_settings.production_validation_title', '生产连接与索引验证', 'Production connection and index validation')}: {status.description}</p>
+        {profile.validation.retrieval.status === 'pending' ? <p>{copy('admin.vector_settings.retrieval_pending', '重建后执行一次正常的 Site Knowledge 搜索；这里会自动记录结果，不另设测试入口。', 'After rebuilding, run a normal Site Knowledge search. Its evidence appears here automatically.')}</p> : null}
+      </div>
+      {profile?.runtime ? <details data-testid="vector-runtime-profile" className="text-xs text-slate-500 dark:text-slate-400">
+        <summary className="cursor-pointer">{zh ? '当前运行配置' : 'Current runtime'}: {profile.runtime.environment} · {runtimeStatusLabel}</summary>
+        <p className="mt-2 break-all">{profile.runtime.model_id} · {profile.runtime.dimensions}D · {formatBackend(profile.runtime.backend)}</p>
+      </details> : null}
 
       {loadError ? <BackofficeDiagnosticNotice message={loadError} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => void loadProfile()} /> : null}
       {!snapshotCurrent ? <p role="status" className="text-sm text-amber-800 dark:text-amber-200">{copy('admin.vector_settings.stale_snapshot', '以下为上次读取的快照，最新状态未确认。请重试读取后再保存或重建。', 'The last read snapshot is shown below. The latest state is unconfirmed. Retry reading before saving or rebuilding.')}</p> : null}
@@ -633,7 +635,7 @@ export default function VectorSettingsPage() {
         </p>
       ) : null}
 
-      <BackofficeSectionPanel data-vector-section="configuration">
+      <BackofficeSectionPanel data-vector-section="configuration" className="!shadow-none">
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-1">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
@@ -653,8 +655,9 @@ export default function VectorSettingsPage() {
           </div>
           <BackofficeStatusBadge label={status.label} status={status.tone} />
         </div>
-        <fieldset disabled={actionBusy} className="mt-4 min-w-0" data-vector-section="fixed-profile">
+        <fieldset disabled={actionBusy} className="mt-3 min-w-0" data-density="compact" data-vector-section="fixed-profile">
           <AdminConfigurationTable
+            density="compact"
             ariaLabel={copy(
               'admin.vector_settings.configuration_table',
               '向量配置表',
@@ -680,11 +683,10 @@ export default function VectorSettingsPage() {
                 'Fixed vector profile'
               )}
               value={
-                <code className="text-xs">
-                  {profile?.profile_id || 'site-knowledge.zh.v1'} ·{' '}
-                  {profile?.model_id || 'BAAI/bge-m3'} · {profile?.dimensions || 1024} ·{' '}
-                  {profile?.metric || 'COSINE'}
-                </code>
+                <details className="text-xs">
+                  <summary className="cursor-pointer">{copy('admin.vector_settings.model', '模型', 'Model')}: {profile?.model_id || 'BAAI/bge-m3'}</summary>
+                  <code className="mt-2 block break-all">{profile?.profile_id || 'site-knowledge.zh.v1'} · {profile?.dimensions || 1024} · {profile?.metric || 'COSINE'}</code>
+                </details>
               }
               detail={copy(
                 'admin.vector_settings.fixed_profile_desc',
@@ -974,15 +976,7 @@ export default function VectorSettingsPage() {
               value={
                 <BackofficeStatusBadge
                   label={
-                    retrievalPassed
-                      ? copy('common.ready', '已通过', 'Passed')
-                      : profile?.validation.retrieval.status === 'failed'
-                        ? copy('common.failed', '失败', 'Failed')
-                      : profile.validation.retrieval.status === 'no_hit'
-                        ? copy('admin.vector_settings.retrieval_no_hit', '已检索，零命中', 'Searched, no hits')
-                      : profile.validation.retrieval.status === 'pending'
-                        ? copy('admin.vector_settings.pending_validation', '等待验证', 'Pending')
-                        : copy('admin.vector_settings.status_unknown', '状态未知', 'Unknown state')
+                    retrievalStatusLabel
                   }
                   status={
                     retrievalPassed

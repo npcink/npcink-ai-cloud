@@ -8,6 +8,7 @@ import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -301,11 +302,11 @@ export function SupportRequestsWorkspace() {
 
       <AdminDataTableFrame
         title={t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}
-        resultLabel={`${t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)} · ${t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}`}
+        resultLabel={t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)}
         dataUi="support-request-table"
         density="compact"
         bodyClassName="overflow-hidden"
-        headerActions={<AdminQueueKeyboardHint />}
+        headerActions={<AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}><p>{t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}</p><div className="mt-2"><AdminQueueKeyboardHint /></div></AdminHelpTip>}
         footer={(
           <>
             {total <= SUPPORT_REQUEST_PAGE_SIZE && offset === 0 ? (
@@ -407,7 +408,7 @@ export function SupportRequestsWorkspace() {
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
-                      <p className="truncate font-medium text-slate-950 dark:text-white">{item.account_id}</p>
+                      <BackofficeIdentifier value={item.account_id} className="block text-xs" />
                       <p className="mt-1 truncate">{item.site_id || t('common.not_available', {}, 'N/A')}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
@@ -417,7 +418,7 @@ export function SupportRequestsWorkspace() {
                       <div className="flex items-center justify-end gap-2">
                         <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; inspect(item.request_id); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
                         <Link
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-secondary btn-sm"
                           href={supportRequestDetailHref(item.request_id)}
                         >
                           {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}

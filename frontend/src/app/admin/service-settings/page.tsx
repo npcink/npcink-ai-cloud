@@ -466,56 +466,27 @@ export default function AdminServiceSettingsPage() {
   }, []);
 
   const metrics = useMemo(() => {
-    const settings = data?.settings;
-    return [
-      {
-        label: t('admin.service_settings.metric_public_url', {}, 'Public URL'),
-        value: statusLabel(settings?.portal_public.status || 'missing_config', t),
-        toneClassName: statusTone(settings?.portal_public.status || 'missing_config'),
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_qq_login', {}, 'QQ login'),
-        value: statusLabel(settings?.qq_login.status || 'missing_config', t),
-        toneClassName: statusTone(settings?.qq_login.status || 'missing_config'),
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_email', {}, 'Email delivery'),
-        value: statusLabel(settings?.portal_email.status || 'missing_config', t),
-        toneClassName: statusTone(settings?.portal_email.status || 'missing_config'),
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_payment', {}, 'Payment'),
-        value: statusLabel(settings?.alipay_payment.status || 'missing_config', t),
-        toneClassName: statusTone(settings?.alipay_payment.status || 'missing_config'),
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_accounting_fx', {}, 'Accounting FX'),
-        value: `${stringValue(settings?.accounting_fx.config.usd_cny_rate) || '7.200000'} CNY/USD`,
-        toneClassName: statusTone(settings?.accounting_fx.status || 'missing_config'),
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_site_relink', {}, 'Site relink'),
-        value: settings?.site_relink_policy.enabled
-          ? `${stringValue(settings.site_relink_policy.config.cooldown_days) || '90'} ${t('common.days', {}, 'days')}`
-          : t('admin.service_settings.site_relink_disabled', {}, 'Cross-account disabled'),
-        toneClassName: settings?.site_relink_policy.enabled
-          ? 'text-emerald-700 dark:text-emerald-300'
-          : 'text-slate-500 dark:text-slate-400',
-        size: 'compact' as const,
-      },
-      {
-        label: t('admin.service_settings.metric_provider_budget', {}, 'Provider budget'),
-        value: statusLabel(settings?.provider_budget.status || 'disabled', t),
-        toneClassName: statusTone(settings?.provider_budget.status || 'disabled'),
-        size: 'compact' as const,
-      },
-    ];
-  }, [data, t]);
+    if (!data || !snapshotCurrent) return [];
+    const groups = [
+      ['portal_public', t('admin.service_settings.metric_public_url', {}, 'Public URL')],
+      ['qq_login', t('admin.service_settings.metric_qq_login', {}, 'QQ login')],
+      ['portal_email', t('admin.service_settings.metric_email', {}, 'Email delivery')],
+      ['alipay_payment', t('admin.service_settings.metric_payment', {}, 'Payment')],
+      ['accounting_fx', t('admin.service_settings.metric_accounting_fx', {}, 'Accounting FX')],
+      ['site_relink_policy', t('admin.service_settings.metric_site_relink', {}, 'Site relink')],
+      ['provider_budget', t('admin.service_settings.metric_provider_budget', {}, 'Provider budget')],
+    ] as const;
+    const attention = groups.filter(([id]) => {
+      const status = data.settings[id].status;
+      return status !== 'ready' && status !== 'disabled';
+    });
+    return attention.length ? [{
+      label: t('admin.service_settings.needs_attention', {}, 'Needs attention'),
+      value: `${attention.length} · ${attention.map(([, label]) => label).join(' · ')}`,
+      toneClassName: 'text-amber-700 dark:text-amber-300',
+      size: 'compact' as const,
+    }] : [];
+  }, [data, snapshotCurrent, t]);
 
   const qqRedirectUri = useMemo(() => {
     return buildQqRedirectUri(portalPublicForm.public_base_url);
@@ -1938,7 +1909,7 @@ export default function AdminServiceSettingsPage() {
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid gap-4 lg:grid-cols-2" onSubmit={submitQq}>
+            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" onSubmit={submitQq}>
               <label className={labelClassName()}>
                 App ID
                 <input className={fieldClassName()} value={qqForm.client_id} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, client_id: event.target.value }))} />
@@ -1962,10 +1933,10 @@ export default function AdminServiceSettingsPage() {
                   setQqForm((current) => ({ ...current, client_secret: '' }));
                 }}
               />
-              <div className="lg:col-span-2">
+              <div className="md:col-span-2">
                 <div className={labelClassName()}>
                   {t('admin.service_settings.redirect_uri_label', {}, 'Redirect URL')}
-                  <div className="mt-1 grid gap-2 lg:grid-cols-[1fr_auto]">
+                  <div className="mt-1 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <input
                       className={fieldClassName()}
                       value={qqRedirectUri}
@@ -1985,7 +1956,7 @@ export default function AdminServiceSettingsPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-end justify-between gap-3 lg:col-span-2">
+              <div className="flex flex-wrap items-end justify-between gap-3 md:col-span-2">
                 <div className="mb-2 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                   <button
                     type="button"
@@ -2000,7 +1971,7 @@ export default function AdminServiceSettingsPage() {
                   </button>
                   {t('admin.service_settings.qq_enabled_label', {}, '启用 QQ 登录')}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   <button type="button" className="btn btn-secondary" disabled={saving === 'qq-test' || activeGroupDirty || activeValidationIssues.length > 0} onClick={() => postJson('/api/admin/service-settings/qq-login/test', {}, 'qq-test', t('admin.service_settings.qq_test_done', {}, 'QQ login configuration check completed.'))}>
                     {t('admin.service_settings.check_qq', {}, 'Check QQ settings')}
                   </button>
@@ -2082,7 +2053,7 @@ export default function AdminServiceSettingsPage() {
               </div>
 
               {emailConfigExpanded ? (
-            <form className="grid gap-4 lg:grid-cols-2" onSubmit={submitEmail}>
+            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" onSubmit={submitEmail}>
               <label className={labelClassName()}>
                 {t('admin.service_settings.smtp_host_label', {}, 'SMTP server')}
                 <input className={fieldClassName()} value={emailForm.smtp_host} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_host: event.target.value }))} />
@@ -2293,7 +2264,7 @@ export default function AdminServiceSettingsPage() {
           'Uses the real backend template for preview only; it does not send email or save settings.'
         )}
         footerActions={(
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               className="btn btn-secondary btn-sm"

@@ -322,9 +322,6 @@ export default function ExternalServicesPage() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            {copy('admin.external_services.table_hint', '先看状态，再配置或测试单个服务。', 'Scan status first, then configure or test one service.')}
-          </span>
         </div>
 
         <div data-external-category={category} role="tabpanel" id={`external-panel-${category}`} aria-labelledby={`external-tab-${category}`} tabIndex={0}>
@@ -406,7 +403,7 @@ export default function ExternalServicesPage() {
                               : copy('admin.external_services.credential_missing', '未配置', 'Missing')}
                         </td>
                         <td className="px-3 py-3 align-top text-slate-600 dark:text-slate-300">
-                          <span>{enabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}</span>
+                          {enabled && !connection?.runtime_effective && connection?.runtime_effective_reason !== 'secondary' ? <span>{copy('common.enabled', '已启用', 'Enabled')}</span> : null}
                           {connection?.runtime_effective ? (
                             <span className="mt-1 block text-xs font-medium text-emerald-700 dark:text-emerald-300">
                               {connection.runtime_effective_reason === 'parallel'
@@ -428,7 +425,7 @@ export default function ExternalServicesPage() {
                                 {busy === `test:${option.id}` ? copy('common.testing', '测试中…', 'Testing…') : copy('common.test_connection', '测试', 'Test')}
                               </button>
                             ) : null}
-                            <button type="button" className="btn btn-primary btn-sm" disabled={actionsBlocked} onClick={() => openEditor(option)}>
+                            <button type="button" className="btn btn-secondary btn-sm" disabled={actionsBlocked} onClick={() => openEditor(option)}>
                               {copy('common.configure', '配置', 'Configure')}
                             </button>
                           </div>

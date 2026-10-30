@@ -1214,6 +1214,15 @@ jobs:
           node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-totp-activation.spec.ts --grep '@contract' --retries=0 --workers=1
           node frontend/tests/compiled/portal-totp-bff.mjs
 
+      - name: Preserve failed frontend screenshot evidence
+        if: failure() && needs.classify.outputs.frontend_e2e_required == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-failed-screenshots
+          path: frontend/test-results/**/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Unchanged frontend acknowledgement
         if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'
         run: echo "Frontend source and toolchain are unchanged; the PR keeps the stable frontend check without reinstalling or retesting the frontend."
