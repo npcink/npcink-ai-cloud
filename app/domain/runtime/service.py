@@ -3122,57 +3122,18 @@ class RuntimeService:
         if not self._is_wordpress_ai_connector_run(run):
             return ProviderOutputDecision(accepted=True, output=provider_output)
         grounded_context = getattr(run, "_wordpress_grounded_context", None)
-        normalization_input = {**input_payload}
-        normalization_input.pop("_grounded_context", None)
-        if isinstance(grounded_context, dict):
-            normalization_input["_grounded_context"] = grounded_context
-        normalized_output = self.wordpress_operation_runtime.normalize_provider_output(
-            provider_output,
-            input_payload=normalization_input,
-        )
-        title_quality_reasons = self.wordpress_operation_runtime.title_quality_reasons(
+        decision = self.wordpress_operation_runtime.prepare_provider_output(
             input_payload=input_payload,
             provider_output=provider_output,
+            grounded_context=grounded_context if isinstance(grounded_context, dict) else None,
         )
-        blocking_title_quality_reasons = (
-            self.wordpress_operation_runtime.blocking_title_quality_reasons(
-                title_quality_reasons
+        if decision.accepted:
+            self._clear_wordpress_output_quality_diagnostic(run)
+        else:
+            self._record_wordpress_output_quality_diagnostic(
+                run, str(decision.usage_context.get("output_quality_reason") or "")
             )
-        )
-        if blocking_title_quality_reasons or self.wordpress_operation_runtime.is_empty_text_output(
-            input_payload=input_payload,
-            provider_output=normalized_output,
-        ):
-            quality_reason = self.wordpress_operation_runtime.output_quality_reason(
-                input_payload=input_payload,
-                provider_output=provider_output,
-            )
-            self._record_wordpress_output_quality_diagnostic(run, quality_reason)
-            error_message = (
-                "provider returned the existing title instead of a new suggestion"
-                if "title_unchanged" in blocking_title_quality_reasons
-                else "provider returned no usable WordPress AI connector text"
-            )
-            return ProviderOutputDecision(
-                accepted=False,
-                output=normalized_output,
-                error_code="provider.output_quality_rejected",
-                error_message=error_message,
-                usage_context={
-                    "output_quality_reason": quality_reason,
-                },
-            )
-        usage_context: dict[str, object] = (
-            {"title_quality_reasons": list(title_quality_reasons)}
-            if title_quality_reasons
-            else {}
-        )
-        self._clear_wordpress_output_quality_diagnostic(run)
-        return ProviderOutputDecision(
-            accepted=True,
-            output=normalized_output,
-            usage_context=usage_context,
-        )
+        return decision
 
     @staticmethod
     def _record_wordpress_output_quality_diagnostic(run: RunRecord, reason: str) -> None:
