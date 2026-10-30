@@ -296,6 +296,41 @@ function SubscriptionsContent() {
     });
   }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId]);
 
+  // Quiet density: debounce text/date drafts into the URL; Enter still applies immediately.
+  useEffect(() => {
+    const nextCustomer = draftFilters.customer.trim();
+    const nextPlanId = draftFilters.plan_id.trim();
+    const nextExpiresBefore = draftFilters.expires_before;
+    const currentCustomer = (appliedCustomer || appliedAccountId).trim();
+    if (
+      nextCustomer === currentCustomer &&
+      nextPlanId === appliedPlanId.trim() &&
+      nextExpiresBefore === appliedExpiresBefore
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      updateQueueUrl({
+        customer: nextCustomer || null,
+        account_id: null,
+        plan_id: nextPlanId || null,
+        expires_before: nextExpiresBefore || null,
+        offset: null,
+        focus: null,
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    appliedAccountId,
+    appliedCustomer,
+    appliedExpiresBefore,
+    appliedPlanId,
+    draftFilters.customer,
+    draftFilters.expires_before,
+    draftFilters.plan_id,
+    updateQueueUrl,
+  ]);
+
   const queuedSubscriptions = subscriptions;
 
   const selectedSubscription = focusedSubscriptionId
@@ -401,12 +436,16 @@ function SubscriptionsContent() {
   const riskFilters: RiskFilter[] = ['needs_action', 'critical', 'warning', 'monitor', 'stable', 'all'];
   const hasFilters = Boolean(
     appliedRisk !== 'needs_action' ||
+    appliedStatusGroup ||
     appliedStatus ||
     appliedAccountId ||
     appliedCustomer ||
     appliedPlanId ||
     appliedExpiresBefore ||
     sort !== 'priority'
+  );
+  const hasDraftFilters = Boolean(
+    draftFilters.customer.trim() || draftFilters.plan_id.trim() || draftFilters.expires_before
   );
   const isShowingRetainedResults = Boolean(error && hasLoaded);
   const riskReasonByCode: Record<string, string> = {
@@ -425,7 +464,7 @@ function SubscriptionsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}
+        title={`${t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}${hasLoaded ? ` · ${formatInteger(total)}` : ''}`}
         description={t(
           'admin.subscriptions.workspace_desc',
           {},
@@ -453,12 +492,6 @@ function SubscriptionsContent() {
             label: t('admin.subscriptions.summary_warning_metric', {}, 'Warning'),
             value: formatInteger(summary.warning),
             toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
-          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
-          {
-            label: t('common.updated_at', {}, 'Updated'),
-            value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
           },
         ]}
       />
@@ -488,14 +521,12 @@ function SubscriptionsContent() {
 
       <>
         <BackofficeSectionPanel className="overflow-hidden !p-0">
-          <div className="space-y-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800">
+          <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+              <h2 className="sr-only">
+                {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
+              </h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:ml-auto lg:justify-end">
                 <AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}>
                   <p>
                   {t(
@@ -518,7 +549,7 @@ function SubscriptionsContent() {
 
             <div data-ui="subscription-enumerated-filters" className="space-y-2">
               <div role="group" aria-label={t('admin.subscriptions.risk_filter_label')} className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.risk_filter_label')}</span>
+                <span className="sr-only">{t('admin.subscriptions.risk_filter_label')}</span>
                 {riskFilters.map((risk) => (
                   <BackofficeFilterPill
                     key={risk}
@@ -531,7 +562,7 @@ function SubscriptionsContent() {
                 ))}
               </div>
               <div role="group" aria-label={t('admin.subscriptions.status_filter_label')} className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.status_filter_label')}</span>
+                <span className="sr-only">{t('admin.subscriptions.status_filter_label')}</span>
                 <BackofficeFilterPill
                   active={appliedStatusGroup === 'active'}
                   aria-pressed={appliedStatusGroup === 'active'}
@@ -558,10 +589,10 @@ function SubscriptionsContent() {
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}
-              className="grid gap-x-3 gap-y-2 md:grid-cols-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.9fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_auto]"
+              className="flex flex-wrap items-center gap-3"
             >
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              <label className="min-w-0 basis-full xl:basis-56 xl:flex-1">
+                <span className="sr-only">
                   {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
                 </span>
                 <input
@@ -572,8 +603,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
                 />
               </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              <label className="min-w-0 w-full sm:w-40">
+                <span className="sr-only">
                   {t('common.plan', {}, 'Package')}
                 </span>
                 <input
@@ -584,8 +615,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, plan_id: event.target.value }))}
                 />
               </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              <label className="min-w-0 w-full sm:w-44">
+                <span className="sr-only">
                   {t('admin.expires_before')}
                 </span>
                 <input
@@ -595,8 +626,8 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, expires_before: event.target.value }))}
                 />
               </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              <label className="w-full shrink-0 sm:w-48">
+                <span className="sr-only">
                   {t('admin.subscriptions.sort_label', {}, 'Sort')}
                 </span>
                 <select
@@ -609,36 +640,18 @@ function SubscriptionsContent() {
                   <option value="customer">{t('admin.subscriptions.sort_customer', {}, 'Customer name')}</option>
                 </select>
               </label>
-              <div className="flex items-end justify-end gap-2 md:col-span-2 xl:col-span-1">
-                <button type="submit" className="btn btn-primary whitespace-nowrap">
-                  {t('admin.subscriptions.apply_filters', {}, 'Apply')}
-                </button>
-                <span
-                  className="inline-flex"
-                  title={t('common.clear_filters', {}, 'Clear filters')}
+              <button type="submit" className="sr-only">
+                {t('admin.subscriptions.apply_filters', {}, 'Apply')}
+              </button>
+              <div className="flex items-center justify-end whitespace-nowrap">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline dark:text-slate-400 dark:hover:text-slate-200"
+                  disabled={!hasFilters && !hasDraftFilters}
+                  onClick={clearFilters}
                 >
-                  <button
-                    type="button"
-                    className="btn btn-secondary h-11 w-11 shrink-0 p-0"
-                    aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!hasFilters && !draftFilters.customer && !draftFilters.plan_id && !draftFilters.expires_before}
-                    onClick={clearFilters}
-                  >
-                    <svg
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
-                      <path d="m16.5 16.5 4 4m0-4-4 4" />
-                    </svg>
-                  </button>
-                </span>
+                  {t('common.clear_filters', {}, 'Clear filters')}
+                </button>
               </div>
             </form>
           </div>
@@ -913,6 +926,12 @@ function SubscriptionsContent() {
           ) : null}
         </AdminInspectorDrawer>
       </>
+
+      {loadedAt ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t('common.updated_at', {}, 'Updated')} {formatDate(loadedAt.toISOString())}
+        </p>
+      ) : null}
     </BackofficePageStack>
   );
 }
