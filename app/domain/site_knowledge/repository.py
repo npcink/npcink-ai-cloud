@@ -607,6 +607,10 @@ class SiteKnowledgeRepository:
                 SiteKnowledgeDocument.post_id,
                 SiteKnowledgeDocument.title,
                 SiteKnowledgeDocument.metadata_json,
+                SiteKnowledgeDocument.url,
+                SiteKnowledgeDocument.content_hash,
+                SiteKnowledgeDocument.modified_gmt,
+                SiteKnowledgeDocument.source_type,
             ).where(
                 SiteKnowledgeDocument.site_id == site_id,
                 SiteKnowledgeDocument.post_id.in_(normalized_ids),
@@ -618,6 +622,10 @@ class SiteKnowledgeRepository:
             int(row[0]): {
                 "title": str(row[1] or ""),
                 **(row[2] if isinstance(row[2], dict) else {}),
+                "url": str(row[3] or ""),
+                "content_hash": str(row[4] or ""),
+                "modified_gmt": str(row[5] or ""),
+                "source_type": str(row[6] or ""),
             }
             for row in rows
         }
@@ -626,6 +634,23 @@ class SiteKnowledgeRepository:
             for post_id in normalized_ids
             if post_id in metadata_by_post_id
         }
+
+    def grounding_metadata_for_post_ids(
+        self, *, site_id: str, post_ids: list[int],
+    ) -> dict[int, dict[str, Any]]:
+        metadata = self.reference_metadata_for_post_ids(site_id=site_id, post_ids=post_ids)
+        if not metadata:
+            return {}
+        chunks = self.session.scalars(select(SiteKnowledgeChunk).where(
+            SiteKnowledgeChunk.site_id == site_id,
+            SiteKnowledgeChunk.post_id.in_(list(metadata)),
+            SiteKnowledgeChunk.source_type.in_(("post", "page")),
+        ))
+        for chunk in chunks:
+            source = metadata[chunk.post_id]
+            if chunk.content_hash == source["content_hash"] and chunk.source_type == source["source_type"]:
+                source.setdefault("chunks", {})[chunk.chunk_index] = chunk.chunk_text
+        return metadata
 
     def last_sync_at(self, site_id: str) -> datetime | None:
         return self.session.scalar(

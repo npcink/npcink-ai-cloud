@@ -41,6 +41,12 @@ from app.domain.wordpress_ai_connector.generation_context import (
     render_generation_context,
     select_generation_context_post_ids,
 )
+from app.domain.wordpress_ai_connector.grounded_context import (
+    build_evidence_pack,
+    normalize_grounded_output,
+    render_evidence_pack,
+    requires_evidence,
+)
 from app.domain.wordpress_ai_connector.routing_profiles import (
     resolve_wordpress_ai_connector_profile_spec,
 )
@@ -562,6 +568,12 @@ class WordPressOperationRuntime:
         reference = self._dict_or_empty(scene_request.get("site_knowledge_reference"))
         task = str(operation_contract.get("task") or "").strip()
         task_contract = self._dict_or_empty(scene_request.get("task_contract"))
+        if requires_evidence(task_contract):
+            return self._apply_factual_evidence(
+                site_id=site_id, run_id=run_id, session=session,
+                scene_request=scene_request, provider_input=provider_input,
+                embedding_usage_callback=embedding_usage_callback,
+            )
         expected_mode = resolve_site_knowledge_reference_mode(
             task=task,
             task_contract=task_contract,
@@ -709,6 +721,49 @@ class WordPressOperationRuntime:
         next_input["metadata"] = metadata
         return next_input
 
+    def _apply_factual_evidence(
+        self, *, site_id: str, run_id: str, session: Session,
+        scene_request: dict[str, Any], provider_input: dict[str, Any],
+        embedding_usage_callback: EmbeddingUsageCallback,
+    ) -> dict[str, Any]:
+        reference = self._dict_or_empty(scene_request.get("site_knowledge_reference"))
+        if reference.get("enabled") is not True or reference.get("mode") != "site_factual_evidence":
+            raise RuntimeExecutionContractError(
+                "grounded_answer.reference_required", "Factual evidence must be enabled"
+            )
+        try:
+            result = SiteKnowledgeService(
+                session, settings=self.settings, providers=self.providers,
+                embedding_usage_callback=embedding_usage_callback,
+            ).execute(
+                site_id=site_id, run_id=run_id,
+                ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,
+                contract_version=SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
+                input_payload={
+                    "query": str(scene_request.get("prompt") or "")[:1200],
+                    "intent": "writing_context", "max_results": 6,
+                    "result_granularity": "chunk",
+                    "filters": {"post_types": ["post", "page"], "status": ["publish"],
+                                "source_types": ["post", "page"]},
+                    "evidence_policy": {"min_score": 0.35, "required_sources": 1,
+                                        "no_hit_policy": "abstain"},
+                },
+            )
+            post_ids = [item["post_id"] for item in result.get("results", []) if isinstance(item, dict)]
+            metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
+                site_id=site_id, post_ids=post_ids,
+            )
+        except Exception as error:
+            raise RuntimeExecutionContractError(
+                "grounded_answer.retrieval_failed", "Site evidence retrieval failed"
+            ) from error
+        pack = build_evidence_pack(result, metadata)
+        return {
+            **provider_input,
+            "input": render_evidence_pack(pack) + "\n\n" + str(provider_input.get("input") or ""),
+            "_grounded_context": pack,
+        }
+
     def normalize_provider_output(
         self,
         output: dict[str, Any],
@@ -724,6 +779,11 @@ class WordPressOperationRuntime:
             if isinstance(item, str) and str(item).strip()
         }
         output_text = self._extract_provider_output_text(output)
+        pack = input_payload.get("_grounded_context")
+        if isinstance(pack, dict):
+            schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+            normalized_json = self._normalize_json_schema_output(output_text, output_schema=schema)
+            return normalize_grounded_output(output, normalized_json, pack)
         if task == "alt_text_suggest":
             return self._normalize_alt_text_provider_output(
                 output_text=output_text,

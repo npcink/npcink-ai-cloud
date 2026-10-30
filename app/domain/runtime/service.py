@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
@@ -622,11 +623,22 @@ class RuntimeService:
 
             provider_input_payload = request.input_payload
             if self._is_wordpress_ai_connector_request(request):
-                provider_input_payload = self._prepare_wordpress_operation_execution_input(
-                    run,
-                    repository=repository,
-                    connector_envelope=connector_envelope or {},
-                )
+                try:
+                    provider_input_payload = self._prepare_wordpress_operation_execution_input(
+                        run,
+                        repository=repository,
+                        connector_envelope=connector_envelope or {},
+                    )
+                except RuntimeErrorBase as error:
+                    if not error.error_code.startswith("grounded_answer."):
+                        raise
+                    self.run_lifecycle_service.fail_run(
+                        repository, run, error_code=error.error_code, error_message=error.message,
+                    )
+                    session.commit()
+                    return self._build_execution_response(
+                        run, repository=repository, idempotent_replay=False,
+                    )
 
             self._execute_candidate_chain(
                 run,
@@ -3109,9 +3121,14 @@ class RuntimeService:
     ) -> ProviderOutputDecision:
         if not self._is_wordpress_ai_connector_run(run):
             return ProviderOutputDecision(accepted=True, output=provider_output)
+        grounded_context = getattr(run, "_wordpress_grounded_context", None)
+        normalization_input = {**input_payload}
+        normalization_input.pop("_grounded_context", None)
+        if isinstance(grounded_context, dict):
+            normalization_input["_grounded_context"] = grounded_context
         normalized_output = self.wordpress_operation_runtime.normalize_provider_output(
             provider_output,
-            input_payload=input_payload,
+            input_payload=normalization_input,
         )
         title_quality_reasons = self.wordpress_operation_runtime.title_quality_reasons(
             input_payload=input_payload,
@@ -6219,6 +6236,10 @@ class RuntimeService:
             input_payload=connector_envelope,
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
+        )
+        # Grounding content is transient; providers cannot supply citation identities.
+        setattr(  # noqa: B010 - per-execution evidence, never an ORM column.
+            run, "_wordpress_grounded_context", deepcopy(prepared_input.pop("_grounded_context", None)),
         )
         # Snapshot Cloud-owned evidence before the provider receives mutable input.
         setattr(  # noqa: B010 - transient evidence is not an ORM column.
