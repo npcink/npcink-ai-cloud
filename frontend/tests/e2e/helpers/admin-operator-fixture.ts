@@ -1540,6 +1540,14 @@ export async function installAdminMocks(
       return;
     }
 
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/payment-orders`) {
+      await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID, items: [],
+        pagination: { limit: 5, offset: 0, total: 0 },
+      });
+      return;
+    }
+
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger`) {
       await fulfillJson(route, {
         account_id: LONG_ACCOUNT_ID,

@@ -90,6 +90,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Commercial and catalog reads.
   {
     methods: ['GET'],
+    pattern: /^accounts\/[^/]+\/payment-orders$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
+  {
+    methods: ['GET'],
     pattern: /^(?:coverage-work-queue|subscriptions)$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_billing',
@@ -153,6 +159,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
 
   // Customer, commercial, and catalog writes.
+  {
+    methods: ['POST'],
+    pattern: /^accounts\/[^/]+\/payment-orders\/[^/]+\/refunds$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
   {
     methods: ['POST'],
     pattern: /^accounts$/,

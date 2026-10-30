@@ -111,3 +111,42 @@ Cloud payment must not:
 
 The allowed Cloud role is payment evidence, entitlement grant/revoke, usage
 metering, billing snapshots, and auditability.
+
+## 7. Account-scoped Admin full refunds
+
+The operator-authorized Admin entry lives at customer detail → Commercial →
+Payment orders and refunds (`/admin/accounts/{account_id}#payment-orders`).
+It covers existing Alipay CNY orders; no Portal self-refund surface is added.
+
+- `GET /internal/service/admin/accounts/{account_id}/payment-orders` is a
+  read-only, bounded list (`limit` 1–20, default 5; non-negative `offset`). It
+  includes payment/refund status, amount, deadline, blocking reason and safe
+  order/refund references. Historical orders are retained; gateway payloads,
+  payment settings, checkout URLs and arbitrary metadata are not returned.
+- `POST /internal/service/admin/accounts/{account_id}/payment-orders/{order_id}/refunds`
+  accepts exactly a trimmed, non-empty `reason` of at most 500 characters.
+  It requires internal authentication and an HTTP idempotency key. The browser
+  proxy additionally requires a platform-admin session with `can_manage_billing`
+  for both routes. Manual `mark-paid`/`mark-succeeded` remain unexposed.
+- The server verifies account/order ownership, uses the original full amount
+  and delegates execution to the existing refund domain. Refund windows,
+  downstream package-order dependencies, purchased-credit consumption, locking,
+  signed gateway results and entitlement reversal remain authoritative.
+- One deterministic, domain idempotency key per order protects the Admin full
+  refund across refreshes, new HTTP request keys and operator tabs. Repeating
+  that action returns its existing refund; it never reissues the gateway call.
+  An existing refund from any other entry blocks a new Admin refund. This
+  bounded surface does not introduce partial refunds or retry failed refunds.
+- The confirmation shows the customer, original order, amount and consequence.
+  Busy controls reject duplicate clicks. A transport failure means unconfirmed,
+  not failed or refunded; recovery only reads the same account's original
+  refund. `requested`/`unknown` require provider reconciliation using the stable
+  reference. Refresh does not query Alipay or manufacture successful settlement.
+- Refund and readback success are separate. A stale/failed order read disables
+  new refund actions; the UI retains the uncertainty and a read-only refresh.
+  Only verified `succeeded` is shown as a successful refund. The operator can
+  then refresh customer entitlement; monetary return still needs their actual
+  Alipay acceptance.
+
+This source contract authorizes neither production deployment/configuration nor
+an agent-executed real refund. The operator performs the real transaction test.
