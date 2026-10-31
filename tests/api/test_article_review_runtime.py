@@ -19,6 +19,7 @@ from app.domain.runtime.provider_execution import RuntimeProviderExecutionServic
 from tests.api.test_runtime_execute import _build_client
 from tests.conftest import build_auth_headers, merge_json_headers
 from tests.domain.test_article_review_contract import finding, snapshot
+from tests.domain.test_article_review_extended import extended_snapshot, logic_finding, model_report
 
 
 class ReviewProvider(OpenAIProviderAdapter):
@@ -61,7 +62,9 @@ def review_payload() -> dict:
     }
 
 
-@pytest.mark.parametrize("mode", ["valid", "invalid", "partial", "provider_error"])
+@pytest.mark.parametrize(
+    "mode", ["valid", "invalid", "partial", "provider_error", "extended", "refused"]
+)
 def test_signed_review_returns_verified_hints_without_durable_text(
     tmp_path: Path,
     mode: str,
@@ -79,11 +82,18 @@ def test_signed_review_returns_verified_hints_without_durable_text(
         item["replacement"] = "untrusted correction"
     if mode == "partial":
         item["evidence"][0]["quote"] = "fabricated quote"
-    provider = ReviewProvider(
-        "provider_error" if mode == "provider_error" else json.dumps({"findings": [item]})
-    )
-    database_url, client = _build_client(tmp_path, providers={"openai": provider})
     payload = review_payload()
+    output = {"findings": [item]}
+    if mode in ("extended", "refused"):
+        payload["input"] = extended_snapshot()
+        output = model_report(payload["input"], [logic_finding()])
+        if mode == "refused":
+            output["checks"]["content_risk"] = {
+                "status": "refused",
+                "reason_code": "provider_refused",
+            }
+    provider = ReviewProvider("provider_error" if mode == "provider_error" else json.dumps(output))
+    database_url, client = _build_client(tmp_path, providers={"openai": provider})
     body = json.dumps(payload).encode()
     path = "/v1/runtime/execute"
     response = client.post(
@@ -115,6 +125,13 @@ def test_signed_review_returns_verified_hints_without_durable_text(
         assert data["status"] == "failed"
         assert data["error_code"] == "article_review.invalid_output"
         assert "untrusted correction" not in response.text
+    elif mode in ("extended", "refused"):
+        report = data["result"]
+        assert report["findings"][0]["check"] == "logic"
+        assert report["findings"][0]["scope"] == "across_blocks"
+        assert report["checks"]["content_risk"]["status"] == (
+            "refused" if mode == "refused" else "completed"
+        )
     else:
         assert data["status"] == "succeeded"
         report = data["result"]

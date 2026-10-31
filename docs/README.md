@@ -565,3 +565,5 @@ merge gates.
 - [Site Knowledge reading-task abstention v2](site-knowledge-reading-task-abstention-v2.md): independently versioned evidence qualification and successful empty recommendations.
 
 - [Read-only Admin economics contract](engineering/admin-economics-readonly-contract.md)
+
+- [Article review context extension](article-review-context-runtime-v1.md) — compatible logic/risk runtime contract.
