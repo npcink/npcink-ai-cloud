@@ -68,7 +68,7 @@ def test_v2_abstains_below_floor_even_with_anchor_or_taxonomy(score: float) -> N
     assert rows == []
     assert receipt["abstained"] is True
     assert receipt["below_evidence_floor"] == 1
-    assert receipt["policy_version"] == "reading_task_abstention.v2"
+    assert receipt["policy_version"] == "reading_task_abstention.v3"
 
 
 @pytest.mark.parametrize(
@@ -98,6 +98,26 @@ def test_v2_abstains_below_floor_even_with_anchor_or_taxonomy(score: float) -> N
         ("新手引导 onboarding", "Shepherd 引导工具", "为访客提供分步交互说明", True),
         ("自定义字段 custom fields", "WordPress Customize API", "自定义选项和设置", False),
         ("自定义字段 custom fields", "Meta Box", "自定义字段管理", True),
+        (
+            "自定义字段插件只需点击即可添加字段",
+            "AI 内容生成插件",
+            "只需三个步骤开始 AI 创作，生成文章摘要",
+            False,
+        ),
+        (
+            "Advanced custom fields - WordPress开发人员的高级自定义字段插件 "
+            "根据需要添加字段。我们的字段生成器wordpress插件只需点",
+            "WordPress AI 内容生成插件",
+            "只需三个步骤即可开始内容创作，提供摘要生成和标签生成。",
+            False,
+        ),
+        ("自定义字段插件只需点击即可添加字段", "字段管理工具", "无需编程添加字段", True),
+        ("自定义字段插件只需点击即可添加字段", "OptionTree", "创建选项面板和元框", True),
+        ("自定义字段插件仅需几步即可配置", "Options Framework", "主题选项面板", True),
+        ("电子书管理只需点击开始", "Kavita 在线书籍管理", "管理图书", True),
+        ("奶茶只需1元", "奶茶店主题", "只需点击安装奶茶菜单", False),
+        ("奶茶只需1元", "奶茶优惠", "新用户仅需 1 元", True),
+        ("奶茶仅需9.9元", "奶茶特惠", "会员只需2美元", True),
         ("前端面试手册", "前端开发资源", "提供面试备考和算法材料", True),
         ("前端面试手册", "前端页面布局", "HTML CSS 布局", False),
         ("去除 category 分类链接", "分类展示区块", "按分类展示文章", False),
