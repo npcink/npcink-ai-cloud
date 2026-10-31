@@ -435,12 +435,12 @@ class RuntimeProviderExecutionService:
                         provider_request
                     )
                 except ProviderExecutionError as error:
-                    self._sanitize_review_error(run, error)
                     if preflight_usage_context:
                         error.usage_context = {
                             **preflight_usage_context,
                             **(error.usage_context or {}),
                         }
+                    self._sanitize_review_error(run, error)
                     self._record_attempt_error(
                         repository=repository,
                         run=run,

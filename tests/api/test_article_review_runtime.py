@@ -15,6 +15,7 @@ from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.core.db import dispose_engine, get_session
 from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 from app.domain.article_review.contract import ABILITY, PROFILE, REQUEST_CONTRACT
+from app.domain.runtime.provider_execution import RuntimeProviderExecutionService
 from tests.api.test_runtime_execute import _build_client
 from tests.conftest import build_auth_headers, merge_json_headers
 from tests.domain.test_article_review_contract import finding, snapshot
@@ -64,7 +65,15 @@ def review_payload() -> dict:
 def test_signed_review_returns_verified_hints_without_durable_text(
     tmp_path: Path,
     mode: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if mode == "provider_error":
+        # Error privacy must apply after merging all usage sources, too.
+        monkeypatch.setattr(
+            RuntimeProviderExecutionService,
+            "enforce_context_budget",
+            staticmethod(lambda request: {"preflight": "original-article-canary"}),
+        )
     item = finding()
     if mode == "invalid":
         item["replacement"] = "untrusted correction"
