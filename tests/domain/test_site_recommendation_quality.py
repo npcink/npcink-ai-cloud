@@ -98,8 +98,19 @@ def test_v2_abstains_below_floor_even_with_anchor_or_taxonomy(score: float) -> N
         ("新手引导 onboarding", "Shepherd 引导工具", "为访客提供分步交互说明", True),
         ("自定义字段 custom fields", "WordPress Customize API", "自定义选项和设置", False),
         ("自定义字段 custom fields", "Meta Box", "自定义字段管理", True),
-        ("自定义字段插件只需点击即可添加字段", "AI 内容生成插件", "只需三个步骤开始 AI 创作，生成文章摘要", False),
-        ("Advanced custom fields - WordPress开发人员的高级自定义字段插件 根据需要添加字段。我们的字段生成器wordpress插件只需点", "WordPress AI 内容生成插件", "只需三个步骤即可开始内容创作，提供摘要生成和标签生成。", False),
+        (
+            "自定义字段插件只需点击即可添加字段",
+            "AI 内容生成插件",
+            "只需三个步骤开始 AI 创作，生成文章摘要",
+            False,
+        ),
+        (
+            "Advanced custom fields - WordPress开发人员的高级自定义字段插件 "
+            "根据需要添加字段。我们的字段生成器wordpress插件只需点",
+            "WordPress AI 内容生成插件",
+            "只需三个步骤即可开始内容创作，提供摘要生成和标签生成。",
+            False,
+        ),
         ("自定义字段插件只需点击即可添加字段", "字段管理工具", "无需编程添加字段", True),
         ("自定义字段插件只需点击即可添加字段", "OptionTree", "创建选项面板和元框", True),
         ("自定义字段插件仅需几步即可配置", "Options Framework", "主题选项面板", True),

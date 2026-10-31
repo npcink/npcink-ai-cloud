@@ -84,7 +84,8 @@ _TASKS = (
     ),
     (
         r"自定义字段|custom fields",
-        r"字段|custom fields|\bacf\b|选项面板|自定义选项页|元框|metabox|options? (?:framework|panel|page)|optiontree",
+        r"字段|custom fields|\bacf\b|选项面板|自定义选项页|元框|metabox"
+        r"|options? (?:framework|panel|page)|optiontree",
     ),
     (
         r"书籍管理|电子书管理|calibre",
