@@ -5,6 +5,56 @@ Status: Cloud [#1317](https://github.com/npcink/npcink-ai-cloud/pull/1317) and A
 Cloud runtime `62a9443e` is accepted on M4. The receipt below separates source,
 runtime, packaging and remaining customer acceptance. No production deployment.
 
+## Accepted legacy-image limitation — 2026-10-31
+
+The operator decided to retain the 69 legacy images with unavailable originals
+as metadata-only and close their original-recovery and pixel-upgrade work.
+This supersedes the open recovery obligations in the dated receipts below;
+it is an accepted historical limitation, not a pending repair or acceptance gate.
+Do not schedule backup searches, re-downloads, retries or index rebuilds for
+this cohort. Existing metadata/index records and retrieval behavior are retained.
+These records remain `metadata_text.v1` / `unavailable_legacy_source` and must
+not be counted as image-pixel retrieval success. Ordinary ingestion and existing
+same-space upgrade behavior remain available when a valid source is delivered.
+
+This documentation decision does not mutate data or runtime configuration and
+does not resolve the separately recorded image-understanding timeouts, other
+product acceptance or production release requirements.
+
+## Reconciled development results and acceptance ownership — 2026-10-31
+
+The follow-up documentation at Cloud candidate
+`7e2229a8553d1bc2e79e5a0557ab420bfeb7005e` records successful development
+results after the historical 30-second failures below. See the pinned
+[vision investigation receipt](https://github.com/npcink/npcink-ai-cloud/blob/7e2229a8553d1bc2e79e5a0557ab420bfeb7005e/docs/history/engineering/2026/vision-timeout-investigation-2026-10-30.md).
+The operator confirmed these results are already handled by the other session;
+this reconciliation reads its records without repeating model calls or changing
+that session's source/configuration.
+
+- Preview single/pair and Chinese OCR samples passed using the development
+  `npcink-vision:qwen35-4b-instruct-16k-v1` route.
+- With the explicitly enabled development/loopback-only 180-second image
+  budget, the original 2560×1440 single and 2560×1736 + 2560×1440 pair passed in
+  32.390s and 63.303s (32.843s/65.963s including uploads). Runs:
+  `run_dfcaddb383994560940b9dddab61cf87` and
+  `run_efaad04f49da4affab014b2760f573b8`.
+- These are bounded local/M4 development samples from an unmerged candidate,
+  not clean-master promotion, arbitrary-image quality or production acceptance.
+  The recorded proxy override is temporary on container recreation; its source
+  integration remains with that candidate. Production/default budgets are
+  unchanged. Do not reopen local model tuning as a development blocker.
+- The operator's prior final Admin visual acceptance is recorded separately in
+  the [Admin ledger](admin-information-hierarchy-implementation-ledger.md#操作者完成后台最终视觉接受--2026-10-30);
+  it does not automatically accept subsequent changes.
+- The operator will verify real refunds and email after a separately authorized
+  production deployment. Keep them pending for that event; no AI-initiated
+  transaction, refund or test email is scheduled here.
+- Release verification using packaged container images without source/workspace
+  overlays belongs to the next explicitly arranged release, following the existing
+  [exact-bundle contract](p5-b5-exact-release-bundle-v1.md) and
+  [release checklist](../deploy/RELEASE_CHECKLIST.md). Routine M4 source sync
+  does not satisfy it. This decision does not authorize build/deploy or promotion.
+
 ## Product and ownership
 
 The loop is source input → sanitized indexing → site-scoped retrieval →
@@ -21,7 +71,7 @@ local contract. There is no new task registry, chat endpoint, CMS or write path.
 | Text delivery | Addon post/page `content_excerpt` carries sanitized body up to 48,000 UTF-8 bytes with v2 byte/character counters. Legacy v1 1,800-byte evidence remains readable. Wire batching uses escaped JSON bytes; dispatch retains its final 900,000-byte guard. Bodies beyond the cap explicitly remain partial. |
 | Factual answering | Locally registered custom tasks may declare `site_knowledge_evidence`, distinct from optional `site_style_profile`. They require enabled `site_factual_evidence` references, `json_object` and `source_grounded` constraints, and an answer/citations schema. |
 | Existing ingestion/lifecycle | Public post/page, approved comments and eligible images retain their existing scoped delivery, explicit withdrawal, exclusion/restore and preserve-on-failed-refresh paths. Known run identities release duplicate payload snapshots; lost responses retain exact replay bytes. This does not add PDF/Word/video or private upload support. |
-| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. M4 inventory now has 2,364 matching 4096D chunks; 69 legacy media chunks remain explicitly metadata-only because their originals were unavailable. They are not pixel-retrieval success. |
+| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. The recorded M4 inventory has 2,364 matching 4096D chunks; 69 legacy media chunks remain explicitly metadata-only because their originals were unavailable. Their recovery work is closed under the [2026-10-31 operator decision](#accepted-legacy-image-limitation--2026-10-31); they are not pixel-retrieval success. |
 | Evidence outcomes | `available` / `partial` on usable factual context; `grounded_answer.no_evidence`, `.retrieval_unavailable`, `.retrieval_failed` are independent failed-run outcomes before the answering provider. Optional style behavior remains unchanged. |
 | Quality evidence | Deterministic long-tail retrieval, UTF-8/wire bounds, current-chunk/hash checks, wrong-site metadata exclusion, missing evidence, forged quotes/IDs, queued failure and no-store coverage. Existing multimodal and refresh safety suites are reused. Run IDs, usage and bounded feedback remain the correlation path; no paid calls manufacture observations. |
 
