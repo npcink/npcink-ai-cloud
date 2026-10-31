@@ -1276,7 +1276,15 @@ class ProviderConnectionAdminService:
         credential = payload.get("credential")
         if credential is None:
             credential = payload.get("secret")
-        normalized_credential = None if credential is None else str(credential)
+        # None keeps the saved credential; the exact empty string explicitly
+        # clears it. Reject a blank replacement before any row or competing
+        # runtime source is mutated.
+        normalized_credential = None if credential is None else str(credential).strip()
+        if credential is not None and str(credential) != "" and not normalized_credential:
+            raise ProviderConnectionAdminError(
+                "provider_connection.credential_blank",
+                "credential must not contain only whitespace",
+            )
         return {
             "connection_id": normalized_connection_id,
             "provider_id": normalized_provider_id,

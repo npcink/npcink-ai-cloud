@@ -225,7 +225,7 @@ test('stored credentials require explicit replacement and clearing needs confirm
   expect(writes[1]).toMatchObject({
     provider_id: 'jina_reader',
     enabled: true,
-    source_role: 'reader_enhancement',
+    source_role: 'execution_source',
     runtime_profile_ids: ['web-search.reader'],
     metadata: {
       ui_source: 'external_services',

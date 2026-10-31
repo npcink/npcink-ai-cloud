@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 const baseVectorProfile = {
   runtime: {
@@ -184,7 +184,7 @@ test('vector settings reports each failed step and retries only from that step',
     if (pathname.endsWith('/vector-store')) {
       vectorStoreRequests += 1;
       if (vectorStoreRequests === 1) {
-        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', error_code: 'vector_store.unavailable', message: 'vector store unavailable' }) });
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('vector store unavailable', 'site_knowledge_vector_profile.zilliz_probe_failed')) });
         return;
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ ...profile, vector_store: { ...profile.vector_store, endpoint: 'https://example.zilliz.com', token_configured: true } })) });
@@ -192,7 +192,7 @@ test('vector settings reports each failed step and retries only from that step',
     }
     embeddingRequests += 1;
     if (embeddingRequests === 1) {
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', error_code: 'embedding.unavailable', message: 'embedding unavailable' }) });
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('embedding unavailable', 'site_knowledge_vector_profile.embedding_invalid')) });
       return;
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(profile)) });
