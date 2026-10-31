@@ -82,7 +82,10 @@ _TASKS = (
         r"分步指南|分步引导|新手引导|intro\.js|onboarding",
         r"分步|步骤|新手引导|intro\.js|onboarding|guided tour",
     ),
-    (r"自定义字段|custom fields", r"字段|custom fields|\bacf\b"),
+    (
+        r"自定义字段|custom fields",
+        r"字段|custom fields|\bacf\b|选项面板|自定义选项页|元框|metabox|options? (?:framework|panel|page)|optiontree",
+    ),
     (
         r"书籍管理|电子书管理|calibre",
         r"书籍管理|电子书管理|图书管理|calibre|ebook management|book management",
@@ -100,8 +103,13 @@ _TASKS = (
     (r"图床|image hosting", r"图床|图片管理|image hosting|image management"),
     (r"query monitor|性能调试|调试工具", r"调试|性能|debug|performance|query monitor"),
 )
+# "Only click" describes setup, not a consumer offer. Require a monetary
+# amount for the ambiguous Chinese prefixes, on both source and target.
 _PROMOTION = re.compile(
-    r"特惠|促销|买一送一|仅需|只需|special offer|happy hour|buy one get one", re.IGNORECASE
+    r"特惠|促销|买一送一|(?:仅需|只需)\s*(?:[¥￥$€£]\s*\d+(?:\.\d+)?"
+    r"|\d+(?:\.\d+)?\s*(?:元|美元|欧元|英镑|人民币|USD|CNY|RMB|EUR|GBP))"
+    r"|special offer|happy hour|buy one get one",
+    re.IGNORECASE,
 )
 _PROMOTION_BOILERPLATE = re.compile(
     r"限时|特惠|促销|优惠|折扣|活动|买一送一|仅需|只需|新用户|注册|即可|享受|夏日|冰爽"
