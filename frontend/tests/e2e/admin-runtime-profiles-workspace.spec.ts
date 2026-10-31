@@ -285,7 +285,15 @@ test('runtime configuration keeps PC action and dialog context with a structured
   await expect(trigger).toBeFocused();
   await expect(profileRow(page, 'route.short_text')).toContainText('Text Provider · text-model-v1');
   expect(browserEvidence.consoleErrors).toEqual([]);
-  expect(browserEvidence.networkFailures).toEqual([]);
+  // Resizing the navigation cancels Next's speculative page reads. Keep that
+  // evidence separate; cancelled API calls and other network errors still fail.
+  const cancelledPrefetches = browserEvidence.networkFailures.filter((failure) => {
+    if (!failure.startsWith('GET ') || !failure.endsWith(' - net::ERR_ABORTED')) return false;
+    const url = new URL(failure.split(' ')[1]);
+    return url.pathname.startsWith('/admin') && url.searchParams.has('_rsc');
+  });
+  const networkFailures = browserEvidence.networkFailures.filter((failure) => !cancelledPrefetches.includes(failure));
+  expect(networkFailures).toEqual([]);
   const rules = {
     'declared-page-model': 'configuration route retains the profile directory and workbench',
     'pc-viewport': '1440x1050 page and 900x1050 dialog checked',
@@ -309,7 +317,8 @@ test('runtime configuration keeps PC action and dialog context with a structured
     rule_results: Object.entries(rules).map(([id, evidence]) => ({ id, evidence, status: 'pass' })),
     screenshot_paths: screenshotPaths,
     interaction_results: [{ id: 'cancel-preserves-saved-profile', status: 'pass', evidence: 'saved primary remains after cancelling a different radio selection' }],
-    console_errors: browserEvidence.consoleErrors, network_failures: browserEvidence.networkFailures,
+    console_errors: browserEvidence.consoleErrors, network_failures: networkFailures,
+    cancelled_prefetch_requests: cancelledPrefetches,
     review_required_items: ['PC grouping, abnormal-state emphasis and five-second scan require human judgment'],
     human_acceptance: 'pending', generated_at: new Date().toISOString(),
   }, null, 2));
@@ -1005,7 +1014,7 @@ test('failed usage save keeps input and successful save survives reload without 
   await page.route('**/api/admin/runtime-profiles', async (route) => {
     if (route.request().method() === 'PATCH' && fail) {
       fail = false;
-      await route.fulfill({ status: 409, json: { status: 'error', error_code: 'runtime_profiles.conflict', message: 'Please retry this usage save.', data: {} } });
+      await route.fulfill({ status: 409, json: { ...envelope({}), status: 'error', error_code: 'runtime_profiles.conflict', message: 'Please retry this usage save.' } });
     } else await route.fallback();
   });
   await page.goto('/admin/runtime-profiles?provider=provider_backup');
@@ -1143,6 +1152,7 @@ for (const failure of ['network', 'timeout', 'malformed'] as const) {
     await page.goto('/admin/runtime-profiles');
     await profileRow(page, 'route.short_text').getByRole('button', { name: /^Configure$|^配置$/ }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByText(/Advanced settings|高级设置/, { exact: true }).click();
     const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
     await timeout.fill('40');
     await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
@@ -1228,6 +1238,7 @@ test('runtime explicit rejection retains an editable draft without reconciliatio
   await page.goto('/admin/runtime-profiles');
   await profileRow(page, 'route.short_text').getByRole('button', { name: /^Configure$|^配置$/ }).click();
   const dialog = page.getByRole('dialog');
+  await dialog.getByText(/Advanced settings|高级设置/, { exact: true }).click();
   const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
   await timeout.fill('40');
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();

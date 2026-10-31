@@ -191,7 +191,7 @@ test('malformed setting fields fail closed and recover without rendering writabl
       : { settings: state.settings }) });
   });
   await page.goto('/admin/service-settings');
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toBeVisible();
   await expect(page.locator('form')).toHaveCount(0);
   malformed = false;
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
@@ -451,7 +451,8 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await baseUrlInput.fill('https://saved.example.test');
   failNextPortalSave = true;
   await saveBaseUrl.click();
-  await expect(page.getByText(/configuration action failed|配置操作失败/i)).toBeVisible();
+  await expect(page.locator('[data-ui="service-settings-write-recovered"]')).toBeVisible();
+  expect(settingsReadCount).toBe(2);
   await expect(baseUrlInput).toHaveValue('https://saved.example.test');
   await expect(saveBaseUrl).toBeEnabled();
 
@@ -459,7 +460,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await expect(page.getByText(/Service setting updated|服务配置已更新/i)).toBeVisible();
   await expect(baseUrlInput).toHaveValue('https://saved.example.test');
   await expect(saveBaseUrl).toBeDisabled();
-  expect(settingsReadCount).toBe(2);
+  expect(settingsReadCount).toBe(3);
   await page.getByRole('button', { name: 'Close notification' }).click();
 
   await page.getByRole('tab', { name: /QQ login|QQ 登录/i }).click();
@@ -880,9 +881,12 @@ for (const invalid of ['connections', 'items'] as const) {
       missing_provider_ids: [], items: [], connections: [{ provider_id: 'openai', display_name: 'Fixture', enabled: true }],
       generated_at: '', period_timezone: 'UTC' } };
     let malformed = true;
-    await page.route('**/api/admin/service-settings', (route) => route.fulfill({ json: buildAdminApiEnvelope({ settings: {
-      ...state.settings, provider_budget: { ...budget, runtime: malformed ? { ...budget.runtime, [invalid]: [null] } : budget.runtime },
-    } }) }));
+    let failRead = false;
+    await page.route('**/api/admin/service-settings', (route) => route.fulfill(failRead
+      ? { status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }
+      : { json: buildAdminApiEnvelope({ settings: {
+        ...state.settings, provider_budget: { ...budget, runtime: malformed ? { ...budget.runtime, [invalid]: [null] } : budget.runtime },
+      } }) }));
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/admin/service-settings');
@@ -892,6 +896,12 @@ for (const invalid of ['connections', 'items'] as const) {
     await expect(warning).toBeVisible();
     const threshold = page.getByRole('spinbutton').first();
     await threshold.fill('75');
+    failRead = true;
+    await warning.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+    await expect(warning.getByRole('button')).toBeEnabled();
+    await expect(threshold).toBeEnabled();
+    await expect(threshold).toHaveValue('75');
+    failRead = false;
     await page.screenshot({ path: testInfo.outputPath(`budget-${invalid}-unknown.png`), fullPage: true });
     malformed = false;
     await warning.getByRole('button', { name: /^Retry$|^重试$/i }).click();
@@ -910,7 +920,7 @@ test('malformed timezone is unknown and recovers through GET without writable de
       config: { timezone: malformed ? {} : 'Pacific/Chatham' } },
   } }) }));
   await page.goto('/admin/service-settings?tab=system');
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toBeVisible();
   await expect(page.locator('form')).toHaveCount(0);
   malformed = false;
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
@@ -928,7 +938,7 @@ test('service explicit rejection retains an editable draft without reconciliatio
   const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
   await base.fill('https://rejected.example.test');
   await page.getByRole('button', { name: /Save base URL|保存基础地址/i }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toBeVisible();
   await expect(base).toBeEnabled();
   await expect(base).toHaveValue('https://rejected.example.test');
   expect(state.reads).toBe(1);
