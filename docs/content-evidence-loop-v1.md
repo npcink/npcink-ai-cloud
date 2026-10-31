@@ -318,3 +318,63 @@ and separate WordPress.org packaging/production release. These examples do not
 guarantee arbitrary prompt-injection resistance. Generic/private uploaded-file
 ingestion remains outside this public-site text slice. Source CI and the central
 matrix are separate gates; none of this runtime evidence replaces them.
+
+## Operator decisions and vision investigation — 2026-10-30 follow-up
+
+The operator explicitly closed recovery of the 69 missing historical originals:
+leave their missing/metadata-only state intact. External-backup recovery is no
+longer an active task; the earlier receipt above retains its historical context.
+Do not fabricate originals or treat metadata as pixel evidence.
+
+The two-image/full-size timeout investigation is recorded in the
+[development investigation receipt](history/engineering/2026/vision-timeout-investigation-2026-10-30.md).
+It identifies the installed Qwen3-VL Thinking renderer continuing to produce
+reasoning despite `think:false`, alongside full-size image processing cost.
+The 30-second product contract remains unchanged. Diagnostic model calls are
+not a new end-to-end acceptance or a production result.
+
+The operator subsequently confirmed that image-grounded descriptions/OCR and
+ALT/caption suggestions remain needed in addition to vector retrieval, and
+authorized the bounded M4 model comparison/configuration. The development
+`vision.ai` route now uses `npcink-vision:qwen35-4b-instruct-16k-v1`, derived
+from `qwen3.5:4b-q4_K_M`, with explicit Chinese result/field constraints and
+16K inference context. Full WordPress→Addon→Cloud calls took 10.062s for one
+768px preview, 16.692s for two previews, and 11.285s for a known Chinese
+screenshot, including uploads. The original-size single and pair still timed
+out at 30 seconds and remain failed cases; no automatic resize was introduced.
+The Qwen3-VL embedding selection and 2,379 vector rows were checked unchanged.
+This is development configuration evidence; no application source or production
+configuration changed, and arbitrary image question-answer quality is untested.
+The linked receipt records exact runs, model controls, limits and rollback.
+
+### Development scope confirmed by operator — 2026-10-31
+
+The local model only needs to support feature development and integration.
+Retain the verified preview-image/OCR samples and the current development
+configuration. Full-original timeouts remain recorded as a local limitation,
+but further M4 model tuning is not a blocker for this development slice. Do not
+add resizing, region crops or a new processing pipeline solely to overcome it.
+
+The operator intends to use a suitable model API for production and mentioned
+the DeepSeek flash model used in `npcink-eval-lab` as an example. This is a future
+candidate, not a verified model ID, image-input capability claim, API selection
+or deployment authorization. Verify the exact model, vision support, output
+contract, quality and latency when integrating that API; retain the original
+image timeout cases for that verification.
+
+### Original-size local development timeout — 2026-10-31
+
+The operator explicitly authorized a longer local wait. Addon now supports an
+explicit development/loopback-only 180-second image budget (190-second HTTP
+wait); the existing M4 Ollama connection allows 180 seconds and the development
+proxy allows 200. Production defaults are unchanged. Original 2560×1440 single
+and 2560×1736 + 2560×1440 pair calls succeeded in 32.390s and 63.303s respectively
+(32.843s/65.963s including uploads), returning descriptions and ALT/caption bases.
+The 30-second failures remain historical evidence, but no longer block these
+local development cases. Original media, attachment metadata and all 2,379 vector
+rows remained unchanged. No resizing, model switch or reindexing was involved.
+
+These are local source/M4 configuration samples, not merged/clean-master or
+production acceptance. The linked investigation records run IDs, verification,
+rollback, and the temporary proxy override that must be reapplied or replaced
+with the canonical configuration on proxy recreation.
