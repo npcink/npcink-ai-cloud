@@ -157,7 +157,52 @@ export type ServiceSettingsProjection = {
   data: NormalizedServiceSettingsData;
   savedForms: SavedServiceSettingsForms;
   emailConfigExpanded: boolean;
+  providerBudgetRuntimeUnavailable: boolean;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function assertServiceSetting(value: unknown, name = 'response'): asserts value is ServiceSetting {
+  if (!isRecord(value) || typeof value.enabled !== 'boolean' || typeof value.status !== 'string'
+    || !isRecord(value.config) || !isRecord(value.secrets)) {
+    throw new TypeError(`Service setting ${name} is invalid.`);
+  }
+}
+
+function validBudgetRuntime(value: unknown): value is ProviderBudgetRuntime {
+  if (!isRecord(value)) return false;
+  const finite = (item: unknown) => typeof item === 'number' && Number.isFinite(item);
+  return typeof value.status === 'string' && finite(value.warning_ratio)
+    && Number.isInteger(value.configured_provider_count) && Number(value.configured_provider_count) >= 0
+    && typeof value.generated_at === 'string' && typeof value.period_timezone === 'string'
+    && Array.isArray(value.missing_provider_ids) && value.missing_provider_ids.every((id) => typeof id === 'string')
+    && Array.isArray(value.connections) && value.connections.every((item) => isRecord(item)
+      && typeof item.provider_id === 'string' && Boolean(item.provider_id.trim())
+      && typeof item.display_name === 'string' && typeof item.enabled === 'boolean'
+      && (item.connection_id === undefined || typeof item.connection_id === 'string'))
+    && Array.isArray(value.items) && value.items.every((item) => isRecord(item)
+      && typeof item.provider_id === 'string' && typeof item.account_class === 'string'
+      && ['day', 'month'].includes(String(item.period_kind))
+      && ['limit_cost_usd', 'reserved_cost_usd', 'remaining_cost_usd', 'utilization_ratio'].every((key) => finite(item[key]))
+      && typeof item.warning === 'boolean' && typeof item.exceeded === 'boolean'
+      && (item.period_start_at === undefined || typeof item.period_start_at === 'string')
+      && (item.period_end_at === undefined || typeof item.period_end_at === 'string'));
+}
+
+function platformTimezone(config: Record<string, unknown>): string {
+  if (!Object.hasOwn(config, 'timezone')) return 'Asia/Shanghai';
+  if (typeof config.timezone !== 'string' || !config.timezone.trim()) {
+    throw new TypeError('Platform timezone response is invalid.');
+  }
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: config.timezone }).format();
+  } catch {
+    throw new TypeError('Platform timezone response is invalid.');
+  }
+  return config.timezone;
+}
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
@@ -243,12 +288,7 @@ export function projectServiceSettingsForms(
   for (const key of [...required, 'accounting_fx', 'provider_budget'] as const) {
     const setting = source.settings[key];
     if (setting === undefined && !required.includes(key as typeof required[number])) continue;
-    if (!setting || typeof setting !== 'object' || Array.isArray(setting)
-      || typeof setting.enabled !== 'boolean' || typeof setting.status !== 'string'
-      || !setting.config || typeof setting.config !== 'object' || Array.isArray(setting.config)
-      || !setting.secrets || typeof setting.secrets !== 'object' || Array.isArray(setting.secrets)) {
-      throw new TypeError(`Service setting ${key} is invalid.`);
-    }
+    assertServiceSetting(setting, key);
   }
   const portalPublic = source.settings.portal_public;
   const qq = source.settings.qq_login;
@@ -257,7 +297,11 @@ export function projectServiceSettingsForms(
   const accountingFx = source.settings.accounting_fx || fallbackAccountingFx();
   const siteRelinkPolicy = source.settings.site_relink_policy;
   const platformPreferences = source.settings.platform_preferences;
-  const providerBudget = source.settings.provider_budget || fallbackProviderBudget();
+  const rawProviderBudget = source.settings.provider_budget || fallbackProviderBudget();
+  const providerBudgetRuntimeUnavailable = Boolean(source.settings.provider_budget)
+    && !validBudgetRuntime(rawProviderBudget.runtime);
+  const providerBudget = { ...rawProviderBudget,
+    runtime: providerBudgetRuntimeUnavailable ? undefined : rawProviderBudget.runtime };
   const emailSmtpUsername = stringValue(email.config.smtp_username);
   const emailFromAddress = stringValue(email.config.from_email);
   const emailUsernameSameAsFromEmail =
@@ -308,7 +352,7 @@ export function projectServiceSettingsForms(
       cooldown_days: stringValue(siteRelinkPolicy.config.cooldown_days) || '90',
     },
     platformPreferences: {
-      timezone: stringValue(platformPreferences.config.timezone) || 'Asia/Shanghai',
+      timezone: platformTimezone(platformPreferences.config),
     },
     providerBudget: {
       enabled: providerBudget.enabled,
@@ -336,6 +380,7 @@ export function projectServiceSettingsForms(
     },
     savedForms,
     emailConfigExpanded: email.status === 'missing_config' || email.status === 'error',
+    providerBudgetRuntimeUnavailable,
   };
 }
 

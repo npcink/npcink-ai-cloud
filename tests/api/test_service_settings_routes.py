@@ -1300,3 +1300,66 @@ def test_admin_provider_account_spend_budget_save_and_runtime_projection(
     assert all(event.event_kind == "service_setting.save" for event in events)
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "setting_id", "secret_key", "config"),
+    [
+        ("qq-login", "portal_qq_login", "client_secret", {"client_id": "test-qq"}),
+        (
+            "email",
+            "portal_email",
+            "smtp_password",
+            {"smtp_host": "smtp.example.test", "from_email": "mail@example.test",
+             "smtp_username": "mail@example.test"},
+        ),
+        ("alipay-payment", "payment_alipay", "private_key", {"app_id": "test-pay"}),
+        ("alipay-payment", "payment_alipay", "public_key", {"app_id": "test-pay"}),
+    ],
+)
+@pytest.mark.parametrize("blank", ["   ", "\t\n", "\u3000"])
+def test_credential_blank_replacement_is_atomic_and_preserve_clear_are_distinct(
+    tmp_path: Path, endpoint: str, setting_id: str, secret_key: str,
+    config: dict[str, str], blank: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"enabled": True, "public_base_url": "https://cloud.example.test"},
+        headers=build_internal_headers(idempotency_key="credential-public-url"),
+    )
+    assert response.status_code == 200, response.text
+    credentials = {"private_key": "fixture-private", "public_key": "fixture-public"} \
+        if endpoint == "alipay-payment" else {}
+    payload = {"enabled": False, **config, **credentials, secret_key: "fixture-saved-credential"}
+    path = f"/internal/service/admin/service-settings/{endpoint}"
+    saved = client.patch(
+        path, json=payload,
+        headers=build_internal_headers(idempotency_key="credential-initial"),
+    )
+    assert saved.status_code == 200, saved.text
+    with get_session(database_url) as session:
+        row = session.get(ServiceSetting, setting_id)
+        assert row is not None
+        previous = (row.enabled, dict(row.config_json), dict(row.secret_ciphertext_json))
+
+    rejected = client.patch(
+        path, json={**payload, "enabled": True, secret_key: blank},
+        headers=build_internal_headers(idempotency_key="credential-blank"),
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert rejected.json()["error_code"] == "service_settings.secret_blank"
+    with get_session(database_url) as session:
+        row = session.get(ServiceSetting, setting_id)
+        assert row is not None
+        assert (row.enabled, row.config_json, row.secret_ciphertext_json) == previous
+
+    for index, secret_fields in enumerate(({}, {secret_key: None}, {secret_key: ""})):
+        preserved = client.patch(
+            path, json={"enabled": False, **config, **secret_fields},
+            headers=build_internal_headers(idempotency_key=f"credential-preserve-clear-{index}"),
+        )
+        assert preserved.status_code == 200, preserved.text
+        assert preserved.json()["data"]["secrets"].get(secret_key, {}).get(
+            "configured", False
+        ) is (index < 2)

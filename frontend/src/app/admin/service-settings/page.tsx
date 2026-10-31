@@ -21,10 +21,12 @@ import { useToast } from '@/components/ui/Toast';
 import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
+import { adminWriteOutcomeUnknown } from '@/lib/admin-write-outcome';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 import {
   projectServiceSettingsForms,
+  assertServiceSetting,
   type AccountingFxForm,
   type AlipayForm,
   type EmailForm,
@@ -313,6 +315,11 @@ export default function AdminServiceSettingsPage() {
   const operationRef = useRef(false);
   const [snapshotCurrent, setSnapshotCurrent] = useState(false);
   const [pendingReadMessage, setPendingReadMessage] = useState('');
+  const preserveDraftOnReadRef = useRef(false);
+  const [writeRecoveryNotice, setWriteRecoveryNotice] = useState(false);
+  const [providerBudgetRuntimeUnavailable, setProviderBudgetRuntimeUnavailable] = useState(false);
+  const [providerBudgetRuntimeLoading, setProviderBudgetRuntimeLoading] = useState(false);
+  const providerBudgetRuntimeReadActive = useRef(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const previewRequestRef = useRef(0);
@@ -417,25 +424,30 @@ export default function AdminServiceSettingsPage() {
         return false;
       }
       const projection = projectServiceSettingsForms(nextData);
+      const preserveDraft = preserveDraftOnReadRef.current;
       setData(projection.data);
       setSnapshotCurrent(true);
       setPendingReadMessage('');
-      setEmailConfigExpanded(projection.emailConfigExpanded);
+      setProviderBudgetRuntimeUnavailable(projection.providerBudgetRuntimeUnavailable);
       const nextSavedForms = projection.savedForms;
       savedFormsRef.current = nextSavedForms;
       setSavedForms(nextSavedForms);
-      setPortalPublicForm(nextSavedForms.portal);
-      setQqForm(nextSavedForms.qq);
-      setEmailForm(nextSavedForms.email);
-      setAlipayForm(nextSavedForms.payment);
-      setAccountingFxForm(nextSavedForms.accounting);
-      setSiteRelinkPolicyForm(nextSavedForms.siteRelink);
-      setPlatformPreferencesForm(nextSavedForms.platformPreferences);
-      setProviderBudgetForm(nextSavedForms.providerBudget);
-      setQqCredentialRevealed(false);
-      setEmailCredentialRevealed(false);
-      setAlipayPrivateKeyRevealed(false);
-      setAlipayPublicKeyRevealed(false);
+      if (!preserveDraft) {
+        setEmailConfigExpanded(projection.emailConfigExpanded);
+        setPortalPublicForm(nextSavedForms.portal);
+        setQqForm(nextSavedForms.qq);
+        setEmailForm(nextSavedForms.email);
+        setAlipayForm(nextSavedForms.payment);
+        setAccountingFxForm(nextSavedForms.accounting);
+        setSiteRelinkPolicyForm(nextSavedForms.siteRelink);
+        setPlatformPreferencesForm(nextSavedForms.platformPreferences);
+        setProviderBudgetForm(nextSavedForms.providerBudget);
+        setQqCredentialRevealed(false);
+        setEmailCredentialRevealed(false);
+        setAlipayPrivateKeyRevealed(false);
+        setAlipayPublicKeyRevealed(false);
+      }
+      preserveDraftOnReadRef.current = false;
       return true;
     } catch (loadError) {
       if (settingsMountedRef.current && settingsRequestSequenceRef.current === requestSequence) {
@@ -452,6 +464,27 @@ export default function AdminServiceSettingsPage() {
       }
     }
   }, []);
+
+  async function loadProviderBudgetRuntime() {
+    if (operationRef.current || settingsRequestActiveRef.current || providerBudgetRuntimeReadActive.current) return;
+    providerBudgetRuntimeReadActive.current = true;
+    const sequence = settingsRequestSequenceRef.current;
+    setProviderBudgetRuntimeLoading(true);
+    try {
+      const response = await serviceSettingsClient.request<ServiceSettingsData>('/api/admin/service-settings');
+      const projection = projectServiceSettingsForms(response.data);
+      if (!settingsMountedRef.current || settingsRequestSequenceRef.current !== sequence) return;
+      setData((current) => current ? { ...current, settings: { ...current.settings,
+        provider_budget: { ...current.settings.provider_budget, runtime: projection.data.settings.provider_budget.runtime },
+      } } : current);
+      setProviderBudgetRuntimeUnavailable(projection.providerBudgetRuntimeUnavailable);
+    } catch {
+      if (settingsMountedRef.current && settingsRequestSequenceRef.current === sequence) setProviderBudgetRuntimeUnavailable(true);
+    } finally {
+      providerBudgetRuntimeReadActive.current = false;
+      if (settingsMountedRef.current) setProviderBudgetRuntimeLoading(false);
+    }
+  }
 
   useEffect(() => {
     settingsMountedRef.current = true;
@@ -555,18 +588,28 @@ export default function AdminServiceSettingsPage() {
     savingKey: string,
     successMessage: string
   ) {
-    if (operationRef.current || !snapshotCurrent || loading) return;
+    if (operationRef.current || settingsRequestActiveRef.current || !snapshotCurrent || loading) return;
     operationRef.current = true;
     setSaving(savingKey);
     setError('');
     setNotice('');
+    setWriteRecoveryNotice(false);
     try {
-      await writeJson(path, 'PATCH', body);
+      const result = await writeJson(path, 'PATCH', body);
+      assertServiceSetting(result);
       const confirmed = await loadSettings();
       if (confirmed) setNotice(successMessage);
       else setPendingReadMessage(t('admin.service_settings.saved_read_failed', {}, 'Settings saved, but the latest state could not be read. Retry the read; do not save again.'));
     } catch (saveError) {
-      setError(serviceSettingsRequestErrorMessage(saveError, t('admin.service_settings.save_failed', {}, 'Failed to save service settings.'), t));
+      if (adminWriteOutcomeUnknown(saveError)) {
+        preserveDraftOnReadRef.current = true;
+        setSnapshotCurrent(false);
+        setWriteRecoveryNotice(true);
+        setPendingReadMessage(t('admin.service_settings.write_unknown', {}, 'The save result is unknown. Your draft is retained and writes are paused until the latest settings can be read. Recovery only reads; it does not save again.'));
+        await loadSettings();
+      } else {
+        setError(serviceSettingsRequestErrorMessage(saveError, t('admin.service_settings.save_failed', {}, 'Failed to save service settings.'), t));
+      }
     } finally {
       operationRef.current = false;
       setSaving('');
@@ -892,6 +935,12 @@ export default function AdminServiceSettingsPage() {
 
   const activeValidationIssues = (() => {
     const issues: string[] = [];
+    const replacements = activeTab === 'qq' ? [qqForm.client_secret]
+      : activeTab === 'email' ? [emailForm.smtp_password]
+        : activeTab === 'payment' ? [alipayForm.private_key, alipayForm.public_key] : [];
+    if (replacements.some((value) => value.length > 0 && !value.trim())) {
+      issues.push(t('admin.service_settings.validation_secret_blank', {}, 'A replacement credential cannot contain only whitespace. Cancel replacement to keep the saved credential.'));
+    }
     if (activeTab === 'portal') {
       try {
         const parsed = new URL(portalPublicForm.public_base_url.trim());
@@ -1057,6 +1106,7 @@ export default function AdminServiceSettingsPage() {
       setAlipayPublicKeyRevealed(false);
     }
     setError('');
+    setWriteRecoveryNotice(false);
   }, [activeTab]);
 
   function requestTabChange(nextTab: ServiceSettingsTab) {
@@ -1299,6 +1349,11 @@ export default function AdminServiceSettingsPage() {
           {error ? <p className="mt-1">{error}</p> : null}
           <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={loading || Boolean(saving)} onClick={() => void loadSettings()}>{t('common.retry')}</button>
         </div>
+      ) : null}
+      {snapshotCurrent && writeRecoveryNotice ? (
+        <p role="status" data-ui="service-settings-write-recovered" className="border-l-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {t('admin.service_settings.write_recovered', {}, 'Latest settings read. Your draft is retained for comparison. A masked credential cannot confirm which replacement was saved; restore saved values to discard the draft, or review it before explicitly saving again.')}
+        </p>
       ) : null}
       <fieldset className="min-w-0" disabled={loading || Boolean(saving) || !snapshotCurrent}>
       <AdminSettingsWorkbench
@@ -1688,12 +1743,18 @@ export default function AdminServiceSettingsPage() {
                 )}
               </AdminSettingsDisclosure>
 
+              {providerBudgetRuntimeUnavailable ? (
+                <div role="status" data-ui="provider-budget-runtime-unavailable" className="border-l-2 border-amber-300 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+                  <p>{t('admin.service_settings.provider_budget_runtime_unavailable', {}, 'Current budget usage and connection choices are unknown. Saved budget configuration is retained; other settings remain available.')}</p>
+                  <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={providerBudgetRuntimeLoading} onClick={() => void loadProviderBudgetRuntime()}>{t('common.retry')}</button>
+                </div>
+              ) : null}
               <AdminSettingsDisclosure
                 dataUi="provider-budget-runtime-state"
                 title={t('admin.service_settings.provider_budget_runtime_title', {}, '当前周期使用情况')}
                 description={t('admin.service_settings.provider_budget_runtime_desc', {}, '只读显示当前 UTC 日/月的预留金额；修改上限不会清除已经发生的使用。')}
-                statusLabel={providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}
-                statusTone={providerBudgetRuntimeTone(data?.settings.provider_budget.runtime?.status)}
+                statusLabel={providerBudgetRuntimeUnavailable ? t('admin.service_settings.awaiting_read', {}, 'Awaiting confirmation') : providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}
+                statusTone={providerBudgetRuntimeUnavailable ? 'attention' : providerBudgetRuntimeTone(data?.settings.provider_budget.runtime?.status)}
               >
                 {data?.settings.provider_budget.runtime?.missing_provider_ids?.length ? (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -1725,7 +1786,7 @@ export default function AdminServiceSettingsPage() {
                       </tbody>
                     </table>
                   </div>
-                ) : (
+                ) : providerBudgetRuntimeUnavailable ? null : (
                   <p className="text-sm text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_runtime_empty', {}, '当前周期还没有 Provider 预算使用记录。')}</p>
                 )}
               </AdminSettingsDisclosure>

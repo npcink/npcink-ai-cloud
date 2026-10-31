@@ -1114,3 +1114,126 @@ test('browser back confirmation handles Escape above the runtime draft', async (
   await expect(page).toHaveURL(/\/admin$/);
   expect(writes).toHaveLength(0);
 });
+
+for (const failure of ['network', 'timeout', 'malformed'] as const) {
+  test(`runtime recovery reads without replay after ${failure} save and retains draft`, async ({ page }, testInfo) => {
+    await installRuntimeProfilesHarness(page);
+    await page.setViewportSize({ width: failure === 'network' ? 1056 : 1440, height: 900 });
+    let profiles = structuredClone(initialProfiles);
+    let failReads = false;
+    let writes = 0;
+    let reads = 0;
+    await page.route('**/api/admin/runtime-profiles', async (route) => {
+      if (route.request().method() === 'GET') {
+        reads += 1;
+        await route.fulfill({ status: failReads ? 503 : 200, json: failReads
+          ? { ...envelope({}), status: 'error', error_code: 'test.read_unavailable' }
+          : envelope(projection(profiles)) });
+        return;
+      }
+      writes += 1;
+      const submitted = route.request().postDataJSON().profiles;
+      expect(submitted).toHaveLength(1);
+      profiles = profiles.map((profile) => ({ ...profile, ...submitted.find((item: { profile_id: string }) => item.profile_id === profile.profile_id) }));
+      failReads = true;
+      if (failure === 'network') await route.abort('failed');
+      if (failure === 'malformed') await route.fulfill({ json: envelope({ profiles: null }) });
+      // A held response exercises the real API client's 12-second deadline.
+    });
+    await page.goto('/admin/runtime-profiles');
+    await profileRow(page, 'route.short_text').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+    const dialog = page.getByRole('dialog');
+    const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
+    await timeout.fill('40');
+    await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+    const recover = dialog.getByRole('button', { name: /Read latest state|读取最新状态/ });
+    await expect(recover).toBeEnabled({ timeout: 18000 });
+    await expect(timeout).toHaveValue('40');
+    await expect(timeout).toBeDisabled();
+    await recover.click();
+    await expect.poll(() => reads).toBe(3);
+    await expect(recover).toBeEnabled();
+    expect(writes).toBe(1);
+    await page.screenshot({ path: testInfo.outputPath(`runtime-recovery-${failure}.png`) });
+    failReads = false;
+    await recover.click();
+    await expect(timeout).toBeEnabled();
+    await expect(timeout).toHaveValue('40');
+    await expect(dialog).toContainText(/Latest state read|已读取最新状态/);
+    await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes).toBe(1);
+  });
+}
+
+test('policy recovery only reads, retains its draft, and validates each required time', async ({ page }, testInfo) => {
+  await installRuntimeProfilesHarness(page);
+  let writes = 0;
+  let failReads = false;
+  const policy = { enabled: false, status: 'disabled', config: { window_start: '01:00', window_end: '06:00', daily_limit: 100 } };
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      writes += 1;
+      Object.assign(policy.config, route.request().postDataJSON());
+      failReads = true;
+      await route.abort('failed');
+      return;
+    }
+    await route.fulfill({ status: failReads ? 503 : 200, json: failReads
+      ? { ...envelope({}), status: 'error', error_code: 'test.read_unavailable' }
+      : envelope({ settings: { media_recognition_policy: policy, platform_preferences: { config: { timezone: 'Asia/Shanghai' } } } }) });
+  });
+  await page.goto('/admin/runtime-profiles');
+  const section = page.locator('[data-ui="media-recognition-policy"]');
+  await section.locator('summary').click();
+  const start = section.getByLabel(/Window start|开始时间/);
+  const end = section.getByLabel(/Window end|结束时间/);
+  const save = section.getByRole('button', { name: /Save recognition policy|保存识别策略/ });
+  await start.fill('');
+  await expect(save).toBeDisabled();
+  await expect(section).toContainText(/start time in HH:mm|HH:mm 格式的开始时间/);
+  await start.fill('02:00');
+  await end.fill('');
+  await expect(save).toBeDisabled();
+  await expect(section).toContainText(/end time in HH:mm|HH:mm 格式的结束时间/);
+  await end.fill('02:00');
+  await expect(save).toBeDisabled();
+  await end.fill('06:00');
+  await expect(save).toBeEnabled(); // Disabled policy does not require a model.
+  expect(writes).toBe(0);
+  await save.click();
+  const recover = section.getByRole('button', { name: /Read latest state|读取最新状态/ });
+  await expect(recover).toBeEnabled();
+  await expect(start).toBeDisabled();
+  await section.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+  await expect(recover).toBeEnabled();
+  expect(writes).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath('policy-recovery.png'), fullPage: true });
+  failReads = false;
+  await recover.click();
+  await expect(start).toBeEnabled();
+  await expect(start).toHaveValue('02:00');
+  await expect(save).toBeDisabled();
+  expect(writes).toBe(1);
+});
+
+test('runtime explicit rejection retains an editable draft without reconciliation', async ({ page }) => {
+  await installRuntimeProfilesHarness(page);
+  let writes = 0;
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    if (route.request().method() === 'GET') { await route.fallback(); return; }
+    writes += 1;
+    await route.fulfill({ status: 409, json: { ...envelope({}), status: 'error', error_code: 'runtime_profiles.invalid_candidate' } });
+  });
+  await page.goto('/admin/runtime-profiles');
+  await profileRow(page, 'route.short_text').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  const dialog = page.getByRole('dialog');
+  const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
+  await timeout.fill('40');
+  await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(timeout).toBeEnabled();
+  await expect(timeout).toHaveValue('40');
+  await expect(page.locator('[data-ui="runtime-profile-write-recovery"]')).toHaveCount(0);
+  expect(writes).toBe(1);
+});

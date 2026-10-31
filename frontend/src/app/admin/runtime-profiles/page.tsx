@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
+import { adminWriteOutcomeUnknown } from '@/lib/admin-write-outcome';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
 
@@ -577,6 +578,8 @@ export default function RuntimeProfilesPage() {
   const [saving, setSaving] = useState(false);
   const operationRef = useRef(false);
   const profilesReadActive = useRef(false);
+  const profilesRecoveryRef = useRef(false);
+  const [profileRecovery, setProfileRecovery] = useState<'' | 'pending' | 'recovered'>('');
   const [probingInstanceId, setProbingInstanceId] = useState('');
   const [probeError, setProbeError] = useState('');
   const [error, setError] = useState('');
@@ -589,6 +592,8 @@ export default function RuntimeProfilesPage() {
   const [mediaRecognitionLoading, setMediaRecognitionLoading] = useState(true);
   const [mediaRecognitionLoaded, setMediaRecognitionLoaded] = useState(false);
   const policyReadActive = useRef(false);
+  const policyRecoveryRef = useRef(false);
+  const [policyRecovery, setPolicyRecovery] = useState<'' | 'pending' | 'recovered'>('');
   const [mediaRecognitionSaving, setMediaRecognitionSaving] = useState(false);
   const [mediaRecognitionError, setMediaRecognitionError] = useState('');
   const [mediaRecognitionErrorCode, setMediaRecognitionErrorCode] = useState('');
@@ -613,12 +618,16 @@ export default function RuntimeProfilesPage() {
     const copy = copyRef.current;
     setLoading(true);
     setError('');
-    setData(null);
-    setActiveProfileId('');
-    setEditingProfile(null);
+    if (!profilesRecoveryRef.current) {
+      setData(null);
+      setActiveProfileId('');
+      setEditingProfile(null);
+    }
     try {
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles');
       applyData(normalizeRuntimeProfilesData(response.data));
+      if (profilesRecoveryRef.current) setProfileRecovery('recovered');
+      profilesRecoveryRef.current = false;
     } catch (cause) {
       setError(resolveUiErrorMessage(cause, copy('error_load', 'Failed to load hosted runtime profiles.')));
     } finally {
@@ -631,14 +640,14 @@ export default function RuntimeProfilesPage() {
     void loadProfiles();
   }, [loadProfiles]);
 
-  const applyMediaRecognitionPolicy = useCallback((value: unknown, platformPreferences: unknown) => {
+  const applyMediaRecognitionPolicy = useCallback((value: unknown, platformPreferences: unknown, preserveDraft = false) => {
     const next = normalizeMediaRecognitionPolicy(value, platformPreferences);
-    setMediaRecognitionForm(next);
+    if (!preserveDraft) setMediaRecognitionForm(next);
     setMediaRecognitionBaseline(mediaRecognitionPolicySnapshot(next));
   }, [setMediaRecognitionForm]);
 
-  const loadMediaRecognitionPolicy = useCallback(async () => {
-    if (policyReadActive.current || operationRef.current) return;
+  const loadMediaRecognitionPolicy = useCallback(async (options?: { recoverWrite?: boolean; preserveDraft?: boolean }) => {
+    if (policyReadActive.current || (operationRef.current && !options?.recoverWrite)) return;
     policyReadActive.current = true;
     const copy = copyRef.current;
     setMediaRecognitionLoading(true);
@@ -647,11 +656,15 @@ export default function RuntimeProfilesPage() {
       const response = await runtimeProfilesClient.request<ServiceSettingsProjection>('/api/admin/service-settings');
       applyMediaRecognitionPolicy(
         response.data.settings.media_recognition_policy,
-        response.data.settings.platform_preferences
+        response.data.settings.platform_preferences,
+        policyRecoveryRef.current || options?.preserveDraft
       );
       setMediaRecognitionLoaded(true);
+      setMediaRecognitionErrorCode('');
+      if (policyRecoveryRef.current) setPolicyRecovery('recovered');
+      policyRecoveryRef.current = false;
     } catch (cause) {
-      setMediaRecognitionLoaded(false);
+      if (!policyRecoveryRef.current) setMediaRecognitionLoaded(false);
       setMediaRecognitionError(resolveUiErrorMessage(cause, copy('media_recognition_load_error', 'Failed to load the media recognition policy.')));
     } finally {
       policyReadActive.current = false;
@@ -715,8 +728,13 @@ export default function RuntimeProfilesPage() {
     ? instancesById.get(mediaRecognitionProfile.candidate_instance_ids[1] || '')
     : undefined;
   const mediaRecognitionDailyLimit = Number(mediaRecognitionForm.daily_limit);
+  const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
   const mediaRecognitionValidationError = mediaRecognitionForm.enabled && !mediaRecognitionModelReady
     ? copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')
+    : !clockPattern.test(mediaRecognitionForm.window_start)
+      ? copy('media_recognition_start_required', 'Enter a start time in HH:mm format.')
+      : !clockPattern.test(mediaRecognitionForm.window_end)
+        ? copy('media_recognition_end_required', 'Enter an end time in HH:mm format.')
     : mediaRecognitionForm.window_start === mediaRecognitionForm.window_end
       ? copy('media_recognition_window_invalid', 'Choose different start and end times.')
       : !Number.isInteger(mediaRecognitionDailyLimit) || mediaRecognitionDailyLimit < 1 || mediaRecognitionDailyLimit > 10000
@@ -732,7 +750,7 @@ export default function RuntimeProfilesPage() {
   const mediaRecognitionBlocked = savedMediaRecognitionPolicy.enabled && !mediaRecognitionModelReady;
   const mediaRecognitionNeedsVerification = mediaRecognitionBlocked
     || mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR;
-  const mediaRecognitionStatusLabel = !mediaRecognitionLoaded
+  const mediaRecognitionStatusLabel = !mediaRecognitionLoaded || policyRecovery === 'pending'
     ? copy('status_unknown', 'Unknown')
     : mediaRecognitionNeedsVerification
     ? copy('media_recognition_needs_verification', 'Needs verification')
@@ -741,7 +759,7 @@ export default function RuntimeProfilesPage() {
       : savedMediaRecognitionPolicy.enabled
         ? copy('media_recognition_enabled', 'Enabled')
         : copy('media_recognition_disabled', 'Disabled');
-  const mediaRecognitionStatusTone = !mediaRecognitionLoaded
+  const mediaRecognitionStatusTone = !mediaRecognitionLoaded || policyRecovery === 'pending'
     ? 'warning'
     : mediaRecognitionNeedsVerification
     ? 'warning'
@@ -927,7 +945,7 @@ export default function RuntimeProfilesPage() {
   }
 
   async function saveProfiles() {
-    if (!editingProfile || operationRef.current) return;
+    if (!editingProfile || operationRef.current || loading || profileRecovery === 'pending') return;
     if (!profileDirty) { setEditingProfile(null); return; }
     const profile = editingProfile;
     if (profile.candidate_instance_ids.some((id) => {
@@ -947,6 +965,7 @@ export default function RuntimeProfilesPage() {
     operationRef.current = true;
     setSaving(true);
     setProbeError('');
+    setProfileRecovery('');
     try {
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles', {
         method: 'PATCH',
@@ -964,15 +983,22 @@ export default function RuntimeProfilesPage() {
       setEditingProfile(null);
       if (!response.data.receipt) toast.success(copy('message_saved', 'Usage configuration saved.'), t('common.success'));
     } catch (cause) {
-      setProbeError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save usage configuration.')));
+      if (adminWriteOutcomeUnknown(cause)) {
+        profilesRecoveryRef.current = true;
+        setProfileRecovery('pending');
+        await loadProfiles();
+      } else {
+        setProbeError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save usage configuration.')));
+      }
     } finally { operationRef.current = false; setSaving(false); }
   }
 
   async function saveMediaRecognitionPolicy() {
-    if (!mediaRecognitionLoaded || mediaRecognitionLoading || !mediaRecognitionDirty || operationRef.current || mediaRecognitionValidationError) return;
+    if (!mediaRecognitionLoaded || mediaRecognitionLoading || policyRecovery === 'pending' || !mediaRecognitionDirty || operationRef.current || mediaRecognitionValidationError) return;
     operationRef.current = true;
     setMediaRecognitionSaving(true);
     setMediaRecognitionError('');
+    setPolicyRecovery('');
     try {
       const response = await runtimeProfilesClient.request<MediaRecognitionPolicySetting>(
         '/api/admin/service-settings/media-recognition-policy',
@@ -993,6 +1019,12 @@ export default function RuntimeProfilesPage() {
       setMediaRecognitionExpanded(false);
       toast.success(copy('media_recognition_saved', 'Media recognition policy saved.'), t('common.success'));
     } catch (cause) {
+      if (adminWriteOutcomeUnknown(cause)) {
+        policyRecoveryRef.current = true;
+        setPolicyRecovery('pending');
+        await loadMediaRecognitionPolicy({ recoverWrite: true });
+        return;
+      }
       const errorCode = cause instanceof ApiError ? cause.errorCode : '';
       setMediaRecognitionErrorCode(errorCode);
       setMediaRecognitionError(
@@ -1034,7 +1066,7 @@ export default function RuntimeProfilesPage() {
     return `${instance.provider_display_name || instance.provider_id} · ${instance.upstream_model_id}`;
   }
 
-  if (loading) {
+  if (loading && !data) {
     return <LoadingFallback />;
   }
 
@@ -1055,6 +1087,15 @@ export default function RuntimeProfilesPage() {
           { label: copy('summary_configuration_error', 'Configuration error'), value: data ? String(attentionCount) : '—' },
         ]}
       />
+
+      {profileRecovery ? (
+        <div role="status" data-ui="runtime-profile-write-recovery" className="border-l-2 border-amber-300 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <p>{profileRecovery === 'pending'
+            ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.')
+            : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p>
+          {profileRecovery === 'pending' ? <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={loading || saving} onClick={() => void loadProfiles()}>{copy('recover_read', 'Read latest state')}</button> : null}
+        </div>
+      ) : null}
 
       {error ? (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
@@ -1186,7 +1227,7 @@ export default function RuntimeProfilesPage() {
             <button
               type="button"
               className="btn btn-primary btn-sm shrink-0"
-              disabled={!mediaRecognitionLoaded || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId) || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
+              disabled={!mediaRecognitionLoaded || policyRecovery === 'pending' || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId) || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
               onClick={() => void saveMediaRecognitionPolicy()}
             >
               {mediaRecognitionSaving
@@ -1195,6 +1236,10 @@ export default function RuntimeProfilesPage() {
             </button>
           </div>
 
+          {policyRecovery ? <div role="status" data-ui="media-recognition-write-recovery" className="mt-3 text-sm text-amber-800 dark:text-amber-200">
+            <p>{policyRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p>
+            {policyRecovery === 'pending' ? <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving} onClick={() => void loadMediaRecognitionPolicy()}>{copy('recover_read', 'Read latest state')}</button> : null}
+          </div> : null}
           {mediaRecognitionError ? (
             <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-rose-700 dark:text-rose-300">
               <span>{mediaRecognitionError}</span>
@@ -1204,7 +1249,7 @@ export default function RuntimeProfilesPage() {
                     {copy('media_recognition_configure_profile', 'Configure and verify model')}
                   </Link>
                 ) : null}
-                <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => void (mediaRecognitionLoaded ? saveMediaRecognitionPolicy() : loadMediaRecognitionPolicy())}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => void loadMediaRecognitionPolicy({ preserveDraft: mediaRecognitionLoaded })}>
                   {t('common.retry')}
                 </button>
               </div>
@@ -1213,7 +1258,7 @@ export default function RuntimeProfilesPage() {
 
           <div className="mt-3">
           {mediaRecognitionLoaded ? (
-          <fieldset className="min-w-0" disabled={!mediaRecognitionLoaded || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)}>
+          <fieldset className="min-w-0" disabled={!mediaRecognitionLoaded || policyRecovery === 'pending' || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)}>
             <AdminConfigurationTable
               ariaLabel={copy('media_recognition_table_label', 'Site media recognition policy')}
               itemHeading={copy('configuration_item_heading', 'Setting')}
@@ -1351,13 +1396,17 @@ export default function RuntimeProfilesPage() {
         saveLabel={copy('action_save_usage', 'Save usage')}
         savingLabel={probingInstanceId ? copy('verifying', '验证中...') : copy('action_saving', 'Saving...')}
         footerNotice={copy('dialog_save_notice', 'Save applies this usage immediately. Cancel discards changes.')}
+        footerActions={profileRecovery === 'pending' ? (
+          <button type="button" className="btn btn-secondary btn-sm" disabled={loading || saving} onClick={() => void loadProfiles()}>{copy('recover_read', 'Read latest state')}</button>
+        ) : undefined}
         density="compact"
         contentMode="contained"
         onClose={() => { setEditingProfile(null); setProbeError(''); }}
         onSubmit={() => void saveProfiles()}
       >
+        {profileRecovery ? <p role="status" className="shrink-0 text-sm text-amber-800 dark:text-amber-200">{profileRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p> : null}
         {editingProfile ? (
-          <fieldset disabled={saving || Boolean(probingInstanceId)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
+          <fieldset disabled={saving || loading || profileRecovery === 'pending' || Boolean(probingInstanceId)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
             <details className="shrink-0 text-xs text-slate-500"><summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary><p className="mt-1 break-words">{editingProfile.tasks.join(' · ')}</p><p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p></details>
             <div className="shrink-0 max-h-[45vh] overflow-y-auto">
               <AdminConfigurationTable

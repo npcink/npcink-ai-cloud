@@ -256,10 +256,10 @@ describe('service settings response projection', () => {
     expect(projection.emailConfigExpanded).toBe(true);
   });
 
-  it('uses the platform timezone default when the preference is empty', () => {
+  it('uses the platform timezone default when the preference is omitted', () => {
     const projection = projectServiceSettingsForms(
       response({
-        platform_preferences: setting('platform_preferences', { timezone: '' }),
+        platform_preferences: setting('platform_preferences', {}),
       })
     );
 
@@ -278,4 +278,32 @@ it('selects runtime budget keys once for aliased connections', () => {
     {value: 'openai', label: 'Npcink Cloud / Backup (openai)'},
     {value: 'deepseek', label: 'DeepSeek (deepseek)'},
   ]);
+});
+
+it.each([null, {}, 123, '', 'Invalid/Timezone'])('rejects an invalid present timezone %j', (timezone) => {
+  const source = response();
+  source.settings.platform_preferences.config.timezone = timezone;
+  expect(() => projectServiceSettingsForms(source)).toThrow('Platform timezone');
+});
+
+it('keeps supported timezone defaults distinct from malformed values', () => {
+  const source = response();
+  delete source.settings.platform_preferences.config.timezone;
+  expect(projectServiceSettingsForms(source).savedForms.platformPreferences.timezone).toBe('Asia/Shanghai');
+  source.settings.platform_preferences.config.timezone = 'Pacific/Chatham';
+  expect(projectServiceSettingsForms(source).savedForms.platformPreferences.timezone).toBe('Pacific/Chatham');
+});
+
+it.each([
+  { connections: [null] }, { connections: [{ provider_id: {} }] },
+  { items: [null] }, { items: [{ provider_id: 'openai', reserved_cost_usd: 'bad' }] },
+  { missing_provider_ids: [null] }, { warning_ratio: Number.NaN },
+])('isolates malformed budget runtime %j while retaining saved forms', (invalid) => {
+  const source = response();
+  Object.assign(source.settings.provider_budget.runtime!, invalid);
+  const projection = projectServiceSettingsForms(source);
+  expect(projection.providerBudgetRuntimeUnavailable).toBe(true);
+  expect(projection.data.settings.provider_budget.runtime).toBeUndefined();
+  expect(projection.savedForms.providerBudget.providers[0].provider_id).toBe('openai');
+  expect(projection.savedForms.portal.public_base_url).toBe('https://cloud.example.com');
 });

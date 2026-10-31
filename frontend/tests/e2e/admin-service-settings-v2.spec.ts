@@ -801,3 +801,136 @@ test('browser back preserves service settings draft until discard is confirmed',
   await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
   await expect(page).toHaveURL(/\/admin$/);
 });
+
+for (const failure of ['network', 'timeout', 'malformed'] as const) {
+  test(`service recovery reads without replay after ${failure} save and retains draft`, async ({ page }, testInfo) => {
+    const state = await installSettingsRecoveryHarness(page);
+    await page.setViewportSize({ width: failure === 'network' ? 1056 : 1440, height: 900 });
+    await page.route('**/api/admin/service-settings/portal-public', async (route) => {
+      state.writes += 1;
+      state.settings.portal_public.config.public_base_url = route.request().postDataJSON().public_base_url;
+      state.failReads = true;
+      if (failure === 'network') await route.abort('failed');
+      if (failure === 'malformed') await route.fulfill({ json: buildAdminApiEnvelope({}) });
+    });
+    await page.goto('/admin/service-settings');
+    const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
+    await base.fill('https://uncertain.example.test');
+    const save = page.getByRole('button', { name: /Save base URL|保存基础地址/i });
+    await save.click();
+    const retry = page.getByRole('button', { name: /^Retry$|^重试$/i });
+    await expect(retry).toBeEnabled({ timeout: 18000 });
+    await expect(page.getByRole('status').filter({ hasText: /save result is unknown|保存结果待确认/ })).toBeVisible();
+    await expect(base).toHaveValue('https://uncertain.example.test');
+    await expect(base).toBeDisabled();
+    await retry.click();
+    await expect.poll(() => state.reads).toBe(3);
+    expect(state.writes).toBe(1);
+    await page.screenshot({ path: testInfo.outputPath(`service-recovery-${failure}.png`), fullPage: true });
+    state.failReads = false;
+    await retry.click();
+    await expect(base).toBeEnabled();
+    await expect(base).toHaveValue('https://uncertain.example.test');
+    await expect(save).toBeDisabled();
+    await expect(page.locator('[data-ui="service-settings-write-recovered"]')).toBeVisible();
+    expect(state.writes).toBe(1);
+  });
+}
+
+for (const group of ['qq', 'email', 'payment'] as const) {
+  test(`credential whitespace is rejected for ${group} even with a saved secret`, async ({ page }) => {
+    const state = await installSettingsRecoveryHarness(page);
+    state.settings.qq_login.config.client_id = 'fixture-qq';
+    state.settings.qq_login.secrets.client_secret = { configured: true, display: 'configured' };
+    state.settings.portal_email.secrets.smtp_password = { configured: true, display: 'configured' };
+    state.settings.portal_email.config.smtp_username = 'mail@example.test';
+    state.settings.alipay_payment.secrets.private_key = { configured: true, display: 'configured' };
+    state.settings.alipay_payment.secrets.public_key = { configured: true, display: 'configured' };
+    await page.goto(`/admin/service-settings?tab=${group}`);
+    if (group === 'email') await page.getByRole('button', { name: /Edit SMTP|编辑 SMTP/ }).click();
+    const panel = page.getByRole('tabpanel');
+    await panel.getByRole('button', { name: /Replace credential|替换凭据/ }).first().click();
+    const credential = panel.locator('[data-ui="admin-credential-field"] input, [data-ui="admin-credential-field"] textarea').first();
+    await credential.fill('   ');
+    await expect(panel).toContainText(/cannot contain only whitespace|不能只有空白字符/);
+    await expect(panel.locator('button[type="submit"]')).toBeDisabled();
+    expect(state.writes).toBe(0);
+    if (group === 'email') {
+      await credential.fill('fixture-replacement');
+      await page.route('**/api/admin/service-settings/email', async (route) => {
+        state.writes += 1;
+        expect(route.request().postDataJSON().smtp_password).toBe('fixture-replacement');
+        await route.abort('failed');
+      });
+      await panel.locator('button[type="submit"]').click();
+      await expect(page.locator('[data-ui="service-settings-write-recovered"]')).toBeVisible();
+      await expect(credential).toHaveValue('fixture-replacement');
+      expect(state.writes).toBe(1);
+    }
+  });
+}
+
+for (const invalid of ['connections', 'items'] as const) {
+  test(`budget ${invalid} corruption stays local and read recovery retains budget draft`, async ({ page }, testInfo) => {
+    const state = await installSettingsRecoveryHarness(page);
+    const budget = { ...setting('provider_account_spend_budget', 'ready', {
+      warning_ratio: 0.8, conservative_unpriced_cost_usd: 0.05, require_provider_configuration: true,
+      providers: [{ provider_id: 'openai', account_class: 'paid', daily_usd: 1, monthly_usd: 10 }],
+    }), runtime: { status: 'ok', warning_ratio: 0.8, configured_provider_count: 1,
+      missing_provider_ids: [], items: [], connections: [{ provider_id: 'openai', display_name: 'Fixture', enabled: true }],
+      generated_at: '', period_timezone: 'UTC' } };
+    let malformed = true;
+    await page.route('**/api/admin/service-settings', (route) => route.fulfill({ json: buildAdminApiEnvelope({ settings: {
+      ...state.settings, provider_budget: { ...budget, runtime: malformed ? { ...budget.runtime, [invalid]: [null] } : budget.runtime },
+    } }) }));
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto('/admin/service-settings');
+    await expect(page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i })).toBeEnabled();
+    await page.getByRole('tab', { name: /Provider.*budget|Provider.*预算/i }).click();
+    const warning = page.locator('[data-ui="provider-budget-runtime-unavailable"]');
+    await expect(warning).toBeVisible();
+    const threshold = page.getByRole('spinbutton').first();
+    await threshold.fill('75');
+    await page.screenshot({ path: testInfo.outputPath(`budget-${invalid}-unknown.png`), fullPage: true });
+    malformed = false;
+    await warning.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+    await expect(warning).toHaveCount(0);
+    await expect(threshold).toHaveValue('75');
+    expect(errors).toEqual([]);
+    expect(state.writes).toBe(0);
+  });
+}
+
+test('malformed timezone is unknown and recovers through GET without writable defaults', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  let malformed = true;
+  await page.route('**/api/admin/service-settings', (route) => route.fulfill({ json: buildAdminApiEnvelope({ settings: {
+    ...state.settings, platform_preferences: { ...state.settings.platform_preferences,
+      config: { timezone: malformed ? {} : 'Pacific/Chatham' } },
+  } }) }));
+  await page.goto('/admin/service-settings?tab=system');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('form')).toHaveCount(0);
+  malformed = false;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(page.locator('[data-configuration-row="platform-timezone"] select')).toHaveValue('Pacific/Chatham');
+  expect(state.writes).toBe(0);
+});
+
+test('service explicit rejection retains an editable draft without reconciliation', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  await page.route('**/api/admin/service-settings/portal-public', async (route) => {
+    state.writes += 1;
+    await route.fulfill({ status: 400, json: buildAdminApiErrorEnvelope('invalid URL', 'service_settings.public_url_invalid') });
+  });
+  await page.goto('/admin/service-settings');
+  const base = page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i });
+  await base.fill('https://rejected.example.test');
+  await page.getByRole('button', { name: /Save base URL|保存基础地址/i }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(base).toBeEnabled();
+  await expect(base).toHaveValue('https://rejected.example.test');
+  expect(state.reads).toBe(1);
+  expect(state.writes).toBe(1);
+});
