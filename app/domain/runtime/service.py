@@ -41,6 +41,7 @@ from app.core.secrets import (
     decrypt_runtime_execution_input,
     encrypt_runtime_execution_input,
 )
+from app.domain.article_review import contract as article_review
 from app.domain.audio_generation.artifacts import (
     AudioArtifactMaterializationError,
     materialize_audio_generation_candidates,
@@ -346,6 +347,11 @@ class RuntimeService:
             ability_name=request.ability_name, execution_kind=request.execution_kind,
             contract_version=request.contract_version, profile_id=request.profile_id,
         )
+        if (
+            request.ability_name == article_review.ABILITY
+            or request.contract_version == article_review.REQUEST_CONTRACT
+        ):
+            article_review.validate_request(request)
         self.contract_validator.validate_runtime_data_handling_contract(request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
@@ -449,6 +455,11 @@ class RuntimeService:
             contract_version=request.contract_version,
             profile_id=request.profile_id,
         )
+        if (
+            request.ability_name == article_review.ABILITY
+            or request.contract_version == article_review.REQUEST_CONTRACT
+        ):
+            article_review.validate_request(request)
         self.contract_validator.validate_runtime_data_handling_contract(request)
         if request.ability_name == CONTENT_FORMAT_ABILITY:
             return execute_formatting(self, request)
@@ -2933,6 +2944,9 @@ class RuntimeService:
         input_payload: dict[str, Any],
         policy: dict[str, object],
     ) -> dict[str, Any]:
+        if run.ability_name == article_review.ABILITY:
+            setattr(run, article_review.TRANSIENT_SNAPSHOT_ATTR, input_payload)
+            return article_review.build_provider_input(input_payload)
         input_payload = self._translate_reviewed_image_prompt(
             run,
             repository=repository,
@@ -3119,6 +3133,19 @@ class RuntimeService:
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
     ) -> ProviderOutputDecision:
+        if run.ability_name == article_review.ABILITY:
+            try:
+                return ProviderOutputDecision(
+                    accepted=True,
+                    output=article_review.build_result(
+                        provider_output, getattr(run, article_review.TRANSIENT_SNAPSHOT_ATTR, {})
+                    ),
+                )
+            except ProviderOutputFinalizationError as error:
+                return ProviderOutputDecision(
+                    accepted=False, output={},
+                    error_code=error.error_code, error_message=error.message,
+                )
         if not self._is_wordpress_ai_connector_run(run):
             return ProviderOutputDecision(accepted=True, output=provider_output)
         grounded_context = getattr(run, "_wordpress_grounded_context", None)
@@ -6626,6 +6653,12 @@ class RuntimeService:
                 continue
             policy[key] = value
         policy = self.contract_validator.enforce_policy_within_execution_contract(policy)
+        execution_contract = policy.get("execution_contract")
+        if (
+            isinstance(execution_contract, dict)
+            and execution_contract.get("ability_name") == article_review.ABILITY
+        ):
+            article_review.validate_policy(policy)
         policy["commercial_policy"] = {
             "decision_code": str(commercial_decision.get("decision_code") or ""),
             "policy_actions": commercial_decision.get("policy_actions")
