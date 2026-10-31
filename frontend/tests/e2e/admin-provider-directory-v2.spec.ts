@@ -1838,3 +1838,218 @@ test('provider workspace tabs expose panels and support roving keyboard navigati
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });
+
+// Audit M01–M07: writes and provider calls are intercepted; no shared configuration changes.
+async function openReadySupplier(page: Page) {
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  return page.getByRole('dialog');
+}
+
+for (const width of [1440, 1056]) {
+  test(`M01 saved supplier keeps failed readback stale and retries GET only at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1050 });
+    await installProviderDirectoryHarness(page);
+    const rows = structuredClone(connections);
+    let writes = 0;
+    let tests = 0;
+    let unreadable = false;
+    await page.route('**/api/admin/ai-resources', route => route.fulfill(unreadable
+      ? { status: 503, json: buildAdminApiErrorEnvelope('directory temporarily unavailable') }
+      : { json: buildAdminApiEnvelope({ connections: rows }) }));
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      writes += 1;
+      rows[1].display_name = route.request().postDataJSON().display_name;
+      unreadable = true;
+      await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready' }) });
+    });
+    await page.route('**/api/admin/provider-connections/model_ready/test', async route => {
+      tests += 1;
+      await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready', ok: true }) });
+    });
+    await page.goto('/admin/ai-resources');
+    const dialog = await openReadySupplier(page);
+    await dialog.getByLabel(/Display name|显示名称/).fill('Saved readback name');
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+    const stale = page.locator('[data-ui="supplier-directory-stale"]');
+    await expect(dialog).toHaveCount(0);
+    await expect(stale).toContainText(/Supplier saved;.*could not be confirmed|供应商已保存，目录回读尚未确认/);
+    await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/ })).toBeDisabled();
+    await expect(page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ })).toBeDisabled();
+    await expect(page.locator('[data-ui="backoffice-page-header"]').getByText('—', { exact: true })).toHaveCount(3);
+    await page.screenshot({ path: testInfo.outputPath(`supplier-readback-stale-${width}.png`) });
+    unreadable = false;
+    await stale.getByRole('button', { name: /Retry directory read|重试读取目录/ }).click();
+    await expect(stale).toHaveCount(0);
+    await expect(page.locator('[data-connection-id="model_ready"]')).toContainText('Saved readback name');
+    expect({ writes, tests }).toEqual({ writes: 1, tests: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  });
+}
+
+test('M02 saving locks the supplier draft until the submitted result is confirmed', async ({ page }, testInfo) => {
+  await installProviderDirectoryHarness(page);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let submitted: Record<string, unknown> | undefined;
+  const rows = structuredClone(connections);
+  await page.route('**/api/admin/ai-resources', route => route.fulfill({ json: buildAdminApiEnvelope({ connections: rows }) }));
+  await page.route('**/api/admin/provider-connections/model_ready', async route => {
+    submitted = route.request().postDataJSON();
+    await gate;
+    rows[1].display_name = String(submitted!.display_name);
+    await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready' }) });
+  });
+  await page.goto('/admin/ai-resources');
+  const dialog = await openReadySupplier(page);
+  const name = dialog.getByLabel(/Display name|显示名称/);
+  await name.fill('Submitted name');
+  await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+  await expect.poll(() => submitted?.display_name).toBe('Submitted name');
+  await expect(name).toBeDisabled();
+  await expect(dialog.getByRole('checkbox')).toBeDisabled();
+  await expect(dialog.getByRole('tab', { name: /Model management|模型管理/ })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /^Close$|^关闭$/ })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('supplier-save-locked.png') });
+  release();
+  await expect(dialog).toHaveCount(0);
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(page.getByRole('dialog').getByLabel(/Display name|显示名称/)).toHaveValue('Submitted name');
+});
+
+for (const outcome of ['success', 'failure', 'credential-change'] as const) {
+  test(`M03 late catalog ${outcome} stays bound to its originating draft`, async ({ page }) => {
+    await installProviderDirectoryHarness(page);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let requested = false;
+    await page.route('**/api/admin/provider-connections/preview-catalog', async route => {
+      requested = true;
+      await gate;
+      await route.fulfill(outcome === 'failure'
+        ? { status: 503, json: buildAdminApiErrorEnvelope('obsolete catalog failure') }
+        : { json: buildAdminApiEnvelope({ provider_id: 'openai', model_count: 1, model_ids: ['old-supplier-only'], models: [{ model_id: 'old-supplier-only', verified: true }] }) });
+    });
+    await page.goto('/admin/ai-resources');
+    let dialog = await openReadySupplier(page);
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    await expect.poll(() => requested).toBe(true);
+    if (outcome === 'credential-change') {
+      await dialog.getByRole('tab', { name: /Connection settings|连接设置/ }).click();
+      await dialog.getByLabel(/Base URL|基础 URL|基础地址|接口地址/).fill('https://changed.example.test/v1');
+      await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    } else {
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: /Add model supplier|添加模型供应商/ }).click();
+      dialog = page.getByRole('dialog');
+      await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    }
+    const response = page.waitForResponse('**/api/admin/provider-connections/preview-catalog');
+    release();
+    await (await response).finished();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(dialog).not.toContainText('old-supplier-only');
+    await expect(dialog).not.toContainText(/Fetched 1 account|已获取 1 个账户模型/);
+    await expect(dialog.locator('[role="alert"]')).toHaveCount(0);
+    await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeEnabled();
+  });
+}
+
+test('M04 supplier draft survives cancelled back navigation and only discards after confirmation', async ({ page }, testInfo) => {
+  await installProviderDirectoryHarness(page);
+  await page.goto('/admin');
+  await page.locator('a[href="/admin/ai-resources"]').first().click();
+  const dialog = await openReadySupplier(page);
+  await dialog.getByLabel(/Display name|显示名称/).fill('Unsaved supplier draft');
+  await page.evaluate(() => window.history.back());
+  const confirm = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
+  await expect(confirm).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('supplier-leave-confirmation.png') });
+  await page.keyboard.press('Escape');
+  await expect(confirm).toBeHidden();
+  await expect(dialog.getByLabel(/Display name|显示名称/)).toHaveValue('Unsaved supplier draft');
+  await expect(page).toHaveURL(/\/admin\/ai-resources/);
+  await page.evaluate(() => window.history.back());
+  await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.locator('a[href="/admin/ai-resources"]').first().click();
+  await openReadySupplier(page);
+  await expect(dialog.getByLabel(/Display name|显示名称/)).toHaveValue('MQZJ');
+  await dialog.getByLabel(/Display name|显示名称/).fill('Refresh guard draft');
+  let unloadPrompted = false;
+  page.on('dialog', async event => { unloadPrompted = event.type() === 'beforeunload'; await event.dismiss(); });
+  // A dismissed reload has no load event; bound Playwright's navigation wait.
+  await page.reload({ timeout: 3000 }).catch(() => undefined);
+  expect(unloadPrompted).toBe(true);
+  await expect(dialog.getByLabel(/Display name|显示名称/)).toHaveValue('Refresh guard draft');
+});
+
+for (const readback of ['available', 'unavailable'] as const) {
+  test(`M05 failed test refreshes persisted status with ${readback} readback`, async ({ page }, testInfo) => {
+    const rows = structuredClone(connections);
+    let tested = false;
+    await installProviderDirectoryHarness(page, { connections: rows });
+    await page.route('**/api/admin/ai-resources', async route => {
+      if (tested && readback === 'unavailable') {
+        await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('directory unavailable after test') });
+      } else await route.fulfill({ json: buildAdminApiEnvelope({ connections: rows }) });
+    });
+    await page.route('**/api/admin/provider-connections/model_ready/test', async route => {
+      tested = true;
+      Object.assign(rows[1], { status: 'upstream_error', verification_status: 'failed', attention_required: true, attention_reasons: ['last_test_failed'] });
+      await route.fulfill({ json: buildAdminApiErrorEnvelope('provider connection catalog request failed', 'provider_connection.upstream_error', {
+        connection_id: 'model_ready', provider_id: 'openai', kind: 'openai_compatible', ok: false,
+        stage: 'catalog_fetch', error_code: 'provider_connection.upstream_error', message: 'catalog request failed',
+        receipt: { event_kind: 'provider_connection.test', outcome: 'failed', scope_id: 'model_ready' },
+      }) });
+    });
+    await page.goto('/admin/ai-resources');
+    const row = page.locator('[data-connection-id="model_ready"]');
+    await row.getByRole('button', { name: /More actions|更多操作/ }).click();
+    await page.getByRole('menuitem', { name: /^Test$|^测试$/ }).click();
+    await expect(page.locator('[data-feedback-for="model_ready"]').getByRole('alert')).toContainText(/upstream|供应商返回异常/);
+    if (readback === 'available') {
+      await expect(row).toContainText(/Last verification failed|上次验证失败/);
+      await expect(row).not.toContainText(/Account catalog fetched|目录已获取/);
+    } else {
+      await expect(page.locator('[data-ui="supplier-directory-stale"]')).toContainText(/unknown|当前状态未知/);
+      await expect(row.getByRole('button', { name: /^Configure$|^配置$/ })).toBeDisabled();
+    }
+    await page.screenshot({ path: testInfo.outputPath(`supplier-test-failure-${readback}.png`) });
+    await expect(page.getByRole('button', { name: /Latest operation|最近操作/ })).toBeVisible();
+  });
+}
+
+test('M06 saving a disabled supplier skips automatic testing and catalog retries', async ({ page }) => {
+  const rows = structuredClone(connections);
+  await installProviderDirectoryHarness(page, { connections: rows });
+  let tests = 0;
+  await page.route('**/api/admin/provider-connections/model_ready/test', async route => { tests += 1; await route.fallback(); });
+  await page.route('**/api/admin/provider-connections/model_ready', async route => {
+    expect(route.request().postDataJSON().enabled).toBe(false);
+    Object.assign(rows[1], { enabled: false, status: 'disabled' });
+    await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready' }) });
+  });
+  await page.goto('/admin/ai-resources');
+  const dialog = await openReadySupplier(page);
+  await dialog.getByRole('checkbox').uncheck();
+  await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-ui="supplier-next-step"]')).toContainText(/saved and disabled|已保存并停用/);
+  await expect(page.getByRole('button', { name: /Retry catalog sync|重试目录同步/ })).toHaveCount(0);
+  expect(tests).toBe(0);
+});
+
+test('M07 malformed directory fails visibly instead of becoming an empty healthy directory', async ({ page }, testInfo) => {
+  await installProviderDirectoryHarness(page);
+  let malformed = true;
+  await page.route('**/api/admin/ai-resources', route => route.fulfill({ json: buildAdminApiEnvelope({ connections: malformed ? 'invalid' : [] }) }));
+  await page.goto('/admin/ai-resources');
+  await expect(page.locator('main').getByRole('alert')).toContainText(/Failed to load|加载供应商管理失败/);
+  await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/ })).toHaveCount(0);
+  await expect(page.locator('[data-ui="model-supplier-table"]')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('supplier-malformed-directory.png') });
+  malformed = false;
+  await page.getByRole('button', { name: /Retry|重试/ }).click();
+  await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/ })).toBeEnabled();
+});
