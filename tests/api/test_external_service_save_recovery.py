@@ -29,7 +29,9 @@ def _payload(provider_id: str, **updates: Any) -> dict[str, Any]:
     }
 
 
-def test_reader_ui_save_contract_enables_and_disables_without_replacing_primary(tmp_path: Path) -> None:
+def test_reader_ui_save_contract_enables_and_disables_without_replacing_primary(
+    tmp_path: Path,
+) -> None:
     _, client = _build_client(tmp_path, providers={})
     path = "/internal/service/admin/provider-connections"
     primary = client.post(path, headers=build_internal_headers(idempotency_key="reader-primary"),
@@ -40,7 +42,9 @@ def test_reader_ui_save_contract_enables_and_disables_without_replacing_primary(
         runtime_profile_ids=["web-search.reader"], config={"secretless": True},
         metadata={"ui_source": "external_services", "service_role": "enhancer"},
     )
-    response = client.post(path, headers=build_internal_headers(idempotency_key="reader-enable"), json=reader)
+    response = client.post(
+        path, headers=build_internal_headers(idempotency_key="reader-enable"), json=reader,
+    )
     assert response.status_code == 200
     assert response.json()["data"]["configured"] is True
     assert response.json()["data"]["runtime_profile_ids"] == ["web-search.reader"]
@@ -62,13 +66,17 @@ def test_blank_replacement_never_stores_or_disables_the_primary(
 ) -> None:
     _, client = _build_client(tmp_path, providers={})
     path = "/internal/service/admin/provider-connections"
-    assert client.post(path, headers=build_internal_headers(idempotency_key="primary-create"),
-                       json=_payload("tavily", credential="  test-primary-key  ")).status_code == 200
+    assert client.post(
+        path, headers=build_internal_headers(idempotency_key="primary-create"),
+        json=_payload("tavily", credential="  test-primary-key  "),
+    ).status_code == 200
     for index, (method, target, payload) in enumerate([
         (client.post, path, _payload("bocha", **{field: blank})),
         (client.patch, f"{path}/external_tavily", _payload("tavily", **{field: blank})),
     ]):
-        response = method(target, headers=build_internal_headers(idempotency_key=f"blank-{index}"), json=payload)
+        response = method(
+            target, headers=build_internal_headers(idempotency_key=f"blank-{index}"), json=payload,
+        )
         assert response.status_code == 400
         assert response.json()["error_code"] == "provider_connection.credential_blank"
     connections = client.get(path, headers=build_internal_headers()).json()["data"]["connections"]
