@@ -21,6 +21,7 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 
@@ -89,6 +90,17 @@ function connectionFor(option: ServiceOption, connections: ProviderConnection[])
   return connections.find((connection) => connection.kind === option.kind && connection.provider_id === option.id);
 }
 
+function isProviderConnection(value: unknown): value is ProviderConnection {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return ['connection_id', 'provider_id', 'provider_type', 'kind', 'display_name', 'status', 'base_url', 'source_role']
+    .every(key => typeof item[key] === 'string')
+    && Boolean(item.connection_id && item.provider_id && item.kind)
+    && typeof item.enabled === 'boolean' && typeof item.configured === 'boolean'
+    && [item.capability_ids, item.runtime_profile_ids].every(ids => Array.isArray(ids) && ids.every(id => typeof id === 'string'))
+    && [item.config, item.metadata].every(record => record === undefined || (record !== null && typeof record === 'object' && !Array.isArray(record)));
+}
+
 export default function ExternalServicesPage() {
   const { locale, t } = useLocale();
   const zh = locale.startsWith('zh');
@@ -114,6 +126,7 @@ export default function ExternalServicesPage() {
   const [dialogError, setDialogError] = useState('');
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
 
   const loadConnections = useCallback(async () => {
     const revision = ++readRevision.current;
@@ -124,7 +137,7 @@ export default function ExternalServicesPage() {
       const response = await externalServicesClient.request<{ connections?: ProviderConnection[] }>(
         '/api/admin/provider-connections'
       );
-      if (!Array.isArray(response.data.connections)) throw new Error('Invalid connection directory');
+      if (!Array.isArray(response.data?.connections) || !response.data.connections.every(isProviderConnection)) throw new Error('Invalid connection directory');
       if (revision !== readRevision.current) return false;
       setConnections(response.data.connections);
       setHasLoaded(true);
@@ -161,6 +174,9 @@ export default function ExternalServicesPage() {
   const editorDirty = Boolean(
     editingOption
     && (draftEnabled !== Boolean(editingConnection?.enabled) || draftCredential)
+  );
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    editorDirty, setPendingNavigationHref, href => router.push(href),
   );
   const readyCount = SERVICE_OPTIONS.filter((option) => {
     const connection = connectionFor(option, connections);
@@ -205,7 +221,11 @@ export default function ExternalServicesPage() {
   async function saveOption(option: ServiceOption, enabled: boolean, clearCredential = false) {
     if (actionsBlocked || mutationRunning.current) return;
     const existing = connectionFor(option, connections);
-    const credential = clearCredential ? '' : draftCredential || undefined;
+    const credential = clearCredential ? '' : draftCredential.trim() || undefined;
+    if (!clearCredential && draftCredential !== '' && !credential) {
+      setDialogError(copy('admin.external_services.credential_blank', '凭据不能只有空白字符。请填写新凭据，或取消替换以保留原值。', 'Credentials cannot contain only whitespace. Enter a new credential or cancel replacement to keep the saved value.'));
+      return;
+    }
     if (enabled && !option.secretless && !credential && !existing?.configured) {
       setDialogError(copy('admin.external_services.credential_required', '启用前请填写 API Key 或 Token。', 'Enter an API key or token before enabling this service.'));
       return;
@@ -227,7 +247,7 @@ export default function ExternalServicesPage() {
             display_name: option.label,
             enabled: clearCredential ? false : enabled,
             base_url: option.baseUrl,
-            source_role: option.role === 'enhancer' ? 'reader_enhancement' : 'execution_source',
+            source_role: 'execution_source',
             capability_ids: option.capabilityIds,
             runtime_profile_ids: option.runtimeProfileIds,
             config: { ...(existing?.config || {}), secretless: Boolean(option.secretless) },
@@ -600,6 +620,21 @@ export default function ExternalServicesPage() {
         variant="danger"
         onClose={() => setDiscardConfirmationOpen(false)}
         onConfirm={discardEditor}
+      />
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={copy('admin.external_services.discard_title', '放弃未保存的修改？', 'Discard unsaved changes?')}
+        message={copy('admin.external_services.discard_confirm', '当前服务有未保存的修改。放弃后，已保存的服务设置不会受影响。', 'This service has unsaved changes. Discarding them will not affect the saved service settings.')}
+        confirmLabel={copy('admin.external_services.discard_action', '放弃修改', 'Discard changes')}
+        cancelLabel={copy('admin.external_services.keep_editing', '继续编辑', 'Keep editing')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          const href = pendingNavigationHref;
+          discardEditor();
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
       />
     </BackofficePageStack>
   );

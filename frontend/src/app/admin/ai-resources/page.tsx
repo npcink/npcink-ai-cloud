@@ -32,7 +32,7 @@ import {
 } from '@/components/admin/SupplierConnectionTables';
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { Modal } from '@/components/ui/Modal';
+import { ConfirmModal, Modal } from '@/components/ui/Modal';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -102,10 +102,20 @@ import {
 } from '@/features/admin/ai-resources/model-reference-model';
 import { ModelReferencePanel } from '@/features/admin/ai-resources/ModelReferencePanel';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
 
 type SupplierCategory = 'ai' | 'capability';
+
+type SavedSupplier = {
+  connectionId: string;
+  providerId: string;
+  hasModels: boolean;
+  enabled: boolean;
+  awaitingConfirmation: boolean;
+  directoryError: string;
+};
 
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
@@ -382,7 +392,7 @@ function AiResourcesContent() {
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [loadingModelReferences, setLoadingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [syncingModelReferences, setSyncingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [savedSupplier, setSavedSupplier] = useState<{ connectionId: string; providerId: string; hasModels: boolean; directoryError: string } | null>(null);
+  const [savedSupplier, setSavedSupplier] = useState<SavedSupplier | null>(null);
   const [modelReferenceError, setModelReferenceError] = useState('');
   const [modelReferences, setModelReferences] = useState<ModelReferenceEntry[]>([]);
   const [modelReferenceTotal, setModelReferenceTotal] = useState(0);
@@ -411,6 +421,22 @@ function AiResourcesContent() {
   const catalogCredentialMissing = !providerConnectionForm.credential.trim()
     && !(providerFormMode === 'edit' && (savedProviderConnection?.configured || savedProviderConnection?.config?.secretless));
   const providerDraftDirty = hasProviderWorkbenchDraftChanges(providerWorkbench);
+  const saveInFlight = useRef(false);
+  const catalogRequestRevision = useRef(0);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const directoryStale = Boolean(directoryError || savedSupplier?.awaitingConfirmation);
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    providerFormOpen && providerDraftDirty,
+    (href) => { if (!saveInFlight.current) setPendingNavigationHref(href); },
+    (href) => router.push(href),
+  );
+  useEffect(() => () => { catalogRequestRevision.current += 1; }, []);
+
+  function invalidateCatalogRequest() {
+    catalogRequestRevision.current += 1;
+    setFetchingProviderCatalog(IDLE_ASYNC_OPERATION);
+  }
+
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [showUnconfirmedModels, setShowUnconfirmedModels] = useState(false);
@@ -458,15 +484,10 @@ function AiResourcesContent() {
     updateWorkspaceParams({ focus: connectionId });
   }, [updateWorkspaceParams]);
   const loadResources = useCallback(async () => {
-    setError('');
     const result = await refetchResources();
-    if (result.error) {
-      setError(providerErrorMessage(
-        result.error,
-        aiText('error_load', 'Failed to load provider management.')
-      ));
-    }
-  }, [aiText, providerErrorMessage, refetchResources]);
+    setSavedSupplier((current) => current ? { ...current, awaitingConfirmation: Boolean(result.error) } : current);
+    return !result.error;
+  }, [refetchResources]);
 
   const [referenceNow, setReferenceNow] = useState(() => Date.now());
   useEffect(() => {
@@ -573,6 +594,7 @@ function AiResourcesContent() {
   }, [searchParams]);
 
   async function saveProviderConnection() {
+    if (saveInFlight.current || directoryStale) return;
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = uniqueList(splitList(providerConnectionForm.modelIds));
@@ -594,6 +616,9 @@ function AiResourcesContent() {
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
     const docsUrl = externalUrlValue(referenceLinks.docsUrl);
+    saveInFlight.current = true;
+    invalidateCatalogRequest();
+    setPendingNavigationHref('');
     setSavingConnection(startAsyncOperation(normalizedConnectionId));
     setError('');
     setMessage('');
@@ -631,35 +656,47 @@ function AiResourcesContent() {
       setLastReceipt(response.data.receipt || null);
       let testFailed = false;
       let testErrorMessage = '';
-      setMessage(aiText('message_connection_saved_testing', 'Provider connection saved. Running connection test now.'));
-      try {
-        await runProviderConnectionTest(savedConnectionId, { announce: false, reload: false, recordResult: false });
-      } catch (testError) {
-        testFailed = true;
-        setMessage('');
-        testErrorMessage = aiText(
-          'message_connection_saved_test_failed',
-          'Provider connection saved, but the connection test failed: {{message}}',
-          {
-            message: providerErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
-          }
-        );
+      if (providerConnectionForm.enabled) {
+        setMessage(aiText('message_connection_saved_testing', 'Provider connection saved. Running connection test now.'));
+        try {
+          await runProviderConnectionTest(savedConnectionId, { announce: false, reload: false, recordResult: false });
+        } catch (testError) {
+          testFailed = true;
+          setMessage('');
+          testErrorMessage = aiText(
+            'message_connection_saved_test_failed',
+            'Provider connection saved, but the connection test failed: {{message}}',
+            {
+              message: providerErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
+            }
+          );
+        }
       }
-      await loadResources();
+      const confirmed = await loadResources();
       dispatchProviderWorkbench({ type: 'reset_after_save' });
-      setSavedSupplier({ connectionId: savedConnectionId, providerId: normalizedProviderId, hasModels: modelIds.length > 0, directoryError: testFailed ? testErrorMessage : '' });
+      setSavedSupplier({
+        connectionId: savedConnectionId,
+        providerId: normalizedProviderId,
+        hasModels: modelIds.length > 0,
+        enabled: providerConnectionForm.enabled,
+        awaitingConfirmation: !confirmed,
+        directoryError: testFailed ? testErrorMessage : '',
+      });
       setError('');
       setMessage('');
-      toast.success(aiText('message_supplier_saved', 'Supplier saved.'), t('common.success'));
+      if (confirmed) toast.success(aiText('message_supplier_saved', 'Supplier saved.'), t('common.success'));
       setSavingConnection(succeedAsyncOperation(normalizedConnectionId));
     } catch (saveError) {
       const saveMessage = providerErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.'));
       setSavingConnection(failAsyncOperation(saveMessage, normalizedConnectionId));
       setError(saveMessage);
+    } finally {
+      saveInFlight.current = false;
     }
   }
 
   async function requestProviderConnectionDelete(connection: Connection) {
+    if (directoryStale || saveInFlight.current) return;
     if (connection.managed_by !== 'cloud_provider_connections') return;
     const requestRevision = deletePreflightRequestRevision.current + 1;
     deletePreflightRequestRevision.current = requestRevision;
@@ -712,6 +749,7 @@ function AiResourcesContent() {
   }
 
   async function deleteProviderConnection(connection: Connection) {
+    if (directoryStale || saveInFlight.current) return;
     if (connection.managed_by !== 'cloud_provider_connections') return;
     if (
       !deletePreflight ||
@@ -784,6 +822,7 @@ function AiResourcesContent() {
   }
 
   async function approveDetectedImageHost(connection: Connection, probeId = '') {
+    if (directoryStale || saveInFlight.current) return;
     const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
     const evidenceProbeId = probeId || String(connection.image_delivery_repair?.probe_id || '');
     if (!evidenceRunId && !evidenceProbeId) return;
@@ -912,6 +951,7 @@ function AiResourcesContent() {
   }
 
   async function fetchProviderCatalogPreview() {
+    if (saveInFlight.current || directoryStale) return;
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
@@ -937,6 +977,7 @@ function AiResourcesContent() {
       setError(aiText('error_fetch_catalog_credential_required', 'Enter an API key before fetching upstream models. Existing saved credentials are not returned to the browser.'));
       return;
     }
+    const requestRevision = ++catalogRequestRevision.current;
     setFetchingProviderCatalog(startAsyncOperation());
     dispatchProviderWorkbench({ type: 'set_catalog_preview', preview: null });
     setError('');
@@ -966,6 +1007,7 @@ function AiResourcesContent() {
           credential: providerConnectionForm.credential,
         },
       });
+      if (requestRevision !== catalogRequestRevision.current) return;
       const preview = response.data;
       dispatchProviderWorkbench({ type: 'set_catalog_preview', preview });
       const verifiedModelIds = (preview.models || [])
@@ -987,6 +1029,7 @@ function AiResourcesContent() {
       setFetchingProviderCatalog(succeedAsyncOperation());
       void ensureFreshModelReferences(referenceProviderId);
     } catch (catalogError) {
+      if (requestRevision !== catalogRequestRevision.current) return;
       const catalogMessage = providerErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
       setFetchingProviderCatalog(failAsyncOperation(catalogMessage));
       setError(catalogMessage);
@@ -1028,6 +1071,7 @@ function AiResourcesContent() {
     connectionId: string,
     options: { announce?: boolean; reload?: boolean; recordResult?: boolean } = {}
   ) {
+    if (directoryStale || (saveInFlight.current && options.reload !== false)) return;
     const announce = options.announce !== false;
     const reload = options.reload !== false;
     const recordResult = options.recordResult !== false;
@@ -1063,6 +1107,8 @@ function AiResourcesContent() {
       setTestingConnection(succeedAsyncOperation(connectionId));
       return result;
     } catch (testError) {
+      // A failed test can still persist verification state on the server.
+      if (reload) await loadResources();
       const result = providerConnectionTestResultFromError(testError);
       if (recordResult && result?.connection_id) {
         setConnectionTestResults((current) => ({
@@ -1085,7 +1131,7 @@ function AiResourcesContent() {
   }
 
   async function retrySavedSupplierCatalog() {
-    if (!savedSupplier) return;
+    if (!savedSupplier || directoryStale || !savedSupplier.enabled) return;
     const connectionId = savedSupplier.connectionId;
     try {
       await runProviderConnectionTest(connectionId, { announce: false, recordResult: false });
@@ -1099,6 +1145,8 @@ function AiResourcesContent() {
   }
 
   function openNewProviderConnection() {
+    if (directoryStale || saveInFlight.current) return;
+    invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
     setImageDeliveryProbeResult(null);
     setProbingImageDelivery(IDLE_ASYNC_OPERATION);
@@ -1116,6 +1164,8 @@ function AiResourcesContent() {
   }
 
   function editProviderConnection(connection: Connection) {
+    if (directoryStale || saveInFlight.current) return;
+    invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
     setImageDeliveryProbeResult(null);
     setProbingImageDelivery(IDLE_ASYNC_OPERATION);
@@ -1134,6 +1184,8 @@ function AiResourcesContent() {
   }
 
   function closeProviderForm() {
+    if (saveInFlight.current) return;
+    invalidateCatalogRequest();
     setImageDeliveryProbeResult(null);
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
@@ -1142,6 +1194,8 @@ function AiResourcesContent() {
   }
 
   function updateProviderConnectionForm(patch: Partial<ProviderConnectionForm>) {
+    if (saveInFlight.current) return;
+    invalidateCatalogRequest();
     dispatchProviderWorkbench({
       type: 'patch_form',
       patch,
@@ -1149,12 +1203,13 @@ function AiResourcesContent() {
         ? defaultReferenceProviderId(patch.providerId, providerConnectionForm.providerPreset)
         : undefined,
       invalidateCatalog: Boolean(
-        patch.kind || patch.baseUrl || patch.credential || patch.providerId
+        ['kind', 'baseUrl', 'credential', 'providerId'].some((key) => Object.hasOwn(patch, key))
       ),
     });
   }
 
   function setProviderModelIds(modelIds: string[]) {
+    if (saveInFlight.current) return;
     const inferredReferenceProviderId = inferReferenceProviderFromModelIds(modelIds, modelReferenceProviderId);
     dispatchProviderWorkbench({
       type: 'set_model_ids',
@@ -1170,6 +1225,8 @@ function AiResourcesContent() {
   }
 
   function applyProviderPreset(presetId: string) {
+    if (saveInFlight.current) return;
+    invalidateCatalogRequest();
     const preset = providerPresetById(presetId);
     const displayName =
       providerConnectionForm.displayName && providerConnectionForm.providerPreset === presetId
@@ -1561,25 +1618,25 @@ function AiResourcesContent() {
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         primaryAction={(
-          <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
+          <button type="button" className="btn btn-primary justify-center" disabled={directoryStale || isSavingConnection} onClick={openNewProviderConnection}>
             {aiText('action_add_model_supplier', 'Add model supplier')}
           </button>
         )}
         summaryItems={[
           {
             label: aiText('overview_configured_suppliers', 'Configured'),
-            value: readyModelSupplierCount,
+            value: directoryStale ? '—' : readyModelSupplierCount,
           },
           {
             label: aiText('overview_attention_suppliers', 'Needs attention'),
-            value: attentionSupplierCount,
-            toneClassName: attentionSupplierCount > 0
+            value: directoryStale ? '—' : attentionSupplierCount,
+            toneClassName: directoryStale ? 'text-slate-500 dark:text-slate-400' : attentionSupplierCount > 0
               ? 'text-amber-600 dark:text-amber-400'
               : 'text-emerald-600 dark:text-emerald-400',
           },
           {
             label: aiText('overview_supplier_total', 'Total suppliers'),
-            value: modelSupplierCount,
+            value: directoryStale ? '—' : modelSupplierCount,
           },
         ]}
         summaryAside={(
@@ -1592,12 +1649,21 @@ function AiResourcesContent() {
         )}
       />
 
-      {savedSupplier ? <section data-ui="supplier-next-step" className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 px-4 py-3 dark:border-slate-800">
-        <div className="min-w-0 text-sm">{savedSupplier.directoryError ? <p role="alert">{savedSupplier.directoryError}</p> : <p>{savedSupplier.hasModels ? aiText('next_configure_usage', 'Choose where to use the enabled models.') : aiText('next_enable_models', 'Enable an account model before configuring usage.')}</p>}</div>
-        <div className="flex shrink-0 gap-2">
-          {savedSupplier.directoryError ? <button type="button" className="btn btn-secondary btn-sm" disabled={asyncOperationRunning(testingConnection, savedSupplier.connectionId)} onClick={() => void retrySavedSupplierCatalog()}>{aiText('action_retry_catalog', 'Retry catalog sync')}</button> : null}
-          {savedSupplier.hasModels ? <Link className="btn btn-primary btn-sm" href={`/admin/runtime-profiles?provider=${encodeURIComponent(savedSupplier.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link> : <button type="button" className="btn btn-primary btn-sm" onClick={() => { const connection = data.connections.find((item) => item.connection_id === savedSupplier.connectionId); if (connection) { editProviderConnection(connection); setProviderWorkbenchSection('models'); } }}>{aiText('action_enable_models', 'Enable models first')}</button>}
-        </div>
+      {directoryStale ? <div data-ui="supplier-directory-stale">
+        <BackofficeDiagnosticNotice
+          message={savedSupplier?.awaitingConfirmation
+            ? aiText('saved_pending_confirmation', 'Supplier saved; the directory could not be confirmed. The list below is stale. Retry the directory read before making more changes.')
+            : aiText('directory_stale', 'The directory could not be refreshed. The list below is stale; current status is unknown. Retry before making changes.')}
+          retryLabel={directoryQuery.isFetching ? t('common.loading') : aiText('action_retry_directory', 'Retry directory read')}
+          onRetry={directoryQuery.isFetching ? undefined : () => void loadResources()}
+        />
+      </div> : null}
+      {savedSupplier && !savedSupplier.awaitingConfirmation ? <section data-ui="supplier-next-step" className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 px-4 py-3 dark:border-slate-800">
+        <div className="min-w-0 text-sm">{savedSupplier.directoryError ? <p role="alert">{savedSupplier.directoryError}</p> : <p>{!savedSupplier.enabled ? aiText('supplier_saved_disabled', 'Supplier saved and disabled. Automatic catalog testing was skipped.') : savedSupplier.hasModels ? aiText('next_configure_usage', 'Choose where to use the enabled models.') : aiText('next_enable_models', 'Enable an account model before configuring usage.')}</p>}</div>
+        {savedSupplier.enabled ? <div className="flex shrink-0 gap-2">
+          {savedSupplier.directoryError ? <button type="button" className="btn btn-secondary btn-sm" disabled={directoryStale || asyncOperationRunning(testingConnection, savedSupplier.connectionId)} onClick={() => void retrySavedSupplierCatalog()}>{aiText('action_retry_catalog', 'Retry catalog sync')}</button> : null}
+          {!directoryStale && (savedSupplier.hasModels ? <Link className="btn btn-primary btn-sm" href={`/admin/runtime-profiles?provider=${encodeURIComponent(savedSupplier.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link> : <button type="button" className="btn btn-primary btn-sm" onClick={() => { const connection = data.connections.find((item) => item.connection_id === savedSupplier.connectionId); if (connection) { editProviderConnection(connection); setProviderWorkbenchSection('models'); } }}>{aiText('action_enable_models', 'Enable models first')}</button>)}
+        </div> : null}
       </section> : null}
 
         <ProviderConnectionDialog
@@ -1605,7 +1671,7 @@ function AiResourcesContent() {
           title={providerDialogTitle}
           titleId="provider-channel-dialog-title"
           message={message}
-          error={error}
+          error={directoryStale ? aiText('directory_stale', 'The directory could not be refreshed. The list below is stale; current status is unknown. Retry before making changes.') : error}
           saving={isSavingConnection}
           closeLabel={aiText('action_close_dialog', 'Close')}
           cancelLabel={aiText('action_cancel', 'Cancel')}
@@ -1613,7 +1679,7 @@ function AiResourcesContent() {
           savingLabel={aiText('saving', 'Saving...')}
           headerAccessory={<AdminHelpTip label={aiText('save_help', 'About saving')}>{aiText('save_supplier_notice', 'Saves the connection and enabled models, then fetches the account catalog again to update runtime models. Capability verification is separate.')}</AdminHelpTip>}
           footerNotice={providerWorkbenchSection === 'references' ? aiText('reference_panel_note', 'Reference information is read-only; it does not change enabled models or routing.') : aiText('save_supplier_short', 'Save connection and enabled models')}
-          footerActions={providerWorkbenchSection === 'references' ? <div key="reference-actions" className="flex flex-wrap gap-2">
+          footerActions={directoryStale ? <button type="button" className="btn btn-secondary" onClick={closeProviderForm}>{aiText('action_close_dialog', 'Close')}</button> : providerWorkbenchSection === 'references' ? <div key="reference-actions" className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary" disabled={isSavingConnection} onClick={closeProviderForm}>{aiText('action_cancel', 'Cancel')}</button>
             <button type="button" className="btn btn-secondary" onClick={(event) => { event.preventDefault(); setProviderWorkbenchSection('models'); }}>{aiText('action_manage_models', 'Manage models')}</button>
           </div> : undefined}
@@ -1622,6 +1688,7 @@ function AiResourcesContent() {
           onClose={closeProviderForm}
           onSubmit={() => { if (providerWorkbenchSection !== 'references') void saveProviderConnection(); }}
         >
+          <fieldset disabled={isSavingConnection || directoryStale} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col gap-2 border-0 p-0">
                 {disabledModelUsages.length ? <div role="alert" className="mb-2 text-sm text-amber-800 dark:text-amber-200">{aiText('model_disable_impact', 'Saving will make models unavailable to: {{profiles}}. Update these usages to avoid interruption.', { profiles: [...new Set(disabledModelUsages.map((usage) => usageName(usage.profile_id)))].join(', ') })} <Link className="font-semibold underline" href={`/admin/runtime-profiles?provider=${encodeURIComponent(providerConnectionForm.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link></div> : null}
                 <div
                   role="tablist"
@@ -1767,9 +1834,10 @@ function AiResourcesContent() {
                           type: 'set_credential_edit_open',
                           open: true,
                         })}
-                        onCancelReplacement={() => dispatchProviderWorkbench({
-                          type: 'cancel_credential_edit',
-                        })}
+                        onCancelReplacement={() => {
+                          invalidateCatalogRequest();
+                          dispatchProviderWorkbench({ type: 'cancel_credential_edit' });
+                        }}
                         density="compact"
                         hideLabel
                       />
@@ -2378,7 +2446,9 @@ function AiResourcesContent() {
                   </details>
                 ) : null}
                 </div>
+          </fieldset>
         </ProviderConnectionDialog>
+        <fieldset disabled={directoryStale || isSavingConnection} className="m-0 min-w-0 border-0 p-0">
         <ModelSupplierTable
           connections={aiSupplierConnections}
           toolbar={(
@@ -2418,6 +2488,7 @@ function AiResourcesContent() {
           }}
           translate={aiText}
         />
+        </fieldset>
 
         {data.providerModelHealth ? (
           <ProviderModelHealthPanel
@@ -2425,6 +2496,24 @@ function AiResourcesContent() {
             translate={aiText}
           />
         ) : null}
+
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={aiText('unsaved_leave_title', 'Leave with unsaved changes?')}
+        message={aiText('unsaved_leave_desc', 'Leaving this page will discard the supplier draft. Saved connections are not affected.')}
+        confirmLabel={aiText('discard_and_leave', 'Discard and leave')}
+        cancelLabel={t('common.cancel')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          if (saveInFlight.current) return;
+          const href = pendingNavigationHref;
+          invalidateCatalogRequest();
+          dispatchProviderWorkbench({ type: 'reset_after_save' });
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
+      />
 
       <Modal
         isOpen={receiptDetailsOpen && Boolean(lastReceipt)}

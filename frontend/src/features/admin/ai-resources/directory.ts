@@ -116,10 +116,11 @@ export function normalizeAiResourcesDirectory(
     raw && typeof raw === 'object' && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
+  if (!Array.isArray(value.connections)) {
+    throw new Error('Failed to load provider directory: invalid connections collection.');
+  }
   return {
-    connections: Array.isArray(value.connections)
-      ? (value.connections as SupplierConnection[])
-      : [],
+    connections: value.connections as SupplierConnection[],
     providerModelHealth: normalizeProviderModelHealth(
       value.provider_model_health
     ),

@@ -18,15 +18,14 @@ describe('AI resources directory query identity', () => {
 });
 
 describe('AI resources directory request lifecycle', () => {
-  it('normalizes a missing connection collection to an empty directory', () => {
-    expect(normalizeAiResourcesDirectory(null)).toEqual({
-      connections: [],
-      providerModelHealth: null,
-    });
-    expect(normalizeAiResourcesDirectory({ connections: 'invalid' })).toEqual({
-      connections: [],
-      providerModelHealth: null,
-    });
+  it.each([null, {}, { connections: 'invalid' }, { connections: null }])(
+    'rejects an unknown directory instead of reporting zero healthy connections: %s', (raw) => {
+      expect(() => normalizeAiResourcesDirectory(raw)).toThrow('invalid connections collection');
+    }
+  );
+
+  it('accepts an explicitly empty directory without optional health evidence', () => {
+    expect(normalizeAiResourcesDirectory({ connections: [] })).toEqual({ connections: [], providerModelHealth: null });
   });
 
   it('passes query cancellation through and preserves Cloud-owned connection data', async () => {
@@ -168,6 +167,7 @@ describe('AI resources provider model health normalization', () => {
 
   it('keeps health evidence attached to the normalized directory', () => {
     const directory = normalizeAiResourcesDirectory({
+      connections: [],
       provider_model_health: healthPayload,
     });
     expect(directory.connections).toEqual([]);
