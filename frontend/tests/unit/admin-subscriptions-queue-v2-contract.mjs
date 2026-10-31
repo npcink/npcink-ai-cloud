@@ -21,7 +21,21 @@ assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\
 
 assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
-assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the Quiet search toolbar');
+assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*sort_label[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before/, 'independent named risk and lifecycle groups stay with the Quiet search toolbar');
+assert.match(source, /primaryRiskFilters[\s\S]*needs_action[\s\S]*critical[\s\S]*warning[\s\S]*all[\s\S]*moreRiskFilters[\s\S]*monitor[\s\S]*stable/, 'risk pills keep primary action states visible and fold monitor/stable behind more');
+assert.match(source, /subscription-more-risk-filters[\s\S]*more_risk_filters[\s\S]*subscription-more-status-filters[\s\S]*more_status_filters/, 'risk and lifecycle groups expose compact more-state disclosures');
+assert.match(source, /subscription-more-filters[\s\S]*more_filters[\s\S]*plan_filter_placeholder[\s\S]*expires_before/, 'plan id and expiry drafts live under a more-filters disclosure');
+assert.match(source, /subscription-row-metrics[\s\S]*common\.sites[\s\S]*snapshot_status_metric[\s\S]*days_until_end/, 'queue rows keep a compact inline metrics line instead of stretched label/value rows');
+assert.doesNotMatch(
+  source,
+  /data-ui="subscription-row-metrics"[\s\S]{0,500}?justify-between/,
+  'compact row metrics must not stretch labels away from values'
+);
+assert.doesNotMatch(
+  source,
+  /data-ui="subscription-queue-item"[\s\S]{0,1800}?<dl className="space-y-1\.5[\s\S]*?justify-between/,
+  'queue rows must not keep the old stretched Sites/Usage/Billing definition list'
+);
 assert.match(source, /const PAGE_SIZE = 10;/, 'subscription pages have a fixed ten-row limit');
 assert.match(source, /BackofficeFilterPill[\s\S]*aria-pressed=\{appliedRisk === risk\}[\s\S]*aria-pressed=\{!appliedStatusGroup && appliedStatus === status\}/, 'each named filter group preserves its independent selected state');
 assert.match(source, /setLoadedRequestKey\(requestKey\)[\s\S]*new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'displayed range belongs to the last successful request');
