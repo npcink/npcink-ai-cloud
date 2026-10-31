@@ -21,6 +21,40 @@ This documentation decision does not mutate data or runtime configuration and
 does not resolve the separately recorded image-understanding timeouts, other
 product acceptance or production release requirements.
 
+## Reconciled development results and acceptance ownership — 2026-10-31
+
+The follow-up documentation at Cloud candidate
+`7e2229a8553d1bc2e79e5a0557ab420bfeb7005e` records successful development
+results after the historical 30-second failures below. See the pinned
+[vision investigation receipt](https://github.com/npcink/npcink-ai-cloud/blob/7e2229a8553d1bc2e79e5a0557ab420bfeb7005e/docs/history/engineering/2026/vision-timeout-investigation-2026-10-30.md).
+The operator confirmed these results are already handled by the other session;
+this reconciliation reads its records without repeating model calls or changing
+that session's source/configuration.
+
+- Preview single/pair and Chinese OCR samples passed using the development
+  `npcink-vision:qwen35-4b-instruct-16k-v1` route.
+- With the explicitly enabled development/loopback-only 180-second image
+  budget, the original 2560×1440 single and 2560×1736 + 2560×1440 pair passed in
+  32.390s and 63.303s (32.843s/65.963s including uploads). Runs:
+  `run_dfcaddb383994560940b9dddab61cf87` and
+  `run_efaad04f49da4affab014b2760f573b8`.
+- These are bounded local/M4 development samples from an unmerged candidate,
+  not clean-master promotion, arbitrary-image quality or production acceptance.
+  The recorded proxy override is temporary on container recreation; its source
+  integration remains with that candidate. Production/default budgets are
+  unchanged. Do not reopen local model tuning as a development blocker.
+- The operator's prior final Admin visual acceptance is recorded separately in
+  the [Admin ledger](admin-information-hierarchy-implementation-ledger.md#操作者完成后台最终视觉接受--2026-10-30);
+  it does not automatically accept subsequent changes.
+- The operator will verify real refunds and email after a separately authorized
+  production deployment. Keep them pending for that event; no AI-initiated
+  transaction, refund or test email is scheduled here.
+- Release verification using packaged container images without source/workspace
+  overlays belongs to the next explicitly arranged release, following the existing
+  [exact-bundle contract](p5-b5-exact-release-bundle-v1.md) and
+  [release checklist](../deploy/RELEASE_CHECKLIST.md). Routine M4 source sync
+  does not satisfy it. This decision does not authorize build/deploy or promotion.
+
 ## Product and ownership
 
 The loop is source input → sanitized indexing → site-scoped retrieval →
