@@ -1,7 +1,8 @@
 # Article language review runtime v1
 
 Status: development candidate, 2026-10-30. Cloud backend only; not merged or
-production-deployed. Addon facade and Toolbox editor integration are pending.
+production-deployed. Addon facade and Toolbox editor integration now exist on separate candidates;
+this document does not certify their installation or signed live acceptance.
 The broader consumer draft in Toolbox includes future logic/content-risk checks;
 this implementation accepts **only Chinese language checks**.
 
@@ -14,7 +15,7 @@ automatically corrects content, saves/publishes, or blocks publication.
 
 Cloud owns bounded hosted execution and verified result projection. The runtime
 identity below is not a WordPress ability registration or a second ability
-registry. Addon will own the fixed transport facade; Toolbox will own collection,
+registry. Addon owns the fixed transport facade; Toolbox owns collection,
 editor snapshot freshness, location navigation and display. Authors make all
 content corrections themselves. No frontend behavior is delivered by this slice.
 
@@ -164,9 +165,10 @@ Focused source tests: `tests/domain/test_article_review_contract.py`,
 transport with a fake provider, verified/partial/failed output, private failure
 metadata, rejection before provider invocation and no-store idempotent replay.
 M4 candidate/accepted, merged, live-model interface, frontend and production
-states must be recorded separately. Next slice: fixed Addon facade, Toolbox
-read-only report integration and bounded synthetic end-to-end verification;
-only then expand to logic and contextual content-risk evaluation.
+states must be recorded separately. The Addon facade and Toolbox read-only
+report integration are now separate candidates. Next acceptance: exact-SHA CI,
+real signed Addon transport and bounded synthetic Chinese model checks.
+Logic and contextual content-risk evaluation remain disabled and deferred.
 
 ### Candidate checkpoint — 2026-10-30
 
@@ -178,7 +180,7 @@ only then expand to logic and contextual content-risk evaluation.
   `codex/article-review-language`; the candidate runtime and frontend were
   healthy. Focused M4 tests passed: 54 tests, one unrelated Starlette/httpx
   deprecation warning. The candidate remains unmerged and non-production.
-- No production operation, merge, Addon facade, editor connection, or new-task
+- At this historical checkpoint, no production operation, merge, Addon facade, editor connection, or new-task
   live-provider smoke has occurred. Preserve the clean local candidate until
   the runtime lane is available; then sync this revision and run the three
   focused test files above. The earlier live-model screen cannot substitute
