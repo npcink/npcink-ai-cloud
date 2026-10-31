@@ -33,7 +33,7 @@ anchor generation and anchor-eligibility v2 are unchanged. It requires:
 No qualifying document means a successful empty result, never a weak-result
 backfill. `status=ready` and retrieval readiness retain their real meanings;
 provider/HTTP/schema failures still fail and must not become abstentions.
-`result_grouping.recommendation_quality` adds `policy_version=reading_task_abstention.v2`,
+`result_grouping.recommendation_quality` adds `policy_version=reading_task_abstention.v3`,
 `below_evidence_floor`, `insufficient_task_evidence`, aggregate
 `reserved_test_documents_suppressed`, boolean `abstained` and a
 bounded `reason` (`insufficient_recommendation_evidence` or
@@ -54,6 +54,29 @@ useful alternative. Calibration on BGE-M3/Zilliz and actual adoption remain
 unmeasured until separately authorized; M4 Qwen/Postgres evidence is not a
 production quality claim. Revert the focused PR to restore the old runtime
 policy; retained documents, vectors and WordPress content need no rollback.
+
+## Procedural wording and option frameworks (2026-10-31)
+
+Policy v3 corrects a demonstrated v2 task-gate bypass. ACF's description used
+“只需点击”; the promotion branch treated this as a consumer offer before the
+custom-field task guard. An unrelated AI content plugin also said “只需三个步骤”
+and shared generic generation wording, so it passed as functional evidence.
+
+The ambiguous `只需` / `仅需` prefixes now need an explicit monetary amount,
+such as `只需1元` or `仅需 $1`. Setup instructions like “只需点击” / “仅需几步”
+continue through ordinary task qualification. Explicit promotion phrases and
+the requirement for both offer action and subject remain. Custom-field task
+evidence also accepts concrete option panels/pages, metaboxes and option
+frameworks, preserving useful implementation alternatives without exact
+product identity. Generic platform overlap remains insufficient.
+
+The ranking families remain `internal_links.v2` / `related_content.v2`;
+`reading_task_abstention.v3` identifies this qualification policy. Scorer,
+weights, score floor, embeddings, index and insertion safety are unchanged.
+Saved-response replay checks the twelve existing development pairs, useful
+field/framework/ebook alternatives and empty controls. It cannot measure
+unreturned retrieval candidates or establish global semantic accuracy.
+Runtime adoption requires separately named M4 source/acceptance evidence.
 
 
 ## Source-anchor correction evidence (2026-10-27)

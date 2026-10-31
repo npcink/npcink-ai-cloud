@@ -6,7 +6,7 @@ from app.domain.site_knowledge.anchor_context import is_reserved_smoke_document
 from app.domain.site_knowledge.recommendation_task_match import reading_task_evidence
 from app.domain.site_knowledge.text_evidence import coerce_float, semantic_score
 
-RECOMMENDATION_POLICY_VERSION = "reading_task_abstention.v2"
+RECOMMENDATION_POLICY_VERSION = "reading_task_abstention.v3"
 MIN_RECOMMENDATION_SCORE = 0.75
 
 
