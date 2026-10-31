@@ -1,6 +1,8 @@
 # Article language review runtime v1
 
-Status: development candidate, 2026-10-30. Cloud backend only; not merged or
+For the compatible logic/risk extension candidate, see [context runtime](article-review-context-runtime-v1.md). The language-only behavior below remains the compatibility baseline.
+
+Historical source checkpoint, 2026-10-30. Cloud backend only; not merged or
 production-deployed. Addon facade and Toolbox editor integration now exist on separate candidates;
 this document does not certify their installation or signed live acceptance.
 The broader consumer draft in Toolbox includes future logic/content-risk checks;

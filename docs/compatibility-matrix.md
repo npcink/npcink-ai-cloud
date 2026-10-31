@@ -58,3 +58,11 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 - [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md)
 - [Reversible Feature Pauses](reversible-feature-pauses-v1.md)
 - [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md)（Ability/task 投影矩阵；与本表的「发布地板」不同维）
+
+### Article review context extension (2026-11-01 source candidate)
+
+The existing v1 checks list expands to the ordered subset language/logic/content_risk.
+Old language-only consumers remain compatible. New combined callers require the
+updated Cloud, Addon guard and Toolbox consumer; older components reject the new
+selection without fallback. See [bounded contract](article-review-context-runtime-v1.md).
+This is not a production deployment or a new Addon version floor.
