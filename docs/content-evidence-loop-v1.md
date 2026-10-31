@@ -313,8 +313,9 @@ and 2,364 chunks, two more of each than before the two original-image deliveries
 that change is accounted for, not an unchanged-corpus claim.
 
 Remaining: representative answer accuracy/claim support and natural use,
-interactive batch vision performance, external recovery of the 69 originals,
-and separate WordPress.org packaging/production release. These examples do not
+interactive batch vision performance, and separate WordPress.org packaging/
+production release. The 69 originals remain unavailable and metadata-only;
+recovery is closed unless an external backup is supplied. These examples do not
 guarantee arbitrary prompt-injection resistance. Generic/private uploaded-file
 ingestion remains outside this public-site text slice. Source CI and the central
 matrix are separate gates; none of this runtime evidence replaces them.
@@ -330,8 +331,9 @@ The two-image/full-size timeout investigation is recorded in the
 [development investigation receipt](history/engineering/2026/vision-timeout-investigation-2026-10-30.md).
 It identifies the installed Qwen3-VL Thinking renderer continuing to produce
 reasoning despite `think:false`, alongside full-size image processing cost.
-The 30-second product contract remains unchanged. Diagnostic model calls are
-not a new end-to-end acceptance or a production result.
+The production/default 30-second contract remains unchanged. A later local
+development-only 180-second loopback opt-in is recorded below; diagnostic model
+calls are not a new end-to-end acceptance or a production result.
 
 The operator subsequently confirmed that image-grounded descriptions/OCR and
 ALT/caption suggestions remain needed in addition to vector retrieval, and
@@ -340,8 +342,9 @@ authorized the bounded M4 model comparison/configuration. The development
 from `qwen3.5:4b-q4_K_M`, with explicit Chinese result/field constraints and
 16K inference context. Full WordPress→Addon→Cloud calls took 10.062s for one
 768px preview, 16.692s for two previews, and 11.285s for a known Chinese
-screenshot, including uploads. The original-size single and pair still timed
-out at 30 seconds and remain failed cases; no automatic resize was introduced.
+screenshot, including uploads. The original-size single and pair timed out under
+the historical 30-second default; a later local development-only extended-timeout
+candidate is recorded below. No automatic resize was introduced.
 The Qwen3-VL embedding selection and 2,379 vector rows were checked unchanged.
 This is development configuration evidence; no application source or production
 configuration changed, and arbitrary image question-answer quality is untested.
