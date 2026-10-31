@@ -5,6 +5,22 @@ Status: Cloud [#1317](https://github.com/npcink/npcink-ai-cloud/pull/1317) and A
 Cloud runtime `62a9443e` is accepted on M4. The receipt below separates source,
 runtime, packaging and remaining customer acceptance. No production deployment.
 
+## Accepted legacy-image limitation — 2026-10-31
+
+The operator decided to retain the 69 legacy images with unavailable originals
+as metadata-only and close their original-recovery and pixel-upgrade work.
+This supersedes the open recovery obligations in the dated receipts below;
+it is an accepted historical limitation, not a pending repair or acceptance gate.
+Do not schedule backup searches, re-downloads, retries or index rebuilds for
+this cohort. Existing metadata/index records and retrieval behavior are retained.
+These records remain `metadata_text.v1` / `unavailable_legacy_source` and must
+not be counted as image-pixel retrieval success. Ordinary ingestion and existing
+same-space upgrade behavior remain available when a valid source is delivered.
+
+This documentation decision does not mutate data or runtime configuration and
+does not resolve the separately recorded image-understanding timeouts, other
+product acceptance or production release requirements.
+
 ## Product and ownership
 
 The loop is source input → sanitized indexing → site-scoped retrieval →
@@ -21,7 +37,7 @@ local contract. There is no new task registry, chat endpoint, CMS or write path.
 | Text delivery | Addon post/page `content_excerpt` carries sanitized body up to 48,000 UTF-8 bytes with v2 byte/character counters. Legacy v1 1,800-byte evidence remains readable. Wire batching uses escaped JSON bytes; dispatch retains its final 900,000-byte guard. Bodies beyond the cap explicitly remain partial. |
 | Factual answering | Locally registered custom tasks may declare `site_knowledge_evidence`, distinct from optional `site_style_profile`. They require enabled `site_factual_evidence` references, `json_object` and `source_grounded` constraints, and an answer/citations schema. |
 | Existing ingestion/lifecycle | Public post/page, approved comments and eligible images retain their existing scoped delivery, explicit withdrawal, exclusion/restore and preserve-on-failed-refresh paths. Known run identities release duplicate payload snapshots; lost responses retain exact replay bytes. This does not add PDF/Word/video or private upload support. |
-| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. M4 inventory now has 2,364 matching 4096D chunks; 69 legacy media chunks remain explicitly metadata-only because their originals were unavailable. They are not pixel-retrieval success. |
+| Image vectors | Reuse master #1310/#1311: local Qwen3-VL text/image vectors, 4096 dimensions; image pixel input and metadata-only migration are distinct. No model replacement or production profile change in this batch. The recorded M4 inventory has 2,364 matching 4096D chunks; 69 legacy media chunks remain explicitly metadata-only because their originals were unavailable. Their recovery work is closed under the [2026-10-31 operator decision](#accepted-legacy-image-limitation--2026-10-31); they are not pixel-retrieval success. |
 | Evidence outcomes | `available` / `partial` on usable factual context; `grounded_answer.no_evidence`, `.retrieval_unavailable`, `.retrieval_failed` are independent failed-run outcomes before the answering provider. Optional style behavior remains unchanged. |
 | Quality evidence | Deterministic long-tail retrieval, UTF-8/wire bounds, current-chunk/hash checks, wrong-site metadata exclusion, missing evidence, forged quotes/IDs, queued failure and no-store coverage. Existing multimodal and refresh safety suites are reused. Run IDs, usage and bounded feedback remain the correlation path; no paid calls manufacture observations. |
 

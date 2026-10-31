@@ -500,8 +500,10 @@ Linux 注册矩阵、Portal 和 TOTP/BFF 终检通过。一次被后续 edited �
 
 收尾后释放额度、商业、i18n 与台账编辑域；两个 builder 工作区和已接受原图保留。
 后续会话从最新 master 核对真实新缺口，避免再次改写已落实取舍。内容处理链路另见
-[开发交付回执](content-evidence-loop-v1.md)：69 张历史图片原图恢复、回答语义质量、
-自然采用与共享 WordPress 的 Addon 安装仍未完成，不由本商业回执补成已验收。
+[开发交付回执](content-evidence-loop-v1.md)：回答语义质量、自然采用与共享
+WordPress 的 Addon 安装仍未完成，不由本商业回执补成已验收。69 张历史图片
+原图恢复已按[操作者 2026-10-31 决定](content-evidence-loop-v1.md#accepted-legacy-image-limitation--2026-10-31)
+关闭，保留 metadata-only，接受历史限制，不计作像素检索成功。
 
 ## 后续定向复核：额度详情读取恢复（2026-10-30）
 
