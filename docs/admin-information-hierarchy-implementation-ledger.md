@@ -1,9 +1,13 @@
 # Admin 信息层级逐页落实台账
 
-Status: active implementation ledger, updated 2026-10-30.
+Status: active implementation ledger, updated 2026-10-31.
 
 本批交付结果见末节「合并版交付核验」。前文保留各阶段当时的状态与证据，
 不能把历史的本地通过、候选或待验收描述当作当前运行身份。
+
+2026-10-31后继对账：下文具名的后台最终人工视觉接受已记录为
+[accepted](#操作者完成后台最终视觉接受--2026-10-30)，历史pending不再作为该批
+当前待办；之后的新版本或新状态仍单独判断。
 
 观测批次已在 [#1314](https://github.com/npcink/npcink-ai-cloud/pull/1314) 通过 CI
 并合入 `d1cbf463`；以下后续页面从该 master 基线逐页落实。
@@ -500,8 +504,10 @@ Linux 注册矩阵、Portal 和 TOTP/BFF 终检通过。一次被后续 edited �
 
 收尾后释放额度、商业、i18n 与台账编辑域；两个 builder 工作区和已接受原图保留。
 后续会话从最新 master 核对真实新缺口，避免再次改写已落实取舍。内容处理链路另见
-[开发交付回执](content-evidence-loop-v1.md)：69 张历史图片原图恢复、回答语义质量、
-自然采用与共享 WordPress 的 Addon 安装仍未完成，不由本商业回执补成已验收。
+[开发交付回执](content-evidence-loop-v1.md)：回答语义质量、自然采用与共享
+WordPress 的 Addon 安装仍未完成，不由本商业回执补成已验收。69 张历史图片
+原图恢复已按[操作者 2026-10-31 决定](content-evidence-loop-v1.md#accepted-legacy-image-limitation--2026-10-31)
+关闭，保留 metadata-only，接受历史限制，不计作像素检索成功。
 
 ## 后续定向复核：额度详情读取恢复（2026-10-30）
 
@@ -650,6 +656,19 @@ M4 前后状态、推广日志、最终脚本回执、明暗及恢复截图与 S
 M4 候选内的新增 6 项 API 用例通过（临时 SQLite、模拟网关，不代表 PostgreSQL
 真实财务并发或资金验收）。本地构建、Admin 结构/类型/lint、anti-drift 通过。
 CI、合并与 M4 accepted 以最终 PR 回执为准；**人工视觉接受 pending，生产未部署**。
+
+### 操作者完成后台最终视觉接受 — 2026-10-30
+
+2026-10-31从原会话候选`7e2229a8553d1bc2e79e5a0557ab420bfeb7005e`承接
+[具名接受记录](https://github.com/npcink/npcink-ai-cloud/blob/7e2229a8553d1bc2e79e5a0557ab420bfeb7005e/docs/admin-information-hierarchy-implementation-ledger.md#操作者完成后台最终视觉接受--2026-10-30)。
+操作者在「核对图片恢复与理解超时」会话明确确认：
+“**后台最终视觉接受**开发验证已通过，人工视觉接受仍单独待完成，看了的，没问题的”。
+据此，该记录指向的既有后台最终人工视觉接受为 **accepted**，不再安排重复
+查看或额外验收表。此处承接原会话记录，本会话没有重新运行浏览器或代签。
+
+接受只覆盖原会话所指的既有批次，与源码、CI、M4开发验证分别记录；不自动
+覆盖之后的新版本或新状态，包括后继退款入口和未合入的订阅Quiet候选。
+真实退款和邮件由操作者在生产另行授权部署后验证，不增加生产部署授权。
 
 
 ## 2026-10-31：模型供应商功能审计 M01–M07
