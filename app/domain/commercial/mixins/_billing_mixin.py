@@ -12,6 +12,9 @@ from uuid import uuid4
 
 from app.adapters.repositories.commercial_plan_repository import CommercialPlanRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
     CommercialSubscriptionLifecycleRepository,
 )
@@ -335,6 +338,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         metadata_json: dict[str, object] | None = None,
         sales_price_cny: float | None = None,
         audit_context: ServiceAuditContext | None = None,
+        parameter_evidence: dict[str, object] | None = None,
     ) -> dict[str, object]:
         if repository.get_plan_for_update(plan_id) is None:
             raise CommercialNotFoundError(
@@ -383,6 +387,18 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 sales_price_cny=sales_price_cny,
             )
         payload = self._serialize_plan_version(plan_version)
+        if parameter_evidence is not None:
+            parameter_offer = repository.get_plan_offer(f"{tier_id}_monthly_v1")
+            serialized_offer = (
+                cast(Any, self)._serialize_plan_offer(parameter_offer)
+                if parameter_offer is not None and parameter_offer.plan_id == plan_id
+                and parameter_offer.account_id is None
+                and parameter_offer.purchase_mode == "self_serve" else None
+            )
+            payload["parameter_operation"] = {
+                **parameter_evidence,
+                "parameters": self._admin_plan_parameter_values(payload, serialized_offer),
+            }
         self._record_service_audit_in_session(
             repository=repository,
             audit_context=audit_context,
@@ -1021,10 +1037,98 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 metadata_json=metadata,
                 sales_price_cny=sales_price_cny,
                 audit_context=audit_context,
+                parameter_evidence={
+                    "action": "parameters.update", "source_revision": revision,
+                },
             )
 
             session.commit()
             return payload
+
+    @staticmethod
+    def _admin_plan_parameter_values(
+        version: dict[str, object], sales_offer: dict[str, object] | None,
+    ) -> dict[str, object]:
+        budgets = cast(dict[str, object], version.get("budgets") or {})
+        metadata = cast(dict[str, object], version.get("metadata") or {})
+        concurrency = cast(dict[str, object], version.get("concurrency") or {})
+        policy = cast(dict[str, object], version.get("policy") or {})
+        subscription = cast(dict[str, object], policy.get("subscription") or {})
+        parameters = {
+            "monthly_included_points": budgets.get("max_ai_credits_per_period", 0),
+            "site_limit": metadata.get("site_limit", 0),
+            "max_vector_documents": metadata.get("max_vector_documents", 0),
+            "max_media_images": metadata.get("max_media_images", 0),
+            "max_cost_cny_per_period": budgets.get("max_cost_cny_per_period", 0),
+            "sales_price_cny": sales_offer.get("amount", 0) if sales_offer else 0,
+            "max_active_runs": concurrency.get("max_active_runs", 0),
+            "max_batch_items": metadata.get("max_batch_items", 0),
+            "grace_period_days": subscription.get("grace_period_days", 0),
+        }
+        return parameters
+
+    def confirm_admin_plan_parameters(
+        self, *, plan_id: str, operation_id: str, source_revision: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # Dedicated SELECT-only chain: no get_admin_site, reconciliation, bootstrap,
+        # billing, audit writes or commit. Missing/ambiguous evidence is not failure
+        # proof and must never authorize another write.
+        result: dict[str, object] = {
+            "plan_id": plan_id, "operation_id": operation_id,
+            "action": "parameters.update", "source_revision": source_revision,
+            "state": "unconfirmed", "current": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            events = CommercialServiceAuditRepository(session).find_plan_parameter_events(
+                plan_id=plan_id, operation_id=operation_id,
+                actor_kind=audit_context.actor_kind, actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json or {}
+            evidence = payload.get("parameter_operation")
+            if (
+                not isinstance(evidence, dict)
+                or evidence.get("action") != "parameters.update"
+                or evidence.get("source_revision") != source_revision
+                or payload.get("plan_id") != plan_id
+                or payload.get("plan_version_id") != event.plan_version_id
+                or event.scope_id != event.plan_version_id
+            ):
+                return result
+            plan = repository.get_plan(plan_id)
+            if plan is None:
+                return result
+            versions = [self._serialize_plan_version(row)
+                        for row in repository.list_plan_versions(plan_id=plan_id)]
+            current = self._select_latest_plan_version(versions)
+            if current is None or current.get("plan_version_id") != event.plan_version_id:
+                return result
+            tier_id = self._infer_plan_tier_id(plan, versions)
+            offer = repository.get_plan_offer(f"{tier_id}_monthly_v1")
+            sales_offer = (
+                cast(Any, self)._serialize_plan_offer(offer)
+                if offer is not None and offer.plan_id == plan_id
+                and offer.account_id is None and offer.purchase_mode == "self_serve" else None
+            )
+            parameters = self._admin_plan_parameter_values(current, sales_offer)
+            if evidence.get("parameters") != parameters:
+                return result
+            result.update(
+                state="confirmed",
+                current={"revision": self._admin_plan_revision(plan, current, sales_offer),
+                         "parameters": parameters, "plan_version_id": event.plan_version_id},
+                receipt={"operation_id": operation_id, "plan_id": plan_id,
+                         "plan_version_id": event.plan_version_id,
+                         "actor_kind": event.actor_kind, "actor_ref": event.actor_ref,
+                         "method": event.method, "path": event.path, "event_kind": event.event_kind,
+                         "audit_event_id": event.id, "action": "parameters.update",
+                         "source_revision": source_revision, "parameters": parameters},
+            )
+            return result
 
     def list_admin_subscriptions(
         self,

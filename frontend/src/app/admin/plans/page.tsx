@@ -26,6 +26,7 @@ import {
   localizeUsageBand,
 } from '@/lib/admin-plan-copy';
 import { createApiClient } from '@/lib/api-client';
+import { requirePlanCatalog, type PlanConfirmation } from '@/features/admin/plans/plan-projection';
 import { ADMIN_CURRENCY } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -88,8 +89,8 @@ type CanonicalTierCoverageItem = {
 };
 
 type PlanCatalogPayload = {
-  items?: PlanListItem[];
-  tier_templates?: TierSummary[];
+  items: PlanListItem[];
+  tier_templates: TierSummary[];
 };
 
 type BootstrapResult = {
@@ -178,6 +179,8 @@ function PlansContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingPlan, setEditingPlan] = useState<{ focus: string; planId: string; alias: string; tierId: string; active: number } | null>(null);
+  const [pendingPlans, setPendingPlans] = useState<string[]>([]);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -191,6 +194,23 @@ function PlansContent() {
     status: 'active',
     description: '',
   });
+
+  const readPendingPlans = useCallback(() => {
+    try { setPendingPlans(Object.keys(sessionStorage).filter(key => key.startsWith('admin.plan-parameters.v1:')).map(key => key.slice('admin.plan-parameters.v1:'.length))); }
+    catch { /* Individual editor fails closed on unavailable storage. */ }
+  }, []);
+  useEffect(() => { readPendingPlans(); }, [readPendingPlans, focusedTierId]);
+  const applyConfirmedParameters = (planId: string, current: PlanConfirmation) => {
+    const p = current.parameters;
+    setPlans(rows => rows.map(item => item.plan.plan_id !== planId || !item.latest_version ? item : {
+      ...item, latest_version: { ...item.latest_version,
+        budgets: { ...item.latest_version.budgets, max_ai_credits_per_period: p.monthly_included_points, max_cost_cny_per_period: p.max_cost_cny_per_period },
+        concurrency: { ...item.latest_version.concurrency, max_active_runs: p.max_active_runs },
+        metadata: { ...item.latest_version.metadata, monthly_included_points: p.monthly_included_points, site_limit: p.site_limit, max_vector_documents: p.max_vector_documents, max_media_images: p.max_media_images, max_batch_items: p.max_batch_items },
+      },
+    }));
+    readPendingPlans();
+  };
 
   const updateCatalogUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParamsKey);
@@ -219,10 +239,10 @@ function PlansContent() {
     else setIsLoading(true);
     setError(null);
     try {
-      const payload = await fetchPlanCatalog();
+      const payload = requirePlanCatalog(await fetchPlanCatalog()) as unknown as PlanCatalogPayload;
       if (sequence !== requestSequenceRef.current) return;
-      setPlans(payload.items || []);
-      setTierTemplates(payload.tier_templates || []);
+      setPlans(payload.items);
+      setTierTemplates(payload.tier_templates);
       setLoadedAt(new Date());
       hasLoadedRef.current = true;
     } catch (err) {
@@ -398,13 +418,42 @@ function PlansContent() {
     await runBootstrapShells(failedShells, succeededResults);
   }, [bootstrapResults, runBootstrapShells, tierTemplates]);
 
+  // Retain the open object independently of refreshable directory rows. A
+  // background empty/changed catalog must not unmount an ordinary draft.
+  useEffect(() => {
+    setEditingPlan(current => {
+      if (!focusedTierId) return null;
+      if (current?.focus === focusedTierId) return current;
+      const item = plans.find(row => row.plan.plan_id === focusedTierId)
+        || findCanonicalShellPlan(plans, focusedTierId);
+      if (item) return { focus: focusedTierId, planId: item.plan.plan_id,
+        alias: item.tier_summary.package_alias, tierId: item.tier_summary.tier_id,
+        active: item.subscription_counts.active };
+      // Recovery remains reachable even if the directory itself cannot load.
+      if (pendingPlans.includes(focusedTierId)) return { focus: focusedTierId,
+        planId: focusedTierId, alias: focusedTierId, tierId: focusedTierId, active: 0 };
+      return null;
+    });
+  }, [focusedTierId, plans, pendingPlans]);
+  const pendingRecovery = pendingPlans.length ? <div role="status" data-ui="plan-pending-directory" className="space-y-2 text-sm">
+    {pendingPlans.map(id => <div key={id} className="flex flex-wrap items-center gap-2"><span>{t('admin.plans.operation_pending', { plan: id })}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => updateCatalogUrl({ focus: id })}>{t('admin.plans.open_pending')}</button></div>)}
+  </div> : null;
+  const workbench = editingPlan ? <PlanManagementWorkbench
+    key={editingPlan.planId} open planId={editingPlan.planId}
+    activeSubscriptionCount={editingPlan.active}
+    fallbackName={localizePackageAlias(t, editingPlan.tierId, editingPlan.alias)}
+    onClose={() => updateCatalogUrl({ focus: null })}
+    onParametersConfirmed={current => applyConfirmedParameters(editingPlan.planId, current)}
+    onSaved={() => loadPlans(true)}
+  /> : null;
+
   if (isLoading) {
-    return <LoadingFallback />;
+    return <><LoadingFallback />{workbench}</>;
   }
 
   if (error && plans.length === 0) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <>{pendingRecovery}<div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-md text-center">
           <h2 className="mb-4 text-2xl font-bold text-red-600">{t('common.error')}</h2>
           <p className="mb-6 text-gray-600 dark:text-gray-400">{error}</p>
@@ -412,7 +461,7 @@ function PlansContent() {
             {t('common.retry')}
           </button>
         </div>
-      </div>
+      </div>{workbench}</>
     );
   }
 
@@ -454,6 +503,7 @@ function PlansContent() {
         ]}
       />
 
+      {pendingRecovery}
       {error ? <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"><span>{error}{plans.length > 0 ? <span className="mt-1 block text-xs">{t('admin.plans.retained_notice', {}, 'Showing the last successfully loaded catalog.')}</span> : null}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadPlans(true)}>{t('common.retry')}</button></div> : null}
 
       <div className="min-w-0">
@@ -593,20 +643,7 @@ function PlansContent() {
           </AdminDataTableFrame>
       </div>
 
-      {selectedEntry?.item?.plan?.plan_id ? (
-        <PlanManagementWorkbench
-          open
-          planId={selectedEntry.item.plan.plan_id}
-          activeSubscriptionCount={Number(selectedEntry.item.subscription_counts?.active || 0)}
-          fallbackName={localizePackageAlias(
-            t,
-            selectedEntry.shell.tier_id,
-            (selectedEntry.item.tier_summary || selectedEntry.shell).package_alias
-          )}
-          onClose={() => updateCatalogUrl({ focus: null })}
-          onSaved={() => loadPlans(true)}
-        />
-      ) : null}
+      {workbench}
 
       {missingShellCount > 0 ? (
       <details id="package-maintenance" className="border-t border-slate-200 pt-4 dark:border-slate-800">

@@ -145,3 +145,17 @@ control and skipped all ten for lack of the explicit runner environment. No PG
 pass or admission is claimed. Existing cross-parent moves remain allowed;
 ordinary GET is unchanged. Integrator runs the supported command above before
 deciding admission; no customer, payment or production operation is required.
+
+## Dated 1A integration acceptance — 2026-11-02
+
+The pending PostgreSQL statements above preserve the builder's original local
+handoff state. The integrator subsequently merged PR
+[#1346](https://github.com/npcink/npcink-ai-cloud/pull/1346) into
+`42fef5409423fb6dc403b1ebfd3304feda5dbd28` and accepted it on M4. Actual isolated
+PostgreSQL executed **10/10** (nine Plan and one Portal control), packaged real
+Chromium executed **3/3**, exact-head CI had 21 successes and 10 policy skips.
+Candidate `8ab6ca916c6075b485122ab16a77b37529bd0105` and merged master have the same
+full tree. This supersedes the earlier PG-pending status for 1A; it is neither
+production nor human product acceptance. Later 1B work follows the
+[evidence/draft contract](admin-plan-parameter-evidence-drafts-v1.md) with its own
+local/CI/M4/merge states.

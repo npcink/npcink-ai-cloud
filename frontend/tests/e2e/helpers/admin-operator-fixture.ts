@@ -64,6 +64,32 @@ export function buildAdminApiErrorEnvelope(
 }
 
 async function fulfillJson(route: Route, data: unknown) {
+  // Keep synthetic plan fixtures aligned with fields always emitted by the
+  // real serializer. Fault-injection routes bypass this normal-fixture helper.
+  const pathname = new URL(route.request().url()).pathname;
+  if (pathname === '/api/admin/plans' || /^\/api\/admin\/plans\/[^/]+$/.test(pathname)) {
+    type Fixture = { tier_templates?: Record<string, unknown>[]; tier_summary?: Record<string, unknown>;
+      plan?: Record<string, unknown>; latest_version?: Record<string, unknown>; sales_offer?: unknown; items?: Fixture[] };
+    const value = data as Fixture;
+    const summaries = value.tier_templates || [value.tier_summary];
+    for (const summary of summaries) {
+      if (!summary) continue;
+      summary.max_vector_documents ??= 0; summary.max_media_images ??= 0;
+      summary.canonical_shell ??= { budgets: {}, concurrency: {}, policy: {}, metadata: {} };
+    }
+    for (const item of value.items || [value]) {
+      if (!item.plan) continue;
+      if (item.tier_summary) {
+        const shell = summaries.find(entry => entry?.tier_id === item.tier_summary?.tier_id);
+        item.tier_summary = { ...shell, ...item.tier_summary };
+      }
+      if (item.latest_version) {
+        item.latest_version.plan_id ??= item.plan.plan_id;
+        item.latest_version.policy ??= {}; item.latest_version.metadata ??= {};
+      }
+    }
+    if (!value.items) value.sales_offer ??= null;
+  }
   await route.fulfill({
     status: 200,
     contentType: 'application/json',

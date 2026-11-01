@@ -889,3 +889,28 @@ M4命令已用实际CLI dry-run修正为受支持双target；真实PG仍由集�
 原误写不存在测试文件导致的零收集失败保留在 `review-2/r3-local-tests.log`。
 当前PG选择为9项Plan加1项Portal对照，本机10项均skip，仍由集成会话隔离实测；
 未将SQLite、命令dry-run或测试收集作为PG锁覆盖证明，未宣称admission。
+
+## B5-02（套餐）／03／04／05（套餐）— 2026-11-02 本地候选 1B
+
+限定既有 `/admin/plans` 目录和参数工作台；积分包、订阅留待后续授权。
+[原操作证据与草稿契约](admin-plan-parameter-evidence-drafts-v1.md)；
+[本地交付记录](history/engineering/2026/admin-plan-evidence-drafts-2026-11-02.md)。
+1A 已由 integrator 通过 PR#1346 合并并 M4 accepted，实际 PG10/10、
+浏览器3/3；以上旧段落的本地 skip 记录保留，不再代表 1A 当前 PG 状态。
+本节 1B 的集成状态单列，不继承 1A 的绿灯。
+
+| 建议／原入口 | 处置与入口 | 证据及限制 |
+| --- | --- | --- |
+| B5-02 参数草稿丢失 | 原工作台接共享导航保护；X／footer／Escape／history／刷新／站内及同路径目标链接均保护。普通草稿可明确丢弃；目录背景空结果不卸载打开的草稿 | 真 Chromium 取消／放弃／干净保存离开；未知意图不随丢弃清除；未扩展积分包 |
+| B5-03 未知结果误重写 | 提交前持久化原 key／Plan／Version／revision／九值和字符串快照；待确认常显、冻结写入，目录提供同标签恢复入口，坏目录仍可进入 | 断线前后、真实12秒超时、replay／408／409／500、刷新／重开／切换及迟到返回；GET 精确审计加当前规范值才能解除，存储写／删失败均阻断 |
+| B5-04 空成功／旧值假发布 | 验证 PATCH 的实际 Version、action／revision／九字段；验证专用 GET 的原 actor／key／route／action／Plan／Version 和当前值；不用普通GET同值冒充本次成功 | 空／错／旧 PATCH、失败／错／旧读、无审计同值均待确认。确认后的本地回填不重读 accounts/sites/ledger；draft 状态不改为 published |
+| B5-05 套餐坏读取显示正常空 | items／tier templates／目标／map／数值／counts 校验后才替换；合法空可显示，坏首次读可Retry，坏背景读保留旧目录及时间并显示陈旧原因 | 缺失／null／错类型／坏行／合法空与恢复；不改积分包目录 |
+| 常显 | 原目标、未知／阻断原因、提交价格积分、冻结输入、只读恢复、存储失败、目录陈旧和Retry | 核心事实及动作不放hover／折叠；PC1440／1056 |
+| 按需 | 原参数／诊断工作台、字段解释、成本阈值；离开确认弹窗 | 初始化与高级维护入口保留；不恢复假loading |
+| 技术证据 | 原 key／revision 披露及既有审计receipt／事件ID／查看记录 | 专用确认授权链SQL只SELECT，commit禁用测试；原401／403安全拒绝审计保留 |
+| 删除重复／迁移 | 无删除；恢复状态从提交回调提升至工作台／目录，入口如上。shared receipt仅增加可选summary，套餐显示“成功记录已核实”，保留真实事件kind | 无共享布局变更、无golden替换、无重复仪表板；其余receipt调用默认行为保持 |
+
+代理目检 PC1056未知状态、PC1440明暗未知／确认、离开弹窗和目录陈旧截图：
+恢复动作与原因可见，禁用控件可辨识，无横向溢出／重叠；人工视觉尚待接受。
+本地API、投影／proxy、PC行为及治理门禁的准确命令、迭代失败和最终结果见交付记录。
+本节不声明 1B CI、M4 candidate／accepted、merged、production 或人工接受。

@@ -4463,6 +4463,24 @@ async def get_admin_plan(
     )
 
 
+@router.get("/admin/plans/{plan_id}/parameter-operations/{operation_id}")
+async def confirm_admin_plan_parameters(
+    request: Request, plan_id: str, operation_id: str,
+    source_revision: str = Query(min_length=1, max_length=128),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_plan_parameters,
+        plan_id=plan_id, operation_id=operation_id, source_revision=source_revision,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="plan parameter operation confirmation", data=result, revision="m6"
+    )
+
+
 @router.patch("/admin/plans/{plan_id}")
 async def update_admin_plan_parameters(
     request: Request,
