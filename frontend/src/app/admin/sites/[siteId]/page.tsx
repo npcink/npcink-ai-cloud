@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
@@ -30,6 +30,7 @@ import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { localizeAdminCommercialCopy } from '@/lib/admin-commercial-copy';
 import { translateStatusLabel } from '@/lib/status-display';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { formatAdminCurrency } from '@/lib/currency';
 import {
   cn,
@@ -198,6 +199,7 @@ function siteRuntimeExplanationText(
 
 function SiteDetailContent() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { t, locale } = useLocale();
   const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
@@ -209,6 +211,7 @@ function SiteDetailContent() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmRelinkClearOpen, setConfirmRelinkClearOpen] = useState(false);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
 
   const readSequenceRef = useRef(0);
   const confirmedProjectionRef = useRef<{ sequence: number; result: SiteOperationResult } | null>(null);
@@ -235,6 +238,11 @@ function SiteDetailContent() {
   const relinkCooldownInput = operations.input;
   const handleActivateSite = () => operations.submit('activate');
   const handleRelinkCooldownUpdate = (action: 'clear' | 'set' | 'reset') => operations.submit(action);
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    operations.inputDirty,
+    (href) => setPendingNavigationHref(href),
+    (href) => router.push(href),
+  );
 
   useEffect(() => {
     const sequence = ++readSequenceRef.current;
@@ -1029,6 +1037,21 @@ function SiteDetailContent() {
         </BackofficeSectionPanel>
       </div>
       </BackofficeDisclosure>
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={t('admin.site_detail.unsaved_leave_title', undefined, 'Leave with an unsaved unlock time?')}
+        message={t('admin.site_detail.unsaved_leave_desc', undefined, 'Leaving will discard this ordinary site datetime draft. A separate pending operation, if any, remains recoverable in this tab.')}
+        confirmLabel={t('admin.site_detail.discard_and_leave', undefined, 'Discard and leave')}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          const href = pendingNavigationHref;
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
+      />
+
       <ConfirmModal
         isOpen={confirmRelinkClearOpen}
         title={t(
