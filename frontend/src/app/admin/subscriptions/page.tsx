@@ -3,7 +3,7 @@
 import React, { FormEvent, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
-import { readSubscriptionQueue, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
+import { readSubscriptionQueue, subscriptionSnapshotCost, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -104,8 +104,7 @@ function normalizeSubscription(item: SubscriptionQueueItem): Subscription {
     current_period_start: subscription.current_period_start_at || '',
     current_period_end: subscription.current_period_end_at || '',
     billing_summary: {
-      total_cost: snapshots.every(snapshot => typeof snapshot.totals.cost === 'number')
-        ? snapshots.reduce((sum, snapshot) => sum + snapshot.totals.cost, 0) : null,
+      total_cost: subscriptionSnapshotCost(item),
       latest_snapshot_id: snapshots[0]?.snapshot_id,
     },
     billing_snapshot_status: {

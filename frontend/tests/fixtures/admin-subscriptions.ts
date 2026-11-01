@@ -10,7 +10,7 @@ type Seed = {
   coverage?: { site_count?: number; package_alias?: string };
   billing_snapshot_status?: { status?: string; summary?: string; site_count?: number; fresh_site_count?: number;
     stale_site_count?: number; missing_site_count?: number; next_action?: { action: string; label?: string; detail?: string } | null };
-  latest_billing_snapshots?: Array<{ snapshot_id: string; totals: Record<string, number> }>;
+  latest_billing_snapshots?: Array<{ snapshot_id: string; totals: Record<string, number>; site_id?: string; account_id?: string; plan_version_id?: string; subscription_id?: string }>;
   usage_totals?: { runs?: number; tokens_total?: number; cost_cny?: number; cost_cny_snapshot_missing_count?: number };
   operator_risk?: { level: string; reason_code: string };
 };

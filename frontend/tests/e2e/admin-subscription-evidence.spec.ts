@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import serializerQueue from '../fixtures/admin-subscription-serializer-queue.json' with { type: 'json' };
 import { mkdir, writeFile } from 'node:fs/promises';
 import { collectBrowserEvents, noUnexpectedBrowserEvents } from './helpers/browser-event-inventory';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
@@ -29,7 +30,7 @@ async function harness(page: Page) {
   const unhandled: string[] = [];
   await installAdminMocks(page, { unhandledAdminRequests: unhandled });
   const value = subscriptionFixture({ billing_snapshot_status: { status: 'stale', stale_site_count: 1 } });
-  const state = { detail: value as unknown, queueMode: 'normal', writes: [] as string[], reads: [] as string[], audits: [] as string[],
+  const state = { detail: value as unknown, queueMode: 'normal', queuePayload: null as unknown, writes: [] as string[], reads: [] as string[], audits: [] as string[],
     timeline: [] as DomainEvidence['timeline'], holdId: '', holdError: false, holdPost: false, held: 0, release: () => {}, unhandled };
   domainEvidence.set(page, state);
   page.on('request', request => {
@@ -51,6 +52,9 @@ async function harness(page: Page) {
         account: { account_id: `acct_${suffix}`, name: `Customer ${suffix.toUpperCase()}` } }));
       let payload: unknown = subscriptionQueueFixture({ items, total: 2 }, params);
       if (state.queueMode === 'empty') payload = subscriptionQueueFixture({ items: [], total: 0, summary: { critical: 0, warning: 0, monitor: 0, stable: 8 } }, params);
+      if (state.queueMode === 'short-page') payload = subscriptionQueueFixture({ items: [], total: 1 }, params);
+      if (state.queueMode === 'zero-total') payload = subscriptionQueueFixture({ items: [items[0]], total: 0 }, params);
+      if (state.queuePayload) payload = state.queuePayload;
       if (state.queueMode === 'missing') payload = {};
       if (state.queueMode === 'null-items') payload = { ...payload as object, items: null };
       if (state.queueMode === 'bad-items') payload = { ...payload as object, items: {} };
@@ -168,7 +172,7 @@ for (const mode of ['null-collection', 'null-entry', 'wrong-type', 'missing-id',
 }
 test('nullable association objects preserve valid metrics but never imply stable or load global audits', async ({ page }, info) => {
   const state = await harness(page);
-  state.detail = { ...subscriptionFixture(), account: null, plan: null, plan_version: null, covered_sites: [] };
+  state.detail = { ...subscriptionFixture({ covered_sites: [] }), account: null, plan: null, plan_version: null };
   await page.goto('/admin/subscriptions/sub_mvp');
   await expect(detailHeading(page)).toBeVisible(); await expect(unknown(page)).toBeVisible();
   await expect(page.locator('[data-ui="subscription-audit-unavailable"]')).toBeVisible();
@@ -250,5 +254,73 @@ test('verified account scopes both audit summary and opened trail without adding
     expect(url.searchParams.get('account_id')).toBe('acct_subscription');
     expect(url.searchParams.has('site_id')).toBe(false);
   }
+  expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
+});
+
+
+for (const mode of ['short-page', 'zero-total']) {
+  test(`review R1 retains rows range and successful timestamp on ${mode}`, async ({ page }, info) => {
+    const state = await harness(page);
+    await page.clock.install({ time: new Date('2026-11-02T04:00:00Z') });
+    await page.goto('/admin/subscriptions');
+    const rows = page.locator('[data-ui="subscription-queue-item"]');
+    await expect(rows).toHaveCount(2);
+    const header = page.locator('[data-ui="backoffice-page-header"]');
+    const before = await header.innerText();
+    const range = await page.locator('[data-ui="subscription-queue-range"]').innerText();
+    await page.clock.fastForward(120000);
+    state.queueMode = mode;
+    await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅/ }).click();
+    await expect(page.getByRole('alert').filter({ hasText: /last successfully loaded|最近一次成功/ })).toBeVisible();
+    await expect(rows).toHaveCount(2);
+    expect(await header.innerText()).toBe(before);
+    expect(await page.locator('[data-ui="subscription-queue-range"]').innerText()).toBe(range);
+    state.timeline.push({ at: Date.now(), event: `rejected ${mode}; retained header timestamp and range: ${range}` });
+    if (mode === 'short-page') await capture(page, 'pc-1440-r1-retained-tuple', info);
+    state.queueMode = 'normal'; await retry(page).click();
+    await expect(page.getByRole('alert').filter({ hasText: /evidence is incomplete|订阅证据不完整/ })).toHaveCount(0);
+    expect(await header.innerText()).not.toBe(before);
+    expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
+  });
+}
+for (const mode of ['status', 'counts', 'null-item', 'foreign-snapshot']) {
+  test(`review R2 refuses ${mode} billing and recovers by one GET`, async ({ page }, info) => {
+    const state = await harness(page); const good = subscriptionFixture();
+    const bad = structuredClone(good);
+    if (mode === 'status') { bad.billing_snapshot_status.fresh_site_count = 0; bad.billing_snapshot_status.stale_site_count = 1; }
+    if (mode === 'counts') bad.billing_snapshot_status.site_count = 10;
+    if (mode === 'null-item') (bad.billing_snapshot_status as unknown as { items: unknown[] }).items = [null];
+    if (mode === 'foreign-snapshot') bad.latest_billing_snapshots[0].site_id = 'foreign_site';
+    state.detail = bad; await page.goto('/admin/subscriptions/sub_mvp');
+    await expect(page.getByRole('heading', { name: /Subscription detail is temporarily unavailable|订阅详情暂时不可用/ })).toBeVisible();
+    await expect(stable(page)).toHaveCount(0); await expect(refresh(page)).toHaveCount(0);
+    expect(state.writes).toEqual([]); expect(state.audits).toEqual([]);
+    const reads = state.reads.length;
+    if (mode === 'foreign-snapshot') { await page.setViewportSize({ width: 1056, height: 1050 }); await capture(page, 'pc-1056-r2-billing-target', info); }
+    state.detail = good; await retry(page).click();
+    await expect(stable(page)).toBeVisible();
+    expect(state.reads).toHaveLength(reads + 1); expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
+  });
+}
+test('review R3 actual isolated serializer inspector distinguishes unknown cost and explicit zero', async ({ page }, info) => {
+  const state = await harness(page);
+  // Unchanged first queue response from the isolated synthetic SQLite serializer.
+  const authentic = serializerQueue; state.queuePayload = authentic.data;
+  await page.goto(`/admin/subscriptions?${authentic.requestKey}`);
+  const row = page.locator('[data-ui="subscription-queue-item"]').filter({ hasText: 'Synthetic serializer account' });
+  await expect(row).toHaveCount(1);
+  await row.getByRole('button', { name: /^Inspect$|^检查$/ }).click();
+  const drawer = page.locator('[data-ui="admin-inspector-drawer"]');
+  const cost = drawer.locator('dl > div').filter({ hasText: /Estimated Cost|预估成本/ }).locator('dd');
+  await expect(cost).toHaveText(/Unknown|未知/);
+  await capture(page, 'pc-1440-r3-authentic-unknown', info);
+  await drawer.getByRole('button', { name: /^Close$|^关闭$/ }).click();
+  const params = new URLSearchParams(authentic.requestKey);
+  const zero = subscriptionFixture({ subscription: { status: 'past_due' }, latest_billing_snapshots: [{ snapshot_id: 'zero', totals: { cost: 0 } }] });
+  state.queuePayload = subscriptionQueueFixture({ items: [zero], total: 1 }, params);
+  await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅/ }).click();
+  await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(1);
+  await page.locator('[data-ui="subscription-queue-item"]').getByRole('button', { name: /^Inspect$|^检查$/ }).click();
+  await expect(cost).toHaveText(/¥0(?:\.00)?/);
   expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
 });

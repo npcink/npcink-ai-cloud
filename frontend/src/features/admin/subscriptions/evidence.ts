@@ -16,17 +16,31 @@ const account = z.object({
 }).nullable();
 const site = z.object({ site_id: id, account_id: z.string(), name: z.string(), status: id,
   ownership_released_at: date });
-const snapshots = z.array(z.object({
+const snapshot = z.object({
   snapshot_id: id, subscription_id: z.string(), site_id: id,
   // Meter totals are sparse in the real serializer. An absent cost is unknown,
   // not a reason to manufacture zero or reject an otherwise valid snapshot.
   totals: z.record(z.string(), number),
-}));
+});
+const snapshots = z.array(snapshot);
+const billingStatus = z.enum(['fresh', 'stale', 'missing']);
 const billing = z.object({
-  status: z.enum(['fresh', 'stale', 'missing']), summary: z.string(), site_count: count,
+  status: billingStatus, summary: z.string(), site_count: count,
   fresh_site_count: count, stale_site_count: count, missing_site_count: count,
   next_action: z.object({ action: z.literal('rebuild_current_period_billing_snapshots'), label: z.string(), detail: z.string() }).nullable(),
-  items: z.array(z.unknown()),
+  items: z.array(z.object({ site_id: id, status: billingStatus, snapshot: snapshot.nullable() })),
+}).refine(value => {
+  const counts = { fresh: 0, stale: 0, missing: 0 };
+  const targets = new Set<string>();
+  for (const item of value.items) {
+    if (targets.has(item.site_id) || (item.status === 'missing') !== (item.snapshot === null)
+      || (item.snapshot && item.snapshot.site_id !== item.site_id)) return false;
+    targets.add(item.site_id); counts[item.status] += 1;
+  }
+  const status = counts.stale ? 'stale' : counts.missing ? 'missing' : 'fresh';
+  return value.site_count === value.items.length && value.fresh_site_count === counts.fresh
+    && value.stale_site_count === counts.stale && value.missing_site_count === counts.missing
+    && value.status === status && Boolean(value.next_action) === (status !== 'fresh' && value.items.length > 0);
 });
 const coverage = z.object({
   covered_by_subscription_id: id, subscription_status: status, plan_id: z.string(),
@@ -81,7 +95,7 @@ function requireValue<S extends z.ZodType>(schema: S, value: unknown): z.infer<S
   return result.data;
 }
 function checkTarget(item: { subscription: z.infer<typeof subscription>; account: z.infer<typeof account>;
-  coverage: z.infer<typeof coverage>; latest_billing_snapshots: z.infer<typeof snapshots> }) {
+  coverage: z.infer<typeof coverage> }) {
   const sub = item.subscription;
   if ((item.account && item.account.account_id !== sub.account_id)
     || item.coverage.covered_by_subscription_id !== sub.subscription_id
@@ -89,6 +103,35 @@ function checkTarget(item: { subscription: z.infer<typeof subscription>; account
     || item.coverage.subscription_status !== sub.status) {
     throw new SubscriptionEvidenceError('Mismatched subscription evidence');
   }
+}
+
+function checkBillingTargets(item: { latest_billing_snapshots: z.infer<typeof snapshots>;
+  billing_snapshot_status: z.infer<typeof billing> }, sites: SiteEvidence) {
+  // A damaged covered-sites collection is already isolated and blocks judgment
+  // and writes. Do not use that incomplete collection to reject valid detail.
+  if (sites.issues.length) return;
+  const all = new Set(sites.sites.map(site => site.site_id));
+  const eligible = new Set(sites.sites.filter(site => site.status !== 'archived' && site.ownership_released_at === null).map(site => site.site_id));
+  const latest = new Set<string>();
+  for (const snapshot of item.latest_billing_snapshots) {
+    if (!all.has(snapshot.site_id) || latest.has(snapshot.site_id)) throw new SubscriptionEvidenceError('Mismatched snapshot target');
+    latest.add(snapshot.site_id);
+  }
+  const items = item.billing_snapshot_status.items;
+  if (items.length !== eligible.size || items.some(entry => !eligible.has(entry.site_id))) {
+    throw new SubscriptionEvidenceError('Mismatched billing targets');
+  }
+}
+
+export function subscriptionSnapshotCost(item: SubscriptionQueueItem): number | null {
+  const snapshots = item.latest_billing_snapshots;
+  // No snapshots, missing sites or sparse totals do not establish a zero cost.
+  if (!snapshots.length || item.billing_snapshot_status.missing_site_count
+    || item.billing_snapshot_status.items.some(entry => !entry.snapshot || !snapshots.some(snapshot =>
+      snapshot.site_id === entry.site_id && snapshot.snapshot_id === entry.snapshot?.snapshot_id))
+    || !snapshots.every(snapshot => typeof snapshot.totals.cost === 'number')) return null;
+  const total = snapshots.reduce((sum, snapshot) => sum + snapshot.totals.cost, 0);
+  return Number.isFinite(total) ? total : null;
 }
 
 export function readSiteEvidence(value: unknown, accountId: string): SiteEvidence {
@@ -117,7 +160,7 @@ export function readSubscriptionQueue(value: unknown, requestKey: string) {
   if ((expires ? Date.parse(expires) : null) !== (filters.expires_before ? Date.parse(filters.expires_before) : null)
     || filters.offset !== Number(requested.get('offset') || 0) || filters.limit !== Number(requested.get('limit'))
     || pagination.offset !== filters.offset || pagination.limit !== filters.limit || pagination.total !== payload.total
-    || payload.items.length > pagination.limit
+    || payload.items.length !== Math.min(pagination.limit, Math.max(payload.total - pagination.offset, 0))
     || pagination.has_more !== (pagination.offset + payload.items.length < payload.total)) {
     throw new SubscriptionEvidenceError('Mismatched subscription pagination');
   }
@@ -125,7 +168,9 @@ export function readSubscriptionQueue(value: unknown, requestKey: string) {
   for (const item of payload.items) {
     checkTarget(item);
     const sub = item.subscription;
-    if (ids.has(sub.subscription_id) || readSiteEvidence(item.covered_sites, sub.account_id).issues.length
+    const sites = readSiteEvidence(item.covered_sites, sub.account_id);
+    checkBillingTargets(item, sites);
+    if (ids.has(sub.subscription_id) || sites.issues.length
       || (filters.account_id && sub.account_id !== filters.account_id)
       || (filters.plan_id && sub.plan_id !== filters.plan_id)
       || (filters.status && sub.status !== filters.status)
@@ -151,8 +196,11 @@ export function readSubscriptionDetail(value: unknown, subscriptionId: string): 
     throw new SubscriptionEvidenceError('Mismatched subscription target');
   }
   // Current published plan parameters may differ from the stored version ID.
-  // Billing counts exclude archived/released sites: no cross-collection equality.
-  return { detail: payload, sites: readSiteEvidence(payload.covered_sites, sub.account_id) };
+  // Billing targets exclude archived/released sites; historical snapshots may
+  // belong to a different subscription/account/version of a covered site.
+  const sites = readSiteEvidence(payload.covered_sites, sub.account_id);
+  checkBillingTargets(payload, sites);
+  return { detail: payload, sites };
 }
 
 export function subscriptionAuditScope(evidence: SubscriptionEvidence) {

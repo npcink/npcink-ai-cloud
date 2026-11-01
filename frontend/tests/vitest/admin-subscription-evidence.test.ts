@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readSubscriptionDetail, readSubscriptionQueue, readSiteEvidence, subscriptionAuditScope } from '@/features/admin/subscriptions/evidence';
+import serializerQueue from '../fixtures/admin-subscription-serializer-queue.json';
+import { readSubscriptionDetail, readSubscriptionQueue, subscriptionSnapshotCost, readSiteEvidence, subscriptionAuditScope } from '@/features/admin/subscriptions/evidence';
 import { subscriptionFixture, subscriptionQueueFixture } from '../fixtures/admin-subscriptions';
 
 const key = 'risk=all&sort=priority&limit=10';
@@ -49,7 +50,7 @@ describe('subscription detail evidence', () => {
     const parsed = readSubscriptionDetail(value, 'sub_mvp');
     expect(subscriptionAuditScope(parsed)).toEqual({ accountId: value.account!.account_id, siteId: '' });
     expect(parsed.detail.plan_version!.plan_version_id).not.toBe(value.subscription.plan_version_id);
-    const nullable = { ...value, account: null, plan: null, plan_version: null, covered_sites: [], usage_totals: { cost_cny: 0, cost_cny_snapshot_missing_count: 0 } };
+    const nullable = { ...subscriptionFixture({ covered_sites: [] }), account: null, plan: null, plan_version: null, usage_totals: { cost_cny: 0, cost_cny_snapshot_missing_count: 0 } };
     expect(readSubscriptionDetail(nullable, 'sub_mvp').detail.plan).toBeNull();
     expect(subscriptionAuditScope(readSubscriptionDetail(nullable, 'sub_mvp'))).toBeNull();
   });
@@ -78,7 +79,7 @@ describe('subscription detail evidence', () => {
   });
   it('does not equate billing counts to covered sites, or reject a previous-subscription snapshot as a current one', () => {
     const value = subscriptionFixture({ covered_sites: [{ site_id: 'archived', status: 'archived' }],
-      billing_snapshot_status: { fresh_site_count: 0, site_count: 0 }, latest_billing_snapshots: [{ snapshot_id: 'old', totals: {} }] });
+      billing_snapshot_status: { fresh_site_count: 0, site_count: 0 }, latest_billing_snapshots: [{ snapshot_id: 'old', site_id: 'archived', account_id: 'historical_account', plan_version_id: 'historical_version', totals: {} }] });
     value.latest_billing_snapshots[0].subscription_id = 'previous_subscription';
     expect(readSubscriptionDetail(value, 'sub_mvp').sites.sites).toHaveLength(1);
   });
@@ -95,5 +96,56 @@ describe('subscription detail evidence', () => {
     expect(result.issues.map(issue => issue.reason)).toEqual(['invalid', 'invalid', 'invalid', 'invalid', 'duplicate', 'duplicate', 'account']);
     const evidence = readSubscriptionDetail({ ...subscriptionFixture(), account: null, covered_sites: [null] }, 'sub_mvp');
     expect(subscriptionAuditScope(evidence)).toBeNull();
+  });
+});
+
+
+describe('review R1–R3 counterexamples', () => {
+  it.each([
+    { items: [], total: 1 },
+    { items: [subscriptionFixture()], total: 0 },
+    { items: [subscriptionFixture()], total: 10 },
+  ])('rejects impossible page slice $total', input => {
+    expect(() => readSubscriptionQueue(subscriptionQueueFixture(input, new URLSearchParams(key)), key)).toThrow();
+  });
+  it.each([
+    ['billing_snapshot_status.status', 'stale'],
+    ['billing_snapshot_status.stale_site_count', 1],
+    ['billing_snapshot_status.site_count', 10],
+    ['billing_snapshot_status.items', [null]],
+    ['billing_snapshot_status.items.0.site_id', 'foreign'],
+    ['billing_snapshot_status.items.0.snapshot.site_id', 'foreign'],
+    ['billing_snapshot_status.items.0.snapshot', null],
+    ['billing_snapshot_status.next_action', { action: 'rebuild_current_period_billing_snapshots', label: '', detail: '' }],
+    ['latest_billing_snapshots.0.site_id', 'foreign'],
+  ])('rejects damaged billing %s', (path, replacement) => {
+    expect(() => readSubscriptionDetail(corrupt(subscriptionFixture(), path as string, replacement), 'sub_mvp')).toThrow();
+  });
+  it('rejects duplicate billing targets and missing action for damaged evidence', () => {
+    const value = subscriptionFixture({ covered_sites: [{ site_id: 'a' }, { site_id: 'b' }] });
+    value.billing_snapshot_status.items[1] = value.billing_snapshot_status.items[0];
+    expect(() => readSubscriptionDetail(value, 'sub_mvp')).toThrow();
+    const stale = subscriptionFixture({ billing_snapshot_status: { stale_site_count: 1 } });
+    stale.billing_snapshot_status.next_action = null;
+    expect(() => readSubscriptionDetail(stale, 'sub_mvp')).toThrow();
+  });
+});
+
+
+describe('review R3 cost evidence', () => {
+  it('keeps the authentic isolated two-site missing-snapshot cost unknown', () => {
+    const item = readSubscriptionQueue(serializerQueue.data, serializerQueue.requestKey).items.find(item => item.subscription.subscription_id === 'sub_serializer')!;
+    expect(item.covered_sites).toHaveLength(2);
+    expect(item.latest_billing_snapshots).toHaveLength(0);
+    expect(subscriptionSnapshotCost(item)).toBeNull();
+  });
+  const cost = (value: ReturnType<typeof subscriptionFixture>) => subscriptionSnapshotCost(readSubscriptionQueue(subscriptionQueueFixture({items: [value], total: 1}, new URLSearchParams(key)), key).items[0]);
+  it('distinguishes absent, partial and sparse snapshots from explicit zero', () => {
+    expect(cost(subscriptionFixture({ covered_sites: [] }))).toBeNull();
+    expect(cost(subscriptionFixture({ billing_snapshot_status: { missing_site_count: 1 } }))).toBeNull();
+    expect(cost(subscriptionFixture({ covered_sites: [{site_id: 'a'}, {site_id: 'b'}], billing_snapshot_status: { missing_site_count: 1 }, latest_billing_snapshots: [{snapshot_id: 'a', totals: {cost: 0}}] }))).toBeNull();
+    expect(cost(subscriptionFixture())).toBeNull();
+    expect(cost(subscriptionFixture({latest_billing_snapshots: [{snapshot_id: 'zero', totals: {cost: 0}}]}))).toBe(0);
+    expect(() => cost(subscriptionFixture({latest_billing_snapshots: []}))).toThrow();
   });
 });

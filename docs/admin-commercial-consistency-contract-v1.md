@@ -66,7 +66,8 @@
 
 - 队列验证必需 items/total/summary/filters/pagination 与原请求范围；风险排序仍由
   后端负责。summary 在风险过滤和分页前计算，不要求其总和等于 total；合法空页、
-  越界空页和真实 0 保留。失败刷新保留旧结果、旧范围和成功读取时间并常显陈旧。
+  越界空页和真实 0 保留。页长必须为 `min(limit, max(total - offset, 0))`，
+  不能采用空首页但 total>0 或有行但 total=0 的坏元组。失败刷新保留旧结果、旧范围和成功读取时间并常显陈旧。
 - 详情必须匹配路由 subscription_id 及账户/套餐/coverage 关系。account、plan、
   plan_version 可以明确为 null，此时保留有效指标、标记待核实并阻止依赖操作；
   缺字段不伪造空对象。当前 published plan version 可不同于订阅存储版本，按父套餐
@@ -74,7 +75,12 @@
   的权威 current_total，不能用不存在的 usage.tokens 补 0；limit <= 0 仍合法。
 - covered_sites 单独验证：坏集合数量未知；坏条目、重复目标双方及跨账户条目逐项
   标明不可用，有效详情和站点继续可读。坏站点不生成链接，依赖操作保持禁用。
-  billing 统计排除 archived/released 站点，不机械等同于覆盖集合；历史订阅快照合法。
+  billing 条目必须有唯一站点、有效状态及匹配站点的 snapshot（missing 时为 null）；
+  三类计数与条目一致，聚合按 stale→missing→fresh，next_action 仅在非空 stale/missing 时为既有重建操作。
+  covered 集合完整时核对 billing 的 eligible 站点及 latest snapshot 的覆盖站点关系，
+  archived/released 排除在 billing 外；covered 自身损坏仍局部隔离，不用不完整集合做跨集合拒绝。
+  历史 snapshot 的账户、订阅及存储版本不强制等于当前对象或 live version。
+- 队列检查器没有快照、部分站点缺快照或 totals 缺 cost 时显示未知；只有明确完整的数值证据才能显示金额，显式 cost:0 保留。
 - 只有当前有效的客户或站点范围才挂载审计面板；已验证 account 优先，summary/trail
   均保持 account 范围，不叠加首个 site，也不信任响应中的任意链接或请求全局审计。
   原查看审计记录入口保留。路由切换隔离旧 GET、错误、POST 完成及其读回。

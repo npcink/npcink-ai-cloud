@@ -74,3 +74,43 @@ CI/PR/push/M4 candidate/M4 accepted/合并/production 均未执行；人工验�
 
 回退按独立组 3 commit 整体 revert，再跑订阅窄门禁；不得重置混合 worktree。
 交还后 builder 冻结，等待独立审核的明确派单。
+
+
+## 独立审核第一轮返修 R1–R4
+
+审核对象 `7b2ab0eb` 未准入。正式返修仅复用原分支/worktree/lock；以下是增量证据，
+不替代前述失败。证据目录为上述根目录的 `review-1/`。
+
+- R1：页长按 `min(limit, max(total-offset, 0))` 验证。新增的空首页 total1、有行 total0
+  和不足页反例在旧实现均失败；浏览器两种坏刷新保留行、范围和原成功时间，GET 恢复后更新。
+- R2：billing items 从 unknown 改为消费字段结构，拒绝 null/重复/错 snapshot 站点、
+  三类计数或聚合矛盾、不满足条件的 action。完整 covered 集合才检查 eligible 站点与
+  latest snapshot 会员关系；archived/released、历史账户/订阅/版本及坏站点局部隔离保留。
+  四种损坏账单浏览器均不 stable、零 rebuild／全局审计，并由一个 GET 恢复。
+- R3：空快照、部分站点缺失、稀疏 cost 不再归一化为0；显式 cost:0 保留。
+  `frontend/tests/fixtures/admin-subscription-serializer-queue.json` 为原5响应中首个完整
+  合成 SQLite 队列响应的原值，测试不再依赖本机证据路径/环境变量；实际检查器验证未知与 ¥0。
+- 13个 R1/R2 新反例先在旧实现全部复现失败；最终单元70通过。真实隔离API的5份响应
+  在修正版重新通过（已有导出，不访问/写入 live DB，不重复制造观测数据）。
+- 局部浏览器9种业务断言全部有完成证据，effective strict仍1通过/8失败。初轮9项为
+  strict1/8，其中R1两项因全局空alert断言、R3因刷新后未等待列表替换而提前失败；修正
+  这些测试等待后仅补3项，业务3完成、strict0/3。测试fixture改为仓内后初次JSON导入
+  因Node缺type属性未运行测试，按现有模式加属性后只补R3，原失败日志保留；均不累计为新覆盖。
+- R4：clean parent `1d52c8d192db` 由 git archive 导出到普通外部目录；运行源码逐字节
+  对Git证明，依赖APFS克隆；仅测试文件做同字节overlay。匹配完整fixture、当前collector、
+  PC尺寸和导航 queue→A→一次mock rebuild及GET读回→queue→B，parent与candidate业务均完成。
+  parent strict4次、candidate5次unexpected，均为缺segment的同源RSC GET200→ERR_ABORTED；
+  pageerror/console/HTTP均0。parent包含queue→A/B与accountA/site，candidate另有accountB。
+  详见 `matched-source.json`、`matched-comparison-receipt.json`、双边comparison.json/trace。
+
+该匹配对照说明同签名在直接parent及相同业务导航存在，不足以证明精确触发器、频率或
+逐一归因原19项。**严格浏览器仍为交付阻塞，整合会话决定下一边界；builder不授予准入。**
+没有再次重跑匹配对照挑绿，没有变更共享预取、collector、分类/断言豁免。
+PC1440坏元组保留及真实费用未知、PC1056错账单目标、混合站点与nullable图像由代理目检；
+常显判断事实和恢复入口保留，无横向溢出，人工产品/视觉验收仍待做。
+
+类型、定向lint、4静态契约及Admin治理通过；最终planner因JSON fixture归为L2 development/local，
+对应release-policy轻门禁也通过。M4由正式返修范围明确不授权；不机械重跑全43/全后台视觉。
+源码与artifact增量manifest、命令原文/结果及五轴自审在 `review-1/`。业务API均mock，
+一次rebuild写入仅为隔离测试。PR/push/CI/M4 candidate/M4 accepted/merge/production均未操作。
+交新干净提交后冻结；不创建额外Git worktree、会话或子代理，不变更既有商业与S03边界。
