@@ -65,8 +65,9 @@ function clearlyRejected(error: unknown): boolean {
     && codes.includes(error.errorCode);
 }
 
-export function useAccountCreditAdjustment({ accountId, failureMessage, readFailureMessage, deltaMessage, reasonMessage, onApplied }: {
+export function useAccountCreditAdjustment({ accountId, newWritesAllowed, failureMessage, readFailureMessage, deltaMessage, reasonMessage, onApplied }: {
   accountId: string;
+  newWritesAllowed: boolean;
   failureMessage: string;
   readFailureMessage: string;
   deltaMessage: string;
@@ -151,7 +152,7 @@ export function useAccountCreditAdjustment({ accountId, failureMessage, readFail
   }
 
   async function submit() {
-    if (!ready || storageBlocked || operationRef.current || busyRef.current) return;
+    if (!newWritesAllowed || activeAccountRef.current !== accountId || !ready || storageBlocked || operationRef.current || busyRef.current) return;
     const delta = Number(form.ai_credit_delta);
     if (!Number.isFinite(delta) || delta === 0) { setError(deltaMessage); return; }
     if (!form.reason.trim()) { setError(reasonMessage); return; }

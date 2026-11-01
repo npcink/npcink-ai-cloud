@@ -1,58 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeAccountSites } from '@/features/admin/accounts/account-projection';
-import {
-  normalizeAccountCreditLedger,
-  normalizeAccountQuotaSummary,
-} from '@/features/admin/accounts/account-credit-evidence';
+import { normalizeAccountCreditLedger, normalizeAccountQuotaSummary } from '@/features/admin/accounts/account-credit-evidence';
+import { ledgerFixture, ledgerEntryFixture, quotaFixture } from '../fixtures/admin-account-evidence';
 
 const accountId = 'acct_test';
+const site = { site_id: 'site_1', account_id: accountId, name: '', status: 'active' };
 
-function quota(overrides: Record<string, unknown> = {}) {
-  return {
-    status: 'ok',
-    ai_credits: {
-      key: 'ai_credits', used: 10, limit: 100, remaining: 90,
-      usage_ratio: 0.1, unlimited: false, status: 'ok', unit: 'ai_credits',
-      ...overrides,
-    },
-    resource_limits: [],
-    internal_limits: [],
-    breakdown: [],
-  };
-}
-
-describe('account evidence projections', () => {
-  it('keeps a valid empty site collection distinct from unavailable evidence', () => {
+describe('serializer-shaped account evidence', () => {
+  it('preserves valid empty sites and required site identity', () => {
     expect(normalizeAccountSites([], accountId)).toEqual([]);
-    expect(() => normalizeAccountSites(null, accountId)).toThrow();
-    expect(() => normalizeAccountSites([{ site_id: 'site_other', account_id: 'acct_other' }], accountId)).toThrow();
-    expect(() => normalizeAccountSites([{ site_id: 'site_missing' }, null], accountId)).toThrow();
+    expect(normalizeAccountSites([site], accountId)).toEqual([site]);
   });
-
-  it('accepts unlimited quota metrics and rejects incomplete or non-finite metrics', () => {
-    expect(normalizeAccountQuotaSummary(quota())).toMatchObject({ status: 'ok' });
-    expect(normalizeAccountQuotaSummary({
-      ...quota(),
-      ai_credits: { ...quota().ai_credits, limit: 0, remaining: 0, usage_ratio: 0, unlimited: true },
-    }).ai_credits.unlimited).toBe(true);
-    expect(() => normalizeAccountQuotaSummary(quota({ used: Number.NaN }))).toThrow();
-    expect(() => normalizeAccountQuotaSummary({ ...quota(), resource_limits: null })).toThrow();
-    expect(() => normalizeAccountQuotaSummary({ ...quota(), breakdown: [{ key: 'runs', quantity: 1, unit: 'run', rate: Number.POSITIVE_INFINITY, ai_credits: 1 }] })).toThrow();
+  it.each([null, {}, [null], [{ ...site, account_id: undefined }], [{ ...site, account_id: null }], [{ ...site, account_id: 'other' }], [{ ...site, status: null }], [{ ...site, name: undefined }]])('rejects malformed site collection %j', value => {
+    expect(() => normalizeAccountSites(value, accountId)).toThrow();
   });
-
-  it('keeps negative ledger adjustments valid while rejecting wrong targets and malformed rows', () => {
-    const valid = {
-      account_id: accountId,
-      pagination: { limit: 12, offset: 0, total: 1, has_more: false },
-      summary: { entry_count: 1, net_ai_credit_delta: -10 },
-      items: [{
-        ledger_entry_id: 'ledger_1', source_type: 'operator_credit_adjustment',
-        ai_credit_delta: -10, consumed_ai_credits: 0, quantity: 10, unit: 'credit',
-      }],
+  it('preserves finite all-zero, unlimited, negative limits, and optional null', () => {
+    for (const limit of [0, -1]) {
+      const payload = quotaFixture(accountId);
+      payload.ai_credits = { ...payload.ai_credits, limit, remaining: 0, usage_ratio: 0, unlimited: true };
+      expect(normalizeAccountQuotaSummary(accountId, payload).ai_credits).toMatchObject({ limit, remaining: 0, usage_ratio: 0, unlimited: true });
+    }
+    expect(normalizeAccountCreditLedger(accountId, { ...ledgerFixture(accountId), generated_at: null }).items).toEqual([]);
+  });
+  it.each([
+    { account_id: 'other' }, { account_id: undefined }, { ai_credits: {} },
+    { ai_credits: { ...quotaFixture(accountId).ai_credits, key: 'bound_sites', unit: 'site' } },
+    { ai_credits: { ...quotaFixture(accountId).ai_credits, used: NaN } },
+    { ai_credits: { ...quotaFixture(accountId).ai_credits, remaining: Infinity } },
+    { ai_credits: { ...quotaFixture(accountId).ai_credits, unlimited: true } },
+    { ai_credit_ledger_summary: {} }, { resource_limits: null }, { breakdown: [null] },
+  ])('rejects malformed quota %j', patch => {
+    expect(() => normalizeAccountQuotaSummary(accountId, { ...quotaFixture(accountId), ...patch } as never)).toThrow();
+  });
+  it('accepts real empty/nonempty ledger summaries, maps, negative adjustments and extensions', () => {
+    const empty = ledgerFixture(accountId);
+    expect(normalizeAccountCreditLedger(accountId, empty)).toEqual(empty);
+    const payload = {
+      ...empty, items: [ledgerEntryFixture(accountId)],
+      pagination: { ...empty.pagination, total: 1 },
+      summary: { ...empty.summary, entry_count: 1, net_ai_credit_delta: -10, net_used_ai_credits: 10,
+        breakdown: [{ key: 'runs', quantity: 1, unit: 'run', rate: 10, ai_credits: 10 }],
+        event_type_totals: { adjustment: -10 }, category_totals: { operator_adjustment: { label: 'Operator adjustment', net_ai_credit_delta: -10 } },
+        optional_extension: { future: true },
+      },
     };
-    expect(normalizeAccountCreditLedger(accountId, valid).items[0].ai_credit_delta).toBe(-10);
-    expect(() => normalizeAccountCreditLedger(accountId, { ...valid, account_id: 'acct_other' })).toThrow();
-    expect(() => normalizeAccountCreditLedger(accountId, { ...valid, items: [{ ...valid.items[0], quantity: Number.NaN }] })).toThrow();
-    expect(() => normalizeAccountCreditLedger(accountId, { ...valid, items: [{ ...valid.items[0], ledger_entry_id: '' }] })).toThrow();
+    const normalized = normalizeAccountCreditLedger(accountId, payload);
+    expect(normalized.items[0]).toMatchObject({ account_id: accountId, ai_credit_delta: -10, rate_unit: undefined });
+    expect(normalized.summary).toEqual(payload.summary);
+  });
+  it.each([
+    { pagination: undefined }, { summary: undefined }, { summary: {} }, { items: null }, { items: [null] },
+    { items: [{ ...ledgerEntryFixture(accountId), account_id: 'other' }] },
+    { items: [{ ...ledgerEntryFixture(accountId), account_id: undefined }] },
+    { items: [{ ...ledgerEntryFixture(accountId), ledger_entry_id: '' }] },
+    { items: [{ ...ledgerEntryFixture(accountId), quantity: NaN }] },
+    { items: [{ ...ledgerEntryFixture(accountId), rate: undefined }] },
+    { items: [{ ...ledgerEntryFixture(accountId), net_ai_credit_delta: undefined }] },
+    { items: [{ ...ledgerEntryFixture(accountId), granted_ai_credits: Infinity }] },
+    { summary: { ...ledgerFixture(accountId).summary, breakdown: [null] } },
+    { summary: { ...ledgerFixture(accountId).summary, net_used_ai_credits: undefined } },
+    { pagination: { total: 0 } },
+  ])('rejects incomplete ledger evidence %j', patch => {
+    expect(() => normalizeAccountCreditLedger(accountId, { ...ledgerFixture(accountId), ...patch } as never)).toThrow();
   });
 });

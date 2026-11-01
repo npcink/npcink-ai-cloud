@@ -31,6 +31,7 @@ export function requireAccountDetail(value: unknown, accountId: string): Record<
 
 export type AccountSiteProjection = {
   site_id: string;
+  account_id: string;
   status: string;
   name: string;
 };
@@ -48,14 +49,14 @@ export function normalizeAccountSites(
     if (!isAccountRecord(item)
       || typeof item.site_id !== 'string'
       || !item.site_id.trim()
-      || (item.account_id !== undefined && item.account_id !== null
-        && (typeof item.account_id !== 'string' || item.account_id !== accountId))
-      || (item.status !== undefined && (typeof item.status !== 'string' || !item.status.trim()))
-      || (item.name !== undefined && typeof item.name !== 'string')) {
+      || item.account_id !== accountId
+      || typeof item.status !== 'string' || !item.status.trim()
+      || typeof item.name !== 'string') {
       throw new Error('Invalid customer site evidence');
     }
     return {
       site_id: item.site_id,
+      account_id: accountId,
       status: item.status || 'unknown',
       name: item.name || '',
     };

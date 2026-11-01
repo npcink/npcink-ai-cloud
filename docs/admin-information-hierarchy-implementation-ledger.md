@@ -822,12 +822,19 @@ B4-06 仅交叉覆盖保存／待确认字段冻结，不宣称整体完成；B4
 
 | 建议／原入口 | 处置与入口 | 本地证据／限制 |
 | --- | --- | --- |
-| B4-06/B4-07 普通草稿与离开 | 资料和 datetime-local 草稿接入共享导航保护；取消离开保留原输入，确认离开才导航。pending intent 继续由既有恢复协议处理 | 1440/1056 PC 定向浏览器覆盖取消／确认及 pending 分离；不新增第二套状态机 |
-| B4-08 关联站点证据 | 严格校验站点集合与 account 归属；坏集合只在 Sites 局部显示 unavailable + Retry，客户主资料与其他页签保持可用；覆盖结论在证据不可用时显示 Unknown | 站点坏投影→GET 恢复 E2E；局部故障注入，不声称生产频率 |
-| B4-09 配额证据 | quota metric、limits、breakdown 和 finite 数值严格校验；配额坏时保留客户壳层与 Retry，不把坏值降格为 0/绿色；unlimited 仍按合法 limit<=0 规则展示 | quota 坏投影→GET 恢复 E2E；配额与流水状态分离 |
-| B4-10 流水证据 | ledger 必须匹配 account，逐条校验 ID、来源、单位和数值；合法负调整保留。流水失败只影响 drawer/流水行，配额摘要仍可用，失败计数显示 Unknown | ledger 坏投影→GET 恢复 E2E；不改变账务计算与写入规则 |
+| B4-06/B4-07 普通草稿与离开 | 资料和 datetime-local 草稿使用 saved baseline 和共享导航保护；同对象 dirty 回填不覆盖。客户页签局部 replaceState 保留草稿，pending intent 独立 | 创建姓名／邮箱及资料两字段 × 延迟成功／明确拒绝／未知；客户／站点返回、内部链接、history 双向、真实 beforeunload、clean/dirty 回填及原 key 返回恢复；PC 1440/1056，不新增第二套状态机 |
+| B4-08 关联站点证据 | 严格校验必需 name/status、集合与每行 account 归属；坏集合在 Sites 局部显示 unavailable + Retry，保留已知 uncovered；依赖站点的结论保持未知 | null／坏行／缺或错归属 → 合法空 GET 恢复，写请求 0；旧客户迟到返回隔离。不声称生产频率 |
+| B4-09 配额证据 | 按真实 serializer 核对 account、AI key/unit、汇总和有限数值；坏证据／重读冻结新调整与 topup 的入口和最终提交，原 pending 精确 GET 不受阻。topup 错误不再绿色 | 坏结构／错目标／错指标、held refetch、打开弹窗后失效、最终 submit 与原 key 保留。全零、负调整、limit<=0 unlimited 及可选 null 单元通过 |
+| B4-10 流水证据 | 顶层及逐行匹配 account；pagination／汇总／实际展示数值必需，breakdown 与 event/category maps 分别校验并保留扩展。首次及 retry 等待显示 loading，合法空才显示无流水 | null 行／错目标／缺 summary 或 pagination → 真实非空 serializer GET 恢复，含负调整；held 首次／重读与合法空对照，不改变账务规则 |
 | 信息层级与去重 | 常显：目标、当前状态、阻塞原因、局部 unavailable、Retry；按需：资料编辑、配额详情、流水 drawer；技术证据：普通草稿原输入与 pending intent 原 key 继续沿用既有协议；删除重复：不复制 pending 状态机或第二套导航确认 | 本批只做 PC 开发与验收，未更新 golden；CI、PR、M4、生产及人工视觉验收另行记录 |
 
 准确命令、截图和独立状态见
 [客户证据草稿本地交付记录](history/engineering/2026/admin-account-evidence-drafts-2026-11-01.md)。
-本条只记录 builder 本地完成，不提前声明合并、M4 accepted 或生产完成。
+首轮 `7833d536` 已 request changes；本条按 R1–R6 修正记录 builder 本地状态，
+准确修正版 commit、原始结果及 SHA256 由独立交付记录的最终 receipt 给出。
+旧 224 项 Admin 浏览器门禁仅属于首轮，不扩大为修正版全矩阵通过。
+GET-only 只说明 HTTP 方法，不证明真实账务数据库零写。
+返修浏览器 91 通过，站点协议选择回归 15 通过；PC 回归 32 通过／1 截图失败：
+旧基线捕捉 hash 页签误触发的 loading 淡化，本次修正后消失。失败图／trace
+保留且未改 golden／阈值，不宣称本地全绿；最终 PC 取证 8 通过、8 图已检查。
+本条不提前声明 admission、PR/CI、合并、M4 accepted、生产或人工视觉接受。

@@ -328,10 +328,10 @@ function AccountDetailContent() {
   const creditEvidencePending = activeDetailTab === 'credits' && creditEvidenceQuery.quotaQuery.isPending;
   const creditEvidenceError = creditEvidenceQuery.quotaQuery.isError;
   const creditEvidenceReady =
-    Boolean(quotaSummary) && !creditEvidenceError;
-  const creditLedgerPending = activeDetailTab === 'credits' && creditEvidenceQuery.ledgerQuery.isPending;
+    quotaSummary?.account_id === accountId && account?.account_id === accountId && !creditEvidenceError && !creditEvidenceQuery.quotaQuery.isFetching;
+  const creditLedgerPending = creditEvidenceQuery.ledgerQuery.isPending || creditEvidenceQuery.ledgerQuery.isFetching;
   const creditLedgerError = creditEvidenceQuery.ledgerQuery.isError;
-  const creditLedgerReady = Boolean(creditLedger) && !creditLedgerError;
+  const creditLedgerReady = creditLedger?.account_id === accountId && !creditLedgerError && !creditLedgerPending;
   useEffect(() => {
     if (!quotaDetailsOpen || creditEvidencePending || document.activeElement !== document.body) return;
     if (creditEvidenceError || !creditEvidenceReady) {
@@ -728,6 +728,7 @@ function AccountDetailContent() {
   };
 
   const handleApplyTopUpPack = async (pack: TopUpPackOption): Promise<boolean> => {
+    if (!creditEvidenceReady || account?.account_id !== accountId) return false;
     const subscriptionId = packageForm.subscription_id || selectPrimarySubscription(account)?.subscription_id || '';
     if (!subscriptionId) {
       setPackageActionError(
@@ -786,6 +787,7 @@ function AccountDetailContent() {
 
   const creditAdjustment = useAccountCreditAdjustment({
     accountId,
+    newWritesAllowed: creditEvidenceReady,
     failureMessage: t('error.failed_save'),
     readFailureMessage: t('admin.account_detail.credit_adjustment_read_failed', undefined, 'Reading the adjustment result failed. It remains unconfirmed; do not submit it again.'),
     deltaMessage: t('admin.account_detail.credit_adjustment_delta_required'),
@@ -1025,7 +1027,7 @@ function AccountDetailContent() {
     siteCount !== null && primaryPackage.coverage_state === 'uncovered' && siteCount > 0 ? siteCount : 0;
   const hasCoverageGap = uncoveredSiteCount > 0;
   const hasUncoveredCommercialPosture =
-    siteEvidenceAvailable && (primaryPackage.coverage_state === 'uncovered' || hasCoverageGap || (account.subscription_count === 0 && siteCount !== null && siteCount > 0));
+    primaryPackage.coverage_state === 'uncovered' || hasCoverageGap || (account.subscription_count === 0 && siteCount !== null && siteCount > 0);
   const hasPaidCoverage =
     primaryPackage.package_kind === 'tier_package' && primaryPackage.coverage_state === 'covered';
   const hasFormalFreeCoverage =
@@ -1033,7 +1035,7 @@ function AccountDetailContent() {
   const postureTone =
     account.status === 'suspended' || riskySubscriptions.length > 0 || hasUncoveredCommercialPosture
       ? 'error'
-      : 'ok';
+      : !siteEvidenceAvailable ? 'unknown' : 'ok';
   const postureTitle = (() => {
     if (account.status === 'suspended') {
       return t('admin.account_detail.suspended_title', undefined, 'Customer access is suspended');
@@ -1050,6 +1052,7 @@ function AccountDetailContent() {
     if (hasPaidCoverage) {
       return t('admin.account_detail.paid_covered_title', undefined, 'Covered by paid package');
     }
+    if (!siteEvidenceAvailable) return t('admin.account_detail.site_evidence_unknown_title');
     return t('admin.account_detail.healthy_title', undefined, 'Customer posture is stable');
   })();
   const postureDescription = (() => {
@@ -1068,6 +1071,7 @@ function AccountDetailContent() {
     if (hasPaidCoverage) {
       return t('admin.account_detail.paid_covered_desc', undefined, 'This customer is covered by a paid package. Use the current subscription record for package changes, suspension, or cancellation.');
     }
+    if (!siteEvidenceAvailable) return t('admin.account_detail.site_evidence_unavailable');
     return t('admin.account_detail.healthy_desc', undefined, 'Commercial coverage and site footprint are readable from this surface.');
   })();
   const nextStepDescription = account.status === 'suspended'
@@ -1075,7 +1079,10 @@ function AccountDetailContent() {
     : primarySubscription && riskySubscriptions[0]
       ? t('admin.account_detail.next_step_subscription_desc', undefined, 'Coverage posture still needs operator attention. Use the bounded actions on this page before opening any deeper commercial detail.')
       : hasUncoveredCommercialPosture
-        ? t('admin.account_detail.open_subscription_queue_desc', undefined, 'This customer has site footprint without readable package coverage, so keep the next decision on customer coverage and site impact first.')
+        ? !siteEvidenceAvailable
+          ? t('admin.account_detail.site_evidence_unavailable')
+          : t('admin.account_detail.next_step_subscription_desc', undefined, 'Coverage posture still needs operator attention. Use the bounded actions on this page before opening any deeper commercial detail.')
+        : !siteEvidenceAvailable ? t('admin.account_detail.site_evidence_unavailable')
         : t('admin.account_detail.open_primary_site_desc', undefined, 'Package coverage is active. Check Access, Credits and usage, and Sites separately for login, quota, and runtime health.');
   const watchItems = [
     {
@@ -1100,7 +1107,7 @@ function AccountDetailContent() {
     {
       label: t('common.sites'),
       value: siteCount === null ? t('common.unknown', {}, 'Unknown') : formatInteger(siteCount),
-      detail: hasCoverageGap
+      detail: !siteEvidenceAvailable ? t('admin.account_detail.site_evidence_unavailable') : hasCoverageGap
         ? t('admin.account_detail.site_coverage_gap_desc', undefined, 'One or more sites exist without matching active subscription coverage.')
         : t('admin.account_detail.site_coverage_ready_desc', undefined, 'Site footprint is attached to current subscription coverage.'),
       toneClassName: hasCoverageGap ? 'text-red-600 dark:text-red-400' : undefined,
@@ -1179,22 +1186,9 @@ function AccountDetailContent() {
     quotaAttentionItems.push(t('admin.account_detail.quota_attention_unresolved', undefined, 'The quota summary reports a warning without an identified item. Refresh the quota evidence before deciding what needs action.'));
   }
   const creditLedgerItems = creditLedgerReady ? creditLedger?.items || [] : [];
-  const creditLedgerNetUsed = creditLedgerReady
-    ? Number(
-        creditLedger?.summary?.net_used_ai_credits ??
-          quotaSummary?.ai_credit_ledger_summary?.net_used_ai_credits ??
-          creditLedger?.summary?.total_ai_credits ??
-          0
-      )
-    : null;
-  const creditLedgerGranted = creditLedgerReady
-    ? Number(
-        creditLedger?.summary?.granted_ai_credits ?? quotaSummary?.ai_credit_ledger_summary?.granted_ai_credits ?? 0
-      )
-    : null;
-  const creditLedgerCount = creditLedgerReady
-    ? Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0)
-    : null;
+  const creditLedgerNetUsed = creditLedgerReady ? creditLedger!.summary.net_used_ai_credits : null;
+  const creditLedgerGranted = creditLedgerReady ? creditLedger!.summary.granted_ai_credits : null;
+  const creditLedgerCount = creditLedgerReady ? creditLedger!.pagination.total : null;
   const creditLedgerCountLabel = creditLedgerCount === null
     ? t('common.unknown', {}, 'Unknown')
     : formatInteger(creditLedgerCount);
@@ -1337,6 +1331,7 @@ function AccountDetailContent() {
     </fieldset>
   );
   const openTopUpOptions = () => {
+    if (!creditEvidenceReady) return;
     setPackageActionError(null);
     setSelectedTopUpPackId(
       TOPUP_PACK_OPTIONS.find((pack) => pack.recommended_for_tiers.includes(currentTierId))?.pack_id
@@ -1358,8 +1353,9 @@ function AccountDetailContent() {
       error={packageActionError || undefined}
       width="wide"
       density="compact"
-      headerAccessory={<BackofficeStatusBadge status={quotaNeedsAttention ? 'warning' : 'ok'} label={quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t)} />}
+      headerAccessory={creditEvidenceBadge}
       footerNotice={t('admin.current_period_only', {}, 'Current period only')}
+      footerActions={!creditEvidenceReady ? <button type="button" className="btn btn-secondary" onClick={() => setTopUpDialogOpen(false)}>{t('common.close')}</button> : undefined}
       onClose={() => {
         if (topUpActionPending !== null) return;
         setTopUpDialogOpen(false);
@@ -1367,7 +1363,7 @@ function AccountDetailContent() {
       }}
       onSubmit={() => {
         const selectedPack = TOPUP_PACK_OPTIONS.find((pack) => pack.pack_id === selectedTopUpPackId);
-        if (!selectedPack) return;
+        if (!selectedPack || !creditEvidenceReady) return;
         void (async () => {
           const applied = await handleApplyTopUpPack(selectedPack);
           if (applied) {
@@ -1380,7 +1376,8 @@ function AccountDetailContent() {
       <p className="text-sm text-slate-600 dark:text-slate-300">
         {t('admin.account_detail.topup_packs_desc', undefined, 'Add temporary current-period headroom without changing the customer package.')}
       </p>
-      {topUpPackSelector}
+      {!creditEvidenceReady ? <p role="alert">{t('admin.account_detail.credit_actions_blocked')}</p> : null}
+      <fieldset disabled={!creditEvidenceReady}>{topUpPackSelector}</fieldset>
     </AdminWorkbenchDialog>
   );
   const creditAdjustmentDialog = (
@@ -1399,8 +1396,8 @@ function AccountDetailContent() {
       width="compact"
       density="compact"
       onClose={() => setCreditAdjustmentOpen(false)}
-      onSubmit={() => void creditAdjustment.submit()}
-      footerActions={creditAdjustment.locked ? (
+      onSubmit={() => { if (creditEvidenceReady) void creditAdjustment.submit(); }}
+      footerActions={creditAdjustment.locked || !creditEvidenceReady ? (
         <button type="button" className="btn btn-secondary" disabled={creditAdjustmentPending} onClick={() => setCreditAdjustmentOpen(false)}>
           {t('common.close', undefined, 'Close')}
         </button>
@@ -1408,7 +1405,8 @@ function AccountDetailContent() {
     >
       {creditAdjustmentNotice}
       {creditAdjustment.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.account_detail.credit_adjustment_storage_blocked', undefined, 'The pending operation could not be retained or recovered in this browser. No new adjustment can be submitted. Preserve this session and ask an operator to verify the ledger.')}</p> : null}
-      <fieldset disabled={creditAdjustment.locked} className="grid gap-3">
+      {!creditEvidenceReady && !creditAdjustmentUnconfirmed ? <p role="alert">{t('admin.account_detail.credit_actions_blocked')}</p> : null}
+      <fieldset disabled={creditAdjustment.locked || !creditEvidenceReady} className="grid gap-3">
         <label className="text-sm">
           <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
             {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
@@ -1555,7 +1553,11 @@ function AccountDetailContent() {
                 aria-selected={isActive}
                 aria-label={tab.label}
                 href={tab.href}
-                onClick={() => setActiveDetailTab(tab.id)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setActiveDetailTab(tab.id);
+                  window.history.replaceState(window.history.state, '', tab.href);
+                }}
                 className={cn(
                   'min-w-[8.5rem] shrink-0 border-b-2 px-3 py-2.5 text-left transition hover:bg-slate-100 dark:hover:bg-slate-900 xl:flex xl:min-w-0 xl:items-center xl:justify-between xl:gap-3 xl:rounded-md xl:border-b-0 xl:border-l-[3px] xl:px-3 xl:py-2.5',
                   isActive
@@ -1595,7 +1597,11 @@ function AccountDetailContent() {
               {postureTone !== 'ok' ? (
                 <a
                   href={account.status === 'suspended' ? '#customer-access' : '#coverage-actions'}
-                  onClick={() => setActiveDetailTab(account.status === 'suspended' ? 'access' : 'commercial')}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setActiveDetailTab(account.status === 'suspended' ? 'access' : 'commercial');
+                    window.history.replaceState(window.history.state, '', account.status === 'suspended' ? '#customer-access' : '#coverage-actions');
+                  }}
                   className="btn btn-secondary btn-sm self-start"
                 >
                   {account.status === 'suspended'
@@ -2200,6 +2206,7 @@ function AccountDetailContent() {
               <button
                 type="button"
                 className={cn('btn whitespace-nowrap', creditNeedsAttention ? 'btn-primary' : 'btn-secondary')}
+                disabled={!creditEvidenceReady}
                 onClick={openTopUpOptions}
               >
                 {t('admin.account_detail.open_topup_options_action', undefined, 'Open top-up options')}
@@ -2207,7 +2214,9 @@ function AccountDetailContent() {
               <button
                 type="button"
                 className="btn btn-secondary whitespace-nowrap"
+                disabled={!creditEvidenceReady && !creditAdjustmentUnconfirmed}
                 onClick={() => {
+                  if (!creditEvidenceReady && !creditAdjustmentUnconfirmed) return;
                   setPackageActionError(null);
                   setCreditAdjustmentOpen(true);
                 }}
@@ -2237,6 +2246,80 @@ function AccountDetailContent() {
             </div>
           </div>
         </div>
+        {!creditEvidenceReady ? <p data-ui="account-credit-actions-blocked" className="text-sm text-slate-600 dark:text-slate-300">{t('admin.account_detail.credit_actions_blocked')}</p> : null}
+          <AdminInspectorDrawer
+            open={activeDrawer === 'credit-ledger'}
+            title={t('admin.account_detail.credit_ledger_title', undefined, 'Credit ledger detail')}
+            titleId="account-credit-ledger-title"
+            eyebrow={t('admin.account_detail.quota_eyebrow', undefined, 'Quota posture')}
+            description={t('admin.account_detail.credit_ledger_desc', undefined, 'Current-period consume, grant, adjustment, and refund records from the AI credit ledger.')}
+            closeLabel={t('common.close', undefined, 'Close')}
+            headerAccessory={<BackofficeStatusBadge status={creditLedgerPending ? 'pending' : creditLedgerError ? 'error' : creditLedgerReady ? 'ok' : 'unknown'} label={creditLedgerPending ? t('common.loading') : creditLedgerError ? t('common.error') : creditLedgerReady ? t('admin.account_detail.credit_ledger_record_count', { count: creditLedgerCountLabel }, `${creditLedgerCountLabel} records`) : t('common.unknown')} />}
+            onClose={() => setActiveDrawer(null)}
+          >
+            {creditLedgerPending ? <div data-ui="account-credit-ledger-pending"><LoadingFallback /></div> : creditLedgerError || !creditLedgerReady ? (
+              <div data-ui="account-credit-ledger-error">
+                <BackofficeDiagnosticNotice
+                  message={t('admin.account_detail.credit_ledger_read_failed', undefined, 'The credit ledger is unavailable. Retry this bounded read; the customer profile and quota evidence remain available.')}
+                  retryLabel={creditEvidenceQuery.ledgerQuery.isFetching ? t('common.loading') : t('common.retry')}
+                  onRetry={() => { if (!creditEvidenceQuery.ledgerQuery.isFetching) void creditEvidenceQuery.ledgerQuery.refetch(); }}
+                />
+              </div>
+            ) : creditLedgerItems.length > 0 ? (
+              <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
+                <div className="hidden grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
+                  <span>{t('admin.account_detail.credit_ledger_source', undefined, 'Source')}</span>
+                  <span>{t('admin.account_detail.credit_ledger_quantity', undefined, 'Quantity')}</span>
+                  <span className="text-right">{t('admin.account_detail.credit_ledger_credits', undefined, 'Credits')}</span>
+                  <span className="text-right">{t('admin.account_detail.credit_ledger_time', undefined, 'Time')}</span>
+                </div>
+                <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+                  {creditLedgerItems.map((entry) => (
+                    <div
+                      key={entry.ledger_entry_id}
+                      className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] sm:gap-3"
+                    >
+                      <div>
+                        <p className="font-medium text-slate-950 dark:text-white">
+                          {creditBreakdownLabel(
+                            {
+                              key: entry.source_type,
+                              quantity: entry.quantity,
+                              unit: entry.unit,
+                              rate: entry.rate,
+                              ai_credits: Math.abs(entry.net_ai_credit_delta),
+                            },
+                            t
+                          )}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {entry.event_type || t('portal.usage.credit_ledger_default_event', {}, 'Usage event')}
+                        </p>
+                      </div>
+                      <p className="text-slate-700 dark:text-slate-300">
+                        {formatInteger(Math.round(entry.quantity))} {entry.unit}
+                      </p>
+                      <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
+                        {formatSignedCreditDelta(entry.net_ai_credit_delta)}
+                      </p>
+                      <p className="text-slate-500 dark:text-slate-400 sm:text-right">
+                        {entry.created_at ? formatDate(entry.created_at) : '-'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <BackofficeEmptyState
+                title={t('admin.account_detail.credit_ledger_empty', undefined, 'No ledger records this period')}
+                description={t(
+                  'admin.account_detail.credit_ledger_empty_desc',
+                  undefined,
+                  'This account has no AI credit ledger entries in the current period.'
+                )}
+              />
+            )}
+          </AdminInspectorDrawer>
         {topUpDialog}
         {!creditAdjustmentOpen ? creditAdjustmentNotice : null}
         {!creditAdjustmentOpen && creditAdjustment.error && creditAdjustmentUnconfirmed ? (
@@ -2346,79 +2429,7 @@ function AccountDetailContent() {
               </div>
             </div>
           </BackofficeStackCard>
-          <AdminInspectorDrawer
-            open={activeDrawer === 'credit-ledger'}
-            title={t('admin.account_detail.credit_ledger_title', undefined, 'Credit ledger detail')}
-            titleId="account-credit-ledger-title"
-            eyebrow={t('admin.account_detail.quota_eyebrow', undefined, 'Quota posture')}
-            description={t('admin.account_detail.credit_ledger_desc', undefined, 'Current-period consume, grant, adjustment, and refund records from the AI credit ledger.')}
-            closeLabel={t('common.close', undefined, 'Close')}
-            headerAccessory={<BackofficeStatusBadge status={creditLedgerError ? 'error' : 'ok'} label={creditLedgerError ? t('common.error') : t('admin.account_detail.credit_ledger_record_count', { count: creditLedgerCountLabel }, `${creditLedgerCountLabel} records`)} />}
-            onClose={() => setActiveDrawer(null)}
-          >
-            {creditLedgerError ? (
-              <div data-ui="account-credit-ledger-error">
-                <BackofficeDiagnosticNotice
-                  message={t('admin.account_detail.credit_ledger_read_failed', undefined, 'The credit ledger is unavailable. Retry this bounded read; the customer profile and quota evidence remain available.')}
-                  retryLabel={creditEvidenceQuery.ledgerQuery.isFetching ? t('common.loading') : t('common.retry')}
-                  onRetry={() => { if (!creditEvidenceQuery.ledgerQuery.isFetching) void creditEvidenceQuery.ledgerQuery.refetch(); }}
-                />
-              </div>
-            ) : creditLedgerItems.length > 0 ? (
-              <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
-                <div className="hidden grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
-                  <span>{t('admin.account_detail.credit_ledger_source', undefined, 'Source')}</span>
-                  <span>{t('admin.account_detail.credit_ledger_quantity', undefined, 'Quantity')}</span>
-                  <span className="text-right">{t('admin.account_detail.credit_ledger_credits', undefined, 'Credits')}</span>
-                  <span className="text-right">{t('admin.account_detail.credit_ledger_time', undefined, 'Time')}</span>
-                </div>
-                <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                  {creditLedgerItems.map((entry) => (
-                    <div
-                      key={entry.ledger_entry_id || `${entry.source_type}-${entry.created_at}`}
-                      className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] sm:gap-3"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-950 dark:text-white">
-                          {creditBreakdownLabel(
-                            {
-                              key: entry.source_type,
-                              quantity: entry.quantity,
-                              unit: entry.unit,
-                              rate: Number(entry.rate || 0),
-                              ai_credits: Math.abs(Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0)),
-                            },
-                            t
-                          )}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {entry.event_type || t('portal.usage.credit_ledger_default_event', {}, 'Usage event')}
-                        </p>
-                      </div>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        {formatInteger(Math.round(Number(entry.quantity || 0)))} {entry.unit}
-                      </p>
-                      <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
-                        {formatSignedCreditDelta(Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0))}
-                      </p>
-                      <p className="text-slate-500 dark:text-slate-400 sm:text-right">
-                        {entry.created_at ? formatDate(entry.created_at) : '-'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <BackofficeEmptyState
-                title={t('admin.account_detail.credit_ledger_empty', undefined, 'No ledger records this period')}
-                description={t(
-                  'admin.account_detail.credit_ledger_empty_desc',
-                  undefined,
-                  'This account has no AI credit ledger entries in the current period.'
-                )}
-              />
-            )}
-          </AdminInspectorDrawer>
+
 
           <BackofficeStackCard className="!rounded-none !border-0 !bg-transparent !px-3 !py-2.5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

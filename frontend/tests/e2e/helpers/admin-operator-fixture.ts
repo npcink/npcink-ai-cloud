@@ -1,3 +1,4 @@
+import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
 import type { Page, Route } from '@playwright/test';
 
 type AccountFixtureItem = {
@@ -1511,7 +1512,7 @@ export async function installAdminMocks(
         identity_relationship_state: 'healthy',
         memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
         sites: accountSitesController ? accountSitesController.value : (accountSites === undefined
-          ? [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }]
+          ? [{ site_id: 'site_mvp', account_id: LONG_ACCOUNT_ID, name: 'MVP Site', status: 'active' }]
           : accountSites),
         subscriptions: [primaryAccountSubscription],
         trial_readiness: {
@@ -1558,6 +1559,7 @@ export async function installAdminMocks(
         return;
       }
       await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID,
         status: 'ok',
         generated_at: '2026-04-08T10:00:00Z',
         ai_credits: {
@@ -1573,6 +1575,7 @@ export async function installAdminMocks(
           source: 'ledger',
         },
         ai_credit_ledger_summary: {
+          ...ledgerSummaryFixture(),
           consumed_ai_credits: 250,
           granted_ai_credits: 0,
           net_used_ai_credits: 250,
@@ -1609,10 +1612,13 @@ export async function installAdminMocks(
           has_more: false,
         },
         summary: {
+          ...ledgerSummaryFixture(),
+          total_ai_credits: 250,
           consumed_ai_credits: 250,
           granted_ai_credits: 0,
           net_used_ai_credits: 250,
           entry_count: 0,
+          breakdown: [],
         },
         items: [],
       });

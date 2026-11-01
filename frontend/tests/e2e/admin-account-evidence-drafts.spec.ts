@@ -1,3 +1,4 @@
+import { quotaFixture, ledgerFixture } from '../fixtures/admin-account-evidence';
 import { expect, test } from '@playwright/test';
 import {
   installAdminMocks,
@@ -31,6 +32,7 @@ test('malformed quota evidence blocks quota conclusions and recovers without cha
   await expect(page.getByText(/Retry this bounded customer read|重新读取这份客户记录/i)).toBeVisible();
 
   quota.value = {
+    ...quotaFixture(LONG_ACCOUNT_ID),
     status: 'ok',
     ai_credits: { key: 'ai_credits', used: 10, limit: 100, remaining: 90, usage_ratio: 0.1, unlimited: false, status: 'ok', unit: 'ai_credits' },
     resource_limits: [], internal_limits: [], breakdown: [],
@@ -56,9 +58,10 @@ test('malformed ledger evidence affects only the ledger drawer and recovers thro
   await expect(drawer.locator('[data-ui="account-credit-ledger-error"]')).toBeVisible();
 
   ledger.value = {
+    ...ledgerFixture(LONG_ACCOUNT_ID),
     account_id: LONG_ACCOUNT_ID,
     pagination: { limit: 12, offset: 0, total: 0, has_more: false },
-    summary: { entry_count: 0 },
+    summary: { ...ledgerFixture(LONG_ACCOUNT_ID).summary, entry_count: 0 },
     items: [],
   };
   await drawer.getByRole('button', { name: /Retry|重试|重試/i }).click();

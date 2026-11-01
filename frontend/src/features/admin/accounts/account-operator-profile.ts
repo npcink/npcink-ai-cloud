@@ -73,6 +73,9 @@ export function readSavedProfile(value: unknown, submitted: { account_id: string
 export function useAccountOperatorProfile({ account, errorFallback, savedNotice, readFailure, onSaved }: UseAccountOperatorProfileOptions) {
   const accountId = account?.account_id || '';
   const [values, setValues] = useState<AccountOperatorProfileValues>({ operator_display_name: '', operator_note: '' });
+  const [baseline, setBaseline] = useState<AccountOperatorProfileValues>({ operator_display_name: '', operator_note: '' });
+  const valuesRef = useRef(values);
+  const baselineRef = useRef(baseline);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -90,30 +93,36 @@ export function useAccountOperatorProfile({ account, errorFallback, savedNotice,
     busyRef.current = false;
     setIsSaving(false); setIntent(null); setNotice(null); setError(null);
     setReady(false); setStorageBlocked(false);
+    const initial = { operator_display_name: '', operator_note: '' };
+    valuesRef.current = initial; baselineRef.current = initial; setValues(initial); setBaseline(initial);
     try {
       const saved = sessionStorage.getItem(profileStorageKey(accountId));
       if (saved) {
         const restored = readProfileIntent(JSON.parse(saved), accountId);
-        operationRef.current = restored; setIntent(restored); setValues(restored.values);
+        operationRef.current = restored; setIntent(restored); valuesRef.current = restored.values; setValues(restored.values);
       }
     } catch { setStorageBlocked(true); }
     setReady(true);
     return () => { contextRef.current += 1; };
   }, [accountId]);
   useEffect(() => {
-    if (!operationRef.current) setValues({
-      operator_display_name: account?.operator_display_name || '', operator_note: account?.operator_note || '',
-    });
+    if (operationRef.current || JSON.stringify(buildAccountOperatorProfilePayload(valuesRef.current)) !== JSON.stringify(buildAccountOperatorProfilePayload(baselineRef.current))) return;
+    const saved = { operator_display_name: account?.operator_display_name || '', operator_note: account?.operator_note || '' };
+    valuesRef.current = saved; baselineRef.current = saved; setValues(saved); setBaseline(saved);
   }, [accountId, account?.operator_display_name, account?.operator_note]);
 
   const setField = useCallback((field: keyof AccountOperatorProfileValues, value: string) => {
-    if (!busyRef.current && !operationRef.current) setValues(current => ({ ...current, [field]: value }));
+    if (!busyRef.current && !operationRef.current) {
+      const next = { ...valuesRef.current, [field]: value };
+      valuesRef.current = next; setValues(next);
+    }
   }, []);
 
   function complete(profile: SavedAccountOperatorProfile, submitted: ProfileIntent, revision: number) {
     clearCustomerIntent(profileStorageKey(submitted.account_id), submitted.operation_id);
     if (contextRef.current !== revision || operationRef.current?.operation_id !== submitted.operation_id) return;
-    operationRef.current = null; setIntent(null); setError(null); setValues(profile);
+    operationRef.current = null; setIntent(null); setError(null);
+    valuesRef.current = profile; baselineRef.current = profile; setValues(profile); setBaseline(profile);
     onSavedRef.current(profile); setNotice(savedNotice);
   }
 
@@ -165,10 +174,7 @@ export function useAccountOperatorProfile({ account, errorFallback, savedNotice,
   return { values, notice, error, isSaving, intent, storageBlocked, setField, submit, confirm,
     dirty: Boolean(account && !intent
       && JSON.stringify(buildAccountOperatorProfilePayload(values))
-        !== JSON.stringify(buildAccountOperatorProfilePayload({
-          operator_display_name: account.operator_display_name,
-          operator_note: account.operator_note,
-        }))),
+        !== JSON.stringify(buildAccountOperatorProfilePayload(baseline))),
     locked: !ready || !account || storageBlocked || isSaving || Boolean(intent) };
 }
 

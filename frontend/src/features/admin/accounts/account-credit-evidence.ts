@@ -31,19 +31,13 @@ export type AccountCreditBreakdownItem = {
 };
 
 export type AccountQuotaSummary = {
+  account_id: string;
   status: string;
   generated_at?: string;
   period_start_at?: string;
   period_end_at?: string;
   ai_credits: AccountQuotaMetric;
-  ai_credit_ledger_summary?: {
-    consumed_ai_credits?: number;
-    granted_ai_credits?: number;
-    adjustment_ai_credits?: number;
-    refund_ai_credits?: number;
-    net_ai_credit_delta?: number;
-    net_used_ai_credits?: number;
-  };
+  ai_credit_ledger_summary: AccountLedgerSummary;
   resource_limits: AccountQuotaMetric[];
   internal_limits: AccountQuotaMetric[];
   breakdown: AccountCreditBreakdownItem[];
@@ -52,6 +46,7 @@ export type AccountQuotaSummary = {
 
 export type AccountCreditLedgerEntry = {
   ledger_entry_id: string;
+  account_id: string;
   site_id?: string;
   event_type?: string;
   source_type: string;
@@ -59,11 +54,11 @@ export type AccountCreditLedgerEntry = {
   run_id?: string;
   ai_credit_delta: number;
   consumed_ai_credits: number;
-  granted_ai_credits?: number;
-  net_ai_credit_delta?: number;
+  granted_ai_credits: number;
+  net_ai_credit_delta: number;
   quantity: number;
   unit: string;
-  rate?: number;
+  rate: number;
   rate_unit?: string;
   rate_version?: string;
   created_at?: string;
@@ -75,24 +70,21 @@ export type AccountCreditLedger = {
   period_start_at?: string;
   period_end_at?: string;
   rate_version?: string;
-  pagination?: {
-    limit?: number;
-    offset?: number;
-    total?: number;
-    has_more?: boolean;
-  };
-  summary?: {
-    total_ai_credits?: number;
-    consumed_ai_credits?: number;
-    granted_ai_credits?: number;
-    adjustment_ai_credits?: number;
-    refund_ai_credits?: number;
-    net_ai_credit_delta?: number;
-    net_used_ai_credits?: number;
-    entry_count?: number;
-    breakdown?: AccountCreditBreakdownItem[];
-  };
+  pagination: { limit: number; offset: number; total: number; has_more: boolean };
+  summary: AccountLedgerSummary & { total_ai_credits: number; breakdown: AccountCreditBreakdownItem[] };
   items: AccountCreditLedgerEntry[];
+};
+
+type AccountLedgerSummary = {
+  consumed_ai_credits: number;
+  granted_ai_credits: number;
+  adjustment_ai_credits: number;
+  refund_ai_credits: number;
+  net_ai_credit_delta: number;
+  net_used_ai_credits: number;
+  entry_count: number;
+  event_type_totals?: Record<string, number>;
+  category_totals?: Record<string, { label: string; net_ai_credit_delta: number }>;
 };
 
 export type AccountQuotaSummaryPayload = Partial<AccountQuotaSummary>;
@@ -194,24 +186,59 @@ export const accountCreditEvidenceKeys = {
     [...accountCreditEvidenceKeys.account(accountId), 'credit-ledger'] as const,
 };
 
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field}`);
+  return value as Record<string, unknown>;
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  const number = finiteNumber(value, field);
+  if (!Number.isSafeInteger(number) || number < 0) throw new Error(`Invalid ${field}`);
+  return number;
+}
+
+// Validate fields consumed by the UI. Other serializer extensions are retained,
+// without treating every extension (such as breakdown/category maps) as a number.
+function normalizeLedgerSummary(value: unknown): AccountLedgerSummary {
+  const summary = record(value, 'ledger summary');
+  const result = { ...summary } as AccountLedgerSummary;
+  for (const key of ['consumed_ai_credits', 'granted_ai_credits', 'adjustment_ai_credits',
+    'refund_ai_credits', 'net_ai_credit_delta', 'net_used_ai_credits'] as const) {
+    result[key] = finiteNumber(summary[key], `summary.${key}`);
+  }
+  result.entry_count = nonNegativeInteger(summary.entry_count, 'summary.entry_count');
+  if (summary.event_type_totals != null) result.event_type_totals = normalizeOptionalNumbers(summary.event_type_totals, 'summary.event_type_totals');
+  if (summary.category_totals != null) {
+    result.category_totals = Object.fromEntries(Object.entries(record(summary.category_totals, 'summary.category_totals')).map(([key, raw]) => {
+      const category = record(raw, `summary.category_totals.${key}`);
+      return [key, { ...category,
+        label: nonEmptyString(category.label, `summary.category_totals.${key}.label`),
+        net_ai_credit_delta: finiteNumber(category.net_ai_credit_delta, `summary.category_totals.${key}.net_ai_credit_delta`),
+      }];
+    }));
+  }
+  return result;
+}
+
 export function normalizeAccountQuotaSummary(
+  accountId: string,
   payload: AccountQuotaSummaryPayload
 ): AccountQuotaSummary {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Account quota evidence is incomplete.');
+  if (payload.account_id !== accountId) throw new Error('Account quota evidence belongs to another customer');
   if (typeof payload.status !== 'string' || !QUOTA_STATUSES.has(payload.status)) throw new Error('Invalid account quota status');
   if (!Array.isArray(payload.resource_limits) || !Array.isArray(payload.internal_limits)) throw new Error('Account quota limits are unavailable');
   if (!payload.ai_credits || typeof payload.ai_credits !== 'object') throw new Error('Account quota evidence is incomplete.');
+  const aiCredits = record(payload.ai_credits, 'ai_credits');
+  if (aiCredits.key !== 'ai_credits' || aiCredits.unit !== 'ai_credits') throw new Error('Invalid account credit metric identity');
   return {
+    account_id: payload.account_id,
     status: payload.status,
-    generated_at: String(payload.generated_at || ''),
-    period_start_at: String(payload.period_start_at || ''),
-    period_end_at: String(payload.period_end_at || ''),
+    generated_at: optionalString(payload.generated_at, 'generated_at'),
+    period_start_at: optionalString(payload.period_start_at, 'period_start_at'),
+    period_end_at: optionalString(payload.period_end_at, 'period_end_at'),
     ai_credits: normalizeQuotaMetric(payload.ai_credits),
-    ai_credit_ledger_summary:
-      payload.ai_credit_ledger_summary &&
-      typeof payload.ai_credit_ledger_summary === 'object'
-        ? Object.fromEntries(Object.entries(payload.ai_credit_ledger_summary).map(([key, value]) => [key, finiteNumber(value, `ai_credit_ledger_summary.${key}`)]))
-        : undefined,
+    ai_credit_ledger_summary: normalizeLedgerSummary(payload.ai_credit_ledger_summary),
     resource_limits: payload.resource_limits.map(normalizeQuotaMetric),
     internal_limits: payload.internal_limits.map(normalizeQuotaMetric),
     breakdown: normalizeBreakdown(payload.breakdown),
@@ -225,23 +252,20 @@ export function normalizeAccountCreditLedger(
   payload: AccountCreditLedgerPayload
 ): AccountCreditLedger {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)
-    || payload.account_id !== accountId || !Array.isArray(payload.items)) throw new Error('Account credit ledger evidence is incomplete.');
-  const pagination = payload.pagination || {};
-  const summary = payload.summary || {};
+    || payload.account_id !== accountId || !Array.isArray(payload.items)
+    || !payload.pagination || !payload.summary) throw new Error('Account credit ledger evidence is incomplete.');
+  const pagination = payload.pagination;
+  const summary = payload.summary;
   if (typeof pagination !== 'object' || Array.isArray(pagination) || typeof summary !== 'object' || Array.isArray(summary)) {
     throw new Error('Invalid account credit ledger envelope');
   }
-  const normalizeInteger = (value: unknown, field: string) => {
-    const number = finiteNumber(value, field);
-    if (!Number.isSafeInteger(number) || number < 0) throw new Error(`Invalid account credit ledger field: ${field}`);
-    return number;
-  };
   const normalizedItems = payload.items.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid account credit ledger item');
     const row = item as Record<string, unknown>;
-    const optionalNumber = (key: string) => row[key] === undefined ? undefined : finiteNumber(row[key], `ledger.${key}`);
+    if (row.account_id !== accountId) throw new Error('Account credit ledger row belongs to another customer');
     return {
       ledger_entry_id: nonEmptyString(row.ledger_entry_id, 'ledger_entry_id'),
+      account_id: nonEmptyString(row.account_id, 'ledger.account_id'),
       site_id: optionalString(row.site_id, 'ledger.site_id'),
       event_type: optionalString(row.event_type, 'ledger.event_type'),
       source_type: nonEmptyString(row.source_type, 'source_type'),
@@ -249,11 +273,11 @@ export function normalizeAccountCreditLedger(
       run_id: optionalString(row.run_id, 'ledger.run_id'),
       ai_credit_delta: finiteNumber(row.ai_credit_delta, 'ai_credit_delta'),
       consumed_ai_credits: finiteNumber(row.consumed_ai_credits, 'consumed_ai_credits'),
-      granted_ai_credits: optionalNumber('granted_ai_credits'),
-      net_ai_credit_delta: optionalNumber('net_ai_credit_delta'),
+      granted_ai_credits: finiteNumber(row.granted_ai_credits, 'ledger.granted_ai_credits'),
+      net_ai_credit_delta: finiteNumber(row.net_ai_credit_delta, 'ledger.net_ai_credit_delta'),
       quantity: finiteNumber(row.quantity, 'quantity'),
       unit: nonEmptyString(row.unit, 'unit'),
-      rate: optionalNumber('rate'),
+      rate: finiteNumber(row.rate, 'ledger.rate'),
       rate_unit: optionalString(row.rate_unit, 'ledger.rate_unit'),
       rate_version: optionalString(row.rate_version, 'ledger.rate_version'),
       created_at: optionalString(row.created_at, 'ledger.created_at'),
@@ -261,17 +285,21 @@ export function normalizeAccountCreditLedger(
   });
   return {
     account_id: payload.account_id,
-    generated_at: String(payload.generated_at || ''),
-    period_start_at: String(payload.period_start_at || ''),
-    period_end_at: String(payload.period_end_at || ''),
-    rate_version: String(payload.rate_version || ''),
+    generated_at: optionalString(payload.generated_at, 'generated_at'),
+    period_start_at: optionalString(payload.period_start_at, 'period_start_at'),
+    period_end_at: optionalString(payload.period_end_at, 'period_end_at'),
+    rate_version: optionalString(payload.rate_version, 'rate_version'),
     pagination: {
-      limit: pagination.limit === undefined ? undefined : normalizeInteger(pagination.limit, 'pagination.limit'),
-      offset: pagination.offset === undefined ? undefined : normalizeInteger(pagination.offset, 'pagination.offset'),
-      total: pagination.total === undefined ? undefined : normalizeInteger(pagination.total, 'pagination.total'),
-      has_more: optionalBoolean(pagination.has_more, 'pagination.has_more'),
+      limit: nonNegativeInteger(pagination.limit, 'pagination.limit'),
+      offset: nonNegativeInteger(pagination.offset, 'pagination.offset'),
+      total: nonNegativeInteger(pagination.total, 'pagination.total'),
+      has_more: typeof pagination.has_more === 'boolean' ? pagination.has_more : (() => { throw new Error('Invalid pagination.has_more'); })(),
     },
-    summary: Object.fromEntries(Object.entries(summary).map(([key, value]) => [key, key === 'entry_count' ? normalizeInteger(value, `summary.${key}`) : finiteNumber(value, `summary.${key}`)])),
+    summary: {
+      ...normalizeLedgerSummary(summary),
+      total_ai_credits: finiteNumber(summary.total_ai_credits, 'summary.total_ai_credits'),
+      breakdown: normalizeBreakdown(summary.breakdown),
+    },
     items: normalizedItems,
   };
 }
@@ -309,6 +337,7 @@ export function useAccountCreditEvidence(
     queryKey: accountCreditEvidenceKeys.quota(accountId),
     queryFn: async ({ signal }) =>
       normalizeAccountQuotaSummary(
+        accountId,
         await requestAccountQuotaSummary(accountId, signal)
       ),
     enabled: enabled && Boolean(accountId),
