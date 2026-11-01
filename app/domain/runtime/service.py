@@ -491,22 +491,13 @@ class RuntimeService:
             )
             request.input_payload = connector_envelope
 
-        resolution = self.routing_service.resolve(
-            profile_id=request.profile_id,
-            execution_kind=request.execution_kind,
-        )
-        merged_policy = self._merge_policy(resolution.default_policy, request.policy)
-        resolution = self._prefer_routing_candidate(resolution, merged_policy)
-        merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
             request,
-            merged_policy,
+            {},
+            client_identity=True,
         )
-        should_enqueue = self._should_enqueue(request, merged_policy)
-        selected_candidate = resolution.selected_candidate
-
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             site = self._require_active_site(repository, request.site_id)
@@ -515,6 +506,28 @@ class RuntimeService:
                     connector_envelope,
                     site=site,
                 )
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+                client_request=request,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
+                )
+            # Routing evidence belongs to the execution snapshot, not client identity.
+            resolution = self.routing_service.resolve(
+                profile_id=request.profile_id,
+                execution_kind=request.execution_kind,
+            )
+            merged_policy = self._merge_policy(resolution.default_policy, request.policy)
+            resolution = self._prefer_routing_candidate(resolution, merged_policy)
+            merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
             execution_contract = self.contract_validator.build_execution_contract(
                 request=request,
                 resolution=resolution,
@@ -530,20 +543,8 @@ class RuntimeService:
                     default_policy=resolution.default_policy,
                     profile_id=resolution.profile_id,
                 )
-
-            existing = self.run_lifecycle_service.get_idempotent_replay(
-                repository=repository,
-                site_id=request.site_id,
-                idempotency_key=request.idempotency_key,
-                request_fingerprint=request_fingerprint,
-            )
-            if existing is not None:
-                session.commit()
-                return self._build_execution_response(
-                    existing,
-                    repository=repository,
-                    idempotent_replay=True,
-                )
+            merged_policy["request_identity_version"] = 2
+            selected_candidate = resolution.selected_candidate
 
             if connector_envelope is not None:
                 self._admit_wordpress_operation_artifact_input(

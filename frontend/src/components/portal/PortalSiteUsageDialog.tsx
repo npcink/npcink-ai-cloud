@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
@@ -25,6 +25,7 @@ import { PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES } from '@/lib/portal-usage-cr
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import type { Locale } from '@/lib/i18n';
 import { formatNumber } from '@/lib/utils';
+import { buildPortalDayTrend } from '@/lib/portal-day-usage';
 import { joinSummaryParts } from '@/lib/portal-summary-text';
 import {
   getPortalSiteDisplayName,
@@ -201,7 +202,8 @@ export function PortalSiteUsageDialog({
   const [drillError, setDrillError] = useState('');
   const [drillHour, setDrillHour] = useState<SiteUsageBucketFilter | null>(null);
   const [drillPage, setDrillPage] = useState(0);
-  const [drillOpenedAt, setDrillOpenedAt] = useState(0);
+  const [drillTotal, setDrillTotal] = useState(0);
+  const [drillTrend, setDrillTrend] = useState<PortalCreditTrendPayload | null>(null);
   const dayRequestVersionRef = useRef(0);
   const drillRequestVersionRef = useRef(0);
   const dialogBodyRef = useRef<HTMLDivElement>(null);
@@ -305,33 +307,34 @@ export function PortalSiteUsageDialog({
     }
   }, [creditEventFeature, usageRange, t]);
 
-  /** Drill-down loads every call of that day (pages of 50 until the total is reached). */
-  const loadDrillDay = useCallback(async (day: SiteUsageDayRow) => {
+  /** One bounded records page; the full-day chart is aggregated by the server. */
+  const loadDrillDay = useCallback(async (day: SiteUsageDayRow, nextPage = 0, hour: SiteUsageBucketFilter | null = null) => {
     const requestSiteId = siteIdRef.current;
     if (!requestSiteId || (usageRange !== '7d' && usageRange !== '30d')) return;
     const requestVersion = ++drillRequestVersionRef.current;
     setDrillItems(null);
     setDrillError('');
+    setDrillHour(hour);
+    setDrillPage(nextPage);
     try {
-      const collected: PortalCreditEvent[] = [];
-      for (let page = 0; page < 40; page += 1) {
-        const response = await portalClient.getAccountCreditEvents({
-          window: usageRange,
-          feature: creditEventFeature,
-          siteId: requestSiteId,
-          startAt: day.start_at,
-          endAt: day.end_at,
-          limit: 50,
-          offset: collected.length,
-        });
-        const items = response.data?.items || [];
-        collected.push(...items);
-        const total = Number(response.data?.pagination?.total ?? collected.length);
-        if (items.length === 0 || collected.length >= total) break;
-      }
+      const [response, aggregate] = await Promise.all([
+        portalClient.getAccountCreditEvents({
+          window: usageRange, feature: creditEventFeature, siteId: requestSiteId,
+          startAt: hour?.startAt || day.start_at, endAt: hour?.endAt || day.end_at,
+          limit: creditEventPageSize, offset: nextPage * creditEventPageSize,
+        }),
+        nextPage === 0 && !hour ? portalClient.getAccountCreditEventBuckets({
+          bucket: '60m', window: usageRange, feature: creditEventFeature, siteId: requestSiteId,
+          startAt: day.start_at, endAt: day.end_at, limit: 50,
+        }) : Promise.resolve(null),
+      ]);
       if (requestVersion !== drillRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
-      collected.sort((a, b) => b.created_at.localeCompare(a.created_at));
-      setDrillItems(collected);
+      if (aggregate?.data) {
+        if (aggregate.data.pagination.has_more) throw new Error('Incomplete day aggregation');
+        setDrillTrend(buildPortalDayTrend(day, aggregate.data.items, requestSiteId, aggregate.data.generated_at));
+      }
+      setDrillItems(response.data?.items || []);
+      setDrillTotal(Number(response.data?.pagination?.total || 0));
     } catch (err) {
       if (requestVersion !== drillRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
       setDrillError(formatPortalErrorMessage(err, t, t('error.failed_load')));
@@ -343,7 +346,7 @@ export function PortalSiteUsageDialog({
   const openDay = useCallback((day: SiteUsageDayRow) => {
     savedDayScrollRef.current = scrollContainer()?.scrollTop ?? 0;
     setDrillDay(day);
-    setDrillOpenedAt(Date.now());
+    setDrillTrend(null);
     setDrillHour(null);
     setDrillPage(0);
     scrollContainer()?.scrollTo({ top: 0 });
@@ -413,48 +416,7 @@ export function PortalSiteUsageDialog({
       : []),
   ];
 
-  /** Hourly bars for the drilled day, built from its calls (local hours, up to now). */
-  const drillTrend = useMemo<PortalCreditTrendPayload | null>(() => {
-    if (!drillDay || !drillItems) return null;
-    const dayStart = drillDay.dayStart.getTime();
-    const now = drillOpenedAt;
-    const hours = Array.from({ length: 24 }, (_, hour) => dayStart + hour * 3600_000).filter((start) => start < now);
-    const points = hours.map((start) => {
-      const inHour = drillItems.filter((item) => {
-        const at = parseUsageDate(item.created_at)?.getTime() ?? -1;
-        return at >= start && at < start + 3600_000;
-      });
-      return {
-        start_at: new Date(start).toISOString(),
-        end_at: new Date(start + 3600_000).toISOString(),
-        ai_credits: inHour.reduce((sum, item) => sum + Number(item.consumed_ai_credits || 0), 0),
-        entry_count: inHour.length,
-      };
-    });
-    return {
-      contract_version: 'portal-credit-trend-v1',
-      generated_at: new Date(now).toISOString(),
-      site_id: siteId,
-      window: '24h',
-      bucket_seconds: 3600,
-      start_at: points[0]?.start_at || drillDay.start_at,
-      end_at: points[points.length - 1]?.end_at || drillDay.end_at,
-      total_ai_credits: points.reduce((sum, point) => sum + point.ai_credits, 0),
-      entry_count: drillItems.length,
-      points,
-    };
-  }, [drillDay, drillItems, drillOpenedAt, siteId]);
-  const drillFilteredItems = useMemo(() => {
-    if (!drillItems) return [];
-    if (!drillHour) return drillItems;
-    const start = Date.parse(drillHour.startAt);
-    const end = Date.parse(drillHour.endAt);
-    return drillItems.filter((item) => {
-      const at = parseUsageDate(item.created_at)?.getTime() ?? -1;
-      return at >= start && at < end;
-    });
-  }, [drillHour, drillItems]);
-  const drillPageItems = drillFilteredItems.slice(drillPage * creditEventPageSize, (drillPage + 1) * creditEventPageSize);
+  const drillPageItems = drillItems || [];
 
   const selectTrendBucket = useCallback((point: PortalCreditTrendPoint) => {
     setBucketFilter({ startAt: point.start_at, endAt: point.end_at, label: formatBucketLabel(point.start_at, point.end_at, locale) });
@@ -563,13 +525,13 @@ export function PortalSiteUsageDialog({
             updatedText(creditRecordsUpdatedAt),
           ])
         : '');
-  const drillSummary = drillDay && drillItems
+  const drillSummary = drillDay
     ? joinSummaryParts([
         `${formatDayLabel(drillDay.dayStart, locale, t)} · ${t(
           'portal.usage.credit_events_summary',
           {
-            credits: formatQuotaValue(drillItems.reduce((sum, item) => sum + Number(item.consumed_ai_credits || 0), 0)),
-            count: formatQuotaValue(drillItems.length),
+            credits: formatQuotaValue(drillDay.consumed_ai_credits),
+            count: formatQuotaValue(drillDay.event_count),
           },
           '{{credits}} AI credits used across {{count}} service events.',
         )}`,
@@ -944,10 +906,9 @@ export function PortalSiteUsageDialog({
                           window="24h"
                           isLoading={!drillItems && !drillError}
                           error={drillError}
-                          onRetry={() => void loadDrillDay(drillDay)}
+                          onRetry={() => void loadDrillDay(drillDay, drillPage, drillHour)}
                           onBucketSelect={(point) => {
-                            setDrillHour({ startAt: point.start_at, endAt: point.end_at, label: formatBucketLabel(point.start_at, point.end_at, locale) });
-                            setDrillPage(0);
+                            void loadDrillDay(drillDay, 0, { startAt: point.start_at, endAt: point.end_at, label: formatBucketLabel(point.start_at, point.end_at, locale) });
                           }}
                           embedded
                         />
@@ -964,8 +925,7 @@ export function PortalSiteUsageDialog({
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-full text-base leading-none hover:bg-blue-100 dark:hover:bg-blue-900/50"
                                 aria-label={t('portal.usage.bucket_filter_clear', {}, 'Clear time slot filter')}
                                 onClick={() => {
-                                  setDrillHour(null);
-                                  setDrillPage(0);
+                                  void loadDrillDay(drillDay);
                                 }}
                               >
                                 <span aria-hidden="true">×</span>
@@ -1133,7 +1093,7 @@ export function PortalSiteUsageDialog({
               </div>
 
               {activeView === 'records' && (isDayMode && drillDay
-                ? Boolean(drillItems && drillFilteredItems.length > 0)
+                ? Boolean(drillItems && drillTotal > 0)
                 : isDayMode ? Boolean(dayRows && dayTotal > 0 && !dayError) : (!creditEventError && creditEvents && creditEventCount > 0)) ? (
                 <nav
                   className="sticky -bottom-4 z-20 -mx-6 -mb-4 mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-gray-900"
@@ -1146,8 +1106,8 @@ export function PortalSiteUsageDialog({
                           'common.pagination_summary',
                           {
                             start: String(drillPage * creditEventPageSize + 1),
-                            end: String(Math.min((drillPage + 1) * creditEventPageSize, drillFilteredItems.length)),
-                            total: String(drillFilteredItems.length),
+                            end: String(Math.min((drillPage + 1) * creditEventPageSize, drillTotal)),
+                            total: String(drillTotal),
                           },
                           'Results',
                         )
@@ -1169,7 +1129,7 @@ export function PortalSiteUsageDialog({
                       className="btn btn-secondary btn-sm"
                       disabled={isDayMode && drillDay ? drillPage === 0 : isDayMode ? dayOffset === 0 || dayLoading : !hasPreviousPage || creditEventLoading}
                       onClick={() => (isDayMode && drillDay
-                        ? setDrillPage((page) => Math.max(0, page - 1))
+                        ? void loadDrillDay(drillDay, Math.max(0, drillPage - 1), drillHour)
                         : isDayMode
                         ? void loadDayPage(Math.max(0, dayOffset - DAY_PAGE_SIZE))
                         : void loadCreditEventPage(Math.max(0, creditEventOffset - creditEventPageSize)))}
@@ -1179,9 +1139,9 @@ export function PortalSiteUsageDialog({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={isDayMode && drillDay ? (drillPage + 1) * creditEventPageSize >= drillFilteredItems.length : isDayMode ? dayOffset + DAY_PAGE_SIZE >= dayTotal || dayLoading : !hasNextPage || creditEventLoading}
+                      disabled={isDayMode && drillDay ? (drillPage + 1) * creditEventPageSize >= drillTotal : isDayMode ? dayOffset + DAY_PAGE_SIZE >= dayTotal || dayLoading : !hasNextPage || creditEventLoading}
                       onClick={() => (isDayMode && drillDay
-                        ? setDrillPage((page) => page + 1)
+                        ? void loadDrillDay(drillDay, drillPage + 1, drillHour)
                         : isDayMode
                         ? void loadDayPage(dayOffset + DAY_PAGE_SIZE)
                         : void loadCreditEventPage(creditEventOffset + creditEventPageSize))}

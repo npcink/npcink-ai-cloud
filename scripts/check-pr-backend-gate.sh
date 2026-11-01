@@ -69,7 +69,7 @@ run_full_backend_gate() {
 	echo "[info] High-risk backend surface changed; running full backend gate."
 	.venv/bin/ruff check .
 	.venv/bin/mypy app
-	.venv/bin/python -m pytest tests/api tests/contract tests/domain -q
+	.venv/bin/python -m pytest tests/core tests/api tests/contract tests/domain tests/workers -q
 }
 
 if [ -n "${GITHUB_EVENT_NAME:-}" ] && [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then

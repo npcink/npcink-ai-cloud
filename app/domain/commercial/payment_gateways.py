@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Protocol
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -14,7 +15,10 @@ from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from app.domain.commercial.errors import CommercialValidationError
+from app.domain.commercial.errors import (
+    CommercialValidationError,
+    PaymentGatewayRefundRejectedError,
+)
 
 PAYMENT_GATEWAY_CONTRACT_VERSION = "payment-gateway-contract-v1"
 SUPPORTED_PAYMENT_GATEWAY_PROVIDERS = ("alipay", "wechat_pay", "manual")
@@ -394,7 +398,10 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 timeout=10.0,
             )
             response.raise_for_status()
-            response_payload = response.json()
+            response_payload, signed_content, signature = _parse_alipay_signed_response(
+                response.text,
+                "alipay_trade_refund_response",
+            )
         except (httpx.HTTPError, ValueError) as error:
             raise CommercialValidationError(
                 "service.alipay_refund_status_unknown",
@@ -403,40 +410,41 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                     "out_request_no before retrying"
                 ),
             ) from error
-        if not isinstance(response_payload, dict):
-            raise CommercialValidationError(
-                "service.alipay_refund_status_unknown",
-                "Alipay returned an invalid refund response",
-            )
-        refund_payload = response_payload.get("alipay_trade_refund_response", {})
-        if not isinstance(refund_payload, dict):
-            raise CommercialValidationError(
-                "service.alipay_refund_status_unknown",
-                "Alipay returned an invalid refund response",
-            )
-        self._verify_response_signature(
-            refund_payload,
-            str(response_payload.get("sign") or ""),
-        )
-        if str(refund_payload.get("code") or "") != "10000":
-            raise CommercialValidationError(
+        refund_payload = response_payload
+        self._verify_response_signature(signed_content, signature)
+        response_code = str(refund_payload.get("code") or "")
+        if response_code in {"40001", "40002", "40004", "40006"}:
+            raise PaymentGatewayRefundRejectedError(
                 "service.alipay_refund_failed",
                 "Alipay rejected the refund request",
             )
+        if response_code != "10000":
+            raise CommercialValidationError(
+                "service.alipay_refund_status_unknown",
+                "Alipay did not confirm a definitive refund outcome",
+            )
         response_order_id = str(refund_payload.get("out_trade_no") or "").strip()
-        if response_order_id and response_order_id != request.order_id:
+        if not response_order_id or response_order_id != request.order_id:
             raise CommercialValidationError(
                 "service.alipay_refund_response_mismatch",
                 "Alipay refund response does not match the payment order",
             )
-        response_amount = _first_float(refund_payload, "refund_fee")
-        if response_amount is not None and _format_cny_amount(
-            response_amount
-        ) != _format_cny_amount(request.amount):
+        try:
+            raw_amount = refund_payload["refund_fee"]
+            if isinstance(raw_amount, bool) or not isinstance(raw_amount, (str, int, float)):
+                raise ValueError("invalid refund amount type")
+            response_amount = Decimal(str(raw_amount))
+            if (
+                not response_amount.is_finite()
+                or response_amount <= 0
+                or response_amount != Decimal(str(request.amount))
+            ):
+                raise ValueError("refund amount mismatch")
+        except (KeyError, InvalidOperation, ValueError) as error:
             raise CommercialValidationError(
                 "service.alipay_refund_response_mismatch",
                 "Alipay refund response amount does not match the requested amount",
-            )
+            ) from error
         provider_refund_no = str(refund_payload.get("trade_no") or "").strip()
         return PaymentGatewayRefundResult(
             provider=self.provider,
@@ -482,27 +490,21 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 timeout=10.0,
             )
             response.raise_for_status()
-            response_payload = response.json()
+            close_payload, signed_content, signature = _parse_alipay_signed_response(
+                response.text,
+                "alipay_trade_close_response",
+            )
         except (httpx.HTTPError, ValueError) as error:
             raise CommercialValidationError(
                 "service.alipay_order_close_failed",
                 "Alipay did not confirm that the unpaid order was closed",
             ) from error
-        if not isinstance(response_payload, dict):
-            raise CommercialValidationError(
-                "service.alipay_order_close_failed",
-                "Alipay returned an invalid order close response",
-            )
-        close_payload = response_payload.get("alipay_trade_close_response", {})
-        if not isinstance(close_payload, dict) or str(close_payload.get("code") or "") != "10000":
+        self._verify_response_signature(signed_content, signature)
+        if str(close_payload.get("code") or "") != "10000":
             raise CommercialValidationError(
                 "service.alipay_order_close_failed",
                 "Alipay did not confirm that the unpaid order was closed",
             )
-        self._verify_response_signature(
-            close_payload,
-            str(response_payload.get("sign") or ""),
-        )
         return PaymentGatewayCloseResult(
             provider=self.provider,
             external_order_no=request.external_order_no or request.order_id,
@@ -593,7 +595,7 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
 
     def _verify_response_signature(
         self,
-        response_payload: dict[str, object],
+        signed_content: str,
         signature: str,
     ) -> None:
         if not signature:
@@ -608,14 +610,9 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 "service.alipay_public_key_invalid",
                 "Alipay public key must be an RSA public key",
             )
-        signed_content = json.dumps(
-            response_payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
         try:
             public_key.verify(
-                base64.b64decode(signature),
+                base64.b64decode(signature, validate=True),
                 signed_content.encode("utf-8"),
                 padding.PKCS1v15(),
                 hashes.SHA256(),
@@ -625,6 +622,61 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 "service.alipay_response_signature_invalid",
                 "Alipay response signature is invalid",
             ) from error
+
+
+def _parse_alipay_signed_response(
+    raw: str, response_key: str
+) -> tuple[dict[str, object], str, str]:
+    """Extract the exact top-level JSON value bytes Alipay signed, without reserialization."""
+
+    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    decoder = json.JSONDecoder(object_pairs_hook=unique_object)
+    length = len(raw)
+
+    def skip_space(index: int) -> int:
+        while index < length and raw[index] in " \t\r\n":
+            index += 1
+        return index
+
+    index = skip_space(0)
+    if index >= length or raw[index] != "{":
+        raise ValueError("expected response object")
+    index = skip_space(index + 1)
+    values: dict[str, object] = {}
+    signed_content = ""
+    while index < length and raw[index] != "}":
+        key, index = decoder.raw_decode(raw, index)
+        if not isinstance(key, str) or key in values:
+            raise ValueError("invalid or duplicate response key")
+        index = skip_space(index)
+        if index >= length or raw[index] != ":":
+            raise ValueError("expected colon")
+        start = skip_space(index + 1)
+        value, index = decoder.raw_decode(raw, start)
+        values[key] = value
+        if key == response_key:
+            signed_content = raw[start:index]
+        index = skip_space(index)
+        if index < length and raw[index] == ",":
+            index = skip_space(index + 1)
+            if index >= length or raw[index] == "}":
+                raise ValueError("trailing comma")
+        else:
+            break
+    if index >= length or raw[index] != "}" or skip_space(index + 1) != length:
+        raise ValueError("invalid response envelope")
+    payload = values.get(response_key)
+    signature = values.get("sign", "")
+    if not isinstance(payload, dict) or not isinstance(signature, str):
+        raise ValueError("invalid signed response")
+    return payload, signed_content, signature
 
 
 def validate_alipay_gateway_config(config: Mapping[str, object]) -> None:

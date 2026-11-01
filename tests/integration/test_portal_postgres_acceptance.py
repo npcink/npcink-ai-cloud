@@ -113,3 +113,84 @@ def test_plugin_error_aggregates_on_postgres(portal_database: str) -> None:
     site = service.get_summary(site_id="site-001")
     assert admin["errors"]
     assert site["errors"]
+
+
+@pytest.mark.parametrize("refund_status", ["requested", "unknown", "failed"])
+def test_credit_consumption_rechecks_refund_after_grant_lock_on_postgres(
+    portal_database: str, refund_status: str,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import UTC, datetime
+    from threading import Event
+    from time import monotonic, sleep
+
+    from app.adapters.repositories.commercial_repository import CommercialRepository
+    from app.core.db import init_schema
+    from tests.domain.test_payment_service import _seed_account_and_plan, _service
+
+    init_schema(portal_database)
+    service = _service(portal_database)
+    _seed_account_and_plan(service)
+    base = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199,
+    )
+    service.mark_payment_order_paid(order_id=str(base["order_id"]), amount=199)
+    order = service.create_credit_pack_payment_order(account_id="acct_pay", pack_id="pack_small")
+    service.mark_payment_order_paid(order_id=str(order["order_id"]), amount=99)
+    ready = Event()
+    consumer_pid: list[int] = []
+
+    def consume() -> float:
+        with get_session(portal_database) as session:
+            consumer_pid.append(int(session.scalar(text("SELECT pg_backend_pid()"))))
+            ready.set()
+            amount = CommercialRepository(session).consume_paid_credit_grants(
+                account_id="acct_pay",
+                ai_credits=1,
+                now=datetime.now(UTC),
+            )
+            session.commit()
+            return amount
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with get_session(portal_database) as session:
+            repo = CommercialRepository(session)
+            repo.get_paid_credit_grant_by_order(str(order["order_id"]), for_update=True)
+            repo.create_payment_refund(
+                refund_id="concurrent-refund",
+                order_id=str(order["order_id"]),
+                account_id="acct_pay",
+                subscription_id=None,
+                provider="alipay",
+                external_refund_no="concurrent-refund",
+                status=refund_status,
+                amount=99,
+                currency="CNY",
+                reason=None,
+                requested_at=datetime.now(UTC),
+                idempotency_key=None,
+                metadata_json={},
+            )
+            pending = pool.submit(consume)
+            try:
+                assert ready.wait(5)
+                deadline = monotonic() + 5
+                blocked = False
+                while monotonic() < deadline:
+                    blocked = bool(
+                        session.scalar(
+                            text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                            {"pid": consumer_pid[0]},
+                        )
+                    )
+                    if blocked:
+                        break
+                    sleep(0.01)
+                assert blocked, "consumer must wait on the grant lock before refund commits"
+                assert not pending.done()
+            finally:
+                session.commit()
+        assert pending.result(timeout=5) == (1 if refund_status == "failed" else 0)

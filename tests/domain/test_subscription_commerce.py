@@ -21,6 +21,7 @@ from app.core.models import (
     AccountSubscription,
     PaymentOrder,
     PlanOffer,
+    Site,
     SubscriptionOrder,
     TrialClaim,
 )
@@ -102,6 +103,88 @@ def _pay(
         amount=float(order["amount"]),
         audit_context=_audit(f"{key}-paid"),
     )
+
+
+@pytest.mark.parametrize("elapsed_days", [30, 31, 61, 365])
+@pytest.mark.parametrize("read_first", [False, True])
+def test_paid_month_expires_without_a_settled_renewal(
+    tmp_path: Path,
+    elapsed_days: int,
+    read_first: bool,
+) -> None:
+    clock = [datetime(2026, 11, 1, tzinfo=UTC)]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_expiry")
+    paid = _pay(service, account_id="acct_expiry", offer_id="plus_monthly_v1", key="expiry")
+    original_end = paid["subscription"]["current_period_end_at"]
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_expiry", name="Expiry", status="active", account_id="acct_expiry")
+        )
+        session.commit()
+    clock[0] += timedelta(days=elapsed_days)
+    if read_first:
+        account = service.get_admin_account("acct_expiry")
+        assert account["subscriptions"][0]["subscription"]["plan_id"] == "free"
+    with get_session(database_url) as session:
+        decision = service.authorize_runtime_request(
+            session=session,
+            site_id="site_expiry",
+            ability_family="text",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            data_classification="internal",
+            request_kind="execute",
+            estimated_ai_credits=1,
+        )
+        session.commit()
+        assert decision["plan_version_id"] == "free_v1"
+        expired = session.get(AccountSubscription, paid["subscription"]["subscription_id"])
+        assert expired.status == "canceled"
+        assert service._serialize_datetime(expired.current_period_end_at) == original_end
+        assert len(list(session.scalars(select(PaymentOrder)))) == 1
+    dispose_engine(database_url)
+
+
+def test_settled_renewal_covers_runtime_until_its_paid_end(tmp_path: Path) -> None:
+    clock = [datetime(2026, 11, 1, tzinfo=UTC)]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_renewal")
+    _pay(service, account_id="acct_renewal", offer_id="plus_monthly_v1", key="first-month")
+    renewed = _pay(
+        service, account_id="acct_renewal", offer_id="plus_monthly_v1", key="second-month"
+    )
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_renewal", name="Renewal", status="active", account_id="acct_renewal")
+        )
+        session.commit()
+    clock[0] += timedelta(days=31)
+    with get_session(database_url) as session:
+        decision = service.authorize_runtime_request(
+            session=session,
+            site_id="site_renewal",
+            ability_family="text",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            data_classification="internal",
+            request_kind="execute",
+            estimated_ai_credits=1,
+        )
+        session.commit()
+        assert decision["plan_version_id"] == "plus_v1"
+        assert decision["period_renewed"] is False
+        assert (
+            decision["period_end_at"].isoformat()
+            == renewed["subscription"]["current_period_end_at"]
+        )
+    dispose_engine(database_url)
 
 
 def test_emergency_stop_does_not_seed_or_change_offers_and_recovers(tmp_path: Path) -> None:

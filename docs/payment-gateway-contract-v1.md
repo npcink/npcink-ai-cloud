@@ -86,7 +86,19 @@ Real Alipay refunds use `alipay.trade.refund` with a stable
 order number, and refund amount before recording provider success or changing
 entitlement. A timeout or malformed response is an unknown result, not a
 failed refund: the same stable refund number must be reconciled before any
-retry.
+retry. Verification uses the exact response-object text in the gateway JSON,
+including whitespace and escapes; duplicate keys are rejected. A success must
+include the matching order number and a finite, positive, exact refund amount.
+Only a verified explicit business rejection is failed; missing/invalid signatures,
+missing fields, mismatches, transport failures, and system errors remain unknown.
+A late gateway error cannot downgrade an already confirmed success.
+
+Credit-pack grants with requested or unknown refunds are unavailable to runtime
+admission and consumption. Consumption locks the grants, then rechecks refund
+state in a separate statement; refund requests lock the same grant before checking
+prior consumption. A confirmed failure releases the freeze; success atomically
+reverses the grant. Partial pending refunds conservatively freeze the whole grant
+until their outcome is known. No database transaction spans gateway HTTP IO.
 
 Provider timestamps without an explicit offset must be interpreted in the
 provider's documented business timezone. Alipay `gmt_*` values are interpreted

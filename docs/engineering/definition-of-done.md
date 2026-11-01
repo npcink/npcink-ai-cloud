@@ -22,6 +22,11 @@ A change is done only when all applicable items hold:
    ([reversible-feature-pauses-v1.md](../reversible-feature-pauses-v1.md)).
 8. **Human acceptance** is required for merge/release outcomes the operator
    requested; agents do not self-certify production readiness.
+9. **Audit remediation** links each scoped finding to its contract, source and
+   executable counterexample, and separates fixed behavior from release and
+   historical-data state. Apply the relevant
+   [audit regression rules](../historical-issue-closure-and-release-evidence-standard-v1.md#13-turn-audit-findings-into-executable-regressions);
+   record failures, skips and targeted reruns without relabeling them a full green run.
 
 Phase 1 product Done for the editor loop additionally follows
 [wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md).

@@ -379,6 +379,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "credit event start_at and end_at must be provided together",
                 )
             if range_start_at is not None and range_end_at is not None:
+                range_start_at = self._normalize_datetime(range_start_at)
+                range_end_at = self._normalize_datetime(range_end_at)
                 if range_start_at >= range_end_at:
                     raise CommercialValidationError(
                         "service.portal_credit_events_range_invalid",
@@ -690,6 +692,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         feature: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        range_start_at: datetime | None = None,
+        range_end_at: datetime | None = None,
     ) -> dict[str, object]:
         bucket_seconds_by_key = {"10m": 600, "30m": 1800, "60m": 3600}
         normalized_bucket = str(bucket or "30m").strip().lower()
@@ -746,6 +750,21 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 else period_start_at
             )
             query_end_at = now if normalized_window in window_durations else min(period_end_at, now)
+            if (range_start_at is None) != (range_end_at is None):
+                raise CommercialValidationError(
+                    "service.portal_credit_event_range_invalid",
+                    "credit event start_at and end_at must be provided together",
+                )
+            if range_start_at is not None and range_end_at is not None:
+                range_start_at = self._normalize_datetime(range_start_at)
+                range_end_at = self._normalize_datetime(range_end_at)
+                if range_start_at >= range_end_at:
+                    raise CommercialValidationError(
+                        "service.portal_credit_event_range_invalid",
+                        "credit event start_at must be earlier than end_at",
+                    )
+                query_start_at = max(query_start_at, range_start_at)
+                query_end_at = min(query_end_at, range_end_at)
             bucket_rows = repository.summarize_portal_credit_event_buckets(
                 account_id=account_id,
                 subscription_id=(

@@ -8681,6 +8681,28 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert latest_bucket["consumed_ai_credits"] >= 1
     assert latest_bucket["top_feature_key"]
 
+    exact_bucket_response = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={
+            "bucket": "60m",
+            "window": "period",
+            "start_at": latest_bucket["start_at"],
+            "end_at": latest_bucket["end_at"],
+        },
+        headers=portal_reads_headers(),
+    )
+    assert exact_bucket_response.status_code == 200
+    assert (
+        exact_bucket_response.json()["data"]["summary"]["consumed_ai_credits"]
+        == latest_bucket["consumed_ai_credits"]
+    )
+    invalid_bucket_range = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={"start_at": latest_bucket["start_at"]},
+        headers=portal_reads_headers(),
+    )
+    assert invalid_bucket_range.status_code == 400
+
     bucket_detail_response = client.get(
         "/portal/v1/account/credit-events",
         params={

@@ -5,8 +5,9 @@ Status: active engineering standard.
 ## Purpose and boundary
 
 The default branch keeps the complete backend pytest gate, but distributes
-`tests/api`, `tests/contract`, and `tests/domain` across four deterministic
-weighted shards. Files remain the normal scheduling unit. A file whose rolling
+`tests/core`, `tests/api`, `tests/contract`, `tests/domain`, and `tests/workers` across four deterministic
+weighted shards. Opt-in integration suites remain separate gates. Core/worker source changes also
+select their unit suites in the targeted PR lane. Files remain the normal scheduling unit. A file whose rolling
 weight exceeds 15 percent of the per-shard target may be divided by statically
 discoverable pytest node ID when the same rolling evidence contains complete
 node weights; otherwise selection fails safe to the whole file. The bounded
