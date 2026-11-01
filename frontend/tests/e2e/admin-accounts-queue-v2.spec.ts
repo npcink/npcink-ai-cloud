@@ -171,7 +171,7 @@ async function installAccountsQueueMocks(page: Page, initialItems = initialAccou
     const limit = Number(params.get('limit'));
     const offset = Number(params.get('offset') || 0);
     expect(limit).toBe(10);
-    items = items.slice(offset, offset + limit);
+    items = items.slice(offset, offset + limit).map(item => ({ ...item, account: { ...item.account, metadata: item.account.metadata || {} } }));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -212,7 +212,14 @@ async function installAccountsQueueMocks(page: Page, initialItems = initialAccou
         ...identityFixture(generatedAccountId, String(payload.primary_email)),
       },
     ];
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: generatedAccountId })) });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+      account_id: generatedAccountId, name: payload.name, status: 'active', metadata,
+      creation_operation_id: route.request().headers()['idempotency-key'],
+      creation_receipt: { operation_id: route.request().headers()['idempotency-key'], account_id: generatedAccountId, audit_event_id: 1 },
+      primary_identity: { principal_id: 'principal_created', email: payload.primary_email, status: 'active' },
+      membership: { membership_id: 'membership_created', role: 'owner', status: 'active' },
+      current_subscription: bindDefaultFree ? { subscription_id: 'sub_created_free' } : null,
+    })) });
   });
 
   await page.route(/\/api\/admin\/accounts\/[^/?]+$/, async route => {
@@ -221,7 +228,7 @@ async function installAccountsQueueMocks(page: Page, initialItems = initialAccou
     const item = accounts.find(account => account.account.account_id === accountId);
     if (!item) return route.fallback();
     await route.fulfill({ json: buildAdminApiEnvelope({
-      account: item.account, primary_identity: item.primary_identity,
+      account: { ...item.account, metadata: item.account.metadata || {} }, primary_identity: item.primary_identity,
       identity_relationship_state: item.identity_relationship_state,
       memberships: [], sites: [], subscriptions: [],
       trial_readiness: { status: 'ready', next_action: 'invite_trial_site', summary: { site_count: 0 } },

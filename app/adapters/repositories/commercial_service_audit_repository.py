@@ -16,6 +16,21 @@ class CommercialServiceAuditRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def find_account_creation_events(
+        self, *, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        # Bound after exact identity/operation filtering, never a recent-page guess.
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "account.upsert",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "POST",
+            ServiceAuditEvent.path == "/internal/service/accounts",
+            ServiceAuditEvent.scope_kind == "account",
+        ).limit(2)))
+
     def record_service_audit_event(
         self,
         *,

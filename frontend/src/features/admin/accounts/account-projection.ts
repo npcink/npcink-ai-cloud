@@ -1,0 +1,30 @@
+// Validate required customer projections before presentation defaults or writes.
+export function isAccountRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function requireAccount(value: unknown, expectedId?: string): Record<string, unknown> {
+  if (!isAccountRecord(value) || typeof value.account_id !== 'string' || !value.account_id.trim()
+    || (expectedId !== undefined && value.account_id !== expectedId)
+    || typeof value.status !== 'string' || !value.status.trim()
+    || typeof value.name !== 'string'
+    || !isAccountRecord(value.metadata)) {
+    throw new Error('Invalid customer projection');
+  }
+  return value;
+}
+
+export function validateAccountDirectory(value: unknown): void {
+  if (!isAccountRecord(value) || !Array.isArray(value.items)
+    || typeof value.total !== 'number' || !Number.isSafeInteger(value.total) || value.total < 0
+    || value.total < value.items.length) throw new Error('Invalid customer directory');
+  for (const item of value.items) {
+    if (!isAccountRecord(item)) throw new Error('Invalid customer row');
+    requireAccount(item.account);
+  }
+}
+
+export function requireAccountDetail(value: unknown, accountId: string): Record<string, unknown> {
+  if (!isAccountRecord(value)) throw new Error('Invalid customer detail');
+  return requireAccount(value.account, accountId);
+}

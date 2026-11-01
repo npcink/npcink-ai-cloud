@@ -1323,7 +1323,11 @@ export async function installAdminMocks(
         await fulfillJson(route, {
           account_id: accountId,
           name,
-          status: 'active',
+          status: 'active', metadata,
+          creation_operation_id: route.request().headers()['idempotency-key'],
+          creation_receipt: { operation_id: route.request().headers()['idempotency-key'], account_id: accountId, audit_event_id: 1 },
+          primary_identity: { principal_id: 'principal_created', email: String(payload.primary_email || '').toLowerCase(), status: 'active' },
+          membership: { membership_id: 'membership_created', role: 'owner', status: 'active' },
           current_subscription: bindDefaultFree
             ? {
                 subscription_id: `sub_${accountId}_free`,
@@ -1355,6 +1359,7 @@ export async function installAdminMocks(
         total: filteredItems.length,
         items: filteredItems.map(item => ({
           ...item,
+          account: { ...item.account, metadata: item.account.metadata || {} },
           identity_relationship_state: secondaryIdentities.has(item.account.account_id) ? 'healthy' : 'missing',
         })),
       });
@@ -2214,7 +2219,7 @@ export async function installAdminMocks(
           qq_bound: false, qq_binding_count: 0,
         } : null;
         await fulfillJson(route, {
-          account: knownAccount.account, primary_identity: identity,
+          account: { ...knownAccount.account, metadata: knownAccount.account.metadata || {} }, primary_identity: identity,
           identity_relationship_state: identity ? 'healthy' : 'missing',
           memberships: identity ? [{ member_ref: `user:${email}`, identity_type: 'user', role: 'user', status: 'active' }] : [],
           sites: [], subscriptions: [],

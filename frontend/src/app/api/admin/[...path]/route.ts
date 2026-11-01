@@ -95,6 +95,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
+    pattern: /^accounts\/creation-operations\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
     pattern: /^accounts\/[^/]+\/credit-ledger\/adjustments\/[^/]+$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_billing',

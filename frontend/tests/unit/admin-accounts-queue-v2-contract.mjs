@@ -10,6 +10,7 @@ const accessSource = readFileSync(resolve(root, 'src/features/admin/accounts/Cus
 const createSource = [
   'src/features/admin/accounts/CreateAccountForm.tsx',
   'src/features/admin/accounts/create-account-form-model.ts',
+  'src/features/admin/accounts/account-create-confirmation.ts',
 ].map((path) => readFileSync(resolve(root, path), 'utf8')).join('\n');
 const dialogSource = readFileSync(
   resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'),
@@ -185,7 +186,7 @@ assert.doesNotMatch(
 
 assert.match(
   directorySource,
-  /AdminWorkbenchDialog[\s\S]*handleCreateAccount[\s\S]*toast\.success[\s\S]*router\.push/,
+  /useAccountCreation\([\s\S]*onCreated:[\s\S]*toast\.success[\s\S]*router\.push[\s\S]*AdminWorkbenchDialog[\s\S]*handleCreateAccount/,
   'customer creation must use the shared dialog, retain success feedback, and open the generated customer'
 );
 assert.match(
