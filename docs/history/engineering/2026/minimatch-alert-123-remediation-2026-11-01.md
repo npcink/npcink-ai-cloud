@@ -1,7 +1,8 @@
 # minimatch #123 安全维护记录 — 2026-11-01
 
-状态：本地修复已验证，[PR #1342](https://github.com/npcink/npcink-ai-cloud/pull/1342)
-已发布；GitHub 告警刷新及 M4 接受尚待完成。
+状态：[PR #1342](https://github.com/npcink/npcink-ai-cloud/pull/1342)
+已合并，M4 已 accepted；#123 刷新后仍 open，报告版本从 10.2.5 变为 3.1.5。
+10.x 放大机制已修复，3.x 与公告范围的差异待上游确认，安全扫描未清零。
 不构成生产部署或真实 Provider 调用授权。
 
 ## 范围与依据
@@ -69,13 +70,39 @@ allowDefaultProject 允许/拒绝路径；保留 ESLint 3.x 的可调用与 make
 - 原始本地日志保留在本任务证据目录的 before-regression.log、
   after-regression.log、lint.log、type-check.log、unit.log、contracts.log、
   audit-after.json 与 build.log；最终回执记录精确修订和 PR 链接。
+- 合入最新 master（含 Admin PR #1344）后补验 TypeScript、788 项 Vitest、
+  全部前端契约及消费者回归通过。最终 head `b45f2b76` 的
+  [Cloud CI](https://github.com/npcink/npcink-ai-cloud/actions/runs/41316501049)
+  与完整适用检查通过；#1342 于 2026-11-01T14:35:48Z squash 合并为
+  `57e30fdf05694bcd5c61b048da1d565600c9f7c1`。
+- 合并后直接读取 GitHub #123：`state=open`、`fixed_at=null`、
+  `version_requirement=3.1.5`；当次开放告警共一条。GitHub 标为 runtime，
+  与本地生产依赖图不一致，不能仅据扫描标签判断公网可利用性。
+  已准备未发送的上游澄清草稿；未以通知、dismiss 或 ignore 代替修复。
 
 ## M4、回滚与后续编辑验证
 
 首次只读状态检查时 M4 为另一个 Admin 任务的候选 `466e4386`，其会话
-“执行”最新回执明确冻结。未经占用协调，不替换该候选；本地与 PR 可独立推进。
-依赖输入变动须用 `m4:preview:deploy`，合并后从干净 master promote，
-核对探针修订、最终前端镜像依赖清单及首页/登录页 smoke；sync 不能代替重建。
+“执行”最新回执明确冻结，因此先完成本地与 PR 验证。操作者随后明确允许
+本任务接管 M4；接管时另一任务已合并 #1344，M4 为其 accepted 修订。
+本任务合入该最新 master 后才完成候选部署，保留其他任务改动。
+
+候选通过 `m4:preview:deploy` 重建前端依赖镜像；合并后从干净 master 执行
+`m4:preview:promote -- --pr 1342`，于 2026-11-01T14:37:46Z accepted：
+
+- `source_revision=57e30fdf05694bcd5c61b048da1d565600c9f7c1`，
+  `source_branch=master`，`source_dirty=false`，`promotion_pr=1342`。
+- 前端镜像 `sha256:d7f789e9291088dc19658c444fba2a19cc3a9346748710205708a680ffd31411`；
+  容器 Node 22.23.3，estree 消费者实际解析 11.0.1，ESLint 解析 3.1.5；
+  八段反例为 64，实际容器消费者契约在候选和 accepted 阶段均通过。
+- 首页、Portal 登录、Admin 登录、JS 资源与 liveness 均 200；accepted
+  探针修订为 `57e30fdf0569` 且 clean。服务运行正常，数据库保持
+  `20261024_0091 (head)`，未新增迁移。
+- promote 的 sync 复用已重建且输入指纹相同的候选镜像；前端源修订保留
+  `b45f2b76`，其树与 squash merge 完全一致。sync 未被当作依赖重建证据。
+- M4 是开发镜像配合 production 前端模式，包含开发工具链；其中生成的
+  `.next/standalone` 未发现 minimatch。未部署或验收生产 runner 镜像，
+  不把 M4 或本地 standalone 清单表述成线上生产证据。
 
 回滚为 revert 本次依赖与回归提交、重建 M4；这会重新引入旧依赖风险，
 不能通过删除回归或隐藏告警宣称安全。无数据库迁移或跨仓公共契约变更，
@@ -104,8 +131,30 @@ Cloud 环境后才导入会初始化应用的集成测试模块，缺少生产�
 编辑验证仅推进了准备层：现有 `magick-ai` 站点只读 readiness 为 ready，
 Addon/Toolbox 实际挂载路径已核对；`check:editor-assist-quality` 28 项通过，
 定向 lint、UI 契约和不自动改动边界通过。未变更站点状态、配置或文章，
-未调用模型。此时 Cloud 探针仍来自另一候选，不能算本次 M4 接受证据。
+未调用模型。准备检查当时的 Cloud 探针来自另一候选，不追认为本次 M4 证据；
+本次 accepted 证据独立记录在上一节。
 历史 2026-10-27 改写样例加强原文确定性的缺口仍保留；本次没有新的人工
 采纳、省时、复用意愿或付费价值证据。后续复用
 [既有 cohort 运行手册](../../../real-editor-cohort-operations-v1.md)，
 真实调用前声明预算并逐次 claim 既有 ledger，不以测试数据填充自然样本。
+
+## 可复用经验与收尾边界
+
+1. 告警关闭必须读取合并后 API；同一告警可从一个依赖版本转指另一个版本。
+   保留版本、manifest、scope 与机制证据，不能以 PR merged 代替 fixed。
+2. 跨主版本 override 只作用于已核对的父消费者；不得为消除扫描红灯破坏
+   其他消费者的 callable/makeRe 契约。3.x 残留继续公开记录，等待公告范围
+   确认或父依赖提供兼容安全版本，再复验并决定是否移除 override。
+3. 集成测试 fixture 会初始化应用时，独立分片/新进程必须能走到目标断言。
+   本次 fixture 导入顺序问题用独立进程复现；不以全套模块缓存掩盖失败，
+   不修改生产保护断言来制造绿灯。
+4. M4 status 必须先返回，才能决定后续部署。本次曾提前启动旧 head 上传，
+   发现基线变化后在 scp 阶段终止，未执行远端 apply；随后合入最新 master
+   重新验证并部署。不能同时启动状态查询与依赖该结果的远端写入。
+5. clean-master 门禁发现运维目录两份未跟踪 Playwright 日志后，逐件复制、
+   SHA256 校验并移至任务证据目录，保留原件；未清扫其他任务工作区。
+
+本任务功能、测试修正和收尾文档分别留存合并回执；精确分支/worktree
+删除结果记入仓库外最终回执，避免为记录自身合并再创建循环收尾提交。
+稳定 M4 运维 checkout 和其他任务工作区不属于本次清理对象。
+可结束本轮实现会话，但不得将 #123、生产验证或真实人工编辑价值标为完成。
