@@ -97,9 +97,6 @@
       "smokePath": "/admin/credit-packs",
       "pageModel": "configuration",
       "evidenceTier": "focused_behavior",
-      "allowedEmptyAdminRequests": [
-        "GET /api/admin/credit-packs"
-      ],
       "focusedSpecs": [
         "tests/e2e/admin-credit-packs-directory-v2.spec.ts"
       ]
