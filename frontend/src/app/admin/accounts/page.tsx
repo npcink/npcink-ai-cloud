@@ -23,9 +23,7 @@ import {
   CreateAccountForm,
   useCreateAccountForm,
 } from '@/features/admin/accounts/CreateAccountForm';
-import {
-  buildCreateAccountPayload,
-} from '@/features/admin/accounts/create-account-form-model';
+import { useAccountCreation } from '@/features/admin/accounts/account-create-confirmation';
 import {
   resolveCustomerPackageDisplay,
   type CoverageState,
@@ -33,6 +31,7 @@ import {
 } from '@/lib/customer-package-display';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import { validateAccountDirectory } from '@/features/admin/accounts/account-projection';
 import {
   ADMIN_QUEUE_PATHNAMES,
   buildAdminAccountDetailPathname,
@@ -87,10 +86,6 @@ interface AccountsListPayload {
   items?: AccountsApiItem[];
   total?: number;
   hidden_internal_total?: number;
-}
-
-interface CreatedAccountPayload {
-  account_id?: string;
 }
 
 const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
@@ -196,9 +191,7 @@ function AccountsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [actionError, setActionError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -250,7 +243,8 @@ function AccountsContent() {
         const payload = (
           await accountsClient.request<AccountsListPayload>(`/api/admin/accounts?${requestKey}`)
         ).data;
-        const normalized = (payload.items || [])
+        validateAccountDirectory(payload);
+        const normalized = payload.items!
           .map((item) => normalizeAccount(item, t))
           .filter((item): item is Account => Boolean(item));
         if (mountedRef.current && requestSequenceRef.current === sequence) {
@@ -341,57 +335,40 @@ function AccountsContent() {
     });
   };
 
+  const creation = useAccountCreation({
+    failureMessage: t('admin.accounts.create_rejected'),
+    emailConflictMessage: t('admin.accounts.email_already_owned'),
+    identityUnavailableMessage: t('admin.accounts.identity_unavailable'),
+    readFailureMessage: t('admin.customer_confirmation.read_failed'),
+    onCreated: (createdAccountId, values) => {
+      toast.success(values.bind_default_free
+        ? t('admin.accounts.onboarding_created_notice') : t('admin.accounts.account_created_notice'),
+        t('admin.accounts.account_created_title'));
+      setIsCreateOpen(false);
+      router.push(accountDetailHref(createdAccountId));
+    },
+  });
+  const isCreating = creation.busy;
   const closeCreateDialog = () => {
     if (isCreating) return;
     setIsCreateOpen(false);
-    setActionError('');
-    createAccountForm.reset();
+    if (!creation.intent) { creation.reset(); createAccountForm.reset(); }
   };
-
   const handleCreateAccount = async (fields: FormData) => {
+    if (!hasLoaded || loadError) return;
     const validation = createAccountForm.validate(fields);
-    if (!validation.success) return;
-    const values = validation.data;
-    setActionError('');
-    setIsCreating(true);
-    try {
-      const response = await accountsClient.request<CreatedAccountPayload>('/api/admin/accounts', {
-        method: 'POST',
-        body: buildCreateAccountPayload(values),
-      });
-      const createdAccountId = String(response.data?.account_id || '').trim();
-      if (!createdAccountId) {
-        throw new Error(
-          t(
-            'admin.accounts.created_account_id_missing',
-            {},
-            'The customer was created, but the generated account ID was not returned.'
-          )
-        );
-      }
-      toast.success(
-        values.bind_default_free
-          ? t(
-              'admin.accounts.onboarding_created_notice',
-              {},
-              'Customer account created and bound to the Free package.'
-            )
-          : t(
-              'admin.accounts.account_created_notice',
-              {},
-              'Account created without automatic subscription coverage.'
-            ),
-        t('admin.accounts.account_created_title', {}, 'Customer created')
-      );
-      setIsCreateOpen(false);
-      createAccountForm.reset();
-      router.push(accountDetailHref(createdAccountId));
-    } catch (err) {
-      setActionError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setIsCreating(false);
-    }
+    if (validation.success) await creation.submit(validation.data);
   };
+  const creationRecovery = creation.intent ? (
+    <div role="status" data-ui="customer-creation-unconfirmed" className="space-y-2 text-sm text-amber-800 dark:text-amber-200">
+      <p>{t('admin.customer_confirmation.create_unconfirmed')}</p>
+      <p className="break-words">{creation.intent.values.name} · {creation.intent.values.primary_email}</p>
+      <p className="break-all">{t('admin.customer_confirmation.operation')}: {creation.intent.operation_id}</p>
+      <button type="button" className="btn btn-secondary" disabled={isCreating} onClick={() => void creation.confirm()}>
+        {t('admin.customer_confirmation.read_result')}
+      </button>
+    </div>
+  ) : null;
 
   if (isLoading && !hasLoaded) return <LoadingFallback />;
 
@@ -429,8 +406,9 @@ function AccountsContent() {
           <button
             type="button"
             className="btn btn-primary"
+            disabled={!hasLoaded || Boolean(loadError)}
             onClick={() => {
-              setActionError('');
+              creation.reset();
               createAccountForm.reset();
               setIsCreateOpen(true);
             }}
@@ -467,6 +445,7 @@ function AccountsContent() {
         width="compact"
         onClose={closeCreateDialog}
         onSubmit={(fields) => void handleCreateAccount(fields)}
+        footerActions={creation.locked || !hasLoaded || Boolean(loadError) ? <button type="button" className="btn btn-secondary" disabled={isCreating} onClick={closeCreateDialog}>{t('common.close')}</button> : undefined}
       >
         <p className="text-sm text-slate-600 dark:text-slate-300 md:col-span-2">
           {t(
@@ -475,12 +454,21 @@ function AccountsContent() {
             'Account ID is generated automatically after creation.'
           )}
         </p>
+        {creationRecovery}
+        {creation.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.customer_confirmation.storage_blocked')}</p> : null}
         <CreateAccountForm
-          actionError={actionError}
+          actionError={creation.error}
+          values={creation.values}
+          setField={creation.setField}
+          locked={creation.locked || !hasLoaded || Boolean(loadError)}
           errors={createAccountForm.errors}
         />
       </AdminWorkbenchDialog>
 
+      {!isCreateOpen ? creationRecovery : null}
+      {!isCreateOpen && creation.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.customer_confirmation.storage_blocked')}</p> : null}
+      {!isCreateOpen && creation.error && creation.intent ? <p role="alert">{creation.error}</p> : null}
+      {creation.confirmedId ? <a className="btn btn-secondary" href={accountDetailHref(creation.confirmedId)}>{t('admin.customer_confirmation.open_created')}</a> : null}
       {loadError ? (
         <div
           role="alert"

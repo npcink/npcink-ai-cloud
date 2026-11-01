@@ -282,7 +282,7 @@ test('customer detail operator profile keeps the draft when the bounded save fai
       body: JSON.stringify(
         buildAdminApiErrorEnvelope(
           'operator profile rejected',
-          'admin.operator_profile_rejected'
+          'service.validation_error'
         )
       ),
     });

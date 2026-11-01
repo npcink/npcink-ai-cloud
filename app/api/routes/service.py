@@ -1948,6 +1948,22 @@ async def upsert_account(
     return build_envelope(status="ok", message="account saved", data=result, revision="m6")
 
 
+@router.get("/admin/accounts/creation-operations/{operation_id}")
+async def confirm_admin_account_creation(
+    request: Request, operation_id: str,
+    primary_email: str = Query(min_length=1, max_length=320),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_account_creation,
+        operation_id=operation_id, primary_email=primary_email,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(status="ok", message="creation confirmation", data=result, revision="m6")
+
+
 @router.patch("/admin/accounts/{account_id}/operator-profile")
 async def update_admin_account_operator_profile(
     request: Request, account_id: str, payload: AccountOperatorProfilePayload

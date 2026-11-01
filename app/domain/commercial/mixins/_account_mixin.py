@@ -33,6 +33,9 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
+    Account,
+    AccountUserMembership,
+    Principal,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
@@ -159,7 +162,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 }
             if subscription_payload is not None:
                 payload["current_subscription"] = subscription_payload["subscription"]
-            self._record_service_audit_in_session(
+            if not str(account_id or "").strip() and identity is not None and audit_context:
+                # Same-transaction evidence distinguishes creation from a later upsert.
+                payload["creation_operation_id"] = audit_context.idempotency_key
+            event = self._record_service_audit_in_session(
                 repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="account.upsert",
@@ -169,8 +175,63 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 scope_id=account.account_id,
                 payload_json=payload,
             )
+            if payload.get("creation_operation_id") and event is not None:
+                payload["creation_receipt"] = {
+                    "operation_id": audit_context.idempotency_key if audit_context else "",
+                    "account_id": account.account_id,
+                    "audit_event_id": event.id,
+                }
             session.commit()
             return payload
+
+    def confirm_admin_account_creation(
+        self, *, operation_id: str, primary_email: str, audit_context: ServiceAuditContext
+    ) -> dict[str, object]:
+        unconfirmed: dict[str, object] = {
+            "operation_id": operation_id, "state": "unconfirmed",
+            "account_id": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            events = CommercialServiceAuditRepository(session).find_account_creation_events(
+                operation_id=operation_id, actor_kind=audit_context.actor_kind,
+                actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return unconfirmed
+            event = events[0]
+            payload = event.payload_json or {}
+            identity = payload.get("primary_identity")
+            membership = payload.get("membership")
+            if not isinstance(identity, dict) or not isinstance(membership, dict):
+                return unconfirmed
+            account_id = event.account_id
+            if (
+                not account_id or event.scope_id != account_id
+                or payload.get("account_id") != account_id
+                or payload.get("creation_operation_id") != operation_id
+                or identity.get("email") != primary_email.strip().lower()
+            ):
+                return unconfirmed
+            account = session.get(Account, account_id)
+            principal = session.get(Principal, str(identity.get("principal_id") or ""))
+            owner = session.get(AccountUserMembership, str(membership.get("membership_id") or ""))
+            if (
+                account is None or principal is None or owner is None
+                or principal.email != identity.get("email")
+                or principal.status != PRINCIPAL_STATUS_ACTIVE
+                or owner.account_id != account_id or owner.principal_id != principal.principal_id
+                or owner.role != USER_ROLE_OWNER
+                or owner.status != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or membership.get("role") != USER_ROLE_OWNER
+                or membership.get("status") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or identity.get("status") != PRINCIPAL_STATUS_ACTIVE
+            ):
+                return unconfirmed
+            return {
+                "operation_id": operation_id, "state": "confirmed", "account_id": account_id,
+                "receipt": {"operation_id": operation_id, "account_id": account_id,
+                            "audit_event_id": event.id},
+            }
 
     def update_account_operator_profile(
         self,

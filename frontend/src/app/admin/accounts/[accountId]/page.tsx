@@ -54,7 +54,8 @@ import {
   summarizeBudget,
 } from '@/features/admin/accounts/account-credit-presentation';
 import { useAccountCreditAdjustment } from '@/features/admin/accounts/account-credit-adjustment';
-import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
+import { requireAccountDetail } from '@/features/admin/accounts/account-projection';
+import { AccountOperatorProfileEditor, AccountOperatorProfileRecovery } from '@/features/admin/accounts/AccountOperatorProfileEditor';
 import { AccountPaymentOrders } from '@/features/admin/accounts/AccountPaymentOrders';
 import {
   CustomerAccessPanel,
@@ -303,7 +304,8 @@ function AccountDetailContent() {
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
   const [nowMs] = useState(() => Date.now());
   const [activeDetailTab, setActiveDetailTab] = useState<AccountDetailTab>('overview');
-  const accountRequestedRef = useRef(false);
+  const accountRequestedRef = useRef('');
+  const accountReadSequenceRef = useRef(0);
   const packagePlansRequestedRef = useRef(false);
   const accountSiteIds =
     account?.sites?.map((site) => site.site_id).filter(Boolean) || [];
@@ -346,7 +348,7 @@ function AccountDetailContent() {
   const handleOperatorProfileSaved = useCallback(
     (profile: SavedAccountOperatorProfile) => {
       setAccount((current) =>
-        current
+        current?.account_id === profile.account_id
           ? {
               ...current,
               ...profile,
@@ -357,8 +359,9 @@ function AccountDetailContent() {
     []
   );
   const operatorProfileController = useAccountOperatorProfile({
-    account,
+    account: account?.account_id === accountId ? account : null,
     errorFallback: t('error.failed_save'),
+    readFailure: t('admin.customer_confirmation.read_failed'),
     savedNotice: t(
       'admin.account_detail.operator_profile_saved_notice',
       undefined,
@@ -387,10 +390,11 @@ function AccountDetailContent() {
   }, []);
 
   const loadAccount = useCallback(async (preferredSiteId = '', force = false) => {
-    if (!force && accountRequestedRef.current) {
+    if (!force && accountRequestedRef.current === accountId) {
       return;
     }
-    accountRequestedRef.current = true;
+    accountRequestedRef.current = accountId;
+    const sequence = ++accountReadSequenceRef.current;
     setIsLoading(true);
     setError(null);
 
@@ -398,7 +402,8 @@ function AccountDetailContent() {
       const payload = (await accountDetailClient.request<AccountDetailApiPayload>(
         `/api/admin/accounts/${accountId}`
       )).data;
-      const accountData = payload.account || {};
+      if (sequence !== accountReadSequenceRef.current) return;
+      const accountData = requireAccountDetail(payload, accountId);
       const accountMetadata =
         accountData.metadata && typeof accountData.metadata === 'object'
           ? (accountData.metadata as Record<string, unknown>)
@@ -503,10 +508,12 @@ function AccountDetailContent() {
       setSelectedSiteId(nextSiteId);
 
     } catch (err) {
-      accountRequestedRef.current = false;
+      if (sequence !== accountReadSequenceRef.current) return;
+      accountRequestedRef.current = '';
+      setAccount(null);
       setError(resolveUiErrorMessage(err, t('error.failed_load')));
     } finally {
-      setIsLoading(false);
+      if (sequence === accountReadSequenceRef.current) setIsLoading(false);
     }
   }, [accountId, t]);
 
@@ -804,6 +811,7 @@ function AccountDetailContent() {
 
   useEffect(() => {
     void loadAccount();
+    return () => { accountReadSequenceRef.current += 1; accountRequestedRef.current = ''; };
   }, [loadAccount]);
 
   useEffect(() => {
@@ -1503,6 +1511,8 @@ function AccountDetailContent() {
           {t('admin.accounts.suspend_reason_label', {}, 'Suspension reason')}: {account.account_status_note}
         </p>
       ) : null}
+
+      <AccountOperatorProfileRecovery controller={operatorProfileController} />
 
       <div data-ui="account-detail-workspace" className="grid gap-5 xl:grid-cols-[12.5rem_minmax(0,1fr)] xl:items-start">
         <div
