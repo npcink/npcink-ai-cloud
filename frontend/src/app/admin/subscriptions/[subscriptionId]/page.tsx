@@ -1,8 +1,9 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
+import { readSubscriptionDetail, subscriptionAuditScope, SubscriptionEvidenceError, type SubscriptionEvidence } from '@/features/admin/subscriptions/evidence';
 import { useParams, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
@@ -34,101 +35,6 @@ import {
 } from '@/lib/admin-return-context';
 import { formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
-type SubscriptionDetailPayload = {
-  subscription?: {
-    subscription_id?: string;
-    account_id?: string;
-    status?: string;
-    plan_id?: string;
-    plan_version_id?: string;
-    current_period_start_at?: string;
-    current_period_end_at?: string;
-    metadata?: Record<string, unknown>;
-  };
-  account?: {
-    account_id?: string;
-    name?: string;
-    status?: string;
-    metadata?: Record<string, unknown>;
-  };
-  covered_sites?: Array<{
-    site_id?: string;
-    name?: string;
-    status?: string;
-  }>;
-  plan?: {
-    plan_id?: string;
-    display_name?: string;
-  };
-  plan_version?: {
-    plan_version_id?: string;
-  };
-  commercial_policy?: {
-    subscription?: {
-      grace_period_days?: number;
-    };
-  };
-  budget_headroom?: {
-    base_budget?: {
-      runs?: number;
-      tokens?: number;
-      cost?: number;
-    };
-    current_period_topup_delta?: {
-      runs?: number;
-      tokens?: number;
-      cost?: number;
-    };
-    effective_budget?: {
-      runs?: number;
-      tokens?: number;
-      cost?: number;
-    };
-  };
-  budget_state?: Record<
-    string,
-    {
-      current_total?: number;
-      limit?: number;
-      over_limit?: boolean;
-    }
-  >;
-  subscription_grace?: {
-    subscription_status?: string;
-    active?: boolean;
-    grace_until_at?: string;
-  };
-  usage_totals?: {
-    runs?: number;
-    tokens?: number;
-    cost_cny?: number;
-    cost_cny_snapshot_missing_count?: number;
-  };
-  related_surfaces?: {
-    site_href?: string;
-    account_href?: string;
-    audit_href?: string;
-  };
-  billing_snapshot_status?: {
-    status?: string;
-    summary?: string;
-    site_count?: number;
-    fresh_site_count?: number;
-    stale_site_count?: number;
-    missing_site_count?: number;
-    next_action?: {
-      action?: string;
-      label?: string;
-      detail?: string;
-    } | null;
-  };
-  commercial_follow_up?: {
-    lifecycle_posture?: string;
-    snapshot_reconciliation_summary?: string;
-    next_operator_follow_up?: string;
-  };
-};
-
 type SubscriptionBillingSnapshotRebuildResult = {
   receipt?: AdminMutationReceiptPayload;
 };
@@ -136,11 +42,14 @@ type SubscriptionBillingSnapshotRebuildResult = {
 const subscriptionDetailClient = createApiClient({ idempotencyPrefix: 'admin_subscription_detail' });
 
 function SubscriptionDetailContent() {
-  const params = useParams();
+  const { subscriptionId } = useParams<{ subscriptionId: string }>();
+  return <SubscriptionDetailView key={subscriptionId} subscriptionId={subscriptionId} />;
+}
+
+function SubscriptionDetailView({ subscriptionId }: { subscriptionId: string }) {
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
-  const { subscriptionId } = params as { subscriptionId: string };
   const returnTo = normalizeAdminReturnTo(
     searchParams.get('return_to'),
     {
@@ -148,7 +57,10 @@ function SubscriptionDetailContent() {
       fallback: ADMIN_QUEUE_PATHNAMES.subscriptions,
     }
   );
-  const [detail, setDetail] = useState<SubscriptionDetailPayload | null>(null);
+  const [evidence, setEvidence] = useState<SubscriptionEvidence | null>(null);
+  const detail = evidence?.detail;
+  const mountedRef = useRef(false);
+  const requestSequenceRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
@@ -158,106 +70,109 @@ function SubscriptionDetailContent() {
   const [snapshotRefreshError, setSnapshotRefreshError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
 
-  useEffect(() => {
-    const loadDetail = async () => {
-      setIsLoading(true);
+  const loadDetail = useCallback(async () => {
+    const sequence = ++requestSequenceRef.current;
+    setIsLoading(true);
+    try {
+      const payload = (await subscriptionDetailClient.request<unknown>(
+        `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`
+      )).data;
+      const next = readSubscriptionDetail(payload, subscriptionId);
+      if (!mountedRef.current || requestSequenceRef.current !== sequence) return false;
+      setEvidence(next);
       setError(null);
-
-      try {
-        const payload = (await subscriptionDetailClient.request<SubscriptionDetailPayload>(
-          `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`
-        )).data;
-        setDetail(payload);
-      } catch (err) {
-        setError(resolveUiErrorMessage(err, t('error.failed_load')));
-      } finally {
-        setIsLoading(false);
+      return true;
+    } catch (err) {
+      if (mountedRef.current && requestSequenceRef.current === sequence) {
+        setError(err instanceof SubscriptionEvidenceError
+          ? t('admin.subscriptions.evidence_invalid', {}, 'Subscription evidence is incomplete or does not match this request. Retry the read.')
+          : resolveUiErrorMessage(err, t('error.failed_load')));
       }
-    };
+      throw err;
+    } finally {
+      if (mountedRef.current && requestSequenceRef.current === sequence) setIsLoading(false);
+    }
+  }, [subscriptionId, t]);
 
-    void loadDetail();
-  }, [loadVersion, subscriptionId, t]);
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadDetail().catch(() => {});
+    return () => { mountedRef.current = false; requestSequenceRef.current += 1; };
+  }, [loadVersion, loadDetail]);
 
   const reloadDetail = async () => {
-    const payload = (await subscriptionDetailClient.request<SubscriptionDetailPayload>(
-      `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`
-    )).data;
-    setDetail(payload);
-    setSnapshotAwaitingRead(false);
-    setSnapshotRefreshError(null);
+    if (await loadDetail()) {
+      setSnapshotAwaitingRead(false);
+      setSnapshotRefreshError(null);
+    }
   };
 
   const normalized = useMemo(() => {
-    const subscription = detail?.subscription ?? {};
-    const account = detail?.account ?? {};
-    const relatedSites = Array.isArray(detail?.covered_sites)
-      ? detail?.covered_sites ?? []
-      : [];
-    const plan = detail?.plan ?? {};
-    const planVersion = detail?.plan_version ?? {};
-    const budget = detail?.budget_state ?? {};
-    const usage = detail?.usage_totals ?? {};
-    const grace = detail?.subscription_grace ?? {};
-    const graceDays = Number(detail?.commercial_policy?.subscription?.grace_period_days ?? 0);
-    const budgetHeadroom = detail?.budget_headroom ?? {};
-    const billingSnapshotStatus = detail?.billing_snapshot_status ?? {};
+    if (!detail || !evidence) return null;
+    const subscription = detail.subscription;
+    const account = detail.account;
+    const plan = detail.plan;
+    const planVersion = detail.plan_version;
+    const budget = detail.budget_state;
+    const usage = detail.usage_totals;
+    const grace = detail.subscription_grace;
+    const graceDays = detail.commercial_policy.subscription.grace_period_days;
+    const budgetHeadroom = detail.budget_headroom;
+    const billingSnapshotStatus = detail.billing_snapshot_status;
 
     return {
-      subscriptionId: String(subscription.subscription_id || subscriptionId),
-      status: normalizeStatusToken(String(subscription.status || grace.subscription_status || 'unknown')),
-      accountId: String(account.account_id || subscription.account_id || ''),
-      accountName: customerLabel(account, ''),
-      planId: String(plan.plan_id || subscription.plan_id || ''),
-      planName: String(plan.display_name || plan.plan_id || subscription.plan_id || ''),
-      planVersionId: String(planVersion.plan_version_id || subscription.plan_version_id || ''),
+      subscriptionId: subscription.subscription_id,
+      status: normalizeStatusToken(subscription.status),
+      accountId: account?.account_id || '',
+      accountName: account ? customerLabel(account, '') : '',
+      planId: subscription.plan_id,
+      planName: plan?.name || '',
+      planVersionId: planVersion?.plan_version_id || subscription.plan_version_id,
       currentPeriodStart: String(subscription.current_period_start_at || ''),
       currentPeriodEnd: String(subscription.current_period_end_at || ''),
       graceDays,
       graceActive: Boolean(grace.active),
       graceUntilAt: String(grace.grace_until_at || ''),
-      runsCurrent: Number(budget.runs?.current_total ?? usage.runs ?? 0),
-      runsLimit: Number(budget.runs?.limit ?? 0),
-      tokensCurrent: Number(budget.tokens?.current_total ?? usage.tokens ?? 0),
-      tokensLimit: Number(budget.tokens?.limit ?? 0),
-      costCurrent: Number(budget.cost?.current_total ?? usage.cost_cny ?? 0),
-      costSnapshotMissingCount: Math.max(
-        0,
-        Number(usage.cost_cny_snapshot_missing_count ?? 0)
-      ),
-      costLimit: Number(budget.cost?.limit ?? 0),
-      baseRunsLimit: Number(budgetHeadroom.base_budget?.runs ?? 0),
-      baseTokensLimit: Number(budgetHeadroom.base_budget?.tokens ?? 0),
-      baseCostLimit: Number(budgetHeadroom.base_budget?.cost ?? 0),
-      topupRunsDelta: Number(budgetHeadroom.current_period_topup_delta?.runs ?? 0),
-      topupTokensDelta: Number(budgetHeadroom.current_period_topup_delta?.tokens ?? 0),
-      topupCostDelta: Number(budgetHeadroom.current_period_topup_delta?.cost ?? 0),
-      effectiveRunsLimit: Number(budgetHeadroom.effective_budget?.runs ?? budget.runs?.limit ?? 0),
-      effectiveTokensLimit: Number(budgetHeadroom.effective_budget?.tokens ?? budget.tokens?.limit ?? 0),
-      effectiveCostLimit: Number(budgetHeadroom.effective_budget?.cost ?? budget.cost?.limit ?? 0),
-      billingSnapshotStatus: String(billingSnapshotStatus.status || 'unknown'),
-      billingSnapshotSummary: String(billingSnapshotStatus.summary || ''),
-      billingSnapshotFreshCount: Number(billingSnapshotStatus.fresh_site_count ?? 0),
-      billingSnapshotStaleCount: Number(billingSnapshotStatus.stale_site_count ?? 0),
-      billingSnapshotMissingCount: Number(billingSnapshotStatus.missing_site_count ?? 0),
+      runsCurrent: budget.runs.current_total,
+      runsLimit: budget.runs.limit,
+      tokensCurrent: budget.tokens.current_total,
+      tokensLimit: budget.tokens.limit,
+      costCurrent: budget.cost.current_total,
+      costSnapshotMissingCount: usage.cost_cny_snapshot_missing_count,
+      costLimit: budget.cost.limit,
+      baseRunsLimit: budgetHeadroom.base_budget.runs,
+      baseTokensLimit: budgetHeadroom.base_budget.tokens,
+      baseCostLimit: budgetHeadroom.base_budget.cost,
+      topupRunsDelta: budgetHeadroom.current_period_topup_delta.runs,
+      topupTokensDelta: budgetHeadroom.current_period_topup_delta.tokens,
+      topupCostDelta: budgetHeadroom.current_period_topup_delta.cost,
+      effectiveRunsLimit: budgetHeadroom.effective_budget.runs,
+      effectiveTokensLimit: budgetHeadroom.effective_budget.tokens,
+      effectiveCostLimit: budgetHeadroom.effective_budget.cost,
+      billingSnapshotStatus: billingSnapshotStatus.status,
+      billingSnapshotSummary: billingSnapshotStatus.summary,
+      billingSnapshotFreshCount: billingSnapshotStatus.fresh_site_count,
+      billingSnapshotStaleCount: billingSnapshotStatus.stale_site_count,
+      billingSnapshotMissingCount: billingSnapshotStatus.missing_site_count,
       billingSnapshotNextAction: {
         action: String(billingSnapshotStatus.next_action?.action || ''),
         label: String(billingSnapshotStatus.next_action?.label || ''),
         detail: String(billingSnapshotStatus.next_action?.detail || ''),
       },
-      hasBudgetPressure: Boolean(budget.runs?.over_limit || budget.tokens?.over_limit || budget.cost?.over_limit),
-      relatedSites: relatedSites.map((site) => ({
-        siteId: String(site.site_id || ''),
-        siteName: String(site.name || ''),
-        status: String(site.status || 'unknown'),
+      hasBudgetPressure: budget.runs.over_limit || budget.tokens.over_limit || budget.cost.over_limit,
+      relatedSites: evidence.sites.sites.map((site) => ({
+        siteId: site.site_id,
+        siteName: site.name,
+        status: site.status,
       })),
     };
-  }, [detail, subscriptionId]);
+  }, [detail, evidence]);
 
-  if (isLoading) {
+  if (isLoading && !evidence) {
     return <AdminRouteSkeleton />;
   }
 
-  if (error) {
+  if (error && !evidence) {
     return (
       <BackofficePageStack>
         <BackofficePrimaryPanel
@@ -265,6 +180,7 @@ function SubscriptionDetailContent() {
           title={t('admin.subscription_detail.load_error_title', {}, 'Subscription detail is temporarily unavailable')}
           description={t('admin.subscription_detail.load_error_desc', {}, 'The operator shell remains available. Retry this bounded subscription read without leaving the current route.')}
         >
+          <p className="mb-3 break-all text-sm">{subscriptionId}</p>
           <BackofficeDiagnosticNotice
             message={error}
             retryLabel={t('common.retry')}
@@ -274,6 +190,11 @@ function SubscriptionDetailContent() {
       </BackofficePageStack>
     );
   }
+
+  if (!normalized || !detail || !evidence) return <AdminRouteSkeleton />;
+  const siteIssues = evidence.sites.issues;
+  const canJudge = !error && !isLoading && !siteIssues.length && Boolean(detail.account && detail.plan && detail.plan_version);
+  const auditScope = !error && !isLoading ? subscriptionAuditScope(evidence) : null;
 
   const nextStepCopy = normalized.hasBudgetPressure
     ? t(
@@ -327,20 +248,27 @@ function SubscriptionDetailContent() {
   const localizedSnapshotActionDetail = localizeAdminCommercialCopy(normalized.billingSnapshotNextAction.detail, t);
   const hasSnapshotFollowUp = ['missing', 'stale'].includes(normalized.billingSnapshotStatus);
   const needsCustomerCoverage = normalized.hasBudgetPressure || ['past_due', 'expired', 'suspended'].includes(normalized.status);
-  const conclusionTitle = needsCustomerCoverage
+  const conclusionTitle = !canJudge
+    ? t('admin.subscription_detail.conclusion_unknown', {}, 'Subscription evidence needs verification')
+    : needsCustomerCoverage
     ? t('admin.subscription_detail.conclusion_coverage_title', {}, 'Customer coverage needs follow-up')
     : hasSnapshotFollowUp
       ? t('admin.subscription_detail.conclusion_snapshot_title', {}, 'Usage statistics need maintenance')
       : t('admin.subscription_detail.conclusion_stable_title', {}, 'Subscription coverage is stable');
-  const conclusionDescription = needsCustomerCoverage
+  const conclusionDescription = !canJudge
+    ? t('admin.subscription_detail.evidence_incomplete', {}, 'Some subscription evidence is unavailable or stale. Dependent operations are blocked; retry this subscription read.')
+    : needsCustomerCoverage
     ? nextStepCopy
     : hasSnapshotFollowUp
       ? t('admin.subscription_detail.current_conclusion_snapshot', {}, 'Refresh usage statistics. This status alone does not mean payment failure or blocked Cloud access.')
       : nextStepCopy;
-  const accountCoverageHref = detail?.related_surfaces?.account_href || normalized.accountId
-    ? `${detail?.related_surfaces?.account_href || `/admin/accounts/${encodeURIComponent(normalized.accountId)}`}#coverage-actions`
-    : '';
-  const relatedSiteCountLabel =
+  const accountCoverageHref = normalized.accountId
+    ? `/admin/accounts/${encodeURIComponent(normalized.accountId)}#coverage-actions` : '';
+  const siteCollectionUnavailable = siteIssues.some(issue => issue.index === null);
+  const siteCountValue = siteCollectionUnavailable ? t('common.unknown', {}, 'Unknown') : siteIssues.length
+    ? t('admin.subscription_detail.site_count_partial', { valid: String(normalized.relatedSites.length), count: String(siteIssues.length) }, `${normalized.relatedSites.length} valid · ${siteIssues.length} unavailable`)
+    : formatInteger(normalized.relatedSites.length);
+  const relatedSiteCountLabel = siteIssues.length ? siteCountValue :
     normalized.relatedSites.length > 0
       ? t(
           'admin.subscription_detail.covered_sites_count',
@@ -350,18 +278,19 @@ function SubscriptionDetailContent() {
       : t('common.not_found', {}, 'Not found');
 
   const handleBillingSnapshotRefresh = async () => {
-    if (isSnapshotRefreshSaving || snapshotAwaitingRead) return;
+    if (!canJudge || isSnapshotRefreshSaving || snapshotAwaitingRead) return;
     setLastReceipt(null);
     setSnapshotRefreshError(null);
     setIsSnapshotRefreshSaving(true);
     try {
       const data = (await subscriptionDetailClient.request<SubscriptionBillingSnapshotRebuildResult>(
-        `/api/admin/subscriptions/${encodeURIComponent(normalized.subscriptionId)}/billing-snapshots/rebuild`,
+        `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}/billing-snapshots/rebuild`,
         {
           method: 'POST',
           body: {},
         }
       )).data;
+      if (!mountedRef.current) return;
       setLastReceipt(data.receipt || null);
       toast.success(
         t(
@@ -375,14 +304,15 @@ function SubscriptionDetailContent() {
       try {
         await reloadDetail();
       } catch (readError) {
-        setSnapshotRefreshError(resolveUiErrorMessage(readError, t('error.failed_load')));
+        if (mountedRef.current) setSnapshotRefreshError(resolveUiErrorMessage(readError, t('error.failed_load')));
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       setSnapshotRefreshError(
         resolveUiErrorMessage(err, t('error.failed_save', {}, 'Failed to save.'))
       );
     } finally {
-      setIsSnapshotRefreshSaving(false);
+      if (mountedRef.current) setIsSnapshotRefreshSaving(false);
     }
   };
 
@@ -407,10 +337,15 @@ function SubscriptionDetailContent() {
         summaryItems={[
           { label: t('common.status', {}, 'Status'), value: <BackofficeStatusBadge status={normalized.status} label={statusValue} /> },
           { label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'), value: <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} /> },
-          { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: formatInteger(normalized.relatedSites.length) },
+          { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: siteCountValue },
         ]}
       />
 
+      {error ? <BackofficeDiagnosticNotice
+        message={`${error} ${t('admin.subscription_detail.retained', {}, 'Showing the last valid detail; it is stale.')}`}
+        retryLabel={snapshotAwaitingRead ? undefined : t('common.retry')}
+        onRetry={snapshotAwaitingRead ? undefined : () => void reloadDetail().catch(() => {})}
+      /> : null}
       <BackofficeSectionPanel>
         <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.period_boundary', {}, 'Period end is not payment evidence.')}{normalized.planId === 'free' ? ` ${t('admin.subscription_detail.free_record', {}, 'Free also has a subscription record.')}` : ''}{normalized.relatedSites.some(site => site.status === 'removed') ? ` ${t('admin.subscription_detail.removed_history', {}, 'Removed sites remain in history and do not require current statistics maintenance.')}` : ''}</p>
         <section className="mt-2 grid items-start gap-4 min-[850px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -422,6 +357,8 @@ function SubscriptionDetailContent() {
             <h2 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{conclusionTitle}</h2>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{conclusionDescription}</p>
             </div>
+            {!canJudge && !siteIssues.length && !error ? <button type="button" className="btn btn-secondary btn-sm" disabled={isLoading || isSnapshotRefreshSaving}
+              onClick={() => void reloadDetail().catch(() => {})}>{t('common.retry')}</button> : null}
             <div className="flex flex-wrap items-center gap-3">
               {needsCustomerCoverage && accountCoverageHref ? (
                 <Link href={accountCoverageHref} className="btn btn-primary">
@@ -433,7 +370,7 @@ function SubscriptionDetailContent() {
                   type="button"
                   className={needsCustomerCoverage ? 'btn btn-secondary' : 'btn btn-primary'}
                   onClick={() => void handleBillingSnapshotRefresh()}
-                  disabled={isSnapshotRefreshSaving || snapshotAwaitingRead}
+                  disabled={!canJudge || isSnapshotRefreshSaving || snapshotAwaitingRead}
                 >
                   {isSnapshotRefreshSaving
                     ? t('admin.subscription_detail.snapshot_refresh_saving', {}, 'Refreshing statistics...')
@@ -443,9 +380,9 @@ function SubscriptionDetailContent() {
               ) : null}
             {snapshotAwaitingRead ? <div role="status" className="space-y-2 text-sm">
               <p>{t('admin.saved_awaiting_read', {}, 'Write succeeded. Reload to confirm the saved state before editing again.')}</p>
-              <button type="button" className="btn btn-secondary" onClick={() => void reloadDetail().catch((err) => setSnapshotRefreshError(resolveUiErrorMessage(err, t('error.failed_load'))))}>{t('common.retry')}</button>
+              <button type="button" className="btn btn-secondary" disabled={isLoading || isSnapshotRefreshSaving} onClick={() => void reloadDetail().catch((err) => setSnapshotRefreshError(resolveUiErrorMessage(err, t('error.failed_load'))))}>{t('common.retry')}</button>
             </div> : null}
-            {snapshotRefreshError ? (
+            {snapshotRefreshError && !error ? (
               <BackofficeDiagnosticNotice message={snapshotRefreshError} />
             ) : null}
             <AdminLatestOperationButton
@@ -468,7 +405,7 @@ function SubscriptionDetailContent() {
                 <dd className="mt-1 break-words text-sm font-medium text-slate-950 dark:text-white [overflow-wrap:anywhere]">
                   {normalized.accountName || t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')}
                   {normalized.accountId ? (
-                    <Link href={`/admin/accounts/${normalized.accountId}`} className="ml-2 text-blue-600 hover:underline dark:text-blue-300">
+                    <Link href={`/admin/accounts/${encodeURIComponent(normalized.accountId)}`} className="ml-2 text-blue-600 hover:underline dark:text-blue-300">
                       {t('admin.subscription_detail.open_customer_action', {}, 'Open customer')}
                     </Link>
                   ) : null}
@@ -512,7 +449,7 @@ function SubscriptionDetailContent() {
               </div>
               <div className="py-2">
                 <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites')}</dt>
-                <dd className="mt-1 text-sm font-medium tabular-nums text-slate-950 dark:text-white">{formatInteger(normalized.relatedSites.length)}</dd>
+                <dd className="mt-1 text-sm font-medium tabular-nums text-slate-950 dark:text-white">{siteCountValue}</dd>
               </div>
             </dl>
           </div>
@@ -602,6 +539,16 @@ function SubscriptionDetailContent() {
             </div>
             <BackofficeStatusBadge status="inactive" label={relatedSiteCountLabel} />
           </div>
+          {siteIssues.length ? <div role="alert" data-ui="subscription-site-evidence" className="space-y-2 text-sm">
+            <p>{siteCollectionUnavailable
+              ? t('admin.subscription_detail.sites_collection', {}, 'Covered-site collection is missing or invalid. Its size is unknown; dependent operations are blocked.')
+              : t('admin.subscription_detail.sites_invalid', { count: String(siteIssues.length) }, `${siteIssues.length} covered-site evidence entries are unavailable. Valid sites remain below; dependent operations are blocked.`)}</p>
+            {!siteCollectionUnavailable ? <ul className="list-inside list-disc">{siteIssues.map(issue => <li key={issue.index}>
+              {t(`admin.subscription_detail.site_issue_${issue.reason}`, { index: String(issue.index! + 1) }, `Site entry ${issue.index! + 1}: ${issue.reason}`)}
+            </li>)}</ul> : null}
+            <button type="button" className="btn btn-secondary btn-sm" disabled={isLoading || isSnapshotRefreshSaving}
+              onClick={() => void reloadDetail().catch(() => {})}>{t('common.retry')}</button>
+          </div> : null}
           {normalized.relatedSites.length > 0 ? (
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -621,7 +568,7 @@ function SubscriptionDetailContent() {
                       <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
                     </td>
                     <td className="py-3 text-right">
-                      <Link href={`/admin/sites/${site.siteId}`} className="font-medium text-blue-600 hover:underline dark:text-blue-300">
+                      <Link href={`/admin/sites/${encodeURIComponent(site.siteId)}`} className="font-medium text-blue-600 hover:underline dark:text-blue-300">
                         {t('admin.site_detail.open_site_action', {}, 'Open site')}
                       </Link>
                     </td>
@@ -629,21 +576,26 @@ function SubscriptionDetailContent() {
                 ))}
               </tbody>
             </table>
-          ) : (
+          ) : !siteIssues.length ? (
             <p className="py-4 text-sm text-slate-600 dark:text-slate-300">
               {t('admin.subscription_detail.no_covered_sites', {}, 'No covered sites are attached to this subscription.')}
             </p>
-          )}
+          ) : null}
         </BackofficeSectionPanel>
-        <AdminAuditSummaryPanel
+        {auditScope ? <AdminAuditSummaryPanel
+          key={`${subscriptionId}:${auditScope.accountId}:${auditScope.siteId}`}
           title={t('admin.audit_summary.subscription_title', {}, 'Recent audit summary for this subscription')}
-          siteId={normalized.relatedSites[0]?.siteId || ''}
-          accountId={normalized.accountId}
-          trailHref={detail?.related_surfaces?.audit_href}
+          siteId={auditScope.siteId}
+          accountId={auditScope.accountId}
+          trailHref={`/api/admin/audit-events?${auditScope.accountId
+            ? `account_id=${encodeURIComponent(auditScope.accountId)}`
+            : `site_id=${encodeURIComponent(auditScope.siteId)}`}&limit=20`}
           display="table"
           compactEmpty
           className="self-start"
-        />
+        /> : <p data-ui="subscription-audit-unavailable" className="text-sm text-slate-600 dark:text-slate-300">
+          {t('admin.subscription_detail.audit_unavailable', {}, 'Audit evidence requires a current, verified customer or site scope. Retry the subscription read.')}
+        </p>}
       </div>
 
       <BackofficeDisclosure

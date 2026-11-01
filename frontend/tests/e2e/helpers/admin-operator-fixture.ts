@@ -1,3 +1,4 @@
+import { subscriptionFixture, subscriptionQueueFixture } from '../../fixtures/admin-subscriptions';
 import { canonicalTier } from '../../fixtures/admin-plan-parameters';
 import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
 import type { Page, Route } from '@playwright/test';
@@ -1068,7 +1069,7 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/subscriptions') {
-      await fulfillJson(route, {
+      await fulfillJson(route, subscriptionQueueFixture({
         total: 1,
         items: [
           {
@@ -1094,12 +1095,12 @@ export async function installAdminMocks(
             },
           },
         ],
-      });
+      }, new URL(route.request().url()).searchParams));
       return;
     }
 
     if (pathname === '/api/admin/subscriptions/sub_mvp') {
-      await fulfillJson(route, {
+      await fulfillJson(route, subscriptionFixture({
         subscription: {
           subscription_id: 'sub_mvp',
           account_id: LONG_ACCOUNT_ID,
@@ -1166,7 +1167,7 @@ export async function installAdminMocks(
             cost: 349,
           },
         },
-      });
+      }));
       return;
     }
 

@@ -19,7 +19,7 @@ assert.doesNotMatch(source, /window\.location\.reload/, 'refresh recovery must p
 assert.match(source, /error && !hasLoaded[\s\S]*error \?/, 'initial load failure and retained-data refresh failure must have distinct UI states');
 assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\s\S]*last successfully loaded results/, 'every failed refresh with retained data must identify the last successful result set');
 
-assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
+assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*readSubscriptionQueue\(payload, requestKey\)[\s\S]*validated\.summary/, 'the queue must validate and consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
 assert.match(source, /subscription-enumerated-filters[\s\S]*role="group"[\s\S]*risk_filter_label[\s\S]*role="group"[\s\S]*status_filter_label[\s\S]*subscription-filter-toolbar[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'independent named risk and lifecycle groups stay with the existing explicit search toolbar');
 assert.match(source, /const PAGE_SIZE = 10;/, 'subscription pages have a fixed ten-row limit');

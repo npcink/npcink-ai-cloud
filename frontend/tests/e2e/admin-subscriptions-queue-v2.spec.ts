@@ -1,3 +1,4 @@
+import { subscriptionFixture, subscriptionQueueFixture } from '../fixtures/admin-subscriptions';
 import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
@@ -148,7 +149,7 @@ test('subscription risk queue persists server filters and inspector focus while 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({ items: items.slice(Number(url.searchParams.get('offset') || 0), Number(url.searchParams.get('offset') || 0) + Number(url.searchParams.get('limit'))), total: items.length, summary })),
+      body: JSON.stringify(buildAdminApiEnvelope(subscriptionQueueFixture({ items: items.slice(Number(url.searchParams.get('offset') || 0), Number(url.searchParams.get('offset') || 0) + Number(url.searchParams.get('limit'))), total: items.length, summary }, new URL(route.request().url()).searchParams))),
     });
   });
   await page.route('**/api/admin/subscriptions/sub_stale', async (route) => {
@@ -156,7 +157,7 @@ test('subscription risk queue persists server filters and inspector focus while 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
+      body: JSON.stringify(buildAdminApiEnvelope(subscriptionFixture({
         subscription: item.subscription,
         account: item.account,
         covered_sites: item.covered_sites,
@@ -164,7 +165,7 @@ test('subscription risk queue persists server filters and inspector focus while 
         plan_version: { plan_version_id: item.subscription.plan_version_id },
         billing_snapshot_status: item.billing_snapshot_status,
         usage_totals: { runs: 0, tokens: 0, cost_cny: 12.25 },
-      })),
+      }))),
     });
   });
 
@@ -319,7 +320,7 @@ test('subscription queue keyboard flow moves focus and opens detail without a re
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({ items: items.slice(Number(url.searchParams.get('offset') || 0), Number(url.searchParams.get('offset') || 0) + Number(url.searchParams.get('limit'))), total: items.length, summary })),
+      body: JSON.stringify(buildAdminApiEnvelope(subscriptionQueueFixture({ items: items.slice(Number(url.searchParams.get('offset') || 0), Number(url.searchParams.get('offset') || 0) + Number(url.searchParams.get('limit'))), total: items.length, summary }, new URL(route.request().url()).searchParams))),
     });
   });
   await page.route('**/api/admin/subscriptions/sub_past_due', async (route) => {
@@ -327,7 +328,7 @@ test('subscription queue keyboard flow moves focus and opens detail without a re
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
+      body: JSON.stringify(buildAdminApiEnvelope(subscriptionFixture({
         subscription: item.subscription,
         account: item.account,
         covered_sites: item.covered_sites,
@@ -335,7 +336,7 @@ test('subscription queue keyboard flow moves focus and opens detail without a re
         plan_version: { plan_version_id: item.subscription.plan_version_id },
         billing_snapshot_status: item.billing_snapshot_status,
         usage_totals: { runs: 0, tokens: 0, cost_cny: 42.5 },
-      })),
+      }))),
     });
   });
   await page.goto('/admin/subscriptions');
@@ -404,10 +405,10 @@ test('subscription mixed input pages and applies search without opening the keyb
     const offset = Number(params.get('offset') || 0);
     const limit = Number(params.get('limit'));
     expect(limit).toBe(10);
-    await route.fulfill({ json: buildAdminApiEnvelope({
+    await route.fulfill({ json: buildAdminApiEnvelope(subscriptionQueueFixture({
       items: matches.slice(offset, offset + limit), total: matches.length,
       summary: { critical: 0, warning: matches.length, monitor: 0, stable: 0 },
-    }) });
+    }, new URL(route.request().url()).searchParams)) });
   });
   await page.goto('/admin/subscriptions');
   const rows = page.locator('[data-ui="subscription-queue-item"]');
@@ -489,12 +490,12 @@ test('subscription mixed input pages and applies search without opening the keyb
   await page.route('**/api/admin/subscriptions/sub_pointer_1', async route => {
     if (route.request().method() !== 'GET') return route.fallback();
     const item = subscriptions[1];
-    await route.fulfill({ json: buildAdminApiEnvelope({
+    await route.fulfill({ json: buildAdminApiEnvelope(subscriptionFixture({
       subscription: item.subscription, account: item.account, covered_sites: item.covered_sites,
       plan: { plan_id: item.subscription.plan_id, display_name: item.coverage.package_alias },
       plan_version: { plan_version_id: item.subscription.plan_version_id },
       billing_snapshot_status: item.billing_snapshot_status, usage_totals: { runs: 0, tokens: 0, cost_cny: 12.25 },
-    }) });
+    })) });
   });
   await page.keyboard.press('j');
   await expect(page).toHaveURL(/focus=sub_pointer_0/);
@@ -572,7 +573,7 @@ async function installDirectoryMocks(page: Page, subscriptions = directorySubscr
     });
     expect(params.get('limit')).toBe('10');
     const offset = Number(params.get('offset') || 0);
-    await route.fulfill({ json: buildAdminApiEnvelope({ items: filtered.slice(offset, offset + 10), total: filtered.length, summary }) });
+    await route.fulfill({ json: buildAdminApiEnvelope(subscriptionQueueFixture({ items: filtered.slice(offset, offset + 10), total: filtered.length, summary }, new URL(route.request().url()).searchParams)) });
   });
   return {
     requests,

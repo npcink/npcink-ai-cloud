@@ -1,3 +1,4 @@
+import { subscriptionFixture } from '../fixtures/admin-subscriptions';
 import { expect, test } from '@playwright/test';
 import {
   LONG_ACCOUNT_ID,
@@ -129,14 +130,14 @@ test('subscription service remediation keeps one statistics refresh secondary', 
   await page.route('**/api/admin/subscriptions/sub_mvp', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(buildAdminApiEnvelope({
+    body: JSON.stringify(buildAdminApiEnvelope(subscriptionFixture({
       subscription: { subscription_id: 'sub_mvp', status: 'past_due', account_id: LONG_ACCOUNT_ID },
       account: { account_id: LONG_ACCOUNT_ID, name: 'Service customer' },
       billing_snapshot_status: {
         status: 'stale', stale_site_count: 1,
         next_action: { action: 'rebuild', label: 'Refresh billing statistics' },
       },
-    })),
+    }))),
   }));
   await page.goto('/admin/subscriptions/sub_mvp');
   await expect(page.getByRole('link', { name: /Open customer coverage|打开客户覆盖/i })).toHaveClass(/btn-primary/);
@@ -157,11 +158,11 @@ test('successful snapshot rebuild with failed readback retries GET without anoth
     if (failRead) {
       await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({
+    await route.fulfill({ json: buildAdminApiEnvelope(subscriptionFixture({
       subscription: { subscription_id: 'sub_mvp', status: 'past_due', account_id: LONG_ACCOUNT_ID },
       account: { account_id: LONG_ACCOUNT_ID, name: 'Synthetic customer' },
       billing_snapshot_status: { status: 'stale', stale_site_count: 1, next_action: { action: 'rebuild' } },
-    }) });
+    })) });
   });
   await page.goto('/admin/subscriptions/sub_mvp');
   const refresh = page.getByRole('button', { name: /Refresh.*statistics|刷新.*统计/ });
