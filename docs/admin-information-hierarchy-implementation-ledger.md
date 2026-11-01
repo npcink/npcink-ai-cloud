@@ -838,3 +838,8 @@ GET-only 只说明 HTTP 方法，不证明真实账务数据库零写。
 旧基线捕捉 hash 页签误触发的 loading 淡化，本次修正后消失。失败图／trace
 保留且未改 golden／阈值，不宣称本地全绿；最终 PC 取证 8 通过、8 图已检查。
 本条不提前声明 admission、PR/CI、合并、M4 accepted、生产或人工视觉接受。
+
+B4-06–10 集成补记（2026-11-01）：操作者明确接受credits页签取消虚假loading的稳定
+外观，并允许更新对应golden。Darwin/Linux分别采用原生actual并重验原失败场景，
+各1 passed；旧32/1及差异图保留，不放宽阈值。此接受仅覆盖该外观，整批产品
+人工验收与生产授权继续独立。集成详情见本组dated交付记录及外部integration-3回执。

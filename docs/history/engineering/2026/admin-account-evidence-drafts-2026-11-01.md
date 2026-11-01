@@ -112,3 +112,11 @@ M4 候选、开发合并及 accepted。临时浏览器服务退出后记录端�
 整批功能人工验收或生产授权。集成会话已接收后续交付责任，将分别使用Darwin/
 Linux原生结果更新对应credits基线并复验，不放松阈值、复制跨平台PNG或删除断言。
 此前32 passed/1 failed保留为历史证据；新门禁结果单列。
+
+集成基线已无冲突纳入当前 master `f7bd59b4`（#1340/#1341），与本组文件无重叠。
+对应 Darwin credits 基线使用本机获批准 actual，原失败场景重验 1 passed。
+Linux 基线独立在 M4 一次性 Playwright 1.59.1 Noble 容器生成；初轮4971px差异
+经 actual/expected/diff 独立核对仅为顶部进度线与内容淡化，纳入同一人工接受范围；
+采用该原生 actual 后同一原场景重验 1 passed。原始失败图/trace仍保留，未改阈值
+或删/跳过断言，未把Darwin图片复制为Linux图片。具体平台与hash见集成证据
+`integration-3/visual-acceptance.json`，CI平台结果仍单独记录。
