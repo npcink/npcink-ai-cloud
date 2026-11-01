@@ -249,9 +249,12 @@ export async function installAdminMocks(
         account_id: LONG_ACCOUNT_ID,
         entry: {
           event_type: String(payload.event_type || 'grant'),
-          credit_delta: Number(payload.credit_delta || 0),
-          reason: String(payload.reason || ''),
-          note: String(payload.note || ''),
+          ledger_entry_id: 'cle_adjustment_fixture',
+          account_id: LONG_ACCOUNT_ID,
+          source_type: 'operator_credit_adjustment',
+          source_id: `account_credit_adjustment:${LONG_ACCOUNT_ID}:${route.request().headers()['idempotency-key']}`,
+          ai_credit_delta: Number(payload.ai_credit_delta || 0),
+          metadata: { reason: String(payload.reason || ''), note: String(payload.note || '') },
         },
         receipt: {
           event_kind: 'account.credit.adjustment',
@@ -1258,6 +1261,19 @@ export async function installAdminMocks(
           overdue: 0,
         },
       }));
+      return;
+    }
+
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile` && route.request().method() === 'PATCH') {
+      const fields = route.request().postDataJSON() as Record<string, string>;
+      const item = accountItems.find(item => item.account.account_id === LONG_ACCOUNT_ID)!;
+      const metadata = { ...item.account.metadata };
+      for (const key of ['operator_display_name', 'operator_note']) {
+        if (fields[key]) metadata[key] = fields[key].trim();
+        else delete metadata[key];
+      }
+      item.account.metadata = metadata;
+      await fulfillJson(route, item.account);
       return;
     }
 

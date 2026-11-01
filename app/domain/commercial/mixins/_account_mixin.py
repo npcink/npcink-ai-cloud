@@ -172,6 +172,34 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def update_account_operator_profile(
+        self,
+        account_id: str,
+        *,
+        fields: dict[str, str],
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        with get_session(self.database_url) as session:
+            repository = CommercialAccountSiteRepository(session)
+            account = repository.update_account_operator_profile(account_id, fields=fields)
+            if account is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found", f"account '{account_id}' was not found"
+                )
+            payload = self._serialize_account(account)
+            self._record_service_audit_in_session(
+                repository=CommercialServiceAuditRepository(session),
+                audit_context=audit_context,
+                event_kind="account.operator_profile.update",
+                outcome="succeeded",
+                account_id=account_id,
+                scope_kind="account",
+                scope_id=account_id,
+                payload_json=payload,
+            )
+            session.commit()
+            return payload
+
     def set_account_status(
         self,
         account_id: str,
@@ -190,7 +218,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
-            account = account_site_repository.get_account(account_id)
+            account = account_site_repository.get_account_for_update(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",

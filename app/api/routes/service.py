@@ -448,6 +448,13 @@ class AccountPayload(BaseModel):
     bind_default_free: bool = False
 
 
+class AccountOperatorProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator_display_name: str = ""
+    operator_note: str = ""
+
+
 class AccountStatusPayload(BaseModel):
     reason: str = ""
 
@@ -1939,6 +1946,30 @@ async def upsert_account(
         )
         return _service_error_response(error)
     return build_envelope(status="ok", message="account saved", data=result, revision="m6")
+
+
+@router.patch("/admin/accounts/{account_id}/operator-profile")
+async def update_admin_account_operator_profile(
+    request: Request, account_id: str, payload: AccountOperatorProfilePayload
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_account_operator_profile,
+            account_id,
+            fields=payload.model_dump(exclude_unset=True),
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request, event_kind="account.operator_profile.update", error=error,
+            account_id=account_id, scope_kind="account", scope_id=account_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error, request=request)
+    return build_envelope(status="ok", message="operator profile saved", data=result, revision="m6")
 
 
 @router.post("/admin/accounts/{account_id}/suspend")
@@ -4117,6 +4148,25 @@ async def disable_admin_portal_user(
             ),
         ),
         revision="m6",
+    )
+
+
+@router.get("/admin/accounts/{account_id}/credit-ledger/adjustments/{operation_id}")
+async def get_admin_account_credit_adjustment(
+    request: Request, account_id: str, operation_id: str
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account_credit_adjustment,
+            account_id, operation_id=operation_id, audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok", message="credit adjustment confirmation", data=result, revision="m6"
     )
 
 

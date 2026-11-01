@@ -5762,6 +5762,11 @@ export const translations: Record<Locale, TranslationMap> = {
       'A current subscription is required before applying a top-up pack.',
     'admin.account_detail.topup_pack_applied_notice':
       '{{pack}} has been applied to the current period.',
+    'admin.account_detail.credit_adjustment_unconfirmed': 'The adjustment result is unconfirmed. Do not submit it again. Read the operation result to confirm; an absent entry does not prove it was rejected.',
+    'admin.account_detail.credit_adjustment_read_failed': 'Reading the adjustment result failed. It remains unconfirmed; do not submit it again.',
+    'admin.account_detail.credit_adjustment_operation': 'Operation',
+    'admin.account_detail.credit_adjustment_confirm': 'Read adjustment result',
+    'admin.account_detail.credit_adjustment_storage_blocked': 'The pending operation could not be retained or recovered in this browser. No new adjustment can be submitted. Preserve this session and ask an operator to verify the ledger.',
     'admin.account_detail.credit_adjustment_label': 'AI credit adjustment',
     'admin.account_detail.open_credit_adjustment_action': 'Adjust AI credits',
     'admin.account_detail.credit_adjustment_desc':
@@ -11712,6 +11717,11 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.account_detail.topup_pack_large': '大加量包',
     'admin.account_detail.topup_missing_subscription': '应用加量包前需要先有当前订阅。',
     'admin.account_detail.topup_pack_applied_notice': '{{pack}} 已应用到当前周期。',
+    'admin.account_detail.credit_adjustment_unconfirmed': '积分调整结果待确认，请勿再次提交。请读取本次操作结果；未查到流水不代表请求未入账。',
+    'admin.account_detail.credit_adjustment_read_failed': '读取调整结果失败，仍待确认，请勿再次提交。',
+    'admin.account_detail.credit_adjustment_operation': '本次操作',
+    'admin.account_detail.credit_adjustment_confirm': '读取调整结果',
+    'admin.account_detail.credit_adjustment_storage_blocked': '此浏览器无法保留或恢复待确认操作，已禁止新增调整。请保留当前会话并由运营人员核对流水。',
     'admin.account_detail.credit_adjustment_label': 'AI 积分调整',
     'admin.account_detail.open_credit_adjustment_action': '调整 AI 积分',
     'admin.account_detail.credit_adjustment_desc': '向当前 AI 积分账本写入赠送或带符号调整。必须填写原因。',

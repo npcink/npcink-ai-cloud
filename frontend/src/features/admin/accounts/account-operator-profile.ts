@@ -16,44 +16,18 @@ export type AccountOperatorProfileAccount = AccountOperatorProfileValues & {
   metadata: Record<string, unknown>;
 };
 
-type AccountOperatorProfilePayload = {
-  account_id: string;
-  name: string;
-  status: string;
-  metadata: Record<string, unknown>;
-  bind_default_free: false;
-};
+type AccountOperatorProfilePayload = AccountOperatorProfileValues;
 
 export type SavedAccountOperatorProfile = AccountOperatorProfileValues & {
   metadata: Record<string, unknown>;
 };
 
 export function buildAccountOperatorProfilePayload(
-  account: AccountOperatorProfileAccount,
   values: AccountOperatorProfileValues
 ): AccountOperatorProfilePayload {
-  const operatorDisplayName = values.operator_display_name.trim();
-  const operatorNote = values.operator_note.trim();
-  const metadata = { ...account.metadata };
-
-  if (operatorDisplayName) {
-    metadata.operator_display_name = operatorDisplayName;
-  } else {
-    delete metadata.operator_display_name;
-  }
-
-  if (operatorNote) {
-    metadata.operator_note = operatorNote;
-  } else {
-    delete metadata.operator_note;
-  }
-
   return {
-    account_id: account.account_id,
-    name: account.name || account.account_id,
-    status: account.status || 'active',
-    metadata,
-    bind_default_free: false,
+    operator_display_name: values.operator_display_name.trim(),
+    operator_note: values.operator_note.trim(),
   };
 }
 
@@ -125,17 +99,15 @@ export function useAccountOperatorProfile({
     setNotice(null);
     setError(null);
     try {
-      const payload = buildAccountOperatorProfilePayload(account, values);
+      const payload = buildAccountOperatorProfilePayload(values);
       await accountDetailClient.request<Record<string, unknown>>(
-        '/api/admin/accounts',
-        { method: 'POST', body: payload }
+        `/api/admin/accounts/${encodeURIComponent(account.account_id)}/operator-profile`,
+        { method: 'PATCH', body: payload }
       );
       const savedProfile = {
-        metadata: payload.metadata,
-        operator_display_name: String(
-          payload.metadata.operator_display_name || ''
-        ),
-        operator_note: String(payload.metadata.operator_note || ''),
+        metadata: { ...account.metadata, ...payload },
+        operator_display_name: payload.operator_display_name,
+        operator_note: payload.operator_note,
       };
       savedProfileKeyRef.current = buildProfileKey(
         account.account_id,
