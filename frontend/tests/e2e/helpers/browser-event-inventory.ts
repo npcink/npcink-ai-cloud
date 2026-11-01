@@ -53,6 +53,7 @@ export function collectBrowserEvents(page: Page) {
   const raw: BrowserInventory = { pageerror: [], consoleError: [], requestfailed: [], httpFailures: [], injectedFailures: [], requests: [], lifecycle: [] };
   const facts = new WeakMap<Request, NetworkEvidence>();
   const active = new Set<number>();
+  const drainListeners = new Set<() => void>();
   let nextId = 0;
   const lifecycle = (event: string) => raw.lifecycle.push({ at: Date.now(), event, url: page.url(), activeRequestIds: [...active] });
   const evidence = (request: Request) => {
@@ -67,10 +68,14 @@ export function collectBrowserEvents(page: Page) {
     return fact;
   };
   page.on('request', request => active.add(evidence(request).id));
-  page.on('requestfinished', request => { const fact = evidence(request); fact.finishedAt = Date.now(); active.delete(fact.id); });
+  page.on('requestfinished', request => {
+    const fact = evidence(request); fact.finishedAt = Date.now(); active.delete(fact.id);
+    drainListeners.forEach(check => check());
+  });
   page.on('requestfailed', request => {
     const fact = evidence(request); fact.finishedAt = Date.now(); active.delete(fact.id);
     raw.requestfailed.push({ ...fact, at: Date.now(), failure: request.failure()?.errorText || null });
+    drainListeners.forEach(check => check());
   });
   page.on('response', response => {
     const fact = evidence(response.request()); fact.responseStatus = response.status();
@@ -86,12 +91,35 @@ export function collectBrowserEvents(page: Page) {
     injectFailure(request: Request, reason: string, failure: { status: number } | { failure: string }) {
       raw.injectedFailures.push({ requestId: evidence(request).id, reason, ...failure });
     },
-    async beforeReload() {
+    async beforeReload(timeout = 20_000) {
+      if (!Number.isFinite(timeout) || timeout <= 0) throw new RangeError('Reload drain timeout must be finite and positive');
       lifecycle('explicit-reload-settle-start');
+      const deadline = Date.now() + timeout;
       // Let the old document's real prefetch/module requests finish. Do not
       // disable prefetch or waive any script cancellation/error classification.
-      await page.waitForLoadState('networkidle', { timeout: 20_000 });
-      if (active.size) throw new Error('Requests still active before explicit reload');
+      try {
+        await page.waitForLoadState('networkidle', { timeout });
+        // networkidle may already have been reached before a same-document
+        // request started. Wait for its actual terminal event as well.
+        if (active.size) {
+          lifecycle('explicit-reload-drain-wait');
+          await new Promise<void>((resolve, reject) => {
+            const drained = () => {
+              if (active.size) return;
+              clearTimeout(timer); drainListeners.delete(drained); resolve();
+            };
+            const timer = setTimeout(() => {
+              drainListeners.delete(drained); reject(new Error('Active request drain timed out'));
+            }, Math.max(1, deadline - Date.now()));
+            drainListeners.add(drained);
+          });
+        }
+        if (active.size) throw new Error('Requests still active before explicit reload');
+      } catch (cause) {
+        lifecycle('explicit-reload-settle-failed');
+        const pending = raw.requests.filter(request => active.has(request.id));
+        throw new Error(`Reload request drain failed within ${timeout}ms; active requests: ${JSON.stringify(pending)}`, { cause });
+      }
       lifecycle('explicit-reload-ready');
     },
   };
