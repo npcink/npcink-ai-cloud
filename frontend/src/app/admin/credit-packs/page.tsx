@@ -136,7 +136,7 @@ export default function AdminCreditPacksPage() {
         <BackofficeEmptyState
           title={t('admin.credit_packs_unavailable_title', {}, 'AI credit pack catalog unavailable')}
           description={error || t('error.failed_load')}
-          action={<button type="button" className="btn btn-primary" disabled={Boolean(draft) || blocked} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
+          action={<button type="button" className="btn btn-primary" disabled={isRefreshing || isSaving} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
         />
       </BackofficePageStack>
     );
@@ -255,7 +255,7 @@ export default function AdminCreditPacksPage() {
                     <td className="px-3 py-2 align-middle">
                       <div className="flex flex-wrap gap-1.5">
                         {item.recommended_for_tiers.length
-                          ? item.recommended_for_tiers.map((tier) => <span key={tier} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">{tier}</span>)
+                          ? item.recommended_for_tiers.map((tier, index) => <span key={`${tier}-${index}`} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">{tier}</span>)
                           : <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.credit_packs_no_recommended_tiers', {}, 'None')}</span>}
                       </div>
                     </td>

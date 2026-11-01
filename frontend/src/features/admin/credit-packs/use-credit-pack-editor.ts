@@ -102,6 +102,10 @@ export function useCreditPackEditor(messages: Messages, onSaved: () => void) {
     if (context !== generation.current || pending.current?.operation_id !== submitted.operation_id) return;
     if (!evidence) { setEditorError(messagesRef.current.unknown); return; }
     try { clearIntent(submitted); } catch { setStorageBlocked(true); return; }
+    // A directory retry can overlap this exact operation confirmation. Its
+    // older catalog (or failure) must not replace the confirmed snapshot.
+    requestSequenceRef.current += 1; requestActiveRef.current = false; inflightRead.current = null;
+    setIsLoading(false); setIsRefreshing(false);
     pending.current = null; setIntent(null); setCatalog(evidence.catalog); setCatalogFresh(true);
     setLoadedAt(new Date()); setError(null); setEditorError(null); setReceiptId(evidence.audit_event_id);
     setDraft(null); setDraftBase(null); onSavedRef.current();

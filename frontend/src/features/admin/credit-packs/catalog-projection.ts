@@ -32,8 +32,7 @@ export function requireItems(value: unknown): CreditPackItem[] {
       || !text(item.label) || item.label.length > 96 || item.currency !== 'CNY'
       || !positiveInt(item.ai_credits, 10_000_000) || !positiveInt(item.validity_days, 1095) || !amount(item.amount)
       || typeof item.active !== 'boolean' || !Array.isArray(item.recommended_for_tiers)
-      || !item.recommended_for_tiers.every(tier => typeof tier === 'string' && MANAGED_TIERS.includes(tier as typeof MANAGED_TIERS[number]))
-      || new Set(item.recommended_for_tiers).size !== item.recommended_for_tiers.length) throw new Error('Invalid credit pack item');
+      || !item.recommended_for_tiers.every(tier => typeof tier === 'string' && MANAGED_TIERS.includes(tier as typeof MANAGED_TIERS[number]))) throw new Error('Invalid credit pack item');
     ids.add(item.pack_id);
   }
   // Select only editable fields; never silently repair or coerce a broken row.

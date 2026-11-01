@@ -1,9 +1,9 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 import { collectBrowserEvents, noUnexpectedBrowserEvents } from './helpers/browser-event-inventory';
 import { buildForm, type PackIntent } from '@/features/admin/credit-packs/catalog-projection';
-import { packCatalog, packConfirmation, packItems, packWrite, revision } from '../fixtures/admin-credit-packs';
+import { packCatalog, packConfirmation, packIntent, packItems, packWrite, revision } from '../fixtures/admin-credit-packs';
 const inventories = new WeakMap<Page, ReturnType<typeof collectBrowserEvents>>();
 test.beforeEach(({ page }) => { inventories.set(page, collectBrowserEvents(page)); });
 test.afterEach(async ({ page }, info) => {
@@ -20,7 +20,8 @@ test.afterEach(async ({ page }, info) => {
 async function harness(page: Page) {
   await installAdminMocks(page);
   const state = { mode: 'normal', catalogMode: 'normal', confirmMode: 'normal', writes: [] as PackIntent[],
-    items: packItems(), rev: revision(), recorded: false, reads: [] as string[], release: () => {}, delayConfirmation: false };
+    items: packItems(), rev: revision(), recorded: false, reads: [] as string[], release: () => {}, delayConfirmation: false,
+    delayCatalog: false, releaseCatalog: () => {}, restoredIntent: null as PackIntent | null };
   await page.route('**/api/admin/credit-packs**', async route => {
     const req = route.request(), path = new URL(req.url()).pathname;
     const failure = async (status: number, code: string) => {
@@ -31,7 +32,8 @@ async function harness(page: Page) {
     if (path.includes('/operations/')) {
       if (state.delayConfirmation) await new Promise<void>(resolve => { state.release = resolve; });
       if (['409', '422', '503'].includes(state.confirmMode)) { await failure(Number(state.confirmMode), state.confirmMode === '409' ? 'service.credit_pack_catalog_revision_conflict' : 'request.validation_error'); return; }
-      const original = state.writes.find(item => path.endsWith(item.operation_id));
+      const original = state.writes.find(item => path.endsWith(item.operation_id))
+        ?? (path.endsWith(state.restoredIntent?.operation_id || '/not-an-operation') ? state.restoredIntent : null);
       const evidence = original ? packConfirmation(original, state.recorded) : null;
       const value = evidence ? { ...evidence, current: evidence.current ? { ...evidence.current, revision: state.rev } : null, receipt: evidence.receipt ? { ...evidence.receipt, revision: state.rev } : null } : {};
       if (state.confirmMode === 'wrong' && 'operation_id' in value) value.operation_id = 'other-operation';
@@ -61,11 +63,14 @@ async function harness(page: Page) {
       if (state.mode === 'other-pack') response = { ...value, items: body.items.map((item: object, i: number) => i === 1 ? { ...item, amount: 1 } : item) };
       await route.fulfill({ json: buildAdminApiEnvelope(response) }); return;
     }
-    let value: unknown = packCatalog(state.items, state.rev);
-    if (state.catalogMode === 'empty') value = packCatalog([]);
-    if (state.catalogMode === 'missing') value = {};
-    if (state.catalogMode === 'null') value = { ...packCatalog(), items: null };
-    if (state.catalogMode === 'bad-row') value = { ...packCatalog(), items: [null] };
+    const catalogMode = state.catalogMode;
+    let value: unknown = packCatalog(structuredClone(state.items), state.rev);
+    if (state.delayCatalog) await new Promise<void>(resolve => { state.releaseCatalog = resolve; });
+    if (catalogMode === '503') { await failure(503, 'service.unavailable'); return; }
+    if (catalogMode === 'empty') value = packCatalog([]);
+    if (catalogMode === 'missing') value = {};
+    if (catalogMode === 'null') value = { ...packCatalog(), items: null };
+    if (catalogMode === 'bad-row') value = { ...packCatalog(), items: [null] };
     await route.fulfill({ json: buildAdminApiEnvelope(value) });
   });
   return state;
@@ -286,4 +291,112 @@ test('empty recommendations reject Enter and button before persistence; restorin
   await workbench(page).getByRole('checkbox', { name: 'plus', exact: true }).check();
   await save(page).click(); await expect(workbench(page)).toHaveCount(0);
   expect(state.writes).toHaveLength(1); expect(state.writes[0].items[0].recommended_for_tiers).toEqual(['plus']);
+});
+
+test('real serializer duplicate tiers stay readable and untouched when another pack saves', async ({ page }) => {
+  const state = await harness(page);
+  const root = process.env.NPCINK_CREDIT_PACK_REVIEW_EVIDENCE;
+  if (root) {
+    const actual = JSON.parse(await readFile(`${root}/real-catalog-duplicate-tiers.json`, 'utf8'));
+    state.items = actual.items; state.rev = actual.revision;
+  } else state.items[1].recommended_for_tiers = ['plus', 'plus'];
+  // The real serializer also emits four fixed read-only policy fields. The
+  // existing PATCH contract submits editable fields; retain every such value.
+  const { pack_id, label, ai_credits, amount, currency, recommended_for_tiers, validity_days, active } = state.items[1];
+  const untouched = structuredClone({ pack_id, label, ai_credits, amount, currency, recommended_for_tiers, validity_days, active });
+  await open(page);
+  await expect(page.locator('[data-pack-id="pack_medium"]')).toContainText('plus');
+  await numbers(page).nth(1).fill('88'); await save(page).click();
+  await expect(workbench(page)).toHaveCount(0);
+  expect(state.writes).toHaveLength(1); expect(state.writes[0].items[1]).toEqual(untouched);
+  expect(state.items[1]).toEqual(untouched);
+});
+
+for (const initial of ['missing', '503']) {
+  test(`restored intent keeps exact snapshot while failed initial catalog ${initial} recovers readonly`, async ({ page }, info) => {
+    const original = packIntent(); original.form.amount = '88'; original.items[0].amount = 88;
+    const snapshot = JSON.stringify(original);
+    await page.addInitScript(value => sessionStorage.setItem('admin.credit-pack-catalog.v1', value), snapshot);
+    const state = await harness(page); state.catalogMode = initial; state.restoredIntent = original;
+    await page.goto('/admin/credit-packs');
+    const retry = page.getByRole('button', { name: /^Retry$|^重试$/ });
+    await expect(retry).toBeEnabled(); await expect(pending(page)).toBeVisible();
+    await read(page).click(); await expect(read(page)).toBeEnabled();
+    expect(state.reads.filter(path => path.includes('/operations/'))).toHaveLength(1);
+    await screenshot(page, `restored-initial-${initial}-retry`, info);
+    state.catalogMode = 'normal'; await retry.click();
+    await expect(page.locator('[data-pack-id]')).toHaveCount(3);
+    await expect(pending(page)).toBeVisible(); await expect(save(page)).toBeDisabled();
+    await expect(numbers(page).nth(1)).toHaveValue('88');
+    expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+    expect(state.reads.filter(path => !path.includes('/operations/'))).toHaveLength(2);
+    expect(state.writes).toHaveLength(0);
+    await screenshot(page, `restored-initial-${initial}-recovered`, info);
+  });
+}
+
+for (const late of ['normal', '503']) {
+  test(`confirmed original operation wins over late directory retry ${late}`, async ({ page }) => {
+    const original = packIntent(); original.form.amount = '88'; original.items[0].amount = 88;
+    await page.addInitScript(value => sessionStorage.setItem('admin.credit-pack-catalog.v1', value), JSON.stringify(original));
+    const state = await harness(page); state.restoredIntent = original; state.catalogMode = 'missing';
+    await page.goto('/admin/credit-packs');
+    const retry = page.getByRole('button', { name: /^Retry$|^重试$/ }); await expect(retry).toBeEnabled();
+    state.catalogMode = late; state.delayCatalog = true;
+    await retry.click(); await expect.poll(() => state.reads.filter(path => !path.includes('/operations/')).length).toBe(2);
+    state.items = structuredClone(original.items); state.rev = revision('b'); state.recorded = true;
+    await read(page).click(); await expect(pending(page)).toHaveCount(0);
+    await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('88.00');
+    const response = page.waitForResponse(res => new URL(res.url()).pathname === '/api/admin/credit-packs');
+    state.releaseCatalog(); await (await response).finished();
+    await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('88.00');
+    await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+    await expect(workbench(page)).toHaveCount(0); await expect(pending(page)).toHaveCount(0);
+    expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBeNull();
+    expect(state.writes).toHaveLength(0);
+  });
+}
+
+test('directory retry arriving before delayed confirmation stays pending until exact receipt', async ({ page }) => {
+  const original = packIntent(); original.form.amount = '88'; original.items[0].amount = 88;
+  const snapshot = JSON.stringify(original);
+  await page.addInitScript(value => sessionStorage.setItem('admin.credit-pack-catalog.v1', value), snapshot);
+  const state = await harness(page); state.restoredIntent = original; state.catalogMode = 'missing';
+  await page.goto('/admin/credit-packs');
+  const retry = page.getByRole('button', { name: /^Retry$|^重试$/ }); await expect(retry).toBeEnabled();
+  state.catalogMode = 'normal'; state.delayCatalog = true;
+  await retry.click(); await expect.poll(() => state.reads.filter(path => !path.includes('/operations/')).length).toBe(2);
+  state.delayConfirmation = true; state.recorded = true; state.items = structuredClone(original.items); state.rev = revision('b');
+  await read(page).click(); await expect.poll(() => state.reads.some(path => path.includes('/operations/'))).toBe(true);
+  state.releaseCatalog(); await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('99.00');
+  await expect(pending(page)).toBeVisible(); await expect(workbench(page).locator('button[type="submit"]')).toBeDisabled();
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+  state.release(); await expect(pending(page)).toHaveCount(0);
+  await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('88.00');
+  expect(state.writes).toHaveLength(0);
+});
+
+test('late retry and confirmation after route departure preserve intent and cannot mutate new context', async ({ page }) => {
+  const original = packIntent(); original.form.amount = '88'; original.items[0].amount = 88;
+  const snapshot = JSON.stringify(original);
+  await page.addInitScript(value => sessionStorage.setItem('admin.credit-pack-catalog.v1', value), snapshot);
+  const state = await harness(page); state.restoredIntent = original; state.catalogMode = 'missing';
+  await page.goto('/admin/credit-packs');
+  const retry = page.getByRole('button', { name: /^Retry$|^重试$/ }); await expect(retry).toBeEnabled();
+  state.catalogMode = 'normal'; state.delayCatalog = true;
+  await retry.click(); await expect.poll(() => state.reads.filter(path => !path.includes('/operations/')).length).toBe(2);
+  state.delayConfirmation = true; state.recorded = true; state.items = structuredClone(original.items); state.rev = revision('b');
+  await read(page).click(); await expect.poll(() => state.reads.some(path => path.includes('/operations/'))).toBe(true);
+  await page.locator('[data-ui="admin-workspace-navigation"] a[href="/admin/plans"]').click();
+  await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
+  await expect(page).toHaveURL(/\/admin\/plans/);
+  state.releaseCatalog(); state.release();
+  await inventories.get(page)!.beforeReload();
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+  await expect(page.locator('[data-ui="credit-pack-directory-table"]')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/admin\/plans/); expect(state.writes).toHaveLength(0);
+  state.delayCatalog = false; state.delayConfirmation = false;
+  await page.goto('/admin/credit-packs'); await expect(pending(page)).toBeVisible();
+  await expect(numbers(page).nth(1)).toHaveValue('88'); await expect(save(page)).toBeDisabled();
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
 });

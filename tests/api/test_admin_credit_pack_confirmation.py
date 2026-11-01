@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from sqlalchemy import event, select
@@ -160,6 +163,31 @@ def test_unauthenticated_and_invalid_admin_cookie_remain_rejected(tmp_path):
     client.cookies.set("npcink_admin_session_token", "invalid-cookie")
     assert client.get(f"{BASE}/operations/not-sent", params={"expected_revision": "unconfigured"},
                       headers=build_internal_headers()).status_code == 401
+
+
+def test_real_catalog_preserves_duplicate_recommendations_when_saving_another_pack(tmp_path):
+    _, client = _build_client(tmp_path, providers={})
+    original = client.get(BASE, headers=build_internal_headers()).json()["data"]
+    items = deepcopy(original["items"])
+    items[1]["recommended_for_tiers"] = ["plus", "plus"]
+    saved = client.patch(BASE, json={"items": items, "expected_revision": original["revision"]},
+                         headers=build_internal_headers(idempotency_key="duplicate-tier-setup"))
+    assert saved.status_code == 200, saved.text
+    actual = client.get(BASE, headers=build_internal_headers()).json()["data"]
+    assert actual["items"][1]["recommended_for_tiers"] == ["plus", "plus"]
+    if root := os.environ.get("NPCINK_CREDIT_PACK_REVIEW_EVIDENCE"):
+        Path(root).mkdir(parents=True, exist_ok=True)
+        (Path(root) / "real-catalog-duplicate-tiers.json").write_text(json.dumps(actual, indent=2))
+    next_items = deepcopy(actual["items"])
+    next_items[0]["amount"] = 88
+    response = client.patch(BASE, json={"items": next_items,
+                                      "expected_revision": actual["revision"]},
+                            headers=build_internal_headers(idempotency_key="edit-other-pack"))
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["items"][1] == items[1]
+    evidence = read(client, actual["revision"], "edit-other-pack")
+    assert evidence["state"] == "confirmed"
+    assert evidence["current"]["items"][1] == items[1]
 
 
 @pytest.mark.parametrize("amount, expected", [

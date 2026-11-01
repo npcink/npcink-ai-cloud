@@ -36,9 +36,15 @@
   按钮是原生 submit，与 Enter 共用表单验证及提交函数。
   既有后端会将空推荐选择恢复为默认，表单明示至少保留一个推荐套餐并在持久化/
   PATCH 前阻止全空；读取仍允许类型正确的空推荐列表，不复制后端默认映射。
+  后端也允许重复的有效推荐 tier，读取保留其顺序和重复值；保存另一包时保留
+  未编辑包的全部可写值，不额外规范化。重复 pack_id、非法 tier 仍视为损坏。
 - PATCH 发出前，在同一标签页 sessionStorage 保存原 key、expected_revision、
   完整提交 items、目标和原表单。存储失败/损坏则冻结写入。
   发送后响应丢失、坏成功投影或确认失败保留原意图，不换 key、重发或猜测失败。
+  恢复意图后的首次目录读取失败仍可 Retry 只读目录；普通读取不确认该操作，
+  不清理/改写原 key、expected_revision、items 或草稿，也不解除写冻结。
+  精确确认成功使已发出的旧目录读取失效，迟到目录/错误不得覆盖确认结果；
+  离开上下文后的一般读取及确认响应均不得污染新页面或删除保留的原意图。
 - 成功 PATCH 增加 `catalog_operation={expected_revision,items}`，与原目录替换和
   `payment.credit_pack_catalog.update` 成功审计在同一事务；不新增第二条成功审计。
 - 专用 `GET /internal/service/admin/credit-packs/operations/{operation_id}` 接收

@@ -44,3 +44,15 @@ it('keeps legal empty recommendations readable but rejects an empty edit before 
   expect(() => formItem(buildForm(items[0]))).toThrow();
   expect(formItem({ ...buildForm(items[0]), recommended_for_tiers: ['plus'] }).recommended_for_tiers).toEqual(['plus']);
 });
+
+it('preserves backend-legal duplicate recommendations through reads and unrelated-pack writes', () => {
+  const items = packItems(); items[1].recommended_for_tiers = ['plus', 'plus'];
+  const catalog = requireCatalog(packCatalog(items));
+  expect(catalog.items[1]).toEqual(items[1]);
+  const intent = packIntent(); intent.items[1] = catalog.items[1];
+  expect(readIntent(intent).items[1]).toEqual(items[1]);
+  expect(requireWrite(packWrite(intent), intent).items[1]).toEqual(items[1]);
+  expect(readConfirmation(packConfirmation(intent), intent)?.catalog.items[1]).toEqual(items[1]);
+  items[1].recommended_for_tiers = ['not-a-tier'];
+  expect(() => requireCatalog(packCatalog(items))).toThrow();
+});
