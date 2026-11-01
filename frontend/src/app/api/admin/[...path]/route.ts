@@ -281,6 +281,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_catalog',
   },
   {
+    methods: ['GET'],
+    pattern: /^credit-packs\/operations\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
     methods: ['PATCH'],
     pattern: /^credit-packs$/,
     namespace: 'admin',

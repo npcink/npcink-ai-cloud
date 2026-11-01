@@ -5,10 +5,12 @@ import { frontendRoot } from './_paths.mjs';
 
 const root = frontendRoot;
 const pageSource = readFileSync(resolve(root, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
+const editorSource = readFileSync(resolve(root, 'src/features/admin/credit-packs/use-credit-pack-editor.ts'), 'utf8');
+const projectionSource = readFileSync(resolve(root, 'src/features/admin/credit-packs/catalog-projection.ts'), 'utf8');
 const proxySource = readFileSync(resolve(root, 'src/app/api/admin/[...path]/route.ts'), 'utf8');
 
 assert.match(
-  pageSource,
+  editorSource,
   /\/api\/admin\/credit-packs/,
   'Admin credit pack page must use the admin service-plane catalog endpoint'
 );
@@ -38,7 +40,7 @@ assert.doesNotMatch(
   'Admin credit pack page must not let operators switch customer pack pricing away from RMB'
 );
 assert.match(
-  pageSource,
+  projectionSource,
   /MANAGED_TIERS[\s\S]*free[\s\S]*plus[\s\S]*pro[\s\S]*agency/,
   'Admin credit pack recommendations must place Plus between Free and Pro'
 );
@@ -52,3 +54,7 @@ assert.match(
   /methods: \['PATCH'\],[\s\S]*?pattern: \/\^credit-packs\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
   'Admin proxy must explicitly allowlist credit pack writes in the admin namespace with catalog authority'
 );
+
+assert.match(proxySource, /methods: \['GET'\],[\s\S]*?pattern: \/\^credit-packs[\s\S]*?operations[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/);
+assert.match(pageSource, /type="submit"[\s\S]*onSubmit=\{\(\) => void handleSaveDraft\(\)\}/);
+assert.match(pageSource, /min=\{0\.000001\} step=\{0\.000001\}/);

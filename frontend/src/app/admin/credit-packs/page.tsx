@@ -17,48 +17,14 @@ import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
-import { createApiClient } from '@/lib/api-client';
+import { ConfirmModal } from '@/components/ui/Modal';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
+import { useCreditPackEditor } from '@/features/admin/credit-packs/use-credit-pack-editor';
+import { MANAGED_TIERS, type CreditPackItem } from '@/features/admin/credit-packs/catalog-projection';
 import { ADMIN_CURRENCY } from '@/lib/currency';
-import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 
-type CreditPackItem = {
-  pack_id: string;
-  label: string;
-  ai_credits: number;
-  amount: number;
-  currency: string;
-  recommended_for_tiers: string[];
-  validity_days: number;
-  active: boolean;
-};
-
-type CreditPackCatalogPayload = {
-  revision: string;
-  catalog_version: string;
-  period_policy: string;
-  expiry_policy: string;
-  default_validity_days: number;
-  items: CreditPackItem[];
-  updated_at?: string;
-};
-
 type PackStatusFilter = 'all' | 'active' | 'inactive';
-
-const MANAGED_TIERS = ['free', 'plus', 'pro', 'agency'] as const;
-const creditPacksClient = createApiClient({ idempotencyPrefix: 'admin_credit_packs' });
-
-function normalizeItem(item: CreditPackItem): CreditPackItem {
-  return {
-    ...item,
-    ai_credits: Math.max(1, Number(item.ai_credits || 0)),
-    amount: Math.max(0.01, Number(item.amount || 0)),
-    validity_days: Math.max(1, Number(item.validity_days || 365)),
-    currency: ADMIN_CURRENCY,
-    recommended_for_tiers: Array.isArray(item.recommended_for_tiers) ? item.recommended_for_tiers : [],
-    active: Boolean(item.active),
-  };
-}
 
 function normalizeStatusFilter(value: string | null): PackStatusFilter {
   return value === 'active' || value === 'inactive' ? value : 'all';
@@ -69,18 +35,8 @@ function formatPackAmount(item: CreditPackItem): string {
     style: 'currency',
     currency: ADMIN_CURRENCY,
     minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
   }).format(item.amount);
-}
-
-async function fetchCatalog(): Promise<CreditPackCatalogPayload> {
-  return (await creditPacksClient.request<CreditPackCatalogPayload>('/api/admin/credit-packs')).data;
-}
-
-async function saveCatalog(items: CreditPackItem[], expectedRevision: string): Promise<CreditPackCatalogPayload> {
-  return (await creditPacksClient.request<CreditPackCatalogPayload>('/api/admin/credit-packs', {
-    method: 'PATCH',
-    body: { items, expected_revision: expectedRevision },
-  })).data;
 }
 
 export default function AdminCreditPacksPage() {
@@ -91,25 +47,36 @@ export default function AdminCreditPacksPage() {
   const searchParams = useSearchParams();
   const statusFilter = normalizeStatusFilter(searchParams.get('status'));
   const focusedPackId = searchParams.get('focus') || '';
-  const [catalog, setCatalog] = useState<CreditPackCatalogPayload | null>(null);
-  const [items, setItems] = useState<CreditPackItem[]>([]);
-  const [draft, setDraft] = useState<CreditPackItem | null>(null);
-  const [draftBase, setDraftBase] = useState<{ revision: string; items: CreditPackItem[] } | null>(null);
-  const [draftConflict, setDraftConflict] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
-  const savingRef = useRef(false);
-  const translationRef = useRef(t);
-  useEffect(() => { translationRef.current = t; }, [t]);
-  const [catalogFresh, setCatalogFresh] = useState(false);
-  const requestActiveRef = useRef(false);
-  const requestSequenceRef = useRef(0);
-  const hasLoadedRef = useRef(false);
-
+  const editor = useCreditPackEditor({
+    load: t('error.failed_load'), save: t('error.failed_save'),
+    unknown: t('admin.credit_packs_operation_unknown'), invalid: t('admin.credit_packs_form_invalid'),
+    conflict: t('admin.credit_packs_catalog_changed'),
+  }, () => toast.success(t('admin.credit_packs_saved_notice'), t('admin.credit_packs_saved_title')));
+  const { catalog, items, draft, draftConflict, conflictRead, intent, blocked, storageBlocked,
+    isLoading, isRefreshing, isSaving, catalogFresh, loadedAt, error, editorError, receiptId,
+    isDraftDirty, loadCatalog, updateField, handleSaveDraft } = editor;
+  const [pendingExit, setPendingExit] = useState<string | null>(null);
+  const localAction = useRef<(() => void) | null>(null);
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(isDraftDirty || blocked,
+    href => setPendingExit(href || null), href => router.push(href));
+  function requestAction(action: () => void) {
+    if (isSaving) return;
+    if (isDraftDirty || blocked) { localAction.current = action; setPendingExit('__local'); }
+    else action();
+  }
+  useEffect(() => {
+    if (!isDraftDirty && !blocked) return;
+    const sameRoute = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const url = new URL(anchor.href, location.href);
+      if (url.origin !== location.origin || url.pathname !== location.pathname || url.search === location.search) return;
+      event.preventDefault(); event.stopPropagation(); setPendingExit(`${url.pathname}${url.search}${url.hash}`);
+    };
+    document.addEventListener('click', sameRoute, true);
+    return () => document.removeEventListener('click', sameRoute, true);
+  }, [isDraftDirty, blocked]);
   const updateCatalogUrl = useCallback((updates: { status?: PackStatusFilter | null; focus?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -121,119 +88,55 @@ export default function AdminCreditPacksPage() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
-  const loadCatalog = useCallback(async (refresh = false) => {
-    if (requestActiveRef.current) return;
-    requestActiveRef.current = true;
-    setCatalogFresh(false);
-    const sequence = ++requestSequenceRef.current;
-    if (refresh || hasLoadedRef.current) setIsRefreshing(true);
-    else setIsLoading(true);
-    setError(null);
-    try {
-      const payload = await fetchCatalog();
-      if (sequence !== requestSequenceRef.current) return;
-      setCatalogFresh(Boolean(payload.revision));
-      if (!payload.revision) setError(translationRef.current('admin.credit_packs_revision_missing'));
-      setCatalog(payload);
-      setItems((payload.items || []).map(normalizeItem));
-      setLoadedAt(new Date());
-      hasLoadedRef.current = true;
-    } catch (err) {
-      if (sequence !== requestSequenceRef.current) return;
-      setError(resolveUiErrorMessage(err, translationRef.current('error.failed_load')));
-    } finally {
-      if (sequence === requestSequenceRef.current) {
-        requestActiveRef.current = false;
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadCatalog();
-  }, [loadCatalog]);
-
   const activeCount = useMemo(() => items.filter((item) => item.active).length, [items]);
-  const defaultValidityDays = Number(catalog?.default_validity_days || 365);
+  const defaultValidityDays = catalog?.default_validity_days;
   const filteredItems = useMemo(
     () => items.filter((item) => statusFilter === 'all' || (statusFilter === 'active' ? item.active : !item.active)),
     [items, statusFilter]
   );
   const selectedItem = (focusedPackId ? filteredItems.find((item) => item.pack_id === focusedPackId) : filteredItems[0]) || null;
-  const savedItemForDraft = draft ? draftBase?.items.find((item) => item.pack_id === draft.pack_id) || null : null;
-  const isDraftDirty = Boolean(draft && savedItemForDraft && JSON.stringify(normalizeItem(draft)) !== JSON.stringify(normalizeItem(savedItemForDraft)));
-
-  const openEditor = (item: CreditPackItem) => {
-    if (!catalogFresh || !catalog?.revision || savingRef.current) return;
-    updateCatalogUrl({ focus: item.pack_id });
-    setEditorError(null);
-    setDraftConflict(false);
-    setDraftBase({ revision: catalog.revision, items });
-    setDraft(normalizeItem({ ...item, recommended_for_tiers: [...item.recommended_for_tiers] }));
-  };
-
-  const closeEditor = () => {
-    if (!isSaving) {
-      setEditorError(null);
-      setDraft(null);
-      setDraftBase(null);
-      setDraftConflict(false);
-    }
-  };
-
+  const openEditor = (item: CreditPackItem) => requestAction(() => {
+    if (blocked) return;
+    updateCatalogUrl({ focus: item.pack_id }); editor.openEditor(item);
+  });
+  const closeEditor = () => requestAction(editor.closeEditor);
   const toggleDraftTier = (tier: string) => {
-    setDraft((current) => {
-      if (!current) return current;
-      const tiers = new Set(current.recommended_for_tiers);
-      if (tiers.has(tier)) tiers.delete(tier);
-      else tiers.add(tier);
-      return normalizeItem({ ...current, recommended_for_tiers: Array.from(tiers) });
-    });
+    if (!draft) return;
+    const tiers = new Set(draft.recommended_for_tiers);
+    if (tiers.has(tier)) tiers.delete(tier); else tiers.add(tier);
+    updateField('recommended_for_tiers', Array.from(tiers));
   };
-
-  const handleSaveDraft = async () => {
-    if (!draft || !draftBase || draftConflict || !isDraftDirty || !catalogFresh || savingRef.current) return;
-    savingRef.current = true;
-    setIsSaving(true);
-    setEditorError(null);
-    try {
-      const nextItems = draftBase.items.map((item) => item.pack_id === draft.pack_id ? normalizeItem(draft) : normalizeItem(item));
-      const payload = await saveCatalog(nextItems, draftBase.revision);
-      setCatalogFresh(Boolean(payload.revision));
-      if (!payload.revision) setError(t('admin.credit_packs_revision_missing'));
-      setCatalog(payload);
-      setItems((payload.items || []).map(normalizeItem));
-      setLoadedAt(new Date());
-      setDraft(null);
-      setDraftBase(null);
-      toast.success(
-        t('admin.credit_packs_saved_notice', {}, 'AI credit pack catalog saved.'),
-        t('admin.credit_packs_saved_title', {}, 'AI credit pack updated')
-      );
-    } catch (err) {
-      if (err instanceof ApiError && err.statusCode === 409 &&
-          ['service.credit_pack_catalog_revision_conflict', 'service.credit_pack_catalog_revision_required'].includes(err.errorCode)) {
-        setDraftConflict(true);
-        setCatalogFresh(false);
-        setEditorError(t('admin.credit_packs_revision_conflict'));
-        setError(t('admin.credit_packs_catalog_changed'));
-      } else setEditorError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      savingRef.current = false;
-      setIsSaving(false);
-    }
-  };
+  const pendingEvidence = <>
+    {intent ? <div role="status" data-ui="credit-pack-pending-operation" className="space-y-2 border border-amber-300 bg-amber-50 p-3 text-sm text-slate-950 dark:border-amber-700 dark:bg-amber-950/20 dark:text-white">
+      <p>{t('admin.credit_packs_pending_target', { target: intent.form.label })}</p>
+      <p>{t('admin.credit_packs_operation_unknown')}</p>
+      <p>{t('admin.credit_packs_submitted_summary', { amount: intent.form.amount, credits: intent.form.ai_credits, days: intent.form.validity_days })}</p>
+      <details><summary>{t('admin.credit_packs_operation_evidence')}</summary><p className="break-all">{intent.target}</p><p className="break-all">{intent.operation_id}</p><p className="break-all">{intent.expected_revision}</p></details>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={isSaving || storageBlocked} onClick={() => void editor.confirm()}>{t('admin.credit_packs_confirm_operation')}</button>
+    </div> : null}
+    {storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.credit_packs_storage_blocked')}</p> : null}
+  </>;
+  const exitDialog = <ConfirmModal isOpen={pendingExit !== null} title={t('admin.credit_packs_leave_title')}
+    message={t(blocked ? 'admin.credit_packs_leave_pending' : 'admin.credit_packs_leave_draft')}
+    confirmLabel={t(blocked ? 'admin.credit_packs_leave_keep_pending' : 'admin.credit_packs_discard_leave')}
+    cancelLabel={t('common.cancel')} variant="danger"
+    onClose={() => { setPendingExit(null); localAction.current = null; cancelNavigation(); }}
+    onConfirm={() => {
+      const destination = pendingExit; setPendingExit(null);
+      if (destination === '__local') { const action = localAction.current; localAction.current = null; action?.(); }
+      else if (destination) { editor.closeEditor(); confirmNavigation(destination); }
+    }} />;
 
   if (isLoading && !catalog) return <LoadingFallback />;
 
   if (!catalog && !isLoading) {
     return (
       <BackofficePageStack>
+        {pendingEvidence}{exitDialog}
         <BackofficeEmptyState
           title={t('admin.credit_packs_unavailable_title', {}, 'AI credit pack catalog unavailable')}
           description={error || t('error.failed_load')}
-          action={<button type="button" className="btn btn-primary" disabled={Boolean(draft)} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
+          action={<button type="button" className="btn btn-primary" disabled={Boolean(draft) || blocked} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
         />
       </BackofficePageStack>
     );
@@ -241,6 +144,9 @@ export default function AdminCreditPacksPage() {
 
   return (
     <BackofficePageStack className="space-y-5">
+      {!draft ? pendingEvidence : null}
+      {exitDialog}
+      {receiptId ? <p role="status" className="text-sm">{t('admin.credit_packs_confirmed_receipt', { id: String(receiptId) })}</p> : null}
       <BackofficeConfigurationHeader
         title={t('admin.credit_packs_title', {}, 'AI credit packs')}
         description={t(
@@ -249,7 +155,7 @@ export default function AdminCreditPacksPage() {
           'Review the customer purchase catalog first. Edit one pack only when price, credits, validity, visibility, or package fit must change.'
         )}
         secondaryAction={(
-          <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving || Boolean(draft)}>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving || Boolean(draft) || blocked}>
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
@@ -263,7 +169,7 @@ export default function AdminCreditPacksPage() {
       {error ? (
         <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
           <span>{error}{items.length > 0 ? <span className="mt-1 block text-xs">{t('admin.credit_packs_retained_notice', {}, 'Showing the last successfully loaded AI credit pack catalog.')}</span> : null}</span>
-          <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(draft)} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(draft) || blocked} onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
         </div>
       ) : null}
 
@@ -295,7 +201,7 @@ export default function AdminCreditPacksPage() {
                     ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-600'
                 )}
-                onClick={() => updateCatalogUrl({ status, focus: null })}
+                onClick={() => requestAction(() => { editor.closeEditor(); updateCatalogUrl({ status, focus: null }); })}
               >
                 {status === 'all' ? t('common.all', {}, 'All') : status === 'active' ? t('common.active', {}, 'Active') : t('common.inactive', {}, 'Inactive')}
               </button>
@@ -357,7 +263,7 @@ export default function AdminCreditPacksPage() {
                       <BackofficeStatusBadge status={item.active ? 'published' : 'draft'} label={t(item.active ? 'common.active' : 'common.inactive', {}, item.active ? 'Active' : 'Inactive')} />
                     </td>
                     <td className={`sticky right-0 z-[5] px-3 py-2 text-right align-middle ${cellBackground}`}>
-                      <button type="button" className="btn btn-secondary btn-sm" disabled={!catalogFresh || isSaving} onClick={() => openEditor(item)}>
+                      <button type="button" className="btn btn-secondary btn-sm" disabled={!catalogFresh || isSaving || blocked} onClick={() => openEditor(item)}>
                         {t('admin.credit_packs_edit_action', {}, 'Edit')}
                       </button>
                     </td>
@@ -376,7 +282,7 @@ export default function AdminCreditPacksPage() {
         title={draft ? t('admin.credit_packs_edit_title', { name: draft.label }, 'Edit {{name}}') : ''}
         titleId="credit-pack-workbench-title"
         headerAccessory={draft ? <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{draft.pack_id}</span> : null}
-        error={editorError || undefined}
+        error={intent ? undefined : editorError || (draftConflict ? t('admin.credit_packs_revision_conflict') : undefined)}
         saving={isSaving}
         closeLabel={t('common.close', {}, 'Close')}
         cancelLabel={t('common.cancel', {}, 'Cancel')}
@@ -386,8 +292,9 @@ export default function AdminCreditPacksPage() {
         footerActions={(
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary btn-sm" disabled={isSaving} onClick={closeEditor}>{t('common.cancel', {}, 'Cancel')}</button>
-            {draftConflict ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { closeEditor(); void loadCatalog(true); }}>{t('admin.credit_packs_reload_discard')}</button> : null}
-            <button type="button" className="btn btn-primary btn-sm" disabled={isSaving || draftConflict || !catalogFresh || !isDraftDirty} onClick={() => void handleSaveDraft()}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
+            {draftConflict ? <button type="button" className="btn btn-secondary btn-sm" disabled={isRefreshing} onClick={() => void loadCatalog(true, true)}>{t('admin.credit_packs_read_latest')}</button> : null}
+            {conflictRead ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => requestAction(editor.adoptLatest)}>{t('admin.credit_packs_adopt_latest')}</button> : null}
+            <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving || blocked || draftConflict || !catalogFresh || !isDraftDirty}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
           </div>
         )}
         width="compact"
@@ -395,8 +302,11 @@ export default function AdminCreditPacksPage() {
         onClose={closeEditor}
         onSubmit={() => void handleSaveDraft()}
       >
+        {pendingEvidence}
+        {draftConflict ? <p role="status" className="text-sm">{t('admin.credit_packs_conflict_preserved')}</p> : null}
+        {conflictRead ? <div role="status" className="text-sm"><p>{t('admin.credit_packs_latest_review')}</p>{conflictRead.items.map(item => <p key={item.pack_id}>{item.label} · {t('admin.credit_packs_submitted_summary', { amount: String(item.amount), credits: String(item.ai_credits), days: String(item.validity_days) })} · {t(item.active ? 'common.active' : 'common.inactive')} · {item.recommended_for_tiers.join(', ')}</p>)}</div> : null}
         {draft ? (
-          <fieldset disabled={isSaving || !catalogFresh} className="min-w-0">
+          <fieldset disabled={isSaving || blocked || !catalogFresh} className="min-w-0">
           <AdminConfigurationTable
             ariaLabel={t('admin.credit_packs_edit_title', { name: draft.label }, 'Edit {{name}}')}
             itemHeading={t('admin.credit_packs_configuration_item', {}, 'Setting')}
@@ -407,31 +317,31 @@ export default function AdminCreditPacksPage() {
             <AdminConfigurationRow
               rowId="credit-pack-label"
               label={t('admin.credit_packs_pack_label', {}, 'Pack')}
-              value={<input aria-label={t('admin.credit_packs_pack_label', {}, 'Pack')} className="input w-full" value={draft.label} onChange={(event) => setDraft((current) => current ? { ...current, label: event.target.value } : current)} />}
+              value={<input aria-label={t('admin.credit_packs_pack_label', {}, 'Pack')} className="input w-full" required maxLength={96} value={draft.label} onChange={(event) => updateField('label', event.target.value)} />}
               detail={t('admin.credit_packs_label_note', {}, 'Customer-facing catalog name.')}
             />
             <AdminConfigurationRow
               rowId="credit-pack-credits"
               label={t('admin.credit_packs_credits_label', {}, 'Credits')}
-              value={<input aria-label={t('admin.credit_packs_credits_label', {}, 'Credits')} className="input w-36" type="number" min={1} step={100} value={draft.ai_credits} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, ai_credits: Number(event.target.value) }) : current)} />}
+              value={<input aria-label={t('admin.credit_packs_credits_label', {}, 'Credits')} className="input w-36" type="number" required min={1} max={10000000} step={1} value={draft.ai_credits} onChange={(event) => updateField('ai_credits', event.target.value)} />}
               detail={t('admin.credit_packs_credits_note', {}, 'Granted after a successful future purchase.')}
             />
             <AdminConfigurationRow
               rowId="credit-pack-amount"
               label={t('admin.credit_packs_amount_label', {}, 'Amount')}
-              value={<input aria-label={t('admin.credit_packs_amount_label', {}, 'Amount')} className="input w-36" type="number" min={0.01} step={1} value={draft.amount} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, amount: Number(event.target.value) }) : current)} />}
+              value={<input aria-label={t('admin.credit_packs_amount_label', {}, 'Amount')} className="input w-36" type="number" required min={0.000001} step={0.000001} value={draft.amount} onChange={(event) => updateField('amount', event.target.value)} />}
               detail={t('admin.credit_packs_currency_fixed_cny', {}, 'RMB pricing is fixed.')}
             />
             <AdminConfigurationRow
               rowId="credit-pack-validity"
               label={t('admin.credit_packs_validity_label', {}, 'Validity')}
-              value={<input aria-label={t('admin.credit_packs_validity_label', {}, 'Validity')} className="input w-36" type="number" min={1} max={1095} step={1} value={draft.validity_days} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, validity_days: Number(event.target.value) }) : current)} />}
+              value={<input aria-label={t('admin.credit_packs_validity_label', {}, 'Validity')} className="input w-36" type="number" required min={1} max={1095} step={1} value={draft.validity_days} onChange={(event) => updateField('validity_days', event.target.value)} />}
               detail={t('admin.credit_packs_validity_note', {}, 'Days after the payment order is completed.')}
             />
             <AdminConfigurationRow
               rowId="credit-pack-visibility"
               label={t('admin.credit_packs_visibility_toggle', {}, 'Customer visible')}
-              value={<label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => current ? { ...current, active: event.target.checked } : current)} /><span>{t(draft.active ? 'common.active' : 'common.inactive', {}, draft.active ? 'Active' : 'Inactive')}</span></label>}
+              value={<label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => updateField('active', event.target.checked)} /><span>{t(draft.active ? 'common.active' : 'common.inactive', {}, draft.active ? 'Active' : 'Inactive')}</span></label>}
               detail={t('admin.credit_packs_visibility_note', {}, 'Controls future customer catalog visibility only.')}
             />
             <AdminConfigurationRow

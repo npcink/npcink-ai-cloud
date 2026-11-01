@@ -63,6 +63,21 @@ class CommercialServiceAuditRepository:
             ServiceAuditEvent.scope_kind == "plan_version",
         ).limit(2)))
 
+    def find_credit_pack_catalog_events(
+        self, *, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "payment.credit_pack_catalog.update",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == "/internal/service/admin/credit-packs",
+            ServiceAuditEvent.scope_kind == "service_setting",
+            ServiceAuditEvent.scope_id == "commercial_credit_pack_catalog",
+        ).limit(2)))
+
     def record_service_audit_event(
         self,
         *,

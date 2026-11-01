@@ -1,3 +1,5 @@
+import { packCatalog, packConfirmation, packWrite } from '../fixtures/admin-credit-packs';
+import { buildForm, type PackIntent } from '@/features/admin/credit-packs/catalog-projection';
 import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
@@ -31,6 +33,11 @@ async function installCreditPackHarness(page: Page) {
   let patchCount = 0;
   let lastPatch: Pack[] = [];
   let failNextGet = false;
+  const operations = new Map<string, PackIntent>();
+  await page.route('**/api/admin/credit-packs/operations/**', async route => {
+    const original = operations.get(new URL(route.request().url()).pathname.split('/').pop()!);
+    await route.fulfill({ json: buildAdminApiEnvelope(original ? { ...packConfirmation(original), current: { ...packWrite(original), revision }, receipt: { ...packConfirmation(original).receipt, revision } } : {}) });
+  });
   await page.route('**/api/admin/credit-packs', async (route) => {
     const method = route.request().method();
     if (method === 'GET') {
@@ -53,6 +60,13 @@ async function installCreditPackHarness(page: Page) {
       revision = `catalog-${patchCount + 1}`;
       lastPatch = Array.isArray(body.items) ? body.items : [];
       items = lastPatch.map((item) => ({ ...item, currency: 'CNY' }));
+      const operation: PackIntent = { operation_id: route.request().headers()['idempotency-key'],
+        expected_revision: body.expected_revision!, target: items.find(item => JSON.stringify(initialPacks.find(old => old.pack_id === item.pack_id)) !== JSON.stringify(item))?.pack_id || items[0].pack_id,
+        items, form: buildForm(items[0]) };
+      operations.set(operation.operation_id, operation);
+      const payload = { ...packWrite(operation), revision };
+      // Both PATCH and confirmation expose the same current catalog revision.
+      await route.fulfill({ json: buildAdminApiEnvelope(payload) }); return;
     } else {
       await route.fallback();
       return;
@@ -60,14 +74,8 @@ async function installCreditPackHarness(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
-          revision: omitRevision ? undefined : revision,
-          catalog_version: 'credit_pack_catalog_v1',
-          period_policy: 'payment_order_grant',
-          expiry_policy: 'paid_at_plus_validity_days',
-          default_validity_days: 365,
-          updated_at: '2026-07-12T08:00:00Z',
-          items,
+      body: JSON.stringify(buildAdminApiEnvelope({ ...packCatalog(items, revision),
+        revision: omitRevision ? undefined : revision,
       })),
     });
   });
@@ -158,6 +166,7 @@ test('credit packs retain missing focus, block stale edits, and isolate modal sh
   await expect(page.getByRole('dialog')).toHaveCount(1);
   await expect(editor.getByLabel(/^Pack$|^(?:AI )?积分包$/)).toHaveValue('Retained draft');
   await editor.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
+  await page.getByRole('button', { name: /Discard draft and leave|放弃草稿并离开/ }).click();
   harness.failNextRequest();
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
   await expect(page.getByRole('alert')).toBeVisible();
@@ -206,12 +215,15 @@ test('credit pack rejects concurrent replacement, retains draft, and reloads exp
   await expect(editor.getByLabel(/^Amount|^价格/)).toHaveValue('29.9');
   await expect(editor.getByRole('button', { name: /Save pack|保存(?: AI )?积分包/ })).toBeDisabled();
   expect(harness.getPatchCount()).toBe(1);
-  const reload = editor.getByRole('button', { name: /Discard draft and reload|丢弃草稿并加载/ });
+  const reload = editor.getByRole('button', { name: /Read latest catalog|读取最新目录/ });
   await expect(reload).toBeVisible();
   const screenshotPath = testInfo.outputPath('credit-pack-conflict-pc-900.png');
   await editor.screenshot({ path: screenshotPath });
   await testInfo.attach('credit-pack-conflict-pc-900', { path: screenshotPath, contentType: 'image/png' });
   await reload.click();
+  await editor.getByRole('button', { name: /Discard draft and adopt latest|放弃草稿并采用最新目录/ }).click();
+  await page.getByRole('button', { name: /Discard draft and leave|放弃草稿并离开/ }).click();
+  await editor.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
   await expect(editor).toBeHidden();
   await expect(page.locator('[data-pack-id="pack_small"]')).toContainText('88.00');
   await page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/ }).click();
@@ -226,7 +238,8 @@ test('credit pack reads without a revision cannot enable editing', async ({ page
   const harness = await installCreditPackHarness(page);
   harness.omitRevision();
   await page.goto('/admin/credit-packs');
-  await expect(page.getByRole('alert').filter({ hasText: /version could not be confirmed|无法确认目录版本/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Retry|重试/ })).toBeVisible();
+  await expect(page.locator('[data-pack-id]')).toHaveCount(0);
   for (const button of await page.locator('[data-pack-id]').getByRole('button', { name: /Edit|编辑/ }).all()) {
     await expect(button).toBeDisabled();
   }
@@ -244,6 +257,7 @@ test('canceling a catalog conflict keeps the blocking reason visible until refre
   await editor.getByRole('button', { name: /Save pack|保存(?: AI )?积分包/ }).click();
   await expect(editor).toContainText(/Another operator|其他操作者/);
   await editor.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
+  await page.getByRole('button', { name: /Discard draft and leave|放弃草稿并离开/ }).click();
   await expect(page.getByRole('alert').filter({ hasText: /Another operator|其他操作者/ })).toBeVisible();
   await expect(page.locator('[data-pack-id="pack_small"]').getByRole('button', { name: /Edit|编辑/ })).toBeDisabled();
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
