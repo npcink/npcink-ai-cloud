@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const page = readFileSync(resolve(process.cwd(), 'src/app/admin/sites/[siteId]/page.tsx'), 'utf8');
+const operations = readFileSync(resolve(process.cwd(), 'src/features/admin/sites/site-operations.ts'), 'utf8');
 const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 
 assert.match(page, /BackofficeDisclosure[\s\S]*admin\.site_detail\.advanced_operational_evidence[\s\S]*admin\.site_detail\.operational_detail_title/, 'commercial, runtime, usage, and billing evidence must be advanced detail');
@@ -10,8 +11,8 @@ assert.match(page, /siteRuntimeExplanationText\(item\.explain_text, t\)/, 'known
 assert.doesNotMatch(page, /href=\{site\.related_surfaces\.audit_href\}/, 'site detail must not expose the raw audit API as a primary link');
 assert.doesNotMatch(page, /href="\/admin\/subscriptions"/, 'site detail must not expose an unscoped duplicate coverage link');
 assert.match(
-  page,
-  /\/api\/admin\/sites\/\$\{encodeURIComponent\(site\.site_id\)\}\/relink-cooldown/,
+  operations,
+  /\/api\/admin\/sites\/\$\{encodeURIComponent\(siteId\)\}\/\$\{action === 'activate' \? 'activate' : 'relink-cooldown'\}/,
   'site detail must update the bounded site relink endpoint'
 );
 for (const action of ["'clear'", "'reset'", "'set'"]) {

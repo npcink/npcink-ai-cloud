@@ -4370,6 +4370,24 @@ async def get_admin_site(
     )
 
 
+@router.get("/admin/sites/{site_id}/operations/{operation_id}")
+async def confirm_admin_site_operation(
+    request: Request, site_id: str, operation_id: str,
+    action: Literal["activate", "set", "clear", "reset"] = Query(),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_site_operation,
+        site_id=site_id, operation_id=operation_id, action=action,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="site operation confirmation", data=result, revision="m6"
+    )
+
+
 @router.patch("/admin/sites/{site_id}/relink-cooldown")
 async def update_admin_site_relink_cooldown(
     request: Request,

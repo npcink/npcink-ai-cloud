@@ -798,3 +798,19 @@ B4-06 仅交叉覆盖保存／待确认字段冻结，不宣称整体完成；B4
 准确命令、失败纠正、截图及独立状态见
 [2A 本地交付记录](history/engineering/2026/admin-customer-confirmation-2026-11-01.md)。
 本条只记录 builder 本地完成；不提前声明 PR/CI、M4 candidate、merged、M4 accepted 或生产完成。
+
+### 站点主投影、激活与冷却待确认（2026-11-01，2B）
+
+本批只落实 B4-03 站点域、B4-11、B4-12；不扩展站点生命周期或 B4-08–10。
+普通未保存草稿 B4-07 另排，冻结字段仅交叉覆盖 B4-06，不提前核销整项。
+
+| 建议／原入口 | 处置与入口 | 本地证据／限制 |
+| --- | --- | --- |
+| B4-03 坏主投影被归一化成正常站点 | 真实 site/目标 ID/现有合法 status 先校验；可选 account 存在时核对关联，合法可选 account/subscription/stat 缺省保留。坏读取用原错误壳和 Retry，不开放依赖对象的新写入 | unit／隔离浏览器覆盖缺失/null/数组/错 ID/坏 status/错 account、读恢复；保留原返回链 |
+| B4-11 激活未知结果 | 原激活动作验证真实目标 active；待确认、目标／动作、读取失败与 GET 按钮在披露区外常显。只证明当前 active，不推导 Provider／WordPress 可用 | 丢响应、真实超时、坏／错目标成功、408/未知409/replay/500、刷新、原站点回入、上下文／新意图迟到隔离；确认链仅窄 GET，不重放 POST |
+| B4-12 set/clear/reset 未知结果 | 三种动作与输入互斥冻结；派发前保留原 key/action/site、输入 UTC 与释放时间；刷新恢复原输入。原立即允许确认弹窗保留，已释放站点原控件继续展开 | set 核对精确 UTC；clear/reset 按精确原 key/actor/path/event/site/action 唯一成功审计取得执行 UTC，再匹配真实当前 site。reset 仍为释放时间加执行时策略天数，clear 才是服务端 now；不改算法 |
+| 确认链边界与信息层级 | 常显：站点／动作／未知或阻塞／读取动作；按需：原弹窗和具名已提交操作证据；技术 ID/UTC 在有界正文保留；删除重复／迁移不适用 | 现有完整详情 GET 可能 reconciliation，不计为零写确认。新 GET 及 onConfirmed 只读／局部更新，不 invalidate/refetch 账单与诊断；最窄 can_manage_accounts，audit-only 拒绝。PC 1440/1056 截图见交付记录，不改 golden |
+
+准确命令、初轮失败纠正、截图和独立证据状态见
+[2B 本地交付记录](history/engineering/2026/admin-site-confirmation-2026-11-01.md)。
+本条不提前声明 PR/CI、M4 candidate、merged、M4 accepted、production 或人工视觉接受。

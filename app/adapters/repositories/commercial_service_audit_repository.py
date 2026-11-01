@@ -31,6 +31,23 @@ class CommercialServiceAuditRepository:
             ServiceAuditEvent.scope_kind == "account",
         ).limit(2)))
 
+    def find_site_cooldown_events(
+        self, *, site_id: str, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        # Exact scope/actor/operation first; two rows are enough to reject ambiguity.
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "site.relink_cooldown.update",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == f"/internal/service/admin/sites/{site_id}/relink-cooldown",
+            ServiceAuditEvent.site_id == site_id,
+            ServiceAuditEvent.scope_kind == "site",
+            ServiceAuditEvent.scope_id == site_id,
+        ).limit(2)))
+
     def record_service_audit_event(
         self,
         *,
