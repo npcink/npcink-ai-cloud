@@ -301,8 +301,8 @@ assert.match(
 );
 assert.match(
   operatorProfileSource,
-  /buildAccountOperatorProfilePayload[\s\S]*bind_default_free: false[\s\S]*accountDetailClient\.request[\s\S]*'\/api\/admin\/accounts'/,
-  'the feature API must preserve the bounded account metadata payload'
+  /buildAccountOperatorProfilePayload[\s\S]*operator_display_name: values\.operator_display_name\.trim\(\)[\s\S]*operator_note: values\.operator_note\.trim\(\)[\s\S]*accountDetailClient\.request[\s\S]*\/operator-profile`[\s\S]*method: 'PATCH'/,
+  'the feature API must update only operator fields through the dedicated PATCH, preserving account lifecycle ownership'
 );
 assert.match(source, /useToast\(\)/, 'customer and commercial success feedback must use global Toast');
 assert.doesNotMatch(

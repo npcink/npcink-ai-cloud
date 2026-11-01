@@ -49,6 +49,25 @@ class CommercialAccountSiteRepository(
         self.session.flush()
         return account
 
+    def update_account_operator_profile(
+        self, account_id: str, *, fields: dict[str, str]
+    ) -> Account | None:
+        account = self.get_account_for_update(account_id)
+        if account is None:
+            return None
+        metadata = dict(account.metadata_json or {})
+        for key in ("operator_display_name", "operator_note"):
+            if key not in fields:
+                continue
+            value = fields[key].strip()
+            if value:
+                metadata[key] = value
+            else:
+                metadata.pop(key, None)
+        account.metadata_json = metadata
+        self.session.flush()
+        return account
+
     def get_site_for_update(self, site_id: str) -> Site | None:
         return self.session.scalar(select(Site).where(Site.site_id == site_id).with_for_update())
 

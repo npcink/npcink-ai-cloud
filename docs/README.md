@@ -516,9 +516,12 @@ Retained active authority:
 - [Image Processing FC/OSS Readiness](image-processing-fc-oss-readiness-2026-07-20.md) - current deferred migration decision;
 - [Naming Residual Allowlist](naming-residual-allowlist-2026-06-24.md) - cross-repository naming guard;
 - [P5 B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md) - pinned at the root by `check-release-policy.sh`;
+- [Portal Production Validation Runbook — 2026-10-16](portal-production-validation-runbook-2026-10-16.md) - bounded operator procedure; recheck its dated revision and deployment evidence against current receipts before use;
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md) - current provider operations procedure;
 - [Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md) - pinned at the root by `check-release-policy.sh`;
-- [Release CI Open-source Patterns](release-ci-open-source-patterns-2026-07.md) - current CI selection and evidence-reuse guidance.
+- [Release CI Open-source Patterns](release-ci-open-source-patterns-2026-07.md) - current CI selection and evidence-reuse guidance;
+- [Trial-stage Commercial Validation Plan — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) - bounded three-user Free observation plan; independent of the approved existing-sales rollout;
+- [Trial-stage Handoff — 2026-10-06](trial-stage-handoff-2026-10-06.md) - retained handoff index; dated statuses are evidence, and current standards and receipts take precedence.
 
 Historical evidence retained in place:
 
@@ -540,19 +543,23 @@ Historical evidence retained in place:
 - [External Trial Copy and Log](external-trial-copy-and-log-2026-06-11.md);
 - [External Trial Handoff Summary](external-trial-handoff-summary-2026-06-15.md);
 - [External Trial Readiness Checklist](external-trial-readiness-checklist-2026-06-10.md);
+- [Internal-link Context Preview — 2026-10-27](internal-link-context-preview-2026-10-27.md) - development prototype replay and handoff evidence;
 - [Local-first Validation Stage — 2026-09-21](local-first-validation-stage-2026-09-21.md);
 - [M4 Compiled Preview and Login Retrospective — 2026-09-08](m4-compiled-preview-and-login-retrospective-2026-09-08.md);
 - [Next Stage Plan — 2026-09-22](next-stage-plan-2026-09-22.md);
 - [Payment and Domestic Readiness Note — 2026-09-22](payment-and-domestic-readiness-note-2026-09-22.md);
 - [Provider Budget Hard Cap Inventory — 2026-09-23](provider-budget-hard-cap-inventory-2026-09-23.md);
 - [Pre-release Legacy Debt and Development History](pre-release-legacy-debt-and-development-history-2026-07-10.md);
+- [Production Release Readiness Plan — 2026-10-06](production-release-readiness-plan-2026-10-06.md) - dated readiness work, not deployment authorization;
 - [Refund Gap Inventory — 2026-09-22](refund-gap-inventory-2026-09-22.md);
+- [Runtime Configuration Acceptance — 2026-10-17](runtime-configuration-acceptance-2026-10-17.md) - dated development candidate and read-only production observations;
 - [Service Settings Projection Remediation — 2026-09-09](service-settings-projection-remediation-2026-09-09.md);
 - [Site Knowledge Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md);
 - [Site-Owner AI Product Commercial Brainstorm — 2026-10-08](history/strategy/2026/site-owner-ai-product-commercial-brainstorm-2026-10-08.md);
 - [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md);
 - [Strategy Session Synthesis — 2026-09-22](strategy-session-synthesis-2026-09-22.md);
 - [Title Quality Observation — 2026-09](title-quality-observation-2026-09.md);
+- [Trial Account and Quota Mechanism — 2026-10-06](trial-account-and-quota-mechanism-2026-10-06.md) - reference inventory; current mechanism contracts and ADR-058 own policy;
 - [WordPress AI Loop Verification Checklist — 2026-09-22](wordpress-ai-loop-verification-checklist-2026-09-22.md);
 - [WordPress AI Runtime Observation — 2026-09-21](wordpress-ai-runtime-observation-2026-09-21.md);
 - [WordPress AI Unified Delivery Plan — 2026-09-07](wordpress-ai-unified-delivery-plan-2026-09-07.md).

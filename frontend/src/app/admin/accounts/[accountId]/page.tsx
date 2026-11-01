@@ -53,6 +53,7 @@ import {
   quotaToneClass,
   summarizeBudget,
 } from '@/features/admin/accounts/account-credit-presentation';
+import { useAccountCreditAdjustment } from '@/features/admin/accounts/account-credit-adjustment';
 import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
 import { AccountPaymentOrders } from '@/features/admin/accounts/AccountPaymentOrders';
 import {
@@ -292,13 +293,6 @@ function AccountDetailContent() {
   const [agencyActionPending, setAgencyActionPending] = useState<'quote' | 'trial' | null>(null);
   const [agencyActionNotice, setAgencyActionNotice] = useState<string | null>(null);
   const [agencyActionError, setAgencyActionError] = useState<string | null>(null);
-  const [creditAdjustmentForm, setCreditAdjustmentForm] = useState({
-    event_type: 'grant',
-    ai_credit_delta: '',
-    reason: '',
-    note: '',
-  });
-  const [creditAdjustmentPending, setCreditAdjustmentPending] = useState(false);
   const [creditAdjustmentOpen, setCreditAdjustmentOpen] = useState(false);
   const [quotaDetailsOpen, setQuotaDetailsOpen] = useState(false);
   const [quotaDetailTab, setQuotaDetailTab] = useState<QuotaDetailTab>('resources');
@@ -773,76 +767,40 @@ function AccountDetailContent() {
     }
   };
 
-  const handleApplyCreditAdjustment = async () => {
-    const creditDelta = Number(creditAdjustmentForm.ai_credit_delta);
-    if (!Number.isFinite(creditDelta) || creditDelta === 0) {
-      setPackageActionError(
-        t(
-          'admin.account_detail.credit_adjustment_delta_required',
-          undefined,
-          'Enter a non-zero AI credit delta.'
-        )
-      );
-      setPackageActionReceipt(null);
-      return;
-    }
-    if (!creditAdjustmentForm.reason.trim()) {
-      setPackageActionError(
-        t(
-          'admin.account_detail.credit_adjustment_reason_required',
-          undefined,
-          'Enter an operator reason before applying the credit adjustment.'
-        )
-      );
-      setPackageActionReceipt(null);
-      return;
-    }
-
-    setCreditAdjustmentPending(true);
-    setPackageActionError(null);
-    setPackageActionNotice(null);
-    setPackageActionReceipt(null);
-    try {
-      const payload = await accountDetailClient.request<AdminMutationPayload>(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/credit-ledger/adjustments`,
-        {
-          method: 'POST',
-          body: {
-            event_type: creditAdjustmentForm.event_type,
-            ai_credit_delta: creditDelta,
-            reason: creditAdjustmentForm.reason.trim(),
-            note: creditAdjustmentForm.note.trim(),
-          },
-        }
-      );
-      setPackageActionReceipt((payload.data?.receipt || null) as AdminMutationReceiptPayload | null);
-      setPackageActionNotice(
-        t(
-          'admin.account_detail.credit_adjustment_applied_notice',
-          undefined,
-          'AI credit adjustment has been written to the current ledger period.'
-        )
-      );
-      setCreditAdjustmentForm((current) => ({
-        event_type: current.event_type,
-        ai_credit_delta: '',
-        reason: '',
-        note: '',
-      }));
+  const creditAdjustment = useAccountCreditAdjustment({
+    accountId,
+    failureMessage: t('error.failed_save'),
+    readFailureMessage: t('admin.account_detail.credit_adjustment_read_failed', undefined, 'Reading the adjustment result failed. It remains unconfirmed; do not submit it again.'),
+    deltaMessage: t('admin.account_detail.credit_adjustment_delta_required'),
+    reasonMessage: t('admin.account_detail.credit_adjustment_reason_required'),
+    onApplied: (data) => {
+      setPackageActionReceipt((data.receipt || null) as AdminMutationReceiptPayload | null);
+      setPackageActionNotice(t(
+        'admin.account_detail.credit_adjustment_applied_notice', undefined,
+        'AI credit adjustment has been written to the current ledger period.',
+      ));
       setCreditAdjustmentOpen(false);
-      await Promise.all([
+      void Promise.all([
         loadAccount(selectedSiteId, true),
         creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
-    } catch (err) {
-      setPackageActionError(
-        resolveUiErrorMessage(err, t('error.failed_save'))
-      );
-    } finally {
-      setCreditAdjustmentPending(false);
-    }
-  };
+    },
+  });
+  const creditAdjustmentForm = creditAdjustment.form;
+  const setCreditAdjustmentForm = creditAdjustment.setForm;
+  const creditAdjustmentPending = creditAdjustment.pending;
+  const creditAdjustmentUnconfirmed = Boolean(creditAdjustment.intent);
+  const creditAdjustmentNotice = creditAdjustmentUnconfirmed ? (
+    <div data-ui="credit-adjustment-unconfirmed" role="status" className="space-y-2 text-sm text-amber-800 dark:text-amber-200">
+      <p>{t('admin.account_detail.credit_adjustment_unconfirmed', undefined,
+        'The adjustment result is unconfirmed. Do not submit it again. Read the operation result to confirm; an absent entry does not prove it was rejected.')}</p>
+      <p className="break-all">{t('admin.account_detail.credit_adjustment_operation', undefined, 'Operation')}: {creditAdjustment.intent?.operation_id}</p>
+      <button type="button" className="btn btn-secondary" disabled={creditAdjustmentPending} onClick={() => void creditAdjustment.confirm()}>
+        {t('admin.account_detail.credit_adjustment_confirm', undefined, 'Read adjustment result')}
+      </button>
+    </div>
+  ) : null;
 
   useEffect(() => {
     void loadAccount();
@@ -1402,7 +1360,7 @@ function AccountDetailContent() {
       title={t('admin.account_detail.credit_adjustment_label', undefined, 'AI credit adjustment')}
       titleId="account-credit-adjustment-title"
       headerAccessory={<BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />}
-      error={packageActionError || undefined}
+      error={creditAdjustment.error || undefined}
       saving={creditAdjustmentPending}
       closeLabel={t('common.close', undefined, 'Close')}
       cancelLabel={t('common.cancel', undefined, 'Cancel')}
@@ -1412,9 +1370,16 @@ function AccountDetailContent() {
       width="compact"
       density="compact"
       onClose={() => setCreditAdjustmentOpen(false)}
-      onSubmit={() => void handleApplyCreditAdjustment()}
+      onSubmit={() => void creditAdjustment.submit()}
+      footerActions={creditAdjustment.locked ? (
+        <button type="button" className="btn btn-secondary" disabled={creditAdjustmentPending} onClick={() => setCreditAdjustmentOpen(false)}>
+          {t('common.close', undefined, 'Close')}
+        </button>
+      ) : undefined}
     >
-      <div className="grid gap-3">
+      {creditAdjustmentNotice}
+      {creditAdjustment.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.account_detail.credit_adjustment_storage_blocked', undefined, 'The pending operation could not be retained or recovered in this browser. No new adjustment can be submitted. Preserve this session and ask an operator to verify the ledger.')}</p> : null}
+      <fieldset disabled={creditAdjustment.locked} className="grid gap-3">
         <label className="text-sm">
           <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
             {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
@@ -1465,7 +1430,7 @@ function AccountDetailContent() {
             placeholder={t('admin.optional', {}, 'Optional')}
           />
         </label>
-      </div>
+      </fieldset>
     </AdminWorkbenchDialog>
   );
   const creditComponentsPanel = (
@@ -2216,7 +2181,9 @@ function AccountDetailContent() {
                   setCreditAdjustmentOpen(true);
                 }}
               >
-                {t('admin.account_detail.open_credit_adjustment_action', undefined, 'Adjust AI credits')}
+                {creditAdjustmentUnconfirmed
+                  ? t('admin.account_detail.credit_adjustment_confirm', undefined, 'Read adjustment result')
+                  : t('admin.account_detail.open_credit_adjustment_action', undefined, 'Adjust AI credits')}
               </button>
             </div>
             <span className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden="true" />
@@ -2238,6 +2205,10 @@ function AccountDetailContent() {
           </div>
         </div>
         {topUpDialog}
+        {!creditAdjustmentOpen ? creditAdjustmentNotice : null}
+        {!creditAdjustmentOpen && creditAdjustment.error && creditAdjustmentUnconfirmed ? (
+          <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{creditAdjustment.error}</p>
+        ) : null}
         {creditAdjustmentDialog}
 
         {quotaNeedsAttention && creditEvidenceReady ? (

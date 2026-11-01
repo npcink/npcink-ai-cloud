@@ -271,8 +271,8 @@ test('customer credit evidence fails closed and keeps bounded retry', async ({ p
 
 test('customer detail operator profile keeps the draft when the bounded save fails', async ({ page }) => {
   await installAdminMocks(page);
-  await page.route('**/api/admin/accounts', async (route) => {
-    if (route.request().method() !== 'POST') {
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async (route) => {
+    if (route.request().method() !== 'PATCH') {
       await route.fallback();
       return;
     }
@@ -309,8 +309,8 @@ test('customer detail operator profile keeps the draft when the bounded save fai
 test('customer detail operator profile preserves the save payload and success receipt', async ({ page }) => {
   await installAdminMocks(page);
   let savedPayload: Record<string, unknown> | null = null;
-  await page.route('**/api/admin/accounts', async (route) => {
-    if (route.request().method() !== 'POST') {
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async (route) => {
+    if (route.request().method() !== 'PATCH') {
       await route.fallback();
       return;
     }
@@ -339,14 +339,8 @@ test('customer detail operator profile preserves the save payload and success re
   await expect(
     page.getByRole('heading', { name: 'Updated customer' }).first()
   ).toBeVisible();
-  expect(savedPayload).toMatchObject({
-    account_id: LONG_ACCOUNT_ID,
-    name: 'MVP Account',
-    status: 'active',
-    bind_default_free: false,
-    metadata: {
-      operator_display_name: 'Updated customer',
-      operator_note: 'Updated detail note',
-    },
+  expect(savedPayload).toEqual({
+    operator_display_name: 'Updated customer',
+    operator_note: 'Updated detail note',
   });
 });

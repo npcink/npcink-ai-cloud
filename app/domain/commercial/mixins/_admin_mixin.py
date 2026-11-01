@@ -2660,6 +2660,36 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             session.commit()
         return payload
 
+    def get_admin_account_credit_adjustment(
+        self, account_id: str, *, operation_id: str, audit_context: ServiceAuditContext
+    ) -> dict[str, object]:
+        # This exact lookup is independent of ledger pagination/periods. Absence
+        # cannot prove a request was never accepted (it may still be in flight).
+        with get_session(self.database_url) as session:
+            if CommercialAccountSiteRepository(session).get_account(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found", f"account '{account_id}' was not found"
+                )
+            entry = CommercialCreditRepository(session).get_credit_ledger_entry_by_idempotency_key(
+                f"account_credit_adjustment:{account_id}:{operation_id}"
+            )
+            applied = (
+                entry is not None
+                and entry.account_id == account_id
+                and entry.source_type == "operator_credit_adjustment"
+                and (entry.metadata_json or {}).get("actor_kind") == audit_context.actor_kind
+                and (entry.metadata_json or {}).get("actor_ref") == audit_context.actor_ref
+            )
+            return {
+                "account_id": account_id,
+                "operation_id": operation_id,
+                "state": "applied" if applied else "unconfirmed",
+                "entry": (
+                    self._serialize_credit_ledger_entry(entry, include_internal=True)
+                    if applied else None
+                ),
+            }
+
     def get_admin_account_credit_ledger(
         self,
         account_id: str,

@@ -87,6 +87,19 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_accounts',
   },
 
+  {
+    methods: ['PATCH'],
+    pattern: /^accounts\/[^/]+\/operator-profile$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^accounts\/[^/]+\/credit-ledger\/adjustments\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
+
   // Commercial and catalog reads.
   {
     methods: ['GET'],
