@@ -41,11 +41,30 @@ For every actual adapter call:
 claim/reconciliation semantics are otherwise unchanged. Stateless helper use
 without a Session does not create a transaction.
 
+When claiming legacy media-derivative work, saturated sites are excluded in SQL
+before choosing the oldest queued row. A prefix longer than 50 blocked media
+runs cannot hide runnable text work; the queued-to-running update still checks
+status and worker eligibility atomically. Paused media entrypoints stay paused.
+
 No pool tuning, migrations, new queues or runtime API fields are introduced.
 WordPress retains local ability, workflow, approval and final-write ownership;
 Cloud remains hosted runtime and accounting evidence only.
 
 ## Durability and failures
+
+For standard hosted execution, request identity v2 hashes the normalized client
+input, policy and execution controls (storage, TTL, timeout, retry, task backend,
+callback and canonical run ID). Current routing revision, candidate health and
+prices are execution evidence and do not change that identity. Replay checks the
+active site and connector binding before looking up the durable run, and returns
+it before resolving current routes or admitting another debit.
+
+Legacy standard runs can be verified with their saved route snapshot and current
+profile defaults plus their persisted execution contract, then upgraded to v2 on
+replay. If defaults changed or the old row lacks the evidence needed to prove a
+match (including a supplied legacy callback URL), fail with the existing 409;
+do not create another run or silently accept different controls. Specialized
+nonstandard runtime paths retain their existing identity contracts.
 
 An in-flight idempotent replay can observe the admitted `running` run. It reuses
 the run and does not issue another Provider call, acceptance meter or debit.

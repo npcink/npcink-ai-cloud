@@ -2437,12 +2437,16 @@ export class PortalClient {
     feature?: PortalCreditEventFeature;
     limit?: number;
     offset?: number;
+    startAt?: string;
+    endAt?: string;
   }): Promise<PortalEnvelope<PortalCreditEventBucketsPayload>> {
     const params = new URLSearchParams({ bucket: options.bucket, window: options.window });
     if (options.siteId) params.set('site_id', options.siteId);
     if (options.feature) params.set('feature', options.feature);
     if (options.limit) params.set('limit', String(options.limit));
     if (options.offset) params.set('offset', String(options.offset));
+    if (options.startAt) params.set('start_at', options.startAt);
+    if (options.endAt) params.set('end_at', options.endAt);
     return this.request('GET', `/account/credit-event-buckets?${params.toString()}`, undefined);
   }
 

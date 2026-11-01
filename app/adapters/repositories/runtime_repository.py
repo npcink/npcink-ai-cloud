@@ -184,38 +184,26 @@ class RuntimeRepository:
         eligible_filter = (RunRecord.worker_eligible_at.is_(None)) | (
             RunRecord.worker_eligible_at <= now
         )
+        runnable_filter = eligible_filter
         if media_derivative_site_running_limit and media_derivative_site_running_limit > 0:
-            candidate_run_ids = list(
-                self.session.scalars(
-                    select(RunRecord.run_id)
-                    .where(RunRecord.status == "queued", eligible_filter)
-                    .order_by(RunRecord.started_at.asc(), RunRecord.run_id.asc())
-                    .limit(50)
+            saturated_sites = (
+                select(RunRecord.site_id)
+                .where(
+                    RunRecord.status == "running", RunRecord.execution_kind == "media_derivative"
                 )
+                .group_by(RunRecord.site_id)
+                .having(func.count(RunRecord.run_id) >= media_derivative_site_running_limit)
             )
-            for candidate_run_id in candidate_run_ids:
-                candidate = self.get_run(str(candidate_run_id))
-                if candidate is None:
-                    continue
-                if (
-                    candidate.execution_kind == "media_derivative"
-                    and self.count_running_media_derivative_runs(candidate.site_id)
-                    >= media_derivative_site_running_limit
-                ):
-                    continue
-                return self._claim_queued_run(
-                    update(RunRecord).where(
-                        RunRecord.run_id == candidate.run_id,
-                        RunRecord.status == "queued",
-                        eligible_filter,
-                    )
-                )
-            self.session.flush()
-            return None
+            # Filter before choosing the oldest row; a saturated prefix of any
+            # length must not hide runnable work for other sites or text runs.
+            runnable_filter = eligible_filter & (
+                (RunRecord.execution_kind != "media_derivative")
+                | RunRecord.site_id.not_in(saturated_sites)
+            )
 
         oldest_queued_run_id = (
             select(RunRecord.run_id)
-            .where(RunRecord.status == "queued", eligible_filter)
+            .where(RunRecord.status == "queued", runnable_filter)
             .order_by(RunRecord.started_at.asc(), RunRecord.run_id.asc())
             .limit(1)
             .scalar_subquery()
@@ -224,7 +212,7 @@ class RuntimeRepository:
             update(RunRecord).where(
                 RunRecord.run_id == oldest_queued_run_id,
                 RunRecord.status == "queued",
-                eligible_filter,
+                runnable_filter,
             )
         )
 

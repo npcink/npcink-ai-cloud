@@ -205,22 +205,26 @@ def test_real_alipay_gateway_closes_order(monkeypatch: pytest.MonkeyPatch) -> No
         def raise_for_status(self) -> None:
             return None
 
-        def json(self) -> dict[str, object]:
+        @property
+        def text(self) -> str:
             close_payload = {"code": "10000", "msg": "Success"}
             signed_content = json.dumps(
                 close_payload,
                 ensure_ascii=False,
-                separators=(",", ":"),
+                indent=2,
             )
             signature = private_key.sign(  # type: ignore[attr-defined]
                 signed_content.encode("utf-8"),
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
-            return {
-                "alipay_trade_close_response": close_payload,
-                "sign": base64.b64encode(signature).decode("ascii"),
-            }
+            return (
+                '{"alipay_trade_close_response":'
+                + signed_content
+                + ',"sign":'
+                + json.dumps(base64.b64encode(signature).decode("ascii"))
+                + "}"
+            )
 
     def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
         captured.update({"url": url, "data": data, "timeout": timeout})
@@ -261,7 +265,8 @@ def test_real_alipay_gateway_submits_and_verifies_refund(
         def raise_for_status(self) -> None:
             return None
 
-        def json(self) -> dict[str, object]:
+        @property
+        def text(self) -> str:
             refund_payload = {
                 "code": "10000",
                 "msg": "Success",
@@ -273,17 +278,20 @@ def test_real_alipay_gateway_submits_and_verifies_refund(
             signed_content = json.dumps(
                 refund_payload,
                 ensure_ascii=False,
-                separators=(",", ":"),
+                indent=2,
             )
             signature = private_key.sign(  # type: ignore[attr-defined]
                 signed_content.encode("utf-8"),
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
-            return {
-                "alipay_trade_refund_response": refund_payload,
-                "sign": base64.b64encode(signature).decode("ascii"),
-            }
+            return (
+                '{"alipay_trade_refund_response":'
+                + signed_content
+                + ',"sign":'
+                + json.dumps(base64.b64encode(signature).decode("ascii"))
+                + "}"
+            )
 
     def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
         captured.update({"url": url, "data": data, "timeout": timeout})

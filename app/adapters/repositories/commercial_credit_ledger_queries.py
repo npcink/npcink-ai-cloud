@@ -228,7 +228,7 @@ class CommercialCreditLedgerQueries:
                 CreditLedgerEntry.account_id == account_id,
                 CreditLedgerEntry.event_type.in_(event_types),
                 CreditLedgerEntry.created_at >= since,
-                CreditLedgerEntry.created_at <= until,
+                CreditLedgerEntry.created_at < until,
             )
         )
         if subscription_id is not None:
@@ -359,7 +359,7 @@ class CommercialCreditLedgerQueries:
                 CreditLedgerEntry.account_id == account_id,
                 CreditLedgerEntry.event_type.in_(event_types),
                 CreditLedgerEntry.created_at >= since,
-                CreditLedgerEntry.created_at <= until,
+                CreditLedgerEntry.created_at < until,
             )
         )
         if subscription_id is not None:
@@ -384,7 +384,7 @@ class CommercialCreditLedgerQueries:
                 CreditLedgerEntry.account_id == account_id,
                 CreditLedgerEntry.event_type.in_(event_types),
                 CreditLedgerEntry.created_at >= since,
-                CreditLedgerEntry.created_at <= until,
+                CreditLedgerEntry.created_at < until,
             )
         )
         if subscription_id is not None:

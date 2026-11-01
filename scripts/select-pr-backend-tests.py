@@ -126,6 +126,7 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
                 "tests/api/test_",
                 "tests/domain/test_",
                 "tests/core/test_",
+                "tests/workers/test_",
                 "tests/dev/test_",
             )
         ):
@@ -133,6 +134,12 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
                 selected.add(candidate)
             continue
         if path.startswith("tests/contract/test_"):
+            continue
+        if path.startswith("app/core/") and path.endswith(".py"):
+            selected.update(_expand_specs(("tests/core/test_*.py", "tests/workers/test_*.py")))
+            continue
+        if path.startswith("app/workers/") and path.endswith(".py"):
+            selected.update(_expand_specs(("tests/workers/test_*.py",)))
             continue
         if path in ALL_API_PATHS | FULL_BACKEND_API_PATHS:
             selected.update(_all_api_tests())

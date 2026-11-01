@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -300,14 +301,11 @@ def _credit_pack_state(database_url: str, order_id: str) -> dict[str, Any]:
                 sum(float(entry.ai_credit_delta or 0.0) for entry in adjustment_entries), 6
             ),
             "payment_event_count": len(
-                list(
-                    session.scalars(
-                        select(PaymentEvent).where(PaymentEvent.order_id == order_id)
-                    )
-                )
+                list(session.scalars(select(PaymentEvent).where(PaymentEvent.order_id == order_id)))
             ),
             "succeeded_refund_count": sum(
-                1 for row in session.scalars(
+                1
+                for row in session.scalars(
                     select(PaymentRefund).where(PaymentRefund.order_id == order_id)
                 )
                 if row.status == PAYMENT_REFUND_STATUS_SUCCEEDED
@@ -333,17 +331,7 @@ def _install_alipay_refund_http_stub(
     monkeypatch: pytest.MonkeyPatch,
     private_key: rsa.RSAPrivateKey,
 ) -> None:
-    class _Response:
-        def __init__(self, payload: dict[str, Any]) -> None:
-            self._payload = payload
-
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, Any]:
-            return self._payload
-
-    def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
+    def _post(url: str, *, data: dict[str, str], timeout: float) -> httpx.Response:
         biz_content = json.loads(data["biz_content"])
         refund_payload = {
             "code": "10000",
@@ -363,11 +351,14 @@ def _install_alipay_refund_http_stub(
             padding.PKCS1v15(),
             hashes.SHA256(),
         )
-        return _Response(
-            {
-                "alipay_trade_refund_response": refund_payload,
-                "sign": base64.b64encode(signature).decode("ascii"),
-            }
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            text='{"alipay_trade_refund_response":'
+            + signed_content
+            + ',"sign":'
+            + json.dumps(base64.b64encode(signature).decode("ascii"))
+            + "}",
         )
 
     monkeypatch.setattr("app.domain.commercial.payment_gateways.httpx.post", _post)

@@ -59,10 +59,18 @@ export function PortalCreditTrendPanel({
         minute: '2-digit',
       }).format(generatedAtDate)
     : '';
+  const clockFormatter = new Intl.DateTimeFormat(dateLocale, { hour: '2-digit', minute: '2-digit' });
+  const clockLabel = (value: string) => clockFormatter.format(new Date(value));
+  const hourCounts = new Map<string, number>();
+  for (const point of points) {
+    const label = clockLabel(point.start_at);
+    hourCounts.set(label, (hourCounts.get(label) || 0) + 1);
+  }
+  const repeatedHours = new Set([...hourCounts].filter(([, count]) => count > 1).map(([label]) => label));
   const formatPointLabel = (value: string) => new Intl.DateTimeFormat(
     dateLocale,
     window === '1h' || window === '24h'
-      ? { hour: '2-digit', minute: '2-digit' }
+      ? { hour: '2-digit', minute: '2-digit', ...(repeatedHours.has(clockLabel(value)) ? { timeZoneName: 'shortOffset' as const } : {}) }
       : { month: 'numeric', day: 'numeric' },
   ).format(new Date(value));
 

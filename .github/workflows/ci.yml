@@ -836,7 +836,7 @@ jobs:
             --shards 4 \
             --shard "${{ matrix.shard }}" \
             --collected-item-floor-seconds 1.0 \
-            tests/api tests/contract tests/domain \
+            tests/core tests/api tests/contract tests/domain tests/workers \
             > "artifacts/pytest-files-shard-${{ matrix.shard }}.txt"
           echo "## Pytest Shard ${{ matrix.shard }}" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
