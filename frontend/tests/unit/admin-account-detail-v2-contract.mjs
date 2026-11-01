@@ -33,6 +33,18 @@ const operatorProfileSource = [
     'utf8'
   ),
 ].join('\n');
+const accountProjectionSource = readFileSync(
+  fromFrontendRoot('src/features/admin/accounts/account-projection.ts'),
+  'utf8'
+);
+const siteDetailSource = readFileSync(
+  fromFrontendRoot('src/app/admin/sites/[siteId]/page.tsx'),
+  'utf8'
+);
+const siteOperationsSource = readFileSync(
+  fromFrontendRoot('src/features/admin/sites/site-operations.ts'),
+  'utf8'
+);
 const architectureSource = readFileSync(
   fromFrontendRoot('../docs/cloud-admin-information-architecture-v2.md'),
   'utf8'
@@ -336,6 +348,41 @@ assert.match(
   source,
   /<ConfirmModal[\s\S]*pendingConfirmation/,
   'governed and destructive customer actions must keep object-specific confirmation'
+);
+assert.match(
+  accountProjectionSource,
+  /export function normalizeAccountSites[\s\S]*Array\.isArray\(value\)[\s\S]*Invalid customer site evidence/,
+  'customer site evidence must be validated as a bounded collection instead of defaulting malformed data to an empty list'
+);
+assert.match(
+  source,
+  /normalizeAccountSites\(payload\.sites, accountId\)[\s\S]*setSiteEvidenceError/,
+  'customer detail must keep malformed site evidence local to the Sites surface'
+);
+assert.match(
+  creditEvidenceSource,
+  /Number\.isFinite\(value\)[\s\S]*normalizeAccountQuotaSummary[\s\S]*normalizeAccountCreditLedger/,
+  'quota and ledger evidence must reject non-finite values before presentation'
+);
+assert.match(
+  creditEvidenceSource,
+  /payload\.account_id !== accountId[\s\S]*payload\.items\.map/,
+  'credit ledger evidence must be bound to the requested customer and validate every item'
+);
+assert.match(
+  source,
+  /useAdminNavigationGuard\([\s\S]*operatorProfileController\.dirty/,
+  'customer operator-profile drafts must use the shared navigation guard'
+);
+assert.match(
+  siteDetailSource,
+  /useAdminNavigationGuard\([\s\S]*operations\.inputDirty/,
+  'site datetime drafts must use the shared navigation guard'
+);
+assert.match(
+  siteOperationsSource,
+  /inputDirty[\s\S]*!intent[\s\S]*input !==/,
+  'site ordinary draft state must remain separate from pending operation recovery'
 );
 assert.match(
   architectureSource,

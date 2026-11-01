@@ -311,3 +311,53 @@ test('old creation response cannot navigate again or erase a newer persisted int
   expect(await page.evaluate(() => sessionStorage.getItem('admin.customer-create.v1'))).toBe(saved); await expect(page.getByTestId('calls')).toHaveText('1'); await expect(page.getByTestId('busy')).toHaveText('true');
   releaseNew(); await expect(page.getByTestId('calls')).toHaveText('2');
 });
+
+// B4-06: field locking is verified across the three actual result branches,
+// alongside the original pending-key/context tests above.
+for (const kind of ['creation', 'profile'] as const) {
+  for (const outcome of ['ok', 'reject', 'lost'] as const) {
+    test(`${kind} delayed ${outcome} keeps both fields equal to the submitted snapshot`, async ({ page }) => {
+      const scenario = kind === 'creation' ? await createScenario(page, outcome) : await profileScenario(page, outcome);
+      const region = kind === 'creation' ? page.getByRole('dialog', { name: addAction }) : page.locator(editorSelector);
+      const fields = kind === 'creation' ? region.locator('input[name="name"], input[name="primary_email"]') : region.locator('input');
+      const snapshot = await fields.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
+      expect(snapshot).toHaveLength(2);
+      // The existing create model canonicalizes the dispatched email; the locked
+      // input must show that same submitted value in all three result branches.
+      if (kind === 'creation') snapshot[1] = snapshot[1].trim().toLowerCase();
+      let release!: () => void; let started = false;
+      const held = new Promise<void>(resolve => { release = resolve; });
+      await page.route(kind === 'creation' ? '**/api/admin/accounts' : `**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async route => {
+        if (route.request().method() === 'GET') return route.fallback();
+        started = true; await held; await route.fallback();
+      });
+      await region.getByRole('button', { name: kind === 'creation' ? createAction : /^Save$|^保存$/ }).click();
+      await expect.poll(() => started).toBe(true);
+      for (let index = 0; index < 2; index++) await expect(fields.nth(index)).toBeDisabled();
+      expect(await fields.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(snapshot);
+      // Find the actual persisted same-tab intent without assuming a new key format.
+      const saved = await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('admin.customer')).map(key => ({ key, value: sessionStorage.getItem(key) })));
+      expect(saved.length).toBeGreaterThan(0);
+      release();
+      await expect.poll(() => scenario.writes.length).toBe(1);
+      if (outcome === 'lost') {
+        await expect.poll(() => scenario.reads.length).toBe(1);
+        for (let index = 0; index < 2; index++) await expect(fields.nth(index)).toBeDisabled();
+        expect(await fields.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(snapshot);
+        expect(await page.evaluate(saved => sessionStorage.getItem(saved.key), saved[0])).toBe(saved[0].value);
+      } else if (outcome === 'reject') {
+        for (let index = 0; index < 2; index++) await expect(fields.nth(index)).toBeEnabled();
+        expect(await fields.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(snapshot);
+      } else if (kind === 'creation') {
+        await expect(page).toHaveURL(new RegExp(`/admin/accounts/${LONG_ACCOUNT_ID}`));
+      } else {
+        await expect(region.getByText(/Operator note has been saved|运营备注已保存/)).toBeVisible();
+        expect(await fields.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).toEqual(snapshot);
+        // A confirmed save establishes a clean baseline, so ordinary navigation is free.
+        await page.getByRole('link', { name: /Back to customers|返回客户列表/i }).click();
+        await expect(page).toHaveURL(/\/admin\/accounts$/);
+      }
+      expect(scenario.writes).toHaveLength(1);
+    });
+  }
+}

@@ -228,7 +228,7 @@ for (const oldResult of ['ok', 'lost', 'superseded'] as const) {
         function Harness() {
           const [accountId, setAccountId] = useState('acct_a');
           const [applied, setApplied] = useState('');
-          const model = useAccountCreditAdjustment({ accountId, failureMessage: 'failed', readFailureMessage: 'read failed', deltaMessage: 'delta', reasonMessage: 'reason', onApplied: data => setApplied(String(data.account_id)) });
+          const model = useAccountCreditAdjustment({ accountId, newWritesAllowed: true, failureMessage: 'failed', readFailureMessage: 'read failed', deltaMessage: 'delta', reasonMessage: 'reason', onApplied: data => setApplied(String(data.account_id)) });
           return <div>
             <button onClick={() => setAccountId(id => id === 'acct_a' ? 'acct_b' : 'acct_a')}>Switch customer</button>
             <output data-testid="context">{accountId}</output>

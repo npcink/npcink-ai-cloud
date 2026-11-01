@@ -814,3 +814,32 @@ B4-06 仅交叉覆盖保存／待确认字段冻结，不宣称整体完成；B4
 准确命令、初轮失败纠正、截图和独立证据状态见
 [2B 本地交付记录](history/engineering/2026/admin-site-confirmation-2026-11-01.md)。
 本条不提前声明 PR/CI、M4 candidate、merged、M4 accepted、production 或人工视觉接受。
+
+### 客户证据局部可用与普通草稿导航保护（2026-11-01，B4-06–10）
+
+本批限定客户详情的普通运营资料／站点时间草稿，以及关联站点、配额和流水证据投影。
+不修改 B4-01/02 的待确认写入协议、账务规则、站点生命周期或商业资格。
+
+| 建议／原入口 | 处置与入口 | 本地证据／限制 |
+| --- | --- | --- |
+| B4-06/B4-07 普通草稿与离开 | 资料和 datetime-local 草稿使用 saved baseline 和共享导航保护；同对象 dirty 回填不覆盖。客户页签局部 replaceState 保留草稿，pending intent 独立 | 创建姓名／邮箱及资料两字段 × 延迟成功／明确拒绝／未知；客户／站点返回、内部链接、history 双向、真实 beforeunload、clean/dirty 回填及原 key 返回恢复；PC 1440/1056，不新增第二套状态机 |
+| B4-08 关联站点证据 | 严格校验必需 name/status、集合与每行 account 归属；坏集合在 Sites 局部显示 unavailable + Retry，保留已知 uncovered；依赖站点的结论保持未知 | null／坏行／缺或错归属 → 合法空 GET 恢复，写请求 0；旧客户迟到返回隔离。不声称生产频率 |
+| B4-09 配额证据 | 按真实 serializer 核对 account、AI key/unit、汇总和有限数值；坏证据／重读冻结新调整与 topup 的入口和最终提交，原 pending 精确 GET 不受阻。topup 错误不再绿色 | 坏结构／错目标／错指标、held refetch、打开弹窗后失效、最终 submit 与原 key 保留。全零、负调整、limit<=0 unlimited 及可选 null 单元通过 |
+| B4-10 流水证据 | 顶层及逐行匹配 account；pagination／汇总／实际展示数值必需，breakdown 与 event/category maps 分别校验并保留扩展。首次及 retry 等待显示 loading，合法空才显示无流水 | null 行／错目标／缺 summary 或 pagination → 真实非空 serializer GET 恢复，含负调整；held 首次／重读与合法空对照，不改变账务规则 |
+| 信息层级与去重 | 常显：目标、当前状态、阻塞原因、局部 unavailable、Retry；按需：资料编辑、配额详情、流水 drawer；技术证据：普通草稿原输入与 pending intent 原 key 继续沿用既有协议；删除重复：不复制 pending 状态机或第二套导航确认 | 本批只做 PC 开发与验收，未更新 golden；CI、PR、M4、生产及人工视觉验收另行记录 |
+
+准确命令、截图和独立状态见
+[客户证据草稿本地交付记录](history/engineering/2026/admin-account-evidence-drafts-2026-11-01.md)。
+首轮 `7833d536` 已 request changes；本条按 R1–R6 修正记录 builder 本地状态，
+准确修正版 commit、原始结果及 SHA256 由独立交付记录的最终 receipt 给出。
+旧 224 项 Admin 浏览器门禁仅属于首轮，不扩大为修正版全矩阵通过。
+GET-only 只说明 HTTP 方法，不证明真实账务数据库零写。
+返修浏览器 91 通过，站点协议选择回归 15 通过；PC 回归 32 通过／1 截图失败：
+旧基线捕捉 hash 页签误触发的 loading 淡化，本次修正后消失。失败图／trace
+保留且未改 golden／阈值，不宣称本地全绿；最终 PC 取证 8 通过、8 图已检查。
+本条不提前声明 admission、PR/CI、合并、M4 accepted、生产或人工视觉接受。
+
+B4-06–10 集成补记（2026-11-01）：操作者明确接受credits页签取消虚假loading的稳定
+外观，并允许更新对应golden。Darwin/Linux分别采用原生actual并重验原失败场景，
+各1 passed；旧32/1及差异图保留，不放宽阈值。此接受仅覆盖该外观，整批产品
+人工验收与生产授权继续独立。集成详情见本组dated交付记录及外部integration-3回执。

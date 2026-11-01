@@ -51,6 +51,9 @@ export function useSiteOperations({ siteId, site, writeFailure, readFailure, inv
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [error, setError] = useState('');
   const [input, setInputState] = useState('');
+  const [baseline, setBaseline] = useState('');
+  const inputRef = useRef('');
+  const baselineRef = useRef('');
   const operationRef = useRef<SiteIntent | null>(null);
   const busyRef = useRef(false);
   const revisionRef = useRef(0);
@@ -59,19 +62,23 @@ export function useSiteOperations({ siteId, site, writeFailure, readFailure, inv
   useEffect(() => {
     revisionRef.current += 1; operationRef.current = null; busyRef.current = false;
     setIntent(null); setBusy(false); setReady(false); setError(''); setStorageBlocked(false); setInputState('');
+    inputRef.current = ''; baselineRef.current = ''; setBaseline('');
     try {
       const saved = sessionStorage.getItem(storageKey(siteId));
       if (saved) {
         const restored = restoreIntent(JSON.parse(saved), siteId);
         operationRef.current = restored; setIntent(restored);
-        if (restored.input_utc) setInputState(toDatetimeLocalValue(restored.input_utc));
+        if (restored.input_utc) { inputRef.current = toDatetimeLocalValue(restored.input_utc); setInputState(inputRef.current); }
       }
     } catch { setStorageBlocked(true); }
     setReady(true);
     return () => { revisionRef.current += 1; };
   }, [siteId]);
   useEffect(() => {
-    if (!operationRef.current && site?.site_id === siteId) setInputState(toDatetimeLocalValue(site.site_relink_policy?.cooldown_until || ''));
+    if (!operationRef.current && site?.site_id === siteId && inputRef.current === baselineRef.current) {
+      const saved = toDatetimeLocalValue(site.site_relink_policy?.cooldown_until || '');
+      inputRef.current = saved; baselineRef.current = saved; setInputState(saved); setBaseline(saved);
+    }
   }, [siteId, site?.site_id, site?.site_relink_policy?.cooldown_until]);
 
   const current = (submitted: SiteIntent, revision: number) => revisionRef.current === revision && operationRef.current?.operation_id === submitted.operation_id;
@@ -79,7 +86,10 @@ export function useSiteOperations({ siteId, site, writeFailure, readFailure, inv
     clearIntent(submitted);
     if (!current(submitted, revision)) return;
     operationRef.current = null; setIntent(null); setError('');
-    if (result.policy) setInputState(toDatetimeLocalValue(result.policy.cooldown_until));
+    if (result.policy) {
+      const saved = toDatetimeLocalValue(result.policy.cooldown_until);
+      inputRef.current = saved; baselineRef.current = saved; setInputState(saved); setBaseline(saved);
+    }
     callbackRef.current(result, submitted.action);
   }
   async function confirm() {
@@ -132,8 +142,10 @@ export function useSiteOperations({ siteId, site, writeFailure, readFailure, inv
     }
     if (needsConfirmation && current(submitted, revision)) await confirm();
   }
-  function setInput(value: string) { if (!operationRef.current && !busyRef.current) setInputState(value); }
+  function setInput(value: string) { if (!operationRef.current && !busyRef.current) { inputRef.current = value; setInputState(value); } }
   return { intent, busy, storageBlocked, error, input, setInput, submit, confirm,
+    inputDirty: Boolean(ready && !intent && site?.site_id === siteId
+      && input !== baseline),
     locked: !ready || !site || site.site_id !== siteId || storageBlocked || busy || Boolean(intent) };
 }
 
