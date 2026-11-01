@@ -57,3 +57,42 @@ Local-ready仅表示本地实现与证据可审核。1B CI、M4 candidate、M4 a
 回滚可撤回本组提交；新增审计payload为兼容性字段，无历史回填，旧记录不会作为本次成功证明。
 未知操作若无唯一持久证据，仍保留待确认；跨设备恢复及人工裁决界面不在本组范围。
 交付后冻结，等待原集成会话独立审核；不用生产或付费调用制造证据。
+
+
+## 独立审核第一轮返修 R1–R3
+
+原提交 `3b49f06e7920ebef9273b8446a25fd0261b45f07` 被 integrator 判定
+request changes／未准入。原结果和失败历史如上保留；旧 33 项不能证明本轮缺口。
+本轮只修 Plan 参数与读取证据，不触碰后端事务、其他商业页面或共享弹窗实现。
+
+- R1：仅原 PATCH 的明确非执行拒绝可清 intent；PATCH 投影验证与确认 GET
+  任意失败都留原 key／目标／revision／九值／字符串草稿，确认 422／409 不再
+  误解锁或显示原写 CAS 冲突。原 PATCH 422 与真实 CAS409 行为保留。
+- R2：按真实 serializer 强制 Version 规范预算／并发／订阅宽限字段，校验
+  初始化模板与 canonical 数值；Offer 绑定实际 Plan 和 canonical 自助月售身份。
+  允许合法 0、null Version／Offer、可选 metadata、自定义 Plan 和历史 Offer Version。
+  测试 canonical fixture 由真实 `_list_plan_tier_templates()` 生成；其 token 字段
+  实际被 sanitizer 输出为 `[redacted]`，模板兼容此精确 sentinel，Version 仍要求数值。
+  没有改生产 catalog／默认值或 token 归一化行为。
+- R3：PC1440 小范围实测上层确认框首末 Tab／Shift+Tab 环绕、连续 Tab 仍在上层、
+  Escape 只取消上层并返回工作台 X 触发按钮；Cancel 同样返回精确触发按钮，草稿保留。
+  pageerror／console.error／requestfailed 原始清单落盘；键盘用例三类均为 0。
+
+增量证据在原根的 `review-1/`，包括新源码／artifact manifests、原始命令和
+`visual-review.json`；原 PC1056／1440dark 证据复用，无 golden 更新。
+
+- `unit-final`：72 项通过（投影67＋既有 proxy5）；原 backend31 未改，复用且未重跑。
+- `browser-2`：17 项选择，16 通过／1 失败。12 项 R1–R3 新回归全部通过，另含
+  原 PATCH CAS409、销售写后读保护和两个既有目录／初始化回归。失败是事件清单漏标
+  既有测试刻意 `route.abort` 的连接重置，功能断言已通过。原始 trace／截图完整保留
+  于 `browser-2-test-results/`，没有抹去失败。
+- `browser-3`：仅复核该断线用例＋受影响的键盘事件清单，2 项通过。
+  两轮去重共17个相关场景最终有通过证据，不称单轮17全绿，不机械重跑旧33或全后台。
+- 首次 `browser` 因 JSON fixture 的 Node ESM import 缺 `type: json` 属性未运行测试；
+  修正导入后继续，失败日志保留。最初 `unit` 命令还指定了一个不存在的 proxy 文件，
+  实际仅投影67项；以真实两文件 `unit-final`72项为准。
+- 最终 Admin 治理／窄 lint／类型与文档门禁另见原始 receipt；不将自动规划器的
+  M4建议当作授权，不减免后续强制CI。无需新增跨页／明暗矩阵，视觉及键盘结构未改。
+
+本轮仍是本地可复核提交，待 integrator 独立二审；无 PR／push／CI、M4候选、
+合并、M4 accepted、生产或人工产品／视觉接受。交付后再次冻结。

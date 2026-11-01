@@ -914,3 +914,20 @@ M4命令已用实际CLI dry-run修正为受支持双target；真实PG仍由集�
 恢复动作与原因可见，禁用控件可辨识，无横向溢出／重叠；人工视觉尚待接受。
 本地API、投影／proxy、PC行为及治理门禁的准确命令、迭代失败和最终结果见交付记录。
 本节不声明 1B CI、M4 candidate／accepted、merged、production 或人工接受。
+
+
+### 1B 独立审核第一轮返修（2026-11-02，仍未准入）
+
+原 `3b49f06e` 被 request changes；上述旧证据不替代新回归。
+R1 只将原 PATCH 明确拒绝解除冻结，确认 GET422／409 保留原 intent 与 GET入口；
+R2 强制真实规范字段与 Offer Plan／canonical身份，坏 detail／模板无可写默认0，
+首次坏读常显错误／Retry，GET修复恢复。合法0、nullable资源、可选metadata与历史Offer保留。
+canonical测试fixture按真实serializer生成，模板 token 的精确 redaction sentinel 保留兼容。
+常显／按需／技术证据／删除重复的入口取舍沿用上表，没有搬走内容或恢复重复。
+
+新增证据只在 `admin-plan-evidence-drafts/review-1/`：R1确认422／409冻结图、
+坏详情与坏目录Retry图、嵌套确认键盘图和完整事件清单。PC1440实测Tab约束、
+Escape仅关上层、Cancel／Escape回工作台触发按钮焦点；键盘用例pageerror／console.error／
+requestfailed均0。其他用例刻意HTTP422／409／503及连接重置单列，失败历史见
+[返修记录](history/engineering/2026/admin-plan-evidence-drafts-2026-11-02.md#独立审核第一轮返修-r1r3)。
+原1056／暗色证据复用，人工视觉继续pending，未以静态契约冒称视觉接受。

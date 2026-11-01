@@ -132,21 +132,28 @@ export function usePlanEditor(planId: string, open: boolean, messages: Messages,
     const generation = context.current;
     setLastReceipt(null); pending.current = submitted; setIntent(submitted); busy.current = true; setIsSaving(true); setError(null); setNotice(null);
     try {
-      const value = (await client.request<unknown>(`/api/admin/plans/${encodeURIComponent(planId)}`, {
-        method: 'PATCH', idempotencyKey: submitted.operation_id, body: { ...submitted.values, revision: submitted.revision },
-      })).data;
-      if (generation !== context.current || pending.current?.operation_id !== submitted.operation_id) return;
-      requirePlanWrite(value, submitted);
-      await confirmOperation(submitted, generation);
-    } catch (failure) {
-      if (generation !== context.current || pending.current?.operation_id !== submitted.operation_id) return;
-      if (explicitlyRejected(failure)) {
+      let value: unknown;
+      // Only an error from the original PATCH can prove a nonexecuting rejection.
+      // Projection validation and confirmation failures leave the sent intent intact.
+      try {
+        value = (await client.request<unknown>(`/api/admin/plans/${encodeURIComponent(planId)}`, {
+          method: 'PATCH', idempotencyKey: submitted.operation_id, body: { ...submitted.values, revision: submitted.revision },
+        })).data;
+      } catch (failure) {
+        if (generation !== context.current || pending.current?.operation_id !== submitted.operation_id) return;
+        if (!explicitlyRejected(failure)) throw failure;
         try { clearIntent(submitted); pending.current = null; setIntent(null); }
         catch { setStorageBlocked(true); return; }
         if (failure instanceof ApiError && failure.errorCode === 'service.admin_plan_revision_conflict') {
           setRevisionConflict(true); setConflictRead(null); setError(null);
         } else setError(resolveUiErrorMessage(failure, messagesRef.current.save));
-      } else setError(messagesRef.current.unknown);
+        return;
+      }
+      if (generation !== context.current || pending.current?.operation_id !== submitted.operation_id) return;
+      requirePlanWrite(value, submitted);
+      await confirmOperation(submitted, generation);
+    } catch {
+      if (generation === context.current && pending.current?.operation_id === submitted.operation_id) setError(messagesRef.current.unknown);
     } finally { if (generation === context.current) { busy.current = false; setIsSaving(false); } }
   }
   function updateField(field: keyof PlanVersionFormState, value: string) {

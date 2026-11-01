@@ -1,14 +1,41 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 import { buildInitialForm, type PlanIntent } from '@/features/admin/plans/plan-projection';
 import { parameters, planCatalog, planConfirmation, planDetail, planWrite } from '../fixtures/admin-plan-parameters';
+
+type BrowserInventory = { pageerror: string[]; consoleError: { text: string; url: string }[]; requestfailed: { url: string; failure: string | null }[]; httpFailures: { url: string; status: number }[]; injectedFailures: { url: string; reason: string }[] };
+const inventories = new WeakMap<Page, BrowserInventory>();
+test.beforeEach(async ({ page }) => {
+  const events: BrowserInventory = { pageerror: [], consoleError: [], requestfailed: [], httpFailures: [], injectedFailures: [] };
+  inventories.set(page, events);
+  page.on('pageerror', error => events.pageerror.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') events.consoleError.push({ text: message.text(), url: message.location().url }); });
+  page.on('requestfailed', request => events.requestfailed.push({ url: request.url(), failure: request.failure()?.errorText || null }));
+  page.on('response', response => { if (response.status() >= 400) events.httpFailures.push({ url: response.url(), status: response.status() }); });
+});
+test.afterEach(async ({ page }, info) => {
+  const events = inventories.get(page)!;
+  const inventory = { test: info.title, statusAtCollection: info.status, ...events,
+    explanation: 'HTTP 422/409 are deliberate original-PATCH or confirmation-GET rejection injections; 503 is deliberate read failure. Connection resets and delayed PATCHes are explicitly recorded under injectedFailures. All events are retained.',
+  };
+  const root = process.env.NPCINK_PLAN_EVIDENCE;
+  const filename = `events-${info.title.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 150)}.json`;
+  const path = root ? `${root}/${filename}` : info.outputPath(filename);
+  if (root) await mkdir(root, { recursive: true });
+  await writeFile(path, JSON.stringify(inventory, null, 2));
+  await info.attach('browser-event-inventory', { path, contentType: 'application/json' });
+  expect(events.pageerror).toEqual([]);
+  expect(events.consoleError.filter(event => !events.httpFailures.some(http => http.url === event.url && event.text.includes(String(http.status)))
+    && !(events.injectedFailures.some(fault => fault.url === event.url) && event.text.includes('ERR_CONNECTION_RESET')))).toEqual([]);
+  expect(events.requestfailed.filter(event => !(events.injectedFailures.some(fault => fault.url === event.url) && /ERR_CONNECTION_RESET|ERR_ABORTED/.test(event.failure || '')))).toEqual([]);
+});
 
 type Mode = 'normal' | 'before-drop' | 'after-drop' | 'malformed' | 'wrong-target' | 'old-body' | 'rejected' | 'delayed';
 async function harness(page: Page) {
   await installAdminMocks(page);
   const state = { versionStatus: 'published', mode: 'normal' as Mode, confirmation: 'normal', detail: 'normal', catalog: 'normal',
-    writes: [] as PlanIntent[], reads: [] as string[], values: { ...parameters }, recorded: false,
+    confirmationError: null as { status: number; code: string } | null, writes: [] as PlanIntent[], reads: [] as string[], values: { ...parameters }, recorded: false,
     requests: [] as string[], writeError: null as { status: number; code: string } | null,
     release: () => {}, confirmRelease: () => {}, delayConfirmation: false };
   page.on('request', request => { const path = new URL(request.url()).pathname; if (path.startsWith('/api/admin/')) state.requests.push(`${request.method()} ${path}`); });
@@ -19,11 +46,17 @@ async function harness(page: Page) {
       const value = state.catalog === 'normal' ? planCatalog() : state.catalog === 'empty' ? { items: [], tier_templates: [] }
         : state.catalog === 'null' ? { ...planCatalog(), items: null } : state.catalog === 'type' ? { ...planCatalog(), items: {} }
           : state.catalog === 'bad-item' ? { ...planCatalog(), items: [{ ...planCatalog().items[0], subscription_counts: {} }] } : {};
+      if (state.catalog.startsWith('bad-template:')) {
+        const catalog = planCatalog();
+        Object.assign(catalog.tier_templates[0], { [state.catalog.split(':')[1]]: {} });
+        await route.fulfill({ json: buildAdminApiEnvelope(catalog) }); return;
+      }
       await route.fulfill({ json: buildAdminApiEnvelope(value) }); return;
     }
     const planId = path.split('/')[4];
     if (path.includes('/parameter-operations/')) {
       if (state.delayConfirmation) await new Promise<void>(resolve => { state.confirmRelease = resolve; });
+      if (state.confirmationError) { await route.fulfill({ status: state.confirmationError.status, json: buildAdminApiErrorEnvelope('injected confirmation failure', state.confirmationError.code) }); return; }
       if (state.confirmation === 'failed') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return; }
       const original = state.writes.find(intent => path.endsWith(intent.operation_id));
       let value: unknown = original ? planConfirmation(original, state.recorded ? 'confirmed' : 'unconfirmed') : {};
@@ -39,9 +72,10 @@ async function harness(page: Page) {
       state.writes.push(intent);
       if (state.writeError) { await route.fulfill({ status: state.writeError.status, json: buildAdminApiErrorEnvelope('unknown', state.writeError.code) }); return; }
       if (state.mode === 'rejected') { await route.fulfill({ status: 422, json: buildAdminApiErrorEnvelope('invalid price', 'request.validation_error') }); return; }
-      if (state.mode === 'before-drop') { await route.abort('connectionreset'); return; }
+      if (state.mode === 'before-drop') { inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate pre-execution connection reset' }); await route.abort('connectionreset'); return; }
       state.recorded = true; state.values = values;
-      if (state.mode === 'after-drop') { await route.abort('connectionreset'); return; }
+      if (state.mode === 'after-drop') { inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate post-commit connection reset' }); await route.abort('connectionreset'); return; }
+      if (state.mode === 'delayed') inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate delayed PATCH for timeout/late-response isolation' });
       if (state.mode === 'delayed') await new Promise<void>(resolve => { state.release = resolve; });
       const value = state.mode === 'malformed' ? {} : state.mode === 'wrong-target' ? { ...planWrite(intent), plan_id: 'wrong' }
         : state.mode === 'old-body' ? { ...planWrite(intent), budgets: { max_ai_credits_per_period: 1 } } : planWrite(intent);
@@ -50,6 +84,10 @@ async function harness(page: Page) {
     }
     const value = planDetail(planId, planId === 'pro' ? state.values : parameters, state.recorded ? 'b' : 'a');
     if (value.latest_version) value.latest_version.status = state.versionStatus;
+    if (state.detail === 'budgets' && value.latest_version) value.latest_version.budgets = {};
+    if (state.detail === 'concurrency' && value.latest_version) value.latest_version.concurrency = {};
+    if (state.detail === 'policy' && value.latest_version) value.latest_version.policy = {};
+    if (state.detail === 'offer' && value.sales_offer) value.sales_offer.plan_id = 'other-plan';
     if (state.detail === 'failed') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('detail unavailable') }); return; }
     await route.fulfill({ json: buildAdminApiEnvelope(state.detail === 'wrong' ? planDetail('wrong') : state.detail === 'old' ? planDetail(planId) : value) });
   });
@@ -355,4 +393,105 @@ test('existing sales success retains the read gate until detail recovery succeed
   await workbench(page).getByRole('button', { name: /^Retry$|^重试$/ }).click();
   await expect(save(page)).toBeEnabled(); await expect(inputs(page).first()).toBeEnabled();
   expect(state.writes).toHaveLength(0);
+});
+
+for (const failure of [{ status: 422, code: 'request.validation_error' }, { status: 409, code: 'service.admin_plan_revision_conflict' }]) {
+  test(`review R1 confirmation ${failure.status} retains exact original intent until GET recovery`, async ({ page }, info) => {
+    const state = await harness(page); state.confirmationError = failure;
+    await page.goto('/admin/plans?focus=pro'); await expect(inputs(page).first()).toHaveValue('99');
+    await inputs(page).first().fill('88.88'); await save(page).click();
+    await expect(read(page)).toBeEnabled();
+    const stored = await page.evaluate(() => sessionStorage.getItem('admin.plan-parameters.v1:pro'));
+    const original = state.writes[0];
+    expect(JSON.parse(stored!)).toEqual(original);
+    await expect(pending(page)).toBeVisible(); await expect(save(page)).toBeDisabled();
+    await expect(workbench(page).locator('[data-ui="plan-revision-conflict"]')).toHaveCount(0);
+    // Even direct button activation cannot dispatch a new-key second PATCH.
+    await save(page).evaluate(button => (button as HTMLButtonElement).click());
+    await read(page).click(); await expect(read(page)).toBeEnabled();
+    expect(await page.evaluate(() => sessionStorage.getItem('admin.plan-parameters.v1:pro'))).toBe(stored);
+    await expect(inputs(page).first()).toHaveValue('88.88');
+    expect(state.writes).toHaveLength(1);
+    await image(page, `review-R1-confirmation-${failure.status}`, 1440, info);
+    state.confirmationError = null;
+    const before = state.requests.length;
+    await read(page).click(); await expect(pending(page)).toHaveCount(0); await expect(save(page)).toBeEnabled();
+    expect(state.requests.slice(before)).toEqual([`GET /api/admin/plans/pro/parameter-operations/${original.operation_id}`]);
+    expect(state.writes).toHaveLength(1);
+    expect(await page.evaluate(() => sessionStorage.getItem('admin.plan-parameters.v1:pro'))).toBeNull();
+  });
+}
+
+test('review R1 original PATCH 422 restores the unchanged editable draft', async ({ page }) => {
+  const state = await harness(page); state.mode = 'rejected';
+  await page.goto('/admin/plans?focus=pro'); await expect(inputs(page).first()).toHaveValue('99');
+  await inputs(page).first().fill('88'); await save(page).click(); await expect(save(page)).toBeEnabled();
+  await expect(pending(page)).toHaveCount(0); await expect(inputs(page).first()).toHaveValue('88');
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.plan-parameters.v1:pro'))).toBeNull();
+  expect(state.writes).toHaveLength(1);
+  expect(state.reads.some(path => path.includes('/parameter-operations/'))).toBe(false);
+});
+
+for (const fault of ['budgets', 'concurrency', 'policy', 'offer']) {
+  test(`review R2 damaged detail ${fault} blocks writes and GET repair restores real values`, async ({ page }, info) => {
+    const state = await harness(page); state.detail = fault;
+    await page.goto('/admin/plans?focus=pro');
+    await expect(workbench(page).getByRole('button', { name: /^Retry$|^重试$/ })).toBeVisible();
+    await expect(inputs(page)).toHaveCount(0); await expect(save(page)).toBeDisabled();
+    expect(state.requests.filter(request => !request.startsWith('GET'))).toEqual([]);
+    if (fault === 'budgets') await image(page, 'review-R2-invalid-detail', 1440, info);
+    state.detail = 'normal';
+    const before = state.requests.length;
+    await workbench(page).getByRole('button', { name: /^Retry$|^重试$/ }).click();
+    await expect(inputs(page).first()).toHaveValue('99');
+    await expect(inputs(page).nth(1)).toHaveValue('10000');
+    await expect(save(page)).toBeEnabled();
+    expect(state.requests.slice(before)).toEqual(['GET /api/admin/plans/pro']);
+    await inputs(page).first().fill('88'); await save(page).click(); await expect(save(page)).toBeEnabled();
+    expect(state.writes).toHaveLength(1);
+    expect(state.writes[0].values).toEqual({ ...parameters, sales_price_cny: 88 });
+  });
+}
+
+for (const fault of ['budgets_template', 'concurrency_template', 'policy_baseline', 'canonical_shell']) {
+  test(`review R2 damaged catalog ${fault} blocks initialization until GET repair`, async ({ page }, info) => {
+    const state = await harness(page); state.catalog = `bad-template:${fault}`;
+    await page.goto('/admin/plans');
+    await expect(page.getByRole('button', { name: /^Retry$|^重试$/ })).toBeVisible();
+    await expect(page.locator('[data-ui="plan-catalog-item"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Create missing packages|创建缺失套餐|补齐缺失套餐/ })).toHaveCount(0);
+    expect(state.requests.filter(request => !request.startsWith('GET'))).toEqual([]);
+    if (fault === 'budgets_template') await image(page, 'review-R2-invalid-catalog', 1440, info);
+    state.catalog = 'normal'; const before = state.requests.length;
+    await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();
+    await expect(page.locator('[data-ui="plan-catalog-item"]')).toHaveCount(2);
+    expect(state.requests.slice(before)).toEqual(['GET /api/admin/plans']);
+    expect(state.writes).toHaveLength(0);
+  });
+}
+
+test('review R3 nested confirmation traps Tab and Escape returns exact trigger focus', async ({ page }, info) => {
+  const state = await harness(page);
+  await page.goto('/admin/plans?focus=pro'); await expect(inputs(page).first()).toHaveValue('99');
+  await inputs(page).first().fill('88');
+  const trigger = workbench(page).locator('[data-ui="admin-workbench-close"]');
+  await trigger.focus(); await trigger.press('Enter');
+  const upper = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: /Discard draft and leave|放弃草稿并离开/ }) });
+  await expect(upper).toBeVisible();
+  const buttons = upper.getByRole('button');
+  await expect(buttons.first()).toBeFocused();
+  await buttons.last().focus(); await page.keyboard.press('Tab'); await expect(buttons.first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab'); await expect(buttons.last()).toBeFocused();
+  for (let i = 0; i < await buttons.count() + 1; i++) {
+    await page.keyboard.press('Tab');
+    expect(await upper.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  }
+  await image(page, 'review-R3-keyboard-confirmation', 1440, info);
+  await page.keyboard.press('Escape');
+  await expect(upper).toHaveCount(0); await expect(workbench(page)).toBeVisible(); await expect(trigger).toBeFocused();
+  await expect(inputs(page).first()).toHaveValue('88');
+  await trigger.press('Enter'); await expect(upper).toBeVisible();
+  await upper.getByRole('button', { name: /^Cancel$|^取消$/ }).click(); await expect(trigger).toBeFocused();
+  expect(state.writes).toHaveLength(0);
+  expect(inventories.get(page)).toEqual({ pageerror: [], consoleError: [], requestfailed: [], httpFailures: [], injectedFailures: [] });
 });

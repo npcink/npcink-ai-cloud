@@ -53,6 +53,13 @@ export type PlanDetailPayload = {
   plan: PlanRecord;
   latest_version?: PlanVersionRecord | null;
   sales_offer?: {
+    offer_id: string;
+    plan_id: string;
+    plan_version_id: string;
+    tier_id: string;
+    account_id: string;
+    purchase_mode: string;
+    billing_cycle: string;
     amount: number;
     currency: string;
     status: string;
@@ -132,34 +139,69 @@ export const record = (value: unknown): value is Record<string, unknown> => Bool
 const text = (value: unknown): value is string => typeof value === 'string' && Boolean(value.trim());
 const number = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 export const validRevision = (value: unknown): value is string => typeof value === 'string' && /^plan-v1:[a-f0-9]{64}$/.test(value);
+const budgetKeys = ['max_ai_credits_per_period', 'max_runs_per_period', 'max_tokens_per_period', 'max_cost_cny_per_period'] as const;
+const metadataKeys = ['monthly_included_points', 'site_limit', 'max_vector_documents', 'max_media_images', 'max_batch_items'] as const;
+function requireNumbers(value: unknown, keys: readonly string[], integer = false) {
+  if (!record(value) || !keys.every(key => number(value[key]) && (!integer || Number.isInteger(value[key])))) throw new Error('Missing or invalid normalized plan value');
+}
+function requireTemplateBudgets(value: unknown) {
+  requireNumbers(value, budgetKeys.filter(key => key !== 'max_tokens_per_period'));
+  // _serialize_plan_tier_template sanitizes token-named keys; Version budgets
+  // instead pass through _normalize_budgets and must contain real numbers.
+  if (!record(value) || (!number(value.max_tokens_per_period) && value.max_tokens_per_period !== '[redacted]')) throw new Error('Invalid template token budget');
+}
+function requirePolicy(value: unknown) {
+  if (!record(value)) throw new Error('Invalid plan policy');
+  requireNumbers(value.subscription, ['grace_period_days'], true);
+}
 function requirePlan(value: unknown) {
-  if (!record(value) || !text(value.plan_id) || !text(value.name) || !text(value.status)) throw new Error('Invalid plan');
+  if (!record(value) || !text(value.plan_id) || !text(value.name) || !text(value.status)
+    || typeof value.description !== 'string'
+    || (value.metadata != null && !record(value.metadata))) throw new Error('Invalid plan');
 }
 function requireVersion(value: unknown, planId?: string) {
   if (!record(value) || !text(value.plan_version_id) || !text(value.version_label) || !text(value.status)
-    || (planId && value.plan_id !== planId) || !record(value.budgets) || !record(value.concurrency)
-    || !record(value.policy) || !record(value.metadata)) throw new Error('Invalid plan version');
-  for (const map of [value.budgets, value.concurrency, value.metadata]) {
-    for (const key of ['monthly_included_points', 'max_ai_credits_per_period', 'max_cost_cny_per_period', 'max_active_runs', 'site_limit', 'max_vector_documents', 'max_media_images', 'max_batch_items']) {
-      if (key in map && !number(map[key])) throw new Error('Invalid plan numeric field');
-    }
+    || (planId && value.plan_id !== planId) || !record(value.metadata)) throw new Error('Invalid plan version');
+  // These fields always exist after the real serializer normalizes a Version.
+  requireNumbers(value.budgets, budgetKeys);
+  requireNumbers(value.concurrency, ['max_active_runs'], true);
+  requirePolicy(value.policy);
+  // Historical/custom Version metadata may omit these keys or store null;
+  // the form then uses the validated canonical summary instead.
+  for (const key of metadataKeys) {
+    if (value.metadata[key] != null && !number(value.metadata[key])) throw new Error('Invalid optional plan metadata');
   }
-  if (value.policy.subscription !== undefined && (!record(value.policy.subscription)
-    || (value.policy.subscription.grace_period_days !== undefined && !number(value.policy.subscription.grace_period_days)))) throw new Error('Invalid plan policy');
 }
 function requireSummary(value: unknown) {
   if (!record(value) || !text(value.tier_id) || !text(value.package_alias)
-    || !['monthly_included_points', 'site_limit', 'max_vector_documents', 'max_media_images', 'max_batch_items'].every(key => number(value[key]))
-    || !record(value.canonical_shell) || !['budgets', 'concurrency', 'policy', 'metadata'].every(key => record((value.canonical_shell as Record<string, unknown>)[key]))
+    || !record(value.canonical_shell) || !record(value.canonical_shell.entitlements)
     || !Array.isArray(value.feature_groups) || !value.feature_groups.every(text)) throw new Error('Invalid plan summary');
+  requireNumbers(value, metadataKeys, true);
+  requireTemplateBudgets(value.budgets_template);
+  requireNumbers(value.concurrency_template, ['max_active_runs'], true);
+  requireNumbers(value.policy_baseline, ['grace_period_days'], true);
+  const shell = value.canonical_shell;
+  requireTemplateBudgets(shell.budgets);
+  requireNumbers(shell.concurrency, ['max_active_runs'], true);
+  requirePolicy(shell.policy);
+  requireNumbers(shell.metadata, metadataKeys, true);
+  if (!record(shell.metadata) || shell.metadata.tier_id !== value.tier_id) throw new Error('Wrong canonical shell tier');
+}
+function requireOffer(value: unknown, planId: string, tierId: unknown) {
+  if (!record(value) || value.plan_id !== planId || value.offer_id !== `${tierId}_monthly_v1`
+    || value.tier_id !== tierId || value.account_id !== '' || value.purchase_mode !== 'self_serve'
+    || !text(value.plan_version_id) || !text(value.billing_cycle)
+    || !number(value.amount) || value.currency !== 'CNY' || !text(value.status)) throw new Error('Invalid canonical plan offer');
+  // A canonical Offer can reference a historical published Version while the
+  // current editor targets a draft. Its Version is intentionally not equated.
 }
 export function requirePlanDetail(value: unknown, planId: string): PlanDetailPayload {
   if (!record(value) || !validRevision(value.revision)) throw new Error('Invalid plan detail');
   requirePlan(value.plan);
   if ((value.plan as Record<string, unknown>).plan_id !== planId || !Object.hasOwn(value, 'latest_version') || !Object.hasOwn(value, 'sales_offer')) throw new Error('Wrong plan detail');
   if (value.latest_version !== null) requireVersion(value.latest_version, planId);
-  if (value.sales_offer !== null && (!record(value.sales_offer) || !number(value.sales_offer.amount) || value.sales_offer.currency !== 'CNY' || !text(value.sales_offer.status))) throw new Error('Invalid plan offer');
   requireSummary(value.tier_summary);
+  if (value.sales_offer !== null) requireOffer(value.sales_offer, planId, (value.tier_summary as Record<string, unknown>).tier_id);
   if (!Array.isArray(value.package_fit_cues) || !value.package_fit_cues.every(cue => record(cue) && ['code', 'severity', 'title', 'detail'].every(key => typeof cue[key] === 'string'))) throw new Error('Invalid plan diagnostics');
   return value as PlanDetailPayload;
 }

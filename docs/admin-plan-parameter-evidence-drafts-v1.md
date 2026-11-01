@@ -22,7 +22,9 @@ recovery, not cross-device persistence. Closing the browser tab may lose it.
 
 Network loss, timeout, replay rejection, unknown 409, server errors, malformed
 success and failed/unmatched confirmation preserve the intent. Only explicit
-known nonexecuting validation/revision rejection permits editing again. No new
+known nonexecuting validation/revision rejection from the original PATCH permits editing again.
+Write-projection validation and confirmation GET failures (including 422/409)
+never clear the sent intent or claim an original-write CAS conflict. No new
 key, automatic PATCH replay or background retry is used to resolve uncertainty.
 Target generations and operation identity prevent late responses from touching
 another Plan or its ordinary draft. Same-target reads preserve a dirty draft and
@@ -72,6 +74,17 @@ loaded timestamp. Legal empty arrays display empty state. Invalid first reads
 show Retry; invalid background reads retain the last successful catalog with a
 visible stale/error notice. Existing canonical-tier selection remains. Recovery
 buttons address actual Plan IDs and remain reachable on initial catalog failure.
+
+Version budgets require all four normalized budget keys; concurrency and policy
+require `max_active_runs` and `subscription.grace_period_days`. Summary templates
+and canonical shell values consumed by initialization/defaults must also be
+complete and numeric. Canonical template token budgets allow the real
+serializer's `[redacted]` sentinel; normalized Version token budgets require a
+number. Historical/custom Version metadata may omit quota keys or contain null;
+validated summary values remain the fallback. Zero and null Version/Offer are
+legitimate. A sales Offer must bind the actual Plan, canonical monthly Offer/tier,
+empty account scope and self-serve mode. Its nonempty Version may be historical,
+so it is not equated with the current draft Version.
 
 | Category | Placement |
 | --- | --- |
