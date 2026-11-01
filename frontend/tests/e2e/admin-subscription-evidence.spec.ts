@@ -324,3 +324,30 @@ test('review R3 actual isolated serializer inspector distinguishes unknown cost 
   await expect(cost).toHaveText(/¥0(?:\.00)?/);
   expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
 });
+
+test('review R2b contradictory snapshot projections refuse stable and recover by one scoped GET', async ({ page }, info) => {
+  const state = await harness(page);
+  const good = JSON.parse(JSON.stringify(subscriptionFixture())) as ReturnType<typeof subscriptionFixture>;
+  const bad = JSON.parse(JSON.stringify(good)) as typeof good;
+  bad.latest_billing_snapshots = [];
+  state.detail = bad;
+  await page.goto('/admin/subscriptions/sub_mvp');
+  await expect(page.getByRole('heading', { name: /Subscription detail is temporarily unavailable|订阅详情暂时不可用/ })).toBeVisible();
+  await expect(stable(page)).toHaveCount(0); await expect(refresh(page)).toHaveCount(0);
+  expect(state.audits).toEqual([]); expect(state.writes).toEqual([]);
+  state.timeline.push({ at: Date.now(), event: 'contradictory projections rejected; no stable, rebuild or unscoped audit' });
+  await capture(page, 'pc-1440-r2b-snapshot-projections', info);
+  const reads = state.reads.length;
+  state.detail = good; await retry(page).click();
+  await expect(stable(page)).toBeVisible();
+  expect(state.reads).toHaveLength(reads + 1);
+  expect(state.reads.at(-1)).toBe('/api/admin/subscriptions/sub_mvp');
+  await settled(page);
+  for (const raw of state.audits) {
+    const url = new URL(raw, 'http://127.0.0.1');
+    expect(url.searchParams.get('account_id')).toBe('acct_subscription');
+    expect(url.searchParams.has('site_id')).toBe(false);
+  }
+  state.timeline.push({ at: Date.now(), event: 'one scoped GET recovered current detail; stable now established' });
+  expect(state.writes).toEqual([]); expect(state.unhandled).toEqual([]);
+});

@@ -114,3 +114,28 @@ PC1440坏元组保留及真实费用未知、PC1056错账单目标、混合站�
 源码与artifact增量manifest、命令原文/结果及五轴自审在 `review-1/`。业务API均mock，
 一次rebuild写入仅为隔离测试。PR/push/CI/M4 candidate/M4 accepted/merge/production均未操作。
 交新干净提交后冻结；不创建额外Git worktree、会话或子代理，不变更既有商业与S03边界。
+
+
+## 第二轮返修 R2b
+
+正式handback对象f5f846fb仍未准入；本轮只解除原branch/worktree/lock冻结修正R2b。
+服务的两份快照投影来自同一map，之前仅验证各自结构与站点会员关系，未核对互相一致。
+新增按site的map验证：非空billing snapshot与latest的ID、订阅、消费totals须相同，
+missing对应不存在；fresh还必须属于当前订阅。totals按键值比较，不依赖JSON键顺序。
+该内部检查不使用covered集合；仅covered会员关系仍以完整站点集合为条件，保留坏站点
+局部隔离、历史stale账户/订阅/版本、稀疏totals及archived/released排除，不重算账务规则。
+
+JSON往返将HTTP两份对象拆开后，7个矛盾反例在旧提交全部复现失败，修正后单元80通过。
+另5份既有合成SQLite真实serializer响应通过；没有重新导出/访问真实数据库。
+一个PC1440浏览器反例验证矛盾快照不建立stable、不显示rebuild、不发全局审计，
+一次目标GET后恢复有效详情；业务体完成（GET2/POST0），严格afterEach仍失败，
+保留account/site两次部分header RSC200→ERR_ABORTED，pageerror/console/HTTP为0。
+结果、PC图、实际命令与增量manifest保存在 `review-2/`；不将业务完成写成strict通过。
+本轮L2 development/local的类型、定向lint、Admin治理及release-policy门禁通过。
+原失败与review-1产物不覆盖，不累加重复场景或门禁数量。没有新增内容层级或移走入口，
+仅沿用常显不可用/陈旧原因与既有GETRetry；人工产品和视觉验收仍待做。
+
+R4严格浏览器阻塞由整合会话保留调查；本轮不重跑匹配对照或原失败来挑绿，
+不改变预取、collector、分类/断言豁免。仅本地验证与新干净提交后冻结，
+PR/push/CI/M4/merge/accepted/production、真实客户/支付/Provider写入或花费均未操作。
+价格/额度/生命周期/账务/实时套餐与S03未知提交/new-key边界保持。

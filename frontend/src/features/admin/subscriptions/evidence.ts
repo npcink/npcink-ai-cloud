@@ -105,19 +105,37 @@ function checkTarget(item: { subscription: z.infer<typeof subscription>; account
   }
 }
 
-function checkBillingTargets(item: { latest_billing_snapshots: z.infer<typeof snapshots>;
+function checkBillingTargets(item: { subscription: z.infer<typeof subscription>; latest_billing_snapshots: z.infer<typeof snapshots>;
   billing_snapshot_status: z.infer<typeof billing> }, sites: SiteEvidence) {
+  // Both projections serialize the same per-site snapshot map. Compare the
+  // consumed fields independently of covered-sites completeness; do not infer
+  // freshness from historical account/version metadata or sparse totals.
+  const latest = new Map<string, z.infer<typeof snapshot>>();
+  for (const snapshot of item.latest_billing_snapshots) {
+    if (latest.has(snapshot.site_id)) throw new SubscriptionEvidenceError('Duplicate latest snapshot target');
+    latest.set(snapshot.site_id, snapshot);
+  }
+  const items = item.billing_snapshot_status.items;
+  for (const entry of items) {
+    const current = latest.get(entry.site_id), projected = entry.snapshot;
+    if (projected === null ? current !== undefined : !current
+      || projected.snapshot_id !== current.snapshot_id || projected.subscription_id !== current.subscription_id
+      || Object.keys(projected.totals).length !== Object.keys(current.totals).length
+      || Object.entries(projected.totals).some(([key, value]) => current.totals[key] !== value)) {
+      throw new SubscriptionEvidenceError('Contradictory snapshot projections');
+    }
+    if (entry.status === 'fresh' && projected?.subscription_id !== item.subscription.subscription_id) {
+      throw new SubscriptionEvidenceError('Historical snapshot cannot establish freshness');
+    }
+  }
   // A damaged covered-sites collection is already isolated and blocks judgment
   // and writes. Do not use that incomplete collection to reject valid detail.
   if (sites.issues.length) return;
   const all = new Set(sites.sites.map(site => site.site_id));
   const eligible = new Set(sites.sites.filter(site => site.status !== 'archived' && site.ownership_released_at === null).map(site => site.site_id));
-  const latest = new Set<string>();
-  for (const snapshot of item.latest_billing_snapshots) {
-    if (!all.has(snapshot.site_id) || latest.has(snapshot.site_id)) throw new SubscriptionEvidenceError('Mismatched snapshot target');
-    latest.add(snapshot.site_id);
+  for (const siteId of latest.keys()) {
+    if (!all.has(siteId)) throw new SubscriptionEvidenceError('Mismatched snapshot target');
   }
-  const items = item.billing_snapshot_status.items;
   if (items.length !== eligible.size || items.some(entry => !eligible.has(entry.site_id))) {
     throw new SubscriptionEvidenceError('Mismatched billing targets');
   }

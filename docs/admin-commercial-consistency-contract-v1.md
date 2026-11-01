@@ -79,7 +79,10 @@
   三类计数与条目一致，聚合按 stale→missing→fresh，next_action 仅在非空 stale/missing 时为既有重建操作。
   covered 集合完整时核对 billing 的 eligible 站点及 latest snapshot 的覆盖站点关系，
   archived/released 排除在 billing 外；covered 自身损坏仍局部隔离，不用不完整集合做跨集合拒绝。
-  历史 snapshot 的账户、订阅及存储版本不强制等于当前对象或 live version。
+  两份 snapshot 投影来自同一 per-site map：非空 billing snapshot 的 ID、订阅和消费的 totals
+  必须与对应 latest snapshot 一致；missing 必须对应 map 无该站点，fresh 必须属于当前订阅。
+  此内部一致性检查不依赖 covered 完整性；只有站点会员关系使用完整 covered 集合。
+  历史 stale snapshot 的账户、订阅及存储版本不强制等于当前对象或 live version。
 - 队列检查器没有快照、部分站点缺快照或 totals 缺 cost 时显示未知；只有明确完整的数值证据才能显示金额，显式 cost:0 保留。
 - 只有当前有效的客户或站点范围才挂载审计面板；已验证 account 优先，summary/trail
   均保持 account 范围，不叠加首个 site，也不信任响应中的任意链接或请求全局审计。

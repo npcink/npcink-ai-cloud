@@ -149,3 +149,48 @@ describe('review R3 cost evidence', () => {
     expect(() => cost(subscriptionFixture({latest_billing_snapshots: []}))).toThrow();
   });
 });
+
+
+describe('review R2b independent HTTP snapshot projections', () => {
+  const wire = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  const cases: Array<[string, (value: ReturnType<typeof subscriptionFixture>) => void]> = [
+    ['non-null billing snapshot with empty latest projection', value => { value.latest_billing_snapshots = []; }],
+    ['different snapshot identity', value => { value.billing_snapshot_status.items[0].snapshot!.snapshot_id = 'unrelated'; }],
+    ['historical subscription on fresh billing snapshot', value => { value.billing_snapshot_status.items[0].snapshot!.subscription_id = 'historical'; }],
+    ['historical subscription on both fresh projections', value => {
+      value.billing_snapshot_status.items[0].snapshot!.subscription_id = 'historical';
+      value.latest_billing_snapshots[0].subscription_id = 'historical';
+    }],
+    ['missing billing item with an existing latest snapshot', value => {
+      value.billing_snapshot_status = subscriptionFixture({ billing_snapshot_status: { missing_site_count: 1 } }).billing_snapshot_status;
+    }],
+    ['different consumed totals', value => { value.billing_snapshot_status.items[0].snapshot!.totals = { cost: 17 }; }],
+    ['different latest subscription for the same snapshot identity', value => { value.latest_billing_snapshots[0].subscription_id = 'historical'; }],
+  ];
+  it.each(cases)('rejects %s on detail and queue', (_name, damage) => {
+    const detail = wire(subscriptionFixture()); damage(detail);
+    expect(() => readSubscriptionDetail(detail, 'sub_mvp')).toThrow();
+    const list = wire(queue()); damage(list.items[0]);
+    expect(() => readSubscriptionQueue(list, key)).toThrow();
+  });
+  it('accepts consistent historical stale snapshots and sparse totals regardless of key order', () => {
+    const value = wire(subscriptionFixture({ billing_snapshot_status: { stale_site_count: 1 }, latest_billing_snapshots: [{
+      snapshot_id: 'historical', subscription_id: 'previous_subscription', account_id: 'previous_account',
+      plan_version_id: 'previous_version', totals: { runs: 0, tokens: 3 },
+    }] }));
+    value.billing_snapshot_status.items[0].snapshot!.totals = { tokens: 3, runs: 0 };
+    expect(readSubscriptionDetail(value, 'sub_mvp').detail.latest_billing_snapshots[0].subscription_id).toBe('previous_subscription');
+    expect(readSubscriptionQueue(wire(subscriptionQueueFixture({ items: [value], total: 1 }, new URLSearchParams(key))), key).items).toHaveLength(1);
+  });
+  it('keeps consistent detail locally usable when covered-sites evidence is damaged', () => {
+    const value = wire(subscriptionFixture());
+    const parsed = readSubscriptionDetail({ ...value, covered_sites: [null] }, 'sub_mvp');
+    expect(parsed.sites.issues).toEqual([{ index: 0, reason: 'invalid' }]);
+    expect(parsed.detail.budget_state.tokens.current_total).toBe(32000);
+  });
+  it('does not require released-site historical snapshots to have billing items', () => {
+    const value = wire(subscriptionFixture({ covered_sites: [{ site_id: 'released', ownership_released_at: '2026-11-01T00:00:00Z' }],
+      latest_billing_snapshots: [{ snapshot_id: 'old', site_id: 'released', subscription_id: 'previous', totals: {} }] }));
+    expect(readSubscriptionDetail(value, 'sub_mvp').detail.billing_snapshot_status.items).toEqual([]);
+  });
+});
