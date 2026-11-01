@@ -11,6 +11,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,
     validate_runtime_callback_target,
@@ -82,6 +85,14 @@ from app.domain.service_settings import resolve_site_relink_policy
 
 WORDPRESS_ADDON_CONNECTION_PROVIDER = "wordpress_addon_connection"
 WORDPRESS_ADDON_CONNECTION_TTL_SECONDS = 10 * 60
+
+
+def _site_operation_datetime(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else None
+    except ValueError:
+        return None
 
 
 def _assert_portal_addon_connection_access(
@@ -1315,6 +1326,64 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 },
             )
             session.commit()
+            return result
+
+    def confirm_admin_site_operation(
+        self, *, site_id: str, operation_id: str, action: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # Do not call get_admin_site: its commercial projections can reconcile billing.
+        result: dict[str, object] = {
+            "site_id": site_id, "operation_id": operation_id, "action": action,
+            "state": "unconfirmed", "site": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            site = session.get(Site, site_id)
+            if site is None:
+                return result
+            if action == "activate":
+                if site.status == SITE_STATUS_ACTIVE:
+                    result.update(state="confirmed", site=self._serialize_site(site))
+                return result
+            if action not in {"set", "clear", "reset"}:
+                return result
+            events = CommercialServiceAuditRepository(session).find_site_cooldown_events(
+                site_id=site_id, operation_id=operation_id,
+                actor_kind=audit_context.actor_kind, actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json or {}
+            if not isinstance(payload, dict):
+                return result
+            resolved = _site_operation_datetime(str(payload.get("relink_cooldown_until") or ""))
+            released = _site_operation_datetime(str(payload.get("ownership_released_at") or ""))
+            if (
+                payload.get("site_id") != site_id or payload.get("action") != action
+                or payload.get("status") != SITE_STATUS_ARCHIVED
+                or site.status != SITE_STATUS_ARCHIVED or resolved is None or released is None
+                or _as_utc(site.relink_cooldown_until) != _as_utc(resolved)
+                or _as_utc(site.ownership_released_at) != _as_utc(released)
+                or event.account_id != site.account_id
+            ):
+                return result
+            policy = resolve_site_relink_policy(self.database_url)
+            result.update(
+                state="confirmed", site=self._serialize_site(site),
+                site_relink_policy={
+                    "enabled": bool(policy.get("enabled", True)),
+                    "default_cooldown_days": int(policy.get("cooldown_days") or 90),
+                    "ownership_released_at": self._serialize_datetime(site.ownership_released_at),
+                    "cooldown_until": self._serialize_datetime(site.relink_cooldown_until),
+                    "cross_account_relink_ready": bool(
+                        policy.get("enabled", True) and resolved.astimezone(UTC) <= self.now_factory()
+                    ),
+                },
+                receipt={"site_id": site_id, "operation_id": operation_id,
+                         "action": action, "audit_event_id": event.id,
+                         "resolved_cooldown_until": self._serialize_datetime(resolved)},
+            )
             return result
 
     def update_site_runtime_callbacks(

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
@@ -23,6 +23,9 @@ import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
+import { requireSiteDetail, type SiteOperationResult } from '@/features/admin/sites/site-operation-model';
+import { useSiteOperations } from '@/features/admin/sites/site-operations';
+import { SiteOperationRecovery } from '@/features/admin/sites/SiteOperationRecovery';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { localizeAdminCommercialCopy } from '@/lib/admin-commercial-copy';
 import { translateStatusLabel } from '@/lib/status-display';
@@ -171,14 +174,6 @@ interface SiteDetailApiPayload {
 
 const siteDetailClient = createApiClient({ idempotencyPrefix: 'admin_site_detail' });
 
-function toDatetimeLocalValue(value: string): string {
-  if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '';
-  const offsetMs = parsed.getTimezoneOffset() * 60_000;
-  return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
 function siteRuntimeExplanationText(
   value: string,
   t: (key: string, params?: Record<string, string>, fallback?: string) => string
@@ -212,93 +207,37 @@ function SiteDetailContent() {
   const [site, setSite] = useState<SiteDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [siteActionError, setSiteActionError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [isActivatingSite, setIsActivatingSite] = useState(false);
-  const [isUpdatingRelinkCooldown, setIsUpdatingRelinkCooldown] = useState(false);
-  const [relinkCooldownInput, setRelinkCooldownInput] = useState('');
   const [confirmRelinkClearOpen, setConfirmRelinkClearOpen] = useState(false);
 
-  const handleActivateSite = async () => {
-    if (!site) {
-      return;
-    }
-
-    setIsActivatingSite(true);
-    setSiteActionError(null);
-
-    try {
-      await siteDetailClient.request<Record<string, unknown>>(`/api/admin/sites/${encodeURIComponent(site.site_id)}/activate`, {
-        method: 'POST',
-        body: {},
-      });
-      setSite((current) => (current ? { ...current, status: 'active' } : current));
-      toast.success(
-        t(
-          'admin.site_detail.activate_success',
-          undefined,
-          'Site is now active. Signed addon probes and hosted runtime requests can proceed.'
-        ),
-        t('admin.site_detail.activate_success_title', undefined, 'Site activated')
-      );
-    } catch (err) {
-      setSiteActionError(resolveUiErrorMessage(
-        err,
-        t('admin.site_detail.activate_failed', undefined, 'Failed to activate the site.')
-      ));
-    } finally {
-      setIsActivatingSite(false);
-    }
-  };
-
-  const handleRelinkCooldownUpdate = async (
-    action: 'clear' | 'set' | 'reset'
-  ) => {
-    if (!site) return;
-    setIsUpdatingRelinkCooldown(true);
-    setSiteActionError(null);
-    try {
-      const body: Record<string, unknown> = { action };
-      if (action === 'set') {
-        body.cooldown_until = new Date(relinkCooldownInput).toISOString();
-      }
-      await siteDetailClient.request<Record<string, unknown>>(
-        `/api/admin/sites/${encodeURIComponent(site.site_id)}/relink-cooldown`,
-        {
-          method: 'PATCH',
-          body,
-        }
-      );
-      toast.success(
-        t(
-          'admin.site_detail.relink_cooldown_update_success',
-          undefined,
-          'Cross-account relink cooldown updated.'
-        ),
-        t(
-          'admin.site_detail.relink_cooldown_update_success_title',
-          undefined,
-          'Relink policy updated'
-        )
-      );
-      setReloadKey((value) => value + 1);
-    } catch (err) {
-      setSiteActionError(
-        resolveUiErrorMessage(
-          err,
-          t(
-            'admin.site_detail.relink_cooldown_update_failed',
-            undefined,
-            'Failed to update the cross-account relink cooldown.'
-          )
-        )
-      );
-    } finally {
-      setIsUpdatingRelinkCooldown(false);
-    }
-  };
+  const readSequenceRef = useRef(0);
+  const confirmedProjectionRef = useRef<{ sequence: number; result: SiteOperationResult } | null>(null);
+  const operations = useSiteOperations({
+    siteId, site: site?.site_id === siteId && !error && !isLoading ? site : null,
+    writeFailure: t('admin.site_confirmation.write_failed'),
+    readFailure: t('admin.customer_confirmation.read_failed'),
+    invalidTime: t('admin.site_confirmation.invalid_time'),
+    onConfirmed: (result, action) => {
+      // Only fields verified by the narrow read/write receipt change here.
+      // Billing, diagnostics and other evidence retain their existing snapshot.
+      confirmedProjectionRef.current = { sequence: readSequenceRef.current, result };
+      setSite(current => current && current.site_id === result.site.site_id ? {
+        ...current,
+        status: String(result.site.status),
+        ...(typeof result.site.name === 'string' ? { site_name: result.site.name || current.site_id } : {}),
+        ...(result.policy ? { site_relink_policy: result.policy } : {}),
+      } : current);
+      toast.success(t(action === 'activate' ? 'admin.site_confirmation.active_now' : 'admin.site_detail.relink_cooldown_update_success'));
+    },
+  });
+  const isActivatingSite = operations.busy && operations.intent?.action === 'activate';
+  const isUpdatingRelinkCooldown = operations.busy && operations.intent?.action !== 'activate';
+  const relinkCooldownInput = operations.input;
+  const handleActivateSite = () => operations.submit('activate');
+  const handleRelinkCooldownUpdate = (action: 'clear' | 'set' | 'reset') => operations.submit(action);
 
   useEffect(() => {
+    const sequence = ++readSequenceRef.current;
     const loadSite = async () => {
       setIsLoading(true);
       setError(null);
@@ -307,8 +246,8 @@ function SiteDetailContent() {
         const payload = (await siteDetailClient.request<SiteDetailApiPayload>(
           `/api/admin/sites/${siteId}`
         )).data;
-        const rawSite = payload.site || {};
-        const rawAccount = payload.account || {};
+        if (sequence !== readSequenceRef.current) return;
+        const rawSite = requireSiteDetail(payload, siteId);
         const siteKeys = Array.isArray(payload.site_keys) ? payload.site_keys : [];
         const rawSubscription = payload.subscription || null;
         const commercialPolicy = payload.commercial_policy || {};
@@ -325,10 +264,10 @@ function SiteDetailContent() {
             ? (latestSnapshot.totals as Record<string, unknown>)
             : {};
         const normalizedSite: SiteDetail = {
-          site_id: String(rawSite.site_id || siteId),
-          account_id: String(rawSite.account_id || rawAccount.account_id || ''),
+          site_id: String(rawSite.site_id),
+          account_id: String(rawSite.account_id || ''),
           site_name: String(rawSite.name || rawSite.site_id || siteId),
-          status: String(rawSite.status || 'unknown'),
+          status: String(rawSite.status),
           created_at: String(rawSite.created_at || ''),
           key_count: siteKeys.length,
           subscription: rawSubscription
@@ -395,21 +334,24 @@ function SiteDetailContent() {
               ? payload.site_relink_policy
               : {},
         };
+        const confirmed = confirmedProjectionRef.current;
+        if (confirmed?.sequence === sequence && confirmed.result.site.site_id === siteId) {
+          normalizedSite.status = String(confirmed.result.site.status);
+          if (typeof confirmed.result.site.name === 'string') normalizedSite.site_name = confirmed.result.site.name || siteId;
+          if (confirmed.result.policy) normalizedSite.site_relink_policy = confirmed.result.policy;
+        }
         setSite(normalizedSite);
-        setRelinkCooldownInput(
-          toDatetimeLocalValue(
-            String(payload.site_relink_policy?.cooldown_until || '')
-          )
-        );
-        await Promise.resolve();
       } catch (err) {
+        if (sequence !== readSequenceRef.current) return;
+        setSite(null);
         setError(resolveUiErrorMessage(err, t('error.failed_load')));
       } finally {
-        setIsLoading(false);
+        if (sequence === readSequenceRef.current) setIsLoading(false);
       }
     };
 
-    loadSite();
+    void loadSite();
+    return () => { readSequenceRef.current += 1; };
   }, [reloadKey, siteId, t]);
 
   if (isLoading) {
@@ -419,6 +361,7 @@ function SiteDetailContent() {
   if (error) {
     return (
       <BackofficePageStack>
+        <SiteOperationRecovery controller={operations} siteLabel={site?.site_name || siteId} />
         <BackofficePrimaryPanel
           eyebrow={t('admin.site_health')}
           title={t('admin.site_detail.load_error_title', undefined, 'Site detail is temporarily unavailable')}
@@ -618,7 +561,7 @@ function SiteDetailContent() {
                 type="button"
                 onClick={handleActivateSite}
                 className={cn('btn btn-primary', isActivatingSite && 'pointer-events-none opacity-50')}
-                disabled={isActivatingSite}
+                disabled={operations.locked}
               >
                 {isActivatingSite
                   ? t('common.saving')
@@ -658,6 +601,7 @@ function SiteDetailContent() {
           </div>
         )}
       />
+      <SiteOperationRecovery controller={operations} siteLabel={site?.site_name || siteId} />
       <BackofficeSectionPanel className="space-y-4" data-ui="site-primary-workspace">
         {site.status === 'provisioning' ? (
           <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -666,11 +610,6 @@ function SiteDetailContent() {
               undefined,
               'This site record exists, but hosted runtime is still blocked until the site is activated.'
             )}
-          </p>
-        ) : null}
-        {siteActionError ? (
-          <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-            {siteActionError}
           </p>
         ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -772,8 +711,8 @@ function SiteDetailContent() {
                   type="datetime-local"
                   className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
                   value={relinkCooldownInput}
-                  onChange={(event) => setRelinkCooldownInput(event.target.value)}
-                  disabled={isUpdatingRelinkCooldown}
+                  onChange={(event) => operations.setInput(event.target.value)}
+                  disabled={operations.locked}
                 />
                 <span className="mt-2 block text-xs font-normal text-gray-500 dark:text-gray-400">
                   {t(
@@ -787,7 +726,7 @@ function SiteDetailContent() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={isUpdatingRelinkCooldown}
+                  disabled={operations.locked}
                   onClick={() => void handleRelinkCooldownUpdate('reset')}
                 >
                   {t(
@@ -799,7 +738,7 @@ function SiteDetailContent() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={isUpdatingRelinkCooldown}
+                  disabled={operations.locked}
                   onClick={() => setConfirmRelinkClearOpen(true)}
                 >
                   {t(
@@ -811,7 +750,7 @@ function SiteDetailContent() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={isUpdatingRelinkCooldown || !relinkCooldownInput}
+                  disabled={operations.locked || !relinkCooldownInput}
                   onClick={() => void handleRelinkCooldownUpdate('set')}
                 >
                   {isUpdatingRelinkCooldown

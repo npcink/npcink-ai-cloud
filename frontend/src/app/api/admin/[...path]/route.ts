@@ -197,6 +197,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_accounts',
   },
   {
+    methods: ['GET'],
+    pattern: /^sites\/[^/]+\/operations\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
     methods: ['PATCH'],
     pattern: /^sites\/[^/]+\/relink-cooldown$/,
     namespace: 'admin',
