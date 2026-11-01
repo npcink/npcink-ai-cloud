@@ -2005,6 +2005,7 @@ export async function installAdminMocks(
 
     if (pathname === `/api/admin/plans/${LONG_PLAN_ID}`) {
       await fulfillJson(route, {
+        revision: `plan-v1:${'a'.repeat(64)}`,
         plan: {
           plan_id: LONG_PLAN_ID,
           name: 'Pro',
@@ -2097,6 +2098,7 @@ export async function installAdminMocks(
 
     if (pathname === `/api/admin/plans/${FREE_PLAN_ID}`) {
       await fulfillJson(route, {
+        revision: `plan-v1:${'b'.repeat(64)}`,
         plan: {
           plan_id: FREE_PLAN_ID,
           name: 'Free',

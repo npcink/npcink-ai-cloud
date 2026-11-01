@@ -843,3 +843,49 @@ B4-06–10 集成补记（2026-11-01）：操作者明确接受credits页签取�
 外观，并允许更新对应golden。Darwin/Linux分别采用原生actual并重验原失败场景，
 各1 passed；旧32/1及差异图保留，不放宽阈值。此接受仅覆盖该外观，整批产品
 人工验收与生产授权继续独立。集成详情见本组dated交付记录及外部integration-3回执。
+
+## B5-01 套餐参数并发保存保护 — 2026-11-01 本地候选
+
+分支 `codex/admin-plan-concurrency`，基线 `7c561eeac4f7335f53ba6b9522c343ce3afcf8cf`。
+范围为 `/admin/plans?focus=<plan>` 的既有参数工作台；
+[并发契约与验证入口](admin-plan-parameters-concurrency-v1.md)。
+
+| 类别 | 本次处置 / 入口 |
+| --- | --- |
+| 常显 | 保留套餐目标、订阅影响及原参数；明确409时显示冲突原因、草稿保留、保存阻断和GET恢复按钮。读取成功后单独显示最新积分/价格/销售状态，输入仍为草稿；只有明确放弃草稿才填入最新值。读取失败保留草稿和保存阻断。 |
+| 按需 | 原字段解释、诊断TAB和高级成本阈值入口保持；不把冲突或恢复动作移入折叠/hover。 |
+| 技术证据 | revision随GET/PATCH传递；保留原receipt/诊断/审计入口，技术epoch不新增操作字段。 |
+| 删除重复 | 本轮没有移走既有内容，无新增重复目录摘要、运营指标、订阅入口或“已就绪”说明。 |
+
+本地定向 API/domain、proxy/capability、Admin结构/类型/lint已验证；
+PC1440×1050、1056×1050 的正常、冲突、读取保草稿、串行保存由真实Chromium
+配合模拟API验证。读取最新不会发PATCH，冲突后保存不可用；窄PC保持页内滚动和固定footer，
+新冲突/恢复信息在首屏可见。截图经代理目检，无横向溢出或控件重叠；不视为人工视觉接受。
+本轮未改主题颜色或共享primitive，不重跑全后台视觉矩阵、不更新任何golden。
+
+原始证据根（本机）：
+`/Users/muze/.codex/visualizations/2026/11/01/01a1929f-2271-7550-b73e-07abd2a0a629/admin-plan-concurrency/`。
+`browser-5.log`、`screenshots/pc-{1440,1056}-{normal,conflict,read-retains-draft,saved}.png`
+及最终manifest记录命令、退出码和SHA256。早期失败与修正日志保留，不能标成整轮一次通过。
+PG隔离测试明确pending（本机无Docker daemon）；新增7项的执行注入见并发契约。
+CI、merged、M4 candidate、M4 accepted、人工及生产均未宣称通过；
+套餐导航草稿/未知结果/广泛投影验证仍属未放行的1B。
+
+### B5-01 第一次独立审核 handback 补证
+
+同页新增 PC1440×1050 暗色冲突及读取保草稿场景，复用既有模拟API浏览器流，
+`review-2/dark-browser.log` 为1项通过。代理已目检
+`review-2/screenshots/pc-1440-dark-{conflict,read-retains-draft}.png`：
+冲突原因、最新积分/价格/状态及两个恢复动作可读，草稿与已读取快照区分明确，
+保存禁用可辨认；无主题实现改动、无golden更新、未重复全后台或56项套件。
+证据仍位于本节上述本机会话根，人工接受与集成 admission 仍pending。
+M4命令已用实际CLI dry-run修正为受支持双target；真实PG仍由集成会话执行。
+调查阶段证实跨父Plan版本移动在本地API可达，先记录缺口并交集成会话决定修复。
+随后按 R3 定向授权，参数保存改为先锁 Plan，再按稳定顺序锁 Version 集合并刷新，
+再锁 Offer、投影和比较revision；保留既有移动语义及普通GET。
+[并发契约](admin-plan-parameters-concurrency-v1.md#cross-parent-version-movement-repair-postgresql-proof-pending)
+记录两种写入顺序的PG锁等待测试与预期；此后端修复没有改变上述四类页面信息处置。
+`review-2/r3-local-tests-corrected.log` 为38项通过，质量检查通过；
+原误写不存在测试文件导致的零收集失败保留在 `review-2/r3-local-tests.log`。
+当前PG选择为9项Plan加1项Portal对照，本机10项均skip，仍由集成会话隔离实测；
+未将SQLite、命令dry-run或测试收集作为PG锁覆盖证明，未宣称admission。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from uuid import uuid4
 
 from app.adapters.repositories.commercial_plan_queries import CommercialPlanQueries
 from app.core.models import Plan, PlanOffer, PlanVersion
@@ -17,7 +18,7 @@ class CommercialPlanRepository(CommercialPlanQueries):
         description: str,
         metadata_json: dict[str, object] | None,
     ) -> Plan:
-        plan = self.get_plan(plan_id)
+        plan = self.get_plan_for_update(plan_id)
         if plan is None:
             plan = Plan(
                 plan_id=plan_id,
@@ -31,7 +32,12 @@ class CommercialPlanRepository(CommercialPlanQueries):
             plan.name = name or plan.name or plan_id
             plan.status = status
             plan.description = description or None
-            plan.metadata_json = metadata_json
+            # Preserve the technical epoch once a catalog mutation established
+            # it; ordinary repository callers retain their metadata contract.
+            plan.metadata_json = (
+                {**(metadata_json or {}), "admin_parameters_epoch": uuid4().hex}
+                if (plan.metadata_json or {}).get("admin_parameters_epoch") else metadata_json
+            )
         self.session.flush()
         return plan
 
@@ -49,7 +55,10 @@ class CommercialPlanRepository(CommercialPlanQueries):
         policy_json: dict[str, object],
         metadata_json: dict[str, object] | None,
     ) -> PlanVersion:
+        self.get_plan_for_update(plan_id)
         plan_version = self.get_plan_version(plan_version_id)
+        if plan_version is not None:
+            self.session.refresh(plan_version, with_for_update=True)
         if plan_version is None:
             plan_version = PlanVersion(
                 plan_version_id=plan_version_id,
@@ -98,7 +107,8 @@ class CommercialPlanRepository(CommercialPlanQueries):
         valid_until_at: datetime | None,
         metadata_json: dict[str, object] | None,
     ) -> PlanOffer:
-        offer = self.get_plan_offer(offer_id)
+        self.get_plan_for_update(plan_id)
+        offer = self.get_plan_offer_for_update(offer_id)
         values = {
             "plan_id": plan_id,
             "plan_version_id": plan_version_id,

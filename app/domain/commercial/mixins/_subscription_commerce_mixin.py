@@ -1472,7 +1472,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             offer_id = str(STANDARD_PLAN_OFFERS[tier_id]["offer_id"])
             if repository.get_plan_offer(offer_id) is not None:
                 continue
-            plan = repository.get_plan(tier_id)
+            plan = repository.get_plan_for_update(tier_id)
             if plan is not None and (
                 plan.status != PLAN_STATUS_ACTIVE
                 or not repository.list_plan_versions(
@@ -1501,11 +1501,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         plan_version_id: str,
         sales_price_cny: float | None,
     ) -> PlanOffer:
+        # Match the parameter/publish/sales lock order: Plan before Offer.
+        repository.get_plan_for_update(plan_id)
         settings = STANDARD_PLAN_OFFERS[tier_id]
         offer_id = str(settings["offer_id"])
-        existing = repository.get_plan_offer(offer_id)
-        if existing is not None:
-            repository.session.refresh(existing, with_for_update=True)
+        existing = repository.get_plan_offer_for_update(offer_id)
         amount = (
             self._money(sales_price_cny)
             if sales_price_cny is not None
@@ -1528,9 +1528,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             purchase_mode=PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
             status=existing.status if existing is not None else PLAN_OFFER_STATUS_ACTIVE,
             trial_enabled=(existing.trial_enabled if existing is not None else True),
-            trial_days=(
-                existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS
-            ),
+            trial_days=(existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS),
             trial_ai_credit_limit=(
                 existing.trial_ai_credit_limit
                 if existing is not None
@@ -1619,10 +1617,15 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         service = cast(Any, self)
         with get_session(service.database_url) as session:
             repository = CommercialSubscriptionLifecycleRepository(session)
+            plan = repository.get_plan_for_update(plan_id)
             offer = next(
-                (item for item in repository.list_plan_offers(self_serve_only=True)
-                 if item.plan_id == plan_id and item.tier_id in STANDARD_PLAN_OFFERS
-                 and item.offer_id == STANDARD_PLAN_OFFERS[item.tier_id]["offer_id"]),
+                (
+                    item
+                    for item in repository.list_plan_offers(self_serve_only=True)
+                    if item.plan_id == plan_id
+                    and item.tier_id in STANDARD_PLAN_OFFERS
+                    and item.offer_id == STANDARD_PLAN_OFFERS[item.tier_id]["offer_id"]
+                ),
                 None,
             )
             if offer is None:
@@ -1631,6 +1634,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 )
             session.refresh(offer, with_for_update=True)
             offer.status = status
+            if plan is not None:
+                plan.metadata_json = {
+                    **(plan.metadata_json or {}),
+                    "admin_parameters_epoch": uuid4().hex,
+                }
             if status == PLAN_OFFER_STATUS_ACTIVE:
                 self._assert_offer_purchasable(
                     offer, repository=repository, account_id="", now=service.now_factory()
