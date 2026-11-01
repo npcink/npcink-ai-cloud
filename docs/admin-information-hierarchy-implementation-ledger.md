@@ -814,3 +814,20 @@ B4-06 仅交叉覆盖保存／待确认字段冻结，不宣称整体完成；B4
 准确命令、初轮失败纠正、截图和独立证据状态见
 [2B 本地交付记录](history/engineering/2026/admin-site-confirmation-2026-11-01.md)。
 本条不提前声明 PR/CI、M4 candidate、merged、M4 accepted、production 或人工视觉接受。
+
+### 客户证据局部可用与普通草稿导航保护（2026-11-01，B4-06–10）
+
+本批限定客户详情的普通运营资料／站点时间草稿，以及关联站点、配额和流水证据投影。
+不修改 B4-01/02 的待确认写入协议、账务规则、站点生命周期或商业资格。
+
+| 建议／原入口 | 处置与入口 | 本地证据／限制 |
+| --- | --- | --- |
+| B4-06/B4-07 普通草稿与离开 | 资料和 datetime-local 草稿接入共享导航保护；取消离开保留原输入，确认离开才导航。pending intent 继续由既有恢复协议处理 | 1440/1056 PC 定向浏览器覆盖取消／确认及 pending 分离；不新增第二套状态机 |
+| B4-08 关联站点证据 | 严格校验站点集合与 account 归属；坏集合只在 Sites 局部显示 unavailable + Retry，客户主资料与其他页签保持可用；覆盖结论在证据不可用时显示 Unknown | 站点坏投影→GET 恢复 E2E；局部故障注入，不声称生产频率 |
+| B4-09 配额证据 | quota metric、limits、breakdown 和 finite 数值严格校验；配额坏时保留客户壳层与 Retry，不把坏值降格为 0/绿色；unlimited 仍按合法 limit<=0 规则展示 | quota 坏投影→GET 恢复 E2E；配额与流水状态分离 |
+| B4-10 流水证据 | ledger 必须匹配 account，逐条校验 ID、来源、单位和数值；合法负调整保留。流水失败只影响 drawer/流水行，配额摘要仍可用，失败计数显示 Unknown | ledger 坏投影→GET 恢复 E2E；不改变账务计算与写入规则 |
+| 信息层级与去重 | 常显：目标、当前状态、阻塞原因、局部 unavailable、Retry；按需：资料编辑、配额详情、流水 drawer；技术证据：普通草稿原输入与 pending intent 原 key 继续沿用既有协议；删除重复：不复制 pending 状态机或第二套导航确认 | 本批只做 PC 开发与验收，未更新 golden；CI、PR、M4、生产及人工视觉验收另行记录 |
+
+准确命令、截图和独立状态见
+[客户证据草稿本地交付记录](history/engineering/2026/admin-account-evidence-drafts-2026-11-01.md)。
+本条只记录 builder 本地完成，不提前声明合并、M4 accepted 或生产完成。

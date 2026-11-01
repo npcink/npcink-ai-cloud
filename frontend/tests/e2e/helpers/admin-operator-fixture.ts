@@ -76,12 +76,26 @@ export async function installAdminMocks(
     auditEvents?: number;
     auditFailureController?: { enabled: boolean };
     quotaNeedsAttention?: boolean;
+    accountSites?: unknown;
+    accountSitesController?: { value: unknown };
+    quotaPayload?: unknown;
+    quotaPayloadController?: { value: unknown };
+    ledgerPayload?: unknown;
+    ledgerPayloadController?: { value: unknown };
+    sitePayloadController?: { value: unknown };
     allowedEmptyAdminRequests?: readonly string[];
     unhandledAdminRequests?: string[];
   } = {}
 ) {
   const auditEvents = options.auditEvents ?? 4;
   const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
+  const accountSites = options.accountSites;
+  const accountSitesController = options.accountSitesController;
+  const quotaPayload = options.quotaPayload;
+  const quotaPayloadController = options.quotaPayloadController;
+  const ledgerPayload = options.ledgerPayload;
+  const ledgerPayloadController = options.ledgerPayloadController;
+  const sitePayloadController = options.sitePayloadController;
   let primaryAccountSubscription = {
     subscription_id: 'sub_mvp',
     status: 'past_due',
@@ -1199,6 +1213,10 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/sites/site_mvp') {
+      if (sitePayloadController) {
+        await fulfillJson(route, sitePayloadController.value);
+        return;
+      }
       await fulfillJson(route, {
         site: {
           site_id: 'site_mvp',
@@ -1492,7 +1510,9 @@ export async function installAdminMocks(
         },
         identity_relationship_state: 'healthy',
         memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
-        sites: [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }],
+        sites: accountSitesController ? accountSitesController.value : (accountSites === undefined
+          ? [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }]
+          : accountSites),
         subscriptions: [primaryAccountSubscription],
         trial_readiness: {
           status: primaryAccountCoverageFollowUp ? 'action_required' : 'ready',
@@ -1533,6 +1553,10 @@ export async function installAdminMocks(
     }
 
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`) {
+      if (quotaPayloadController || quotaPayload !== undefined) {
+        await fulfillJson(route, quotaPayloadController ? quotaPayloadController.value : quotaPayload);
+        return;
+      }
       await fulfillJson(route, {
         status: 'ok',
         generated_at: '2026-04-08T10:00:00Z',
@@ -1570,6 +1594,10 @@ export async function installAdminMocks(
     }
 
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger`) {
+      if (ledgerPayloadController || ledgerPayload !== undefined) {
+        await fulfillJson(route, ledgerPayloadController ? ledgerPayloadController.value : ledgerPayload);
+        return;
+      }
       await fulfillJson(route, {
         account_id: LONG_ACCOUNT_ID,
         generated_at: '2026-04-08T10:00:00Z',

@@ -163,6 +163,12 @@ export function useAccountOperatorProfile({ account, errorFallback, savedNotice,
   }
 
   return { values, notice, error, isSaving, intent, storageBlocked, setField, submit, confirm,
+    dirty: Boolean(account && !intent
+      && JSON.stringify(buildAccountOperatorProfilePayload(values))
+        !== JSON.stringify(buildAccountOperatorProfilePayload({
+          operator_display_name: account.operator_display_name,
+          operator_note: account.operator_note,
+        }))),
     locked: !ready || !account || storageBlocked || isSaving || Boolean(intent) };
 }
 

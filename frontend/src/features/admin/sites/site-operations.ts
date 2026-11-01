@@ -134,6 +134,8 @@ export function useSiteOperations({ siteId, site, writeFailure, readFailure, inv
   }
   function setInput(value: string) { if (!operationRef.current && !busyRef.current) setInputState(value); }
   return { intent, busy, storageBlocked, error, input, setInput, submit, confirm,
+    inputDirty: Boolean(ready && !intent && site?.site_id === siteId
+      && input !== toDatetimeLocalValue(site.site_relink_policy?.cooldown_until || '')),
     locked: !ready || !site || site.site_id !== siteId || storageBlocked || busy || Boolean(intent) };
 }
 

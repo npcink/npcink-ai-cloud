@@ -10,7 +10,7 @@ import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { ConfirmModal } from '@/components/ui/Modal';
@@ -54,7 +54,7 @@ import {
   summarizeBudget,
 } from '@/features/admin/accounts/account-credit-presentation';
 import { useAccountCreditAdjustment } from '@/features/admin/accounts/account-credit-adjustment';
-import { requireAccountDetail } from '@/features/admin/accounts/account-projection';
+import { normalizeAccountSites, requireAccountDetail } from '@/features/admin/accounts/account-projection';
 import { AccountOperatorProfileEditor, AccountOperatorProfileRecovery } from '@/features/admin/accounts/AccountOperatorProfileEditor';
 import { AccountPaymentOrders } from '@/features/admin/accounts/AccountPaymentOrders';
 import {
@@ -72,6 +72,7 @@ import { formatAdminCurrency } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import {
   ADMIN_QUEUE_PATHNAMES,
   ADMIN_RETURN_TO_PARAM,
@@ -252,6 +253,7 @@ function selectPrimarySubscription(account: AccountDetail | null): AccountDetail
 
 function AccountDetailContent() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const { success: showSuccessToast } = useToast();
@@ -264,6 +266,8 @@ function AccountDetailContent() {
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [siteEvidenceError, setSiteEvidenceError] = useState<string | null>(null);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [accountStatusNotice, setAccountStatusNotice] = useState<string | null>(null);
   const [accountStatusError, setAccountStatusError] = useState<string | null>(null);
@@ -307,8 +311,9 @@ function AccountDetailContent() {
   const accountRequestedRef = useRef('');
   const accountReadSequenceRef = useRef(0);
   const packagePlansRequestedRef = useRef(false);
+  const siteEvidenceAvailable = !siteEvidenceError;
   const accountSiteIds =
-    account?.sites?.map((site) => site.site_id).filter(Boolean) || [];
+    siteEvidenceAvailable ? account?.sites?.map((site) => site.site_id).filter(Boolean) || [] : [];
   const siteRuntimeQuery = useAccountSiteRuntime(
     accountId,
     accountSiteIds,
@@ -320,15 +325,13 @@ function AccountDetailContent() {
   );
   const quotaSummary = creditEvidenceQuery.quotaSummary;
   const creditLedger = creditEvidenceQuery.creditLedger;
-  const creditEvidencePending =
-    activeDetailTab === 'credits' &&
-    (creditEvidenceQuery.quotaQuery.isPending ||
-      creditEvidenceQuery.ledgerQuery.isPending);
-  const creditEvidenceError =
-    creditEvidenceQuery.quotaQuery.isError ||
-    creditEvidenceQuery.ledgerQuery.isError;
+  const creditEvidencePending = activeDetailTab === 'credits' && creditEvidenceQuery.quotaQuery.isPending;
+  const creditEvidenceError = creditEvidenceQuery.quotaQuery.isError;
   const creditEvidenceReady =
-    Boolean(quotaSummary) && Boolean(creditLedger) && !creditEvidenceError;
+    Boolean(quotaSummary) && !creditEvidenceError;
+  const creditLedgerPending = activeDetailTab === 'credits' && creditEvidenceQuery.ledgerQuery.isPending;
+  const creditLedgerError = creditEvidenceQuery.ledgerQuery.isError;
+  const creditLedgerReady = Boolean(creditLedger) && !creditLedgerError;
   useEffect(() => {
     if (!quotaDetailsOpen || creditEvidencePending || document.activeElement !== document.body) return;
     if (creditEvidenceError || !creditEvidenceReady) {
@@ -369,6 +372,11 @@ function AccountDetailContent() {
     ),
     onSaved: handleOperatorProfileSaved,
   });
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    operatorProfileController.dirty,
+    (href) => setPendingNavigationHref(href),
+    (href) => router.push(href),
+  );
 
   const loadPackagePlans = useCallback(async (force = false) => {
     if (!force && packagePlansRequestedRef.current) {
@@ -397,6 +405,7 @@ function AccountDetailContent() {
     const sequence = ++accountReadSequenceRef.current;
     setIsLoading(true);
     setError(null);
+    setSiteEvidenceError(null);
 
     try {
       const payload = (await accountDetailClient.request<AccountDetailApiPayload>(
@@ -412,7 +421,12 @@ function AccountDetailContent() {
       const operatorNote = String(accountMetadata.operator_note || '').trim();
       const accountStatusNote = String(accountMetadata.account_status_note || '').trim();
       const accountStatusUpdatedAt = String(accountMetadata.account_status_updated_at || '').trim();
-      const sites = Array.isArray(payload.sites) ? payload.sites : [];
+      let sites: ReturnType<typeof normalizeAccountSites> = [];
+      try {
+        sites = normalizeAccountSites(payload.sites, accountId);
+      } catch {
+        setSiteEvidenceError(t('admin.account_detail.site_evidence_unavailable', undefined, 'Site evidence is unavailable. Retry this bounded read before treating the customer as having no sites.'));
+      }
       const subscriptions = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
       const nextAccount: AccountDetail = {
         account_id: String(accountData.account_id || accountId),
@@ -426,11 +440,7 @@ function AccountDetailContent() {
         created_at: String(accountData.created_at || ''),
         site_count: sites.length,
         subscription_count: subscriptions.length,
-        sites: sites.map((site: { site_id?: string; status?: string; name?: string }) => ({
-          site_id: String(site.site_id || ''),
-          status: site.status || 'unknown',
-          name: site.name || '',
-        })),
+        sites,
         subscriptions: subscriptions.map((item: { subscription?: Record<string, unknown> } | Record<string, unknown>) => {
           const subscription =
             item && typeof item === 'object' && 'subscription' in item
@@ -916,6 +926,7 @@ function AccountDetailContent() {
         name: site.name || '',
       }))
     : [];
+  const siteCount = siteEvidenceAvailable ? siteOptions.length : null;
   let accountDetailPathname = null;
   try {
     accountDetailPathname = buildAdminAccountDetailPathname(account.account_id);
@@ -968,12 +979,13 @@ function AccountDetailContent() {
     ? Number(boundSitesMetric.usage_ratio || 0)
     : siteLimitUnlimited
       ? 0
-      : account.site_count / accountSiteLimit;
+      : siteCount === null ? 0 : siteCount / accountSiteLimit;
   const hasSiteLimitPressure = !siteLimitUnlimited && siteUsageRatio >= 0.8;
   const hasApiKeyGap =
     siteRuntimeEvidenceComplete &&
-    account.site_count > 0 &&
-    activeKeySiteCount < account.site_count;
+    siteCount !== null &&
+    siteCount > 0 &&
+    activeKeySiteCount < siteCount;
   const creditNeedsAttention = Boolean(creditEvidenceReady && creditMetric && quotaMetricNeedsAttention(creditMetric));
   const resourceAlerts = creditEvidenceReady
     ? (quotaSummary?.resource_limits || []).filter(quotaMetricNeedsAttention)
@@ -1010,10 +1022,10 @@ function AccountDetailContent() {
     return diff >= 0 && diff <= 1000 * 60 * 60 * 24 * 30;
   });
   const uncoveredSiteCount =
-    primaryPackage.coverage_state === 'uncovered' && account.site_count > 0 ? account.site_count : 0;
+    siteCount !== null && primaryPackage.coverage_state === 'uncovered' && siteCount > 0 ? siteCount : 0;
   const hasCoverageGap = uncoveredSiteCount > 0;
   const hasUncoveredCommercialPosture =
-    primaryPackage.coverage_state === 'uncovered' || hasCoverageGap || (account.subscription_count === 0 && account.site_count > 0);
+    siteEvidenceAvailable && (primaryPackage.coverage_state === 'uncovered' || hasCoverageGap || (account.subscription_count === 0 && siteCount !== null && siteCount > 0));
   const hasPaidCoverage =
     primaryPackage.package_kind === 'tier_package' && primaryPackage.coverage_state === 'covered';
   const hasFormalFreeCoverage =
@@ -1087,7 +1099,7 @@ function AccountDetailContent() {
     },
     {
       label: t('common.sites'),
-      value: formatInteger(account.site_count),
+      value: siteCount === null ? t('common.unknown', {}, 'Unknown') : formatInteger(siteCount),
       detail: hasCoverageGap
         ? t('admin.account_detail.site_coverage_gap_desc', undefined, 'One or more sites exist without matching active subscription coverage.')
         : t('admin.account_detail.site_coverage_ready_desc', undefined, 'Site footprint is attached to current subscription coverage.'),
@@ -1157,26 +1169,35 @@ function AccountDetailContent() {
     ...resourceAlerts,
   ].map((metric) => `${quotaMetricLabel(metric, t)} · ${quotaMetricStatusLabel(metric)} · ${formatQuotaMetricValue(metric)} / ${formatQuotaMetricLimit(metric)}`);
   if (hasSiteLimitPressure && !resourceAlerts.some((metric) => metric.key === 'bound_sites')) {
-    quotaAttentionItems.push(`${t('admin.account_detail.bound_sites_label', undefined, 'Bound sites')} · ${formatInteger(account.site_count)} / ${formatInteger(accountSiteLimit)} · ${t('admin.account_detail.recommend_site_limit', undefined, 'Confirm the package site limit before binding another WordPress site to this customer.')}`);
+    if (siteCount !== null) quotaAttentionItems.push(`${t('admin.account_detail.bound_sites_label', undefined, 'Bound sites')} · ${formatInteger(siteCount)} / ${formatInteger(accountSiteLimit)} · ${t('admin.account_detail.recommend_site_limit', undefined, 'Confirm the package site limit before binding another WordPress site to this customer.')}`);
   }
   if (hasApiKeyGap && !resourceAlerts.some((metric) => metric.key === 'active_api_key_sites')) {
-    quotaAttentionItems.push(`${t('admin.account_detail.active_api_keys_label', undefined, 'Active API keys')} · ${formatInteger(activeKeySiteCount)} / ${formatInteger(account.site_count)} · ${t('admin.account_detail.recommend_key_gap', undefined, 'Issue or restore active Cloud API key coverage for every bound site before trial traffic.')}`);
+    if (siteCount !== null) quotaAttentionItems.push(`${t('admin.account_detail.active_api_keys_label', undefined, 'Active API keys')} · ${formatInteger(activeKeySiteCount)} / ${formatInteger(siteCount)} · ${t('admin.account_detail.recommend_key_gap', undefined, 'Issue or restore active Cloud API key coverage for every bound site before trial traffic.')}`);
   }
   const quotaAttentionUnresolved = quotaNeedsAttention && quotaAttentionItems.length === 0;
   if (quotaAttentionUnresolved) {
     quotaAttentionItems.push(t('admin.account_detail.quota_attention_unresolved', undefined, 'The quota summary reports a warning without an identified item. Refresh the quota evidence before deciding what needs action.'));
   }
-  const creditLedgerItems = creditLedger?.items || [];
-  const creditLedgerNetUsed = Number(
-    creditLedger?.summary?.net_used_ai_credits ??
-      quotaSummary?.ai_credit_ledger_summary?.net_used_ai_credits ??
-      creditLedger?.summary?.total_ai_credits ??
-      0
-  );
-  const creditLedgerGranted = Number(
-    creditLedger?.summary?.granted_ai_credits ?? quotaSummary?.ai_credit_ledger_summary?.granted_ai_credits ?? 0
-  );
-  const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
+  const creditLedgerItems = creditLedgerReady ? creditLedger?.items || [] : [];
+  const creditLedgerNetUsed = creditLedgerReady
+    ? Number(
+        creditLedger?.summary?.net_used_ai_credits ??
+          quotaSummary?.ai_credit_ledger_summary?.net_used_ai_credits ??
+          creditLedger?.summary?.total_ai_credits ??
+          0
+      )
+    : null;
+  const creditLedgerGranted = creditLedgerReady
+    ? Number(
+        creditLedger?.summary?.granted_ai_credits ?? quotaSummary?.ai_credit_ledger_summary?.granted_ai_credits ?? 0
+      )
+    : null;
+  const creditLedgerCount = creditLedgerReady
+    ? Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0)
+    : null;
+  const creditLedgerCountLabel = creditLedgerCount === null
+    ? t('common.unknown', {}, 'Unknown')
+    : formatInteger(creditLedgerCount);
   const packagePlanOptions = packagePlans
     .filter((item) => item.plan?.plan_id)
     .map((item) => {
@@ -1207,7 +1228,7 @@ function AccountDetailContent() {
     { ...account, metadata: { ...account.metadata, operator_display_name: account.operator_display_name } },
     t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')
   );
-  const hasAdvancedChecks = siteOptions.length > 0;
+  const hasAdvancedChecks = siteEvidenceAvailable && siteOptions.length > 0;
   const detailTabs: Array<{ id: AccountDetailTab; label: string; navLabel: string; detail: string; href: string }> = [
     {
       id: 'overview',
@@ -1242,7 +1263,7 @@ function AccountDetailContent() {
       id: 'sites',
       label: t('admin.account_detail.sites_tab', undefined, 'Sites'),
       navLabel: t('admin.account_detail.sites_tab', undefined, 'Sites'),
-      detail: formatInteger(account.site_count),
+      detail: siteCount === null ? t('common.unknown', {}, 'Unknown') : formatInteger(siteCount),
       href: '#site-footprint',
     },
     {
@@ -1472,7 +1493,7 @@ function AccountDetailContent() {
     </div>
   );
   const headerMetrics = [
-    { label: t('common.sites'), value: formatInteger(account.site_count) },
+    { label: t('common.sites'), value: siteCount === null ? t('common.unknown', {}, 'Unknown') : formatInteger(siteCount) },
     { label: t('common.status'), value: translateStatusLabel(account.status, t) },
     { label: t('common.subscriptions'), value: formatInteger(account.subscription_count) },
     ...(uncoveredSiteCount > 0
@@ -2199,7 +2220,9 @@ function AccountDetailContent() {
             <span className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden="true" />
             <div data-ui="account-credit-evidence-actions" className="flex flex-wrap items-center gap-2">
               <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={() => setActiveDrawer('credit-ledger')}>
-                {t('admin.account_detail.view_credit_ledger_action', { count: formatInteger(creditLedgerCount) }, `View ledger · ${formatInteger(creditLedgerCount)}`)}
+                {creditLedgerError
+                  ? t('admin.account_detail.credit_ledger_read_failed_action', undefined, 'Read ledger result')
+                  : t('admin.account_detail.view_credit_ledger_action', { count: creditLedgerCountLabel }, `View ledger · ${creditLedgerCountLabel}`)}
               </button>
               <button
                 type="button"
@@ -2310,13 +2333,13 @@ function AccountDetailContent() {
               <div className="flex flex-wrap items-center gap-3 sm:justify-end">
                 <div className="text-left sm:text-right">
                 <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                  {formatInteger(Math.round(creditLedgerNetUsed))}
+                  {creditLedgerNetUsed === null ? t('common.unknown', {}, 'Unknown') : formatInteger(Math.round(creditLedgerNetUsed))}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {t(
                     'admin.account_detail.credit_ledger_net_used_label',
-                    { count: formatInteger(creditLedgerCount), granted: formatInteger(Math.round(creditLedgerGranted)) },
-                    `Net used, ${formatInteger(creditLedgerCount)} records, ${formatInteger(Math.round(creditLedgerGranted))} granted`
+                    { count: creditLedgerCountLabel, granted: creditLedgerGranted === null ? t('common.unknown', {}, 'Unknown') : formatInteger(Math.round(creditLedgerGranted)) },
+                    `Net used, ${creditLedgerCountLabel} records, ${creditLedgerGranted === null ? t('common.unknown', {}, 'Unknown') : formatInteger(Math.round(creditLedgerGranted))} granted`
                   )}
                 </p>
                 </div>
@@ -2330,10 +2353,18 @@ function AccountDetailContent() {
             eyebrow={t('admin.account_detail.quota_eyebrow', undefined, 'Quota posture')}
             description={t('admin.account_detail.credit_ledger_desc', undefined, 'Current-period consume, grant, adjustment, and refund records from the AI credit ledger.')}
             closeLabel={t('common.close', undefined, 'Close')}
-            headerAccessory={<BackofficeStatusBadge status="ok" label={t('admin.account_detail.credit_ledger_record_count', { count: formatInteger(creditLedgerCount) }, `${formatInteger(creditLedgerCount)} records`)} />}
+            headerAccessory={<BackofficeStatusBadge status={creditLedgerError ? 'error' : 'ok'} label={creditLedgerError ? t('common.error') : t('admin.account_detail.credit_ledger_record_count', { count: creditLedgerCountLabel }, `${creditLedgerCountLabel} records`)} />}
             onClose={() => setActiveDrawer(null)}
           >
-            {creditLedgerItems.length > 0 ? (
+            {creditLedgerError ? (
+              <div data-ui="account-credit-ledger-error">
+                <BackofficeDiagnosticNotice
+                  message={t('admin.account_detail.credit_ledger_read_failed', undefined, 'The credit ledger is unavailable. Retry this bounded read; the customer profile and quota evidence remain available.')}
+                  retryLabel={creditEvidenceQuery.ledgerQuery.isFetching ? t('common.loading') : t('common.retry')}
+                  onRetry={() => { if (!creditEvidenceQuery.ledgerQuery.isFetching) void creditEvidenceQuery.ledgerQuery.refetch(); }}
+                />
+              </div>
+            ) : creditLedgerItems.length > 0 ? (
               <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
                 <div className="hidden grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
                   <span>{t('admin.account_detail.credit_ledger_source', undefined, 'Source')}</span>
@@ -2616,7 +2647,15 @@ function AccountDetailContent() {
               {t('admin.account_detail.site_footprint_desc', undefined, 'Use site coverage to decide whether the next operator step belongs on a site detail page or stays at the customer level.')}
             </p>
           </div>
-          {siteOptions.length === 0 ? (
+          {siteEvidenceError ? (
+            <div data-ui="account-site-evidence-error">
+              <BackofficeDiagnosticNotice
+                message={siteEvidenceError}
+                retryLabel={t('common.retry')}
+                onRetry={() => void loadAccount(selectedSiteId, true)}
+              />
+            </div>
+          ) : siteOptions.length === 0 ? (
             <BackofficeEmptyState
               title={t('admin.account_detail.sites_empty_title', undefined, 'No sites on this customer')}
               description={t('admin.account_detail.sites_empty_desc', undefined, 'This customer does not have a connected site yet. Open the customer list or wait for site onboarding before making coverage changes.')}
@@ -2884,6 +2923,21 @@ function AccountDetailContent() {
       ) : null}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={t('admin.account_detail.unsaved_leave_title', undefined, 'Leave with unsaved customer changes?')}
+        message={t('admin.account_detail.unsaved_leave_desc', undefined, 'Leaving will discard the operator profile draft. Saved customer data and any pending write confirmation remain separate.')}
+        confirmLabel={t('admin.account_detail.discard_and_leave', undefined, 'Discard and leave')}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          const href = pendingNavigationHref;
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
+      />
 
       <ConfirmModal
         isOpen={Boolean(pendingConfirmation)}

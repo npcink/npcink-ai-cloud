@@ -28,3 +28,36 @@ export function requireAccountDetail(value: unknown, accountId: string): Record<
   if (!isAccountRecord(value)) throw new Error('Invalid customer detail');
   return requireAccount(value.account, accountId);
 }
+
+export type AccountSiteProjection = {
+  site_id: string;
+  status: string;
+  name: string;
+};
+
+/**
+ * Sites are a bounded evidence projection. Keep an invalid collection
+ * unavailable instead of filtering bad rows into a misleading empty state.
+ */
+export function normalizeAccountSites(
+  value: unknown,
+  accountId: string
+): AccountSiteProjection[] {
+  if (!Array.isArray(value)) throw new Error('Customer site evidence is unavailable');
+  return value.map((item) => {
+    if (!isAccountRecord(item)
+      || typeof item.site_id !== 'string'
+      || !item.site_id.trim()
+      || (item.account_id !== undefined && item.account_id !== null
+        && (typeof item.account_id !== 'string' || item.account_id !== accountId))
+      || (item.status !== undefined && (typeof item.status !== 'string' || !item.status.trim()))
+      || (item.name !== undefined && typeof item.name !== 'string')) {
+      throw new Error('Invalid customer site evidence');
+    }
+    return {
+      site_id: item.site_id,
+      status: item.status || 'unknown',
+      name: item.name || '',
+    };
+  });
+}
