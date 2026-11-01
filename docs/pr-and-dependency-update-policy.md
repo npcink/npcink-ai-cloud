@@ -58,8 +58,14 @@ seventh acceptance condition.
 4. Merge security patches before routine version updates when both are queued.
 5. For runtime or lockfile changes, deploy the merged `master` revision to M4
    and run the relevant runtime smoke checks.
-6. Confirm default-branch alerts resolve after GitHub refreshes the dependency
-   graph.
+6. Read default-branch alerts again after GitHub refreshes the dependency graph;
+   record state, resolved version, manifest and scope. The same alert may remain
+   open while moving to another installed version. A merged PR is not evidence
+   that its alert closed. When the published range and version-specific
+   mechanism disagree, preserve a bounded reproducer and consumer API evidence,
+   report the unresolved alert, and seek upstream range clarification through
+   an authorized channel. Do not suppress it or force an incompatible global
+   override solely to obtain a green scan.
 
 Do not deploy production merely because a Dependabot PR merged. Production
 promotion remains governed by `docs/cloud-production-release-policy-v1.md`.
@@ -92,6 +98,10 @@ or test files in a separate focused human PR, then refresh the dependency PR on
 that merged fix. Do not skip the failed check, weaken the assertion, or put
 application/test source into the trusted-bot lane. A test-only correction can
 retain an exact dictionary assertion while adding newly contracted fields.
+If a failure depends on first import or environment initialization, reproduce
+the exact test in a fresh process and its file in isolation; a prior full-suite
+pass may only reflect cached modules. Keep the original failure evidence and
+security assertion when correcting fixture setup order.
 
 Editing a PR body can retrigger its required contract check. Re-read checks for
 the current head and body before merging; an earlier green result is not a
