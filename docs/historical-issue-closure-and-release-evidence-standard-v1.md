@@ -160,6 +160,10 @@ pass because adjacent checks are green.
   not assign to `path`; use names such as `target_file` or `target_path`.
 - Inspect status and diff statistics before staging, cached file names before
   committing, and the committed file list after committing.
+- Serialize Git fetch, pull/fast-forward and promotion steps. A tool's running
+  session ID is not completion; await each dependent operation and check its
+  exit status before starting the next. Recheck HEAD against origin/master
+  after an interrupted update rather than carrying stale revision assumptions.
 - Keep an auxiliary worktree locked until its PR is merged and the worktree is
   clean; audit before removal.
 

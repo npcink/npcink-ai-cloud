@@ -1,6 +1,6 @@
 # 审查问题落实记录 — 2026-11-01
 
-状态：development 候选。本文记录本次 13 项审查问题的处置，不构成生产部署、真实支付、退款或付费 Provider 调用授权。
+状态：13 项修复已通过 [PR #1340](https://github.com/npcink/npcink-ai-cloud/pull/1340) 合入 master，并在 M4 接受。本文保留 development 阶段证据，合并后的结果见末节；不构成生产部署、真实支付、退款或付费 Provider 调用授权。
 
 目标仓库为 `npcink-ai-cloud`；从最新 `origin/master` 的 `190d2e2e` 创建隔离分支 `codex/audit-correctness-remediation`。原审查工作区和其中的未跟踪文件未改动。保留当前暂停入口、商业价格和 WordPress 最终写入边界，没有增加基础设施或数据库迁移。
 
@@ -92,6 +92,8 @@ pnpm run m4:preview:test -- --focused \
 
 ## 会话停止点与保留成果回执
 
+本节保留首次 development 停止点；操作者随后授权发布、合并与本任务清理，后续结果见「合并与 M4 接受回执」。
+
 本回执只覆盖本次 13 项，不证明仓库其他历史审查、生产数据或其他任务已经清零。
 
 - 工作区：`/Users/muze/.codex/worktrees/cloud-audit-remediation/npcink-ai-cloud`。
@@ -102,3 +104,16 @@ pnpm run m4:preview:test -- --focused \
 - 全局 PR 审计达到既有 1,000 条查询上限，不能据此判定其他分支无 PR；本任务已用独立按 head 查询补证。此处只记录证据缺口，不扩大本轮为全仓清理或修改审计脚本。
 - 可以安全关闭会话并稍后从本分支接续；这不等于合并收尾。保留当前锁和工作区，不删除未合并成果。
 - 清理条件：获得明确发布/合并指令后，走受保护 PR、完成实际检查与合并、按适用规范完成 clean-master M4 接受，再核对任务成果已纳入且工作区干净；之后仅清理本任务分支和工作区，其他任务独立核验。
+
+## 合并与 M4 接受回执
+
+- 操作者明确确认发布、合并、M4 接受及本任务分支/worktree 清理；生产不在授权范围。
+- [PR #1340](https://github.com/npcink/npcink-ai-cloud/pull/1340) 于 `2026-11-01T10:44:43Z` squash 合并，master 为 `4a8363dd1a74e7716a4c6cecfddbd6ecca786398`；合并树与本任务六个提交的最终树完全相同。
+- [Cloud CI](https://github.com/npcink/npcink-ai-cloud/actions/runs/41297849764) 四个后端分片分别通过 1,303 / 1,219 / 1,213 / 1,326 项，合计 **5,061 passed、32 skipped、8 subtests passed**；backend 汇总、后端静态、前端、镜像冒烟、PostgreSQL 回归及 CI observability 均通过。core 与 workers 在 CI 日志中有实际执行记录。
+- 前端 CI 通过 752 项 Vitest、50 + 4 + 9 项浏览器检查及 52 项编译后 BFF 检查；[CodeQL](https://github.com/npcink/npcink-ai-cloud/actions/runs/41297849713)、密钥扫描和 PR 正文契约通过，未遗留审查线程。
+- 既有 OCR 工作流经 Actions API 确认是 `disabled_manually`，本次未启用、未运行，也不声明自动模型审查通过。
+- 从干净 master 操作目录执行 `m4:preview:promote -- --pr 1340` 后，状态为 `acceptance_state=accepted`、`promotion_pr=1340`、`source_branch=master`、`source_dirty=false`、`source_revision=4a8363dd1a74e7716a4c6cecfddbd6ecca786398`。首页与 `/health/live` 返回 200，探针返回同一修订；服务健康、worker 运行、迁移仍为 `20261024_0091`，端口保持 loopback。
+- 接受后的真实 PostgreSQL 退款/消费锁竞争三项再次通过。本次无真实支付、退款或付费 Provider 调用。
+- 远端修复分支已由 GitHub 合并后自动删除；本地六个原提交另存为经 `git bundle verify` 验证的任务备份。后续仅文档收尾，沿用本任务锁与工作区；清理仍以精确 PR、分支、干净状态和已保存证据为条件，其他任务保持原状。
+
+本轮操作复盘：更新操作目录时曾误将 fetch 与 pull 并行启动，造成引用竞争；首次 promotion 因 HEAD 落后于 origin/master 被门禁拦截，未开始远端同步。改为等待 fetch 完整退出、显式 fast-forward、核对树与修订后成功。Git 取回/更新是依赖步骤，工具返回 session ID 只表示仍在运行，不能作为完成证据；不得在前一步未结束或退出非零时继续后续变更。

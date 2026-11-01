@@ -194,7 +194,7 @@ deleting the old decision history.
 - [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
 - [CPU 分配对照与性能专项收尾 — 2026-10-19](history/engineering/2026/cpu-allocation-performance-closeout-2026-10-19.md) — 校正采样后的18格对照；业务收益未稳定达10%，回调部分退化，不采用新分配并结束本次性能专项。
 - [回调签名与空队列退避验证 — 2026-10-19](history/engineering/2026/callback-dispatch-idle-backoff-validation-2026-10-19.md) — 同为2核预算、callback0.25核及连接池2+1的三轮对照；回调P95、CPU、空闲成本与冷空闲限制。
-- [审查问题落实记录 — 2026-11-01](history/engineering/2026/audit-correctness-remediation-2026-11-01.md) — 13 项正确性、退款、幂等、CI 与 Portal 问题的 development 候选处置、回归和验证边界。
+- [审查问题落实记录 — 2026-11-01](history/engineering/2026/audit-correctness-remediation-2026-11-01.md) — 13 项正确性、退款、幂等、CI 与 Portal 问题的处置、#1340 合并、M4 accepted、回归与开发复盘；保留生产与历史数据修正边界。
 - [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
 
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
