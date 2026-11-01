@@ -1,6 +1,7 @@
 # minimatch #123 安全维护记录 — 2026-11-01
 
-状态：本地修复已验证，PR、GitHub 告警刷新及 M4 接受尚待完成。
+状态：本地修复已验证，[PR #1342](https://github.com/npcink/npcink-ai-cloud/pull/1342)
+已发布；GitHub 告警刷新及 M4 接受尚待完成。
 不构成生产部署或真实 Provider 调用授权。
 
 ## 范围与依据
@@ -83,3 +84,27 @@ allowDefaultProject 允许/拒绝路径；保留 ESLint 3.x 的可调用与 make
 安全维护后复用既有编辑就绪工具与自然任务记录，优先标题、摘要、选中
 文本改写。自动化、M4 与代理审阅不算真实人工采纳；不为凑十次样本调用
 付费模型，不制造保存/反馈数据，不扩大到新平台或后台功能。
+
+## CI 独立分片发现与准备检查
+
+依赖 PR 首轮 [Cloud CI](https://github.com/npcink/npcink-ai-cloud/actions/runs/41301254220)
+前端、CodeQL、密钥扫描、Python 依赖审计与文档检查通过；contract-3 为
+448 passed / 1 failed，失败为
+`test_m4_portal_postgres_runner.py::test_production_environment_is_preserved_and_guard_rejects_it`。
+该文件与 master 的 blob 相同，独立本地进程复现了相同失败：runner 清空
+Cloud 环境后才导入会初始化应用的集成测试模块，缺少生产配置使其在 DB
+安全断言执行前失败。完整套件先前的模块缓存遮蔽了导入顺序依赖。
+
+按依赖更新规范用单独 [PR #1343](https://github.com/npcink/npcink-ai-cloud/pull/1343)
+将 fixture 导入移到环境清理之前，不改应用、runner、fixture 或任何原断言。
+修正后独立用例 1 passed、全文件 9 passed、ruff 通过；依赖 PR 必须刷新到
+该修正合并后的 master 再看完整检查结果。原红 CI 与本地复现证据保留。
+
+编辑验证仅推进了准备层：现有 `magick-ai` 站点只读 readiness 为 ready，
+Addon/Toolbox 实际挂载路径已核对；`check:editor-assist-quality` 28 项通过，
+定向 lint、UI 契约和不自动改动边界通过。未变更站点状态、配置或文章，
+未调用模型。此时 Cloud 探针仍来自另一候选，不能算本次 M4 接受证据。
+历史 2026-10-27 改写样例加强原文确定性的缺口仍保留；本次没有新的人工
+采纳、省时、复用意愿或付费价值证据。后续复用
+[既有 cohort 运行手册](../../../real-editor-cohort-operations-v1.md)，
+真实调用前声明预算并逐次 claim 既有 ledger，不以测试数据填充自然样本。
