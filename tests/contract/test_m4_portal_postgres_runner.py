@@ -95,6 +95,10 @@ def test_explicit_pg_missing_runtime_settings_fails_instead_of_skipping(
 
 
 def test_production_environment_is_preserved_and_guard_rejects_it(monkeypatch):
+    # Import under the test environment, before the embedded runner scrubs
+    # Cloud settings. A fresh shard must reach the DB guard, not app startup.
+    from tests.integration.test_portal_postgres_acceptance import m4_database_url
+
     code, seen = _execute(
         monkeypatch,
         "tests/integration/test_portal_self_service_postgres.py",
@@ -102,7 +106,5 @@ def test_production_environment_is_preserved_and_guard_rejects_it(monkeypatch):
     )
     assert code == 0  # Synthetic pytest.main; the real fixture must reject this value.
     assert seen["environment"]["NPCINK_TEST_PORTAL_ENVIRONMENT"] == "production"
-    from tests.integration.test_portal_postgres_acceptance import m4_database_url
-
     with pytest.raises(AssertionError, match="production acceptance is forbidden"):
         m4_database_url.__wrapped__()
