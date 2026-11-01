@@ -1,8 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ConfirmModal } from '@/components/ui/Modal';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
+import { usePlanEditor } from '@/features/admin/plans/use-plan-editor';
+import { buildInitialForm, buildBaselineFieldPatch, type PlanConfirmation } from '@/features/admin/plans/plan-projection';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
-import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { AdminMutationReceipt } from '@/components/admin/AdminMutationReceipt';
 import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { PlanSalesControl } from '@/components/admin/PlanSalesControl';
@@ -14,83 +19,8 @@ import {
   localizePackageAlias,
   localizePackageFitCue,
 } from '@/lib/admin-plan-copy';
-import { createApiClient } from '@/lib/api-client';
-import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 import { formatNumber as formatInteger } from '@/lib/utils';
-
-type PlanRecord = {
-  plan_id: string;
-  name: string;
-  status: string;
-  description: string;
-  metadata?: Record<string, unknown>;
-};
-
-type PlanVersionRecord = {
-  version_label: string;
-  status: string;
-  budgets: Record<string, unknown>;
-  concurrency: Record<string, unknown>;
-  policy: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-  created_at: string;
-};
-
-type TierSummary = {
-  tier_id: string;
-  label: string;
-  package_alias: string;
-  monthly_included_points: number;
-  site_limit: number;
-  max_vector_documents: number;
-  max_media_images: number;
-  budgets_template: Record<string, unknown>;
-  concurrency_template: Record<string, unknown>;
-  max_batch_items: number;
-  package_operator_note: string;
-  policy_baseline: Record<string, unknown>;
-  canonical_shell: {
-    entitlements: Record<string, unknown>;
-    budgets: Record<string, unknown>;
-    concurrency: Record<string, unknown>;
-    policy: Record<string, unknown>;
-    metadata: Record<string, unknown>;
-  };
-  feature_groups: string[];
-};
-
-type PackageFitCue = {
-  code: string;
-  severity: string;
-  title: string;
-  detail: string;
-};
-
-type PlanDetailPayload = {
-  revision: string;
-  plan: PlanRecord;
-  latest_version?: PlanVersionRecord | null;
-  sales_offer?: {
-    amount: number;
-    currency: string;
-    status: string;
-  } | null;
-  tier_summary: TierSummary;
-  package_fit_cues: PackageFitCue[];
-};
-
-type PlanVersionFormState = {
-  monthly_included_points: string;
-  site_limit: string;
-  max_vector_documents: string;
-  max_media_images: string;
-  max_cost_cny_per_period: string;
-  sales_price_cny: string;
-  max_active_runs: string;
-  max_batch_items: string;
-  grace_period_days: string;
-};
 
 type ManagementTab = 'parameters' | 'diagnostics';
 
@@ -101,66 +31,8 @@ type PlanManagementWorkbenchProps = {
   activeSubscriptionCount: number;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
+  onParametersConfirmed: (current: PlanConfirmation) => void;
 };
-
-const planManagementClient = createApiClient({ idempotencyPrefix: 'admin_plan_management' });
-
-function numberField(value: unknown): string {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? String(numeric) : '0';
-}
-
-function numericValue(value: unknown): number {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormState {
-  const latestVersion = detail?.latest_version || null;
-  const tierSummary = detail?.tier_summary;
-  const canonicalShell = tierSummary?.canonical_shell;
-  const canonicalBudgets = canonicalShell?.budgets || {};
-  const canonicalConcurrency = canonicalShell?.concurrency || {};
-  const canonicalPolicy = canonicalShell?.policy || {};
-  const canonicalMetadata = canonicalShell?.metadata || {};
-  const budgets = latestVersion?.budgets || canonicalBudgets;
-  const concurrency = latestVersion?.concurrency || canonicalConcurrency;
-  const policy = latestVersion?.policy || canonicalPolicy;
-  const metadata = latestVersion?.metadata || canonicalMetadata;
-  const policySubscription = (policy.subscription || canonicalPolicy.subscription || {}) as Record<string, unknown>;
-
-  return {
-    monthly_included_points: numberField(
-      budgets.max_ai_credits_per_period ??
-        metadata.monthly_included_points ??
-        tierSummary?.monthly_included_points
-    ),
-    site_limit: numberField(metadata.site_limit ?? tierSummary?.site_limit),
-    max_vector_documents: numberField(metadata.max_vector_documents ?? tierSummary?.max_vector_documents),
-    max_media_images: numberField(metadata.max_media_images ?? tierSummary?.max_media_images),
-    max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
-    sales_price_cny: numberField(detail?.sales_offer?.amount),
-    max_active_runs: numberField(concurrency.max_active_runs),
-    max_batch_items: numberField(metadata.max_batch_items ?? tierSummary?.max_batch_items),
-    grace_period_days: numberField(policySubscription.grace_period_days),
-  };
-}
-
-function buildBaselineFieldPatch(tierSummary: TierSummary): Partial<PlanVersionFormState> {
-  const budgets = tierSummary.canonical_shell?.budgets || {};
-  const concurrency = tierSummary.canonical_shell?.concurrency || {};
-  const policySubscription = (tierSummary.canonical_shell?.policy?.subscription || {}) as Record<string, unknown>;
-  return {
-    monthly_included_points: numberField(tierSummary.monthly_included_points),
-    site_limit: numberField(tierSummary.site_limit),
-    max_vector_documents: numberField(tierSummary.max_vector_documents),
-    max_media_images: numberField(tierSummary.max_media_images),
-    max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
-    max_active_runs: numberField(concurrency.max_active_runs),
-    max_batch_items: numberField(tierSummary.max_batch_items),
-    grace_period_days: numberField(policySubscription.grace_period_days),
-  };
-}
 
 function ParameterField({
   label,
@@ -212,61 +84,46 @@ export function PlanManagementWorkbench({
   activeSubscriptionCount,
   onClose,
   onSaved,
+  onParametersConfirmed,
 }: PlanManagementWorkbenchProps) {
   const { t } = useLocale();
-  const translationRef = useRef(t);
-  useEffect(() => { translationRef.current = t; }, [t]);
-  const savingRef = useRef(false);
-  const [awaitingRead, setAwaitingRead] = useState(false);
-  const [revisionConflict, setRevisionConflict] = useState(false);
-  const [conflictRead, setConflictRead] = useState<PlanDetailPayload | null>(null);
-  const [detail, setDetail] = useState<PlanDetailPayload | null>(null);
-  const [form, setForm] = useState<PlanVersionFormState>(() => buildInitialForm(null));
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<ManagementTab>('parameters');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
-
-  const loadDetail = useCallback(async (showLoading = true, preserveDraft = false) => {
-    if (!planId) return;
-    if (showLoading) setIsLoading(true);
-    setError(null);
-    try {
-      const payload = (await planManagementClient.request<PlanDetailPayload>(
-        `/api/admin/plans/${encodeURIComponent(planId)}`
-      )).data;
-      if (typeof payload.revision !== 'string' || !/^plan-v1:[a-f0-9]{64}$/.test(payload.revision)
-        || payload.plan.plan_id !== planId) {
-        throw new Error(translationRef.current('admin.plans.revision_unavailable', {}, 'Package revision is unavailable. Reload before saving.'));
-      }
-      if (preserveDraft) {
-        setConflictRead(payload);
-      } else {
-        setAwaitingRead(false);
-        setDetail(payload);
-        setForm(buildInitialForm(payload));
-      }
-    } catch (loadError) {
-      setError(resolveUiErrorMessage(loadError, translationRef.current('error.failed_load')));
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  }, [planId]);
-
+  const [pendingExit, setPendingExit] = useState<string | null>(null);
+  const editor = usePlanEditor(planId, open, {
+    load: t('error.failed_load'), save: t('error.failed_save'),
+    unknown: t('admin.plans.operation_unconfirmed'), confirmed: t('admin.plans.operation_confirmed'),
+  }, onParametersConfirmed);
+  const { detail, setDetail, form, setForm, dirty: hasUnsavedChanges, intent,
+    isLoading, isSaving, setIsSaving, lastReceipt, error, notice, setNotice, revisionConflict, conflictRead,
+    loadDetail, updateField, handleSave } = editor;
+  const operationBlocked = Boolean(intent) || editor.storageBlocked;
+  const awaitingRead = operationBlocked || editor.salesReadRequired;
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    open && (hasUnsavedChanges || operationBlocked),
+    href => setPendingExit(href || null), href => router.push(href),
+  );
+  // The shared guard intentionally leaves same-route links to their owner.
+  // A package focus change is an object switch, so guard it locally as well.
   useEffect(() => {
-    if (!open || !planId) return;
-    setAwaitingRead(false);
-    setRevisionConflict(false);
-    setConflictRead(null);
-    setDetail(null);
-    setNotice(null);
-    setLastReceipt(null);
-    setActiveTab('parameters');
-    void loadDetail();
-  }, [loadDetail, open, planId]);
-
+    if (!open || (!hasUnsavedChanges && !operationBlocked)) return;
+    const sameRoute = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const url = new URL(anchor.href, location.href);
+      if (url.origin !== location.origin || url.pathname !== location.pathname
+        || url.searchParams.get('focus') === new URL(location.href).searchParams.get('focus')) return;
+      event.preventDefault(); event.stopPropagation();
+      setPendingExit(`${url.pathname}${url.search}${url.hash}`);
+    };
+    document.addEventListener('click', sameRoute, true);
+    return () => document.removeEventListener('click', sameRoute, true);
+  }, [open, hasUnsavedChanges, operationBlocked]);
+  function requestClose() {
+    if (hasUnsavedChanges || operationBlocked) setPendingExit('__close');
+    else onClose();
+  }
   const latestVersion = detail?.latest_version || null;
   const localizedAlias = detail
     ? localizePackageAlias(
@@ -289,82 +146,15 @@ export function PlanManagementWorkbench({
     () => detail ? buildBaselineFieldPatch(detail.tier_summary) : {},
     [detail]
   );
-  const hasUnsavedChanges = useMemo(() => {
-    if (!detail) return false;
-    const savedForm = buildInitialForm(detail);
-    return (Object.keys(form) as Array<keyof PlanVersionFormState>)
-      .some((field) => form[field] !== savedForm[field]);
-  }, [detail, form]);
-
-  const updateField = (field: keyof PlanVersionFormState, value: string) => {
-    setNotice(null);
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-
   const restoreSavedValues = () => {
-    if (!detail) return;
+    if (!detail || awaitingRead || isSaving) return;
     setForm(buildInitialForm(detail));
     setNotice(t('admin.plans.saved_values_restored_notice', {}, 'Saved values restored.'));
   };
-
   const applyDefaultValues = () => {
-    setForm((current) => ({ ...current, ...baselinePatch }));
-    setNotice(
-      t(
-        'admin.plans.default_values_applied_notice',
-        { tier: localizedAlias },
-        `${localizedAlias} defaults applied. Sales price is unchanged; save to publish these values.`
-      )
-    );
-  };
-
-  const handleSave = async () => {
-    if (!detail || isSaving || savingRef.current || awaitingRead || revisionConflict) return;
-    savingRef.current = true;
-    setIsSaving(true);
-    setError(null);
-    setNotice(null);
-    setLastReceipt(null);
-    try {
-      const payload = {
-        revision: detail.revision,
-        monthly_included_points: Number(form.monthly_included_points || 0),
-        site_limit: Number(form.site_limit || 0),
-        max_vector_documents: Number(form.max_vector_documents || 0),
-        max_media_images: Number(form.max_media_images || 0),
-        max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
-        sales_price_cny: Number(form.sales_price_cny || 0),
-        max_active_runs: Number(form.max_active_runs || 0),
-        max_batch_items: Number(form.max_batch_items || 0),
-        grace_period_days: Number(form.grace_period_days || 0),
-      };
-      const data = (await planManagementClient.request<{ receipt?: AdminMutationReceiptPayload | null }>(
-        `/api/admin/plans/${encodeURIComponent(planId)}`,
-        { method: 'PATCH', body: payload }
-      )).data;
-      setNotice(
-        t(
-          'admin.coverage_package_release_saved_notice',
-          {},
-          'Package changes saved and published. Existing subscriptions on this package use the latest values.'
-        )
-      );
-      setLastReceipt(data.receipt ?? null);
-      setAwaitingRead(true);
-      await loadDetail(false);
-      await onSaved();
-    } catch (saveError) {
-      if (saveError instanceof ApiError && saveError.errorCode === 'service.admin_plan_revision_conflict') {
-        setRevisionConflict(true);
-        setConflictRead(null);
-        setError(null);
-      } else {
-        setError(resolveUiErrorMessage(saveError, t('error.failed_save', {}, 'Failed to save.')));
-      }
-    } finally {
-      savingRef.current = false;
-      setIsSaving(false);
-    }
+    if (awaitingRead || isSaving) return;
+    setForm(current => ({ ...current, ...baselinePatch }));
+    setNotice(t('admin.plans.default_values_applied_notice', { tier: localizedAlias }));
   };
 
   const tabs: Array<{ id: ManagementTab; label: string }> = [
@@ -373,6 +163,7 @@ export function PlanManagementWorkbench({
   ];
 
   return (
+    <>
     <AdminWorkbenchDialog
       open={open}
       title={t('admin.plans.manage_title', { package: localizedAlias }, `Manage ${localizedAlias}`)}
@@ -399,17 +190,17 @@ export function PlanManagementWorkbench({
         : ''}
       footerActions={(
         <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={onClose}>
+          <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={requestClose}>
             {t('common.close', {}, 'Close')}
           </button>
-          <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving || awaitingRead || revisionConflict}>
+          <button type="submit" className="btn btn-primary" disabled={!detail?.latest_version || !editor.ready || isLoading || isSaving || awaitingRead || revisionConflict}>
             {isSaving ? t('common.saving', {}, 'Saving...') : t('common.save', {}, 'Save')}
           </button>
         </div>
       )}
       width="wide"
       density="compact"
-      onClose={onClose}
+      onClose={requestClose}
       onSubmit={() => void handleSave()}
     >
       {isLoading && !detail ? <LoadingFallback /> : null}
@@ -435,11 +226,7 @@ export function PlanManagementWorkbench({
             <div className="space-y-2">
               <p>{t('admin.plans.latest_values_review', { price: String(conflictRead.sales_offer?.amount ?? '—'), credits: buildInitialForm(conflictRead).monthly_included_points, status: translateStatusLabel(conflictRead.sales_offer?.status || conflictRead.plan.status, t) }, 'Latest saved package: {{credits}} AI credits, CNY {{price}}; sales: {{status}}. Your inputs below are still your draft.')}</p>
               <button type="button" className="btn btn-secondary" onClick={() => {
-                setDetail(conflictRead);
-                setForm(buildInitialForm(conflictRead));
-                setRevisionConflict(false);
-                setConflictRead(null);
-                setError(null);
+                editor.adoptLatest();
               }}>
                 {t('admin.plans.replace_draft_latest', {}, 'Discard draft and edit latest values')}
               </button>
@@ -447,10 +234,19 @@ export function PlanManagementWorkbench({
           ) : null}
         </div>
       ) : null}
-      {awaitingRead ? <div role="status" className="space-y-2 text-sm">
+      {intent ? <div role="status" data-ui="plan-pending-operation" className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-slate-950 dark:border-amber-700 dark:bg-amber-950/20 dark:text-white">
+        <p>{t('admin.plans.operation_pending', { plan: intent.plan_id })}</p>
+        <p>{t('admin.plans.submitted_summary', { price: String(intent.values.sales_price_cny), credits: String(intent.values.monthly_included_points) })}</p>
+        <details><summary className="cursor-pointer">{t('admin.plans.operation_evidence')}</summary>
+          <p className="break-all">{intent.operation_id}</p><p className="break-all">{intent.revision}</p>
+        </details>
+        <button type="button" className="btn btn-secondary" disabled={isSaving || isLoading || editor.storageBlocked} onClick={() => void editor.confirm()}>{t('admin.plans.confirm_operation')}</button>
+      </div> : null}
+      {editor.salesReadRequired ? <div role="status" className="space-y-2 text-sm">
         <p>{t('admin.saved_awaiting_read', {}, 'Write succeeded. Reload to confirm the saved state before editing again.')}</p>
         <button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadDetail()}>{t('common.retry')}</button>
       </div> : null}
+      {editor.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.plans.storage_blocked')}</p> : null}
       {detail ? (
         <fieldset disabled={isSaving || isLoading || awaitingRead} className="min-w-0">
           <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800" role="tablist">
@@ -479,13 +275,13 @@ export function PlanManagementWorkbench({
                   key={planId}
                   planId={planId}
                   status={detail.sales_offer.status}
-                  disabled={isSaving || hasUnsavedChanges || revisionConflict}
+                  disabled={isSaving || hasUnsavedChanges || revisionConflict || awaitingRead}
                   onSavingChange={setIsSaving}
                   onSaved={async (status) => {
+                    editor.setSalesReadRequired(true);
                     setDetail((current) => current?.sales_offer ? {
                       ...current, sales_offer: { ...current.sales_offer, status },
                     } : current);
-                    setAwaitingRead(true);
                     await loadDetail(false);
                     await onSaved();
                   }}
@@ -642,7 +438,7 @@ export function PlanManagementWorkbench({
 
               {lastReceipt ? (
                 <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
-                  <AdminMutationReceipt receipt={lastReceipt} title={t('admin.latest_receipt', {}, 'Latest receipt')} />
+                  <AdminMutationReceipt summary={t('admin.plans.operation_confirmed')} receipt={lastReceipt} title={t('admin.latest_receipt', {}, 'Latest receipt')} />
                 </div>
               ) : null}
             </section>
@@ -708,5 +504,21 @@ export function PlanManagementWorkbench({
         </fieldset>
       ) : null}
     </AdminWorkbenchDialog>
+    <ConfirmModal
+      isOpen={pendingExit !== null}
+      title={t('admin.plans.leave_title')}
+      message={t(intent ? 'admin.plans.leave_pending' : editor.storageBlocked ? 'admin.plans.leave_storage' : 'admin.plans.leave_draft')}
+      confirmLabel={t(operationBlocked ? 'admin.plans.leave_keep_pending' : 'admin.plans.discard_leave')}
+      cancelLabel={t('common.cancel')}
+      variant="danger"
+      onClose={() => { setPendingExit(null); cancelNavigation(); }}
+      onConfirm={() => {
+        const destination = pendingExit;
+        setPendingExit(null);
+        if (destination === '__close') onClose();
+        else if (destination) confirmNavigation(destination);
+      }}
+    />
+    </>
   );
 }

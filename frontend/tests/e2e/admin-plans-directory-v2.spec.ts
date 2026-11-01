@@ -214,35 +214,39 @@ test('package initialization reports mixed results and retries only failed tiers
   expect(versionRequests).toEqual(['plus', 'agency', 'plus']);
 });
 
-test('package write followed by read failure allows read retry only', async ({ page }) => {
+test('malformed parameter write keeps the submitted intent despite normal detail recovery', async ({ page }) => {
   await installPlanDirectoryHarness(page);
-  let writes = 0;
-  let failReads = false;
-  await page.route('**/api/admin/plans/free', async (route) => {
+  let writes = 0, confirmationReads = 0;
+  let failConfirmation = true;
+  await page.route('**/api/admin/plans/free', async route => {
     if (route.request().method() === 'PATCH') {
-      writes += 1;
-      failReads = true;
-      await route.fulfill({ json: buildAdminApiEnvelope({}) }); return;
-    }
-    if (failReads) {
-      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
+      writes += 1; await route.fulfill({ json: buildAdminApiEnvelope({}) }); return;
     }
     await route.fallback();
   });
+  await page.route('**/api/admin/plans/free/parameter-operations/**', async route => {
+    confirmationReads += 1;
+    if (failConfirmation) {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
+    }
+    const url = new URL(route.request().url());
+    await route.fulfill({ json: buildAdminApiEnvelope({ plan_id: 'free', operation_id: url.pathname.split('/').at(-1),
+      action: 'parameters.update', source_revision: url.searchParams.get('source_revision'), state: 'unconfirmed', current: null, receipt: null }) });
+  });
   await page.goto('/admin/plans');
-  const freeRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: /Free/ }).first();
-  await freeRow.getByRole('button', { name: /Manage|管理/ }).click();
+  await page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: /Free/ }).first().getByRole('button', { name: /Manage|管理/ }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.locator('input').first()).toBeVisible();
   await dialog.locator('input').first().fill('77');
   await dialog.getByRole('button', { name: /^Save$|^保存$/ }).click();
-  await expect(dialog.getByText(/Write succeeded|写入已成功/)).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeDisabled();
+  const read = dialog.getByRole('button', { name: /Read operation result|读取操作结果/ });
+  await expect(read).toBeEnabled();
+  await expect(dialog).not.toContainText(/Write succeeded|写入已成功/);
+  await read.click(); await expect(read).toBeEnabled();
+  failConfirmation = false;
+  await read.click(); await expect(read).toBeEnabled();
+  await expect(dialog.locator('input').first()).toHaveValue('77');
   await expect(dialog.locator('input').first()).toBeDisabled();
-  expect(writes).toBe(1);
-  failReads = false;
-  await dialog.getByRole('button', { name: /^Retry$|^重试$/ }).click();
-  await expect(dialog.getByText(/Write succeeded|写入已成功/)).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeEnabled();
-  expect(writes).toBe(1);
+  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeDisabled();
+  expect(writes).toBe(1); expect(confirmationReads).toBe(2);
 });

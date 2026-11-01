@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 vi.mock('@/lib/env', () => ({ getApiBaseUrl: () => 'http://api:8000' }));
 vi.mock('@/lib/server-env', () => ({ getInternalAuthToken: () => 'test-internal-token' }));
-import { PATCH, POST } from '@/app/api/admin/[...path]/route';
+import { GET, PATCH, POST } from '@/app/api/admin/[...path]/route';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -70,4 +70,22 @@ it('requires catalog management before forwarding parameter writes and preserves
       method: 'PATCH', body, headers: expect.objectContaining({ 'Idempotency-Key': 'plan-original-key' }),
     })
   );
+});
+
+it('restricts exact read-only parameter confirmation to catalog capability', async () => {
+  const path = ['plans', 'plus', 'parameter-operations', 'original-key'];
+  const context = { params: Promise.resolve({ path }) };
+  const request = () => new NextRequest('https://cloud.test/api/admin/plans/plus/parameter-operations/original-key?source_revision=plan-v1%3Aa', {
+    headers: { cookie: 'npcink_admin_session_token=admin-test' },
+  });
+  const denied = backend(false);
+  expect((await GET(request(), context)).status).toBe(403);
+  expect(denied).toHaveBeenCalledOnce();
+  const allowed = backend(true);
+  expect((await GET(request(), context)).status).toBe(200);
+  expect(allowed).toHaveBeenLastCalledWith(
+    'http://api:8000/internal/service/admin/plans/plus/parameter-operations/original-key?source_revision=plan-v1%3Aa',
+    expect.objectContaining({ method: 'GET' }),
+  );
+  expect((await GET(request(), { params: Promise.resolve({ path: [...path, 'raw'] }) })).status).toBe(404);
 });

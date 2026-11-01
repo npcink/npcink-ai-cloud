@@ -1,3 +1,4 @@
+import { canonicalTier } from '../../fixtures/admin-plan-parameters';
 import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
 import type { Page, Route } from '@playwright/test';
 
@@ -64,6 +65,46 @@ export function buildAdminApiErrorEnvelope(
 }
 
 async function fulfillJson(route: Route, data: unknown) {
+  // Keep synthetic plan fixtures aligned with fields always emitted by the
+  // real serializer. Fault-injection routes bypass this normal-fixture helper.
+  const pathname = new URL(route.request().url()).pathname;
+  if (pathname === '/api/admin/plans' || /^\/api\/admin\/plans\/[^/]+$/.test(pathname)) {
+    type Fixture = { tier_templates?: Record<string, unknown>[]; tier_summary?: Record<string, unknown>;
+      plan?: Record<string, unknown>; latest_version?: Record<string, unknown>; sales_offer?: unknown; items?: Fixture[] };
+    const value = data as Fixture;
+    const normalizeSummary = (raw: Record<string, unknown>) => {
+      const actual = canonicalTier(String(raw.tier_id));
+      const summary = { ...actual, ...raw };
+      const shell = (raw.canonical_shell || {}) as Record<string, Record<string, unknown>>;
+      summary.budgets_template = { ...actual.budgets_template, ...(raw.budgets_template as object) };
+      summary.concurrency_template = { ...actual.concurrency_template, ...(raw.concurrency_template as object) };
+      summary.policy_baseline = { ...actual.policy_baseline, ...(raw.policy_baseline as object) };
+      summary.canonical_shell = {
+        entitlements: { ...actual.canonical_shell.entitlements, ...shell.entitlements },
+        budgets: { ...summary.budgets_template, ...shell.budgets },
+        concurrency: { ...summary.concurrency_template, ...shell.concurrency },
+        policy: { ...actual.canonical_shell.policy, ...shell.policy },
+        metadata: { ...actual.canonical_shell.metadata, ...shell.metadata },
+      };
+      return summary;
+    };
+    value.tier_templates = value.tier_templates?.map(normalizeSummary);
+    for (const item of value.items || [value]) {
+      if (!item.plan) continue;
+      if (item.tier_summary) item.tier_summary = normalizeSummary(item.tier_summary);
+      if (item.latest_version) {
+        const version = item.latest_version;
+        version.plan_id ??= item.plan.plan_id;
+        version.budgets = { max_ai_credits_per_period: item.tier_summary?.monthly_included_points ?? 0,
+          max_runs_per_period: 0, max_tokens_per_period: 0, max_cost_cny_per_period: 0, ...(version.budgets as object) };
+        version.concurrency = { max_active_runs: 0, ...(version.concurrency as object) };
+        const policy = (version.policy || {}) as Record<string, unknown>;
+        version.policy = { ...policy, subscription: { grace_period_days: 0, ...(policy.subscription as object) } };
+        version.metadata ??= {};
+      }
+    }
+    if (!value.items) value.sales_offer ??= null;
+  }
   await route.fulfill({
     status: 200,
     contentType: 'application/json',

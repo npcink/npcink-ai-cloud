@@ -1,0 +1,472 @@
+[
+  {
+    "tier_id": "free",
+    "label": "Free",
+    "package_alias": "Free",
+    "usage_band": "300 AI credits per month.",
+    "positioning": "Conservative single-site package with a small monthly AI credit grant and separate resource boundaries.",
+    "monthly_included_points": 300,
+    "site_limit": 1,
+    "max_vector_documents": 100,
+    "max_media_images": 100,
+    "budgets_template": {
+      "max_ai_credits_per_period": 300,
+      "max_runs_per_period": 0,
+      "max_tokens_per_period": "[redacted]",
+      "max_cost_cny_per_period": 0.0
+    },
+    "concurrency_template": {
+      "max_active_runs": 1
+    },
+    "max_batch_items": 5,
+    "nightly_inspection_runs_per_period": 0,
+    "nightly_inspection_retention_days": 14,
+    "nightly_inspection_payload_modes": [
+      "metadata_only"
+    ],
+    "automation_enabled": true,
+    "api_enabled": true,
+    "openclaw_enabled": true,
+    "package_operator_note": "Free limits high-cost AI consumption through monthly AI credits while keeping ordinary Cloud service usage reviewable.",
+    "policy_baseline": {
+      "grace_period_days": 0,
+      "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development."
+    },
+    "canonical_shell": {
+      "entitlements": {
+        "ability_families": [
+          "*"
+        ],
+        "channels": [
+          "*"
+        ],
+        "execution_kinds": [
+          "*"
+        ],
+        "execution_tiers": [
+          "cloud"
+        ],
+        "data_classifications": [
+          "*"
+        ]
+      },
+      "budgets": {
+        "max_ai_credits_per_period": 300,
+        "max_runs_per_period": 0,
+        "max_tokens_per_period": "[redacted]",
+        "max_cost_cny_per_period": 0.0
+      },
+      "concurrency": {
+        "max_active_runs": 1
+      },
+      "policy": {
+        "subscription": {
+          "grace_period_days": 0,
+          "downgrade_policy": {}
+        },
+        "budgets": {
+          "ai_credits": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "runs": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "tokens": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "cost": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          }
+        },
+        "reconciliation": {
+          "tolerance": {
+            "runs": 0.0,
+            "provider_calls": 0.0,
+            "tokens_total": 0.0,
+            "cost": 0.0
+          }
+        }
+      },
+      "metadata": {
+        "tier_id": "free",
+        "package_alias": "Free",
+        "monthly_included_points": 300,
+        "site_limit": 1,
+        "max_vector_documents": 100,
+        "max_media_images": 100,
+        "max_batch_items": 5,
+        "nightly_inspection_runs_per_period": 0,
+        "nightly_inspection_retention_days": 14,
+        "nightly_inspection_payload_modes": [
+          "metadata_only"
+        ],
+        "automation_enabled": true,
+        "api_enabled": true,
+        "openclaw_enabled": true
+      }
+    },
+    "feature_groups": [
+      "Hosted runtime baseline",
+      "Portal usage visibility",
+      "Operator-managed subscription changes"
+    ]
+  },
+  {
+    "tier_id": "plus",
+    "label": "Plus",
+    "package_alias": "Plus",
+    "usage_band": "3,000 AI credits per month.",
+    "positioning": "Entry paid Plus package for accounts that have outgrown Free but do not yet need full Pro monthly AI credit headroom.",
+    "monthly_included_points": 3000,
+    "site_limit": 3,
+    "max_vector_documents": 800,
+    "max_media_images": 1000,
+    "budgets_template": {
+      "max_ai_credits_per_period": 3000,
+      "max_runs_per_period": 0,
+      "max_tokens_per_period": "[redacted]",
+      "max_cost_cny_per_period": 0.0
+    },
+    "concurrency_template": {
+      "max_active_runs": 2
+    },
+    "max_batch_items": 15,
+    "nightly_inspection_runs_per_period": 0,
+    "nightly_inspection_retention_days": 14,
+    "nightly_inspection_payload_modes": [
+      "metadata_only",
+      "excerpt"
+    ],
+    "automation_enabled": true,
+    "api_enabled": true,
+    "openclaw_enabled": true,
+    "package_operator_note": "Plus gives early paid accounts a controlled step up from Free while keeping Pro as the normal hosted AI package.",
+    "policy_baseline": {
+      "grace_period_days": 3,
+      "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development."
+    },
+    "canonical_shell": {
+      "entitlements": {
+        "ability_families": [
+          "*"
+        ],
+        "channels": [
+          "*"
+        ],
+        "execution_kinds": [
+          "*"
+        ],
+        "execution_tiers": [
+          "cloud"
+        ],
+        "data_classifications": [
+          "*"
+        ]
+      },
+      "budgets": {
+        "max_ai_credits_per_period": 3000,
+        "max_runs_per_period": 0,
+        "max_tokens_per_period": "[redacted]",
+        "max_cost_cny_per_period": 0.0
+      },
+      "concurrency": {
+        "max_active_runs": 2
+      },
+      "policy": {
+        "subscription": {
+          "grace_period_days": 3,
+          "downgrade_policy": {}
+        },
+        "budgets": {
+          "ai_credits": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "runs": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "tokens": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "cost": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          }
+        },
+        "reconciliation": {
+          "tolerance": {
+            "runs": 0.0,
+            "provider_calls": 0.0,
+            "tokens_total": 0.0,
+            "cost": 0.0
+          }
+        }
+      },
+      "metadata": {
+        "tier_id": "plus",
+        "package_alias": "Plus",
+        "monthly_included_points": 3000,
+        "site_limit": 3,
+        "max_vector_documents": 800,
+        "max_media_images": 1000,
+        "max_batch_items": 15,
+        "nightly_inspection_runs_per_period": 0,
+        "nightly_inspection_retention_days": 14,
+        "nightly_inspection_payload_modes": [
+          "metadata_only",
+          "excerpt"
+        ],
+        "automation_enabled": true,
+        "api_enabled": true,
+        "openclaw_enabled": true
+      }
+    },
+    "feature_groups": [
+      "Hosted runtime + workflow coverage",
+      "Starter paid usage headroom",
+      "Operator-managed subscription changes"
+    ]
+  },
+  {
+    "tier_id": "pro",
+    "label": "Pro",
+    "package_alias": "Pro",
+    "usage_band": "10,000 AI credits per month.",
+    "positioning": "Commercial Pro package with normal hosted AI consumption controlled by monthly AI credits and separate resource boundaries.",
+    "monthly_included_points": 10000,
+    "site_limit": 5,
+    "max_vector_documents": 2000,
+    "max_media_images": 5000,
+    "budgets_template": {
+      "max_ai_credits_per_period": 10000,
+      "max_runs_per_period": 0,
+      "max_tokens_per_period": "[redacted]",
+      "max_cost_cny_per_period": 0.0
+    },
+    "concurrency_template": {
+      "max_active_runs": 3
+    },
+    "max_batch_items": 25,
+    "nightly_inspection_runs_per_period": 0,
+    "nightly_inspection_retention_days": 14,
+    "nightly_inspection_payload_modes": [
+      "metadata_only",
+      "excerpt"
+    ],
+    "automation_enabled": true,
+    "api_enabled": true,
+    "openclaw_enabled": true,
+    "package_operator_note": "Pro keeps ordinary usage broadly available while high-cost AI search, query, and generation paths spend AI credits.",
+    "policy_baseline": {
+      "grace_period_days": 3,
+      "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development."
+    },
+    "canonical_shell": {
+      "entitlements": {
+        "ability_families": [
+          "*"
+        ],
+        "channels": [
+          "*"
+        ],
+        "execution_kinds": [
+          "*"
+        ],
+        "execution_tiers": [
+          "cloud"
+        ],
+        "data_classifications": [
+          "*"
+        ]
+      },
+      "budgets": {
+        "max_ai_credits_per_period": 10000,
+        "max_runs_per_period": 0,
+        "max_tokens_per_period": "[redacted]",
+        "max_cost_cny_per_period": 0.0
+      },
+      "concurrency": {
+        "max_active_runs": 3
+      },
+      "policy": {
+        "subscription": {
+          "grace_period_days": 3,
+          "downgrade_policy": {}
+        },
+        "budgets": {
+          "ai_credits": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "runs": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "tokens": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "cost": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          }
+        },
+        "reconciliation": {
+          "tolerance": {
+            "runs": 0.0,
+            "provider_calls": 0.0,
+            "tokens_total": 0.0,
+            "cost": 0.0
+          }
+        }
+      },
+      "metadata": {
+        "tier_id": "pro",
+        "package_alias": "Pro",
+        "monthly_included_points": 10000,
+        "site_limit": 5,
+        "max_vector_documents": 2000,
+        "max_media_images": 5000,
+        "max_batch_items": 25,
+        "nightly_inspection_runs_per_period": 0,
+        "nightly_inspection_retention_days": 14,
+        "nightly_inspection_payload_modes": [
+          "metadata_only",
+          "excerpt"
+        ],
+        "automation_enabled": true,
+        "api_enabled": true,
+        "openclaw_enabled": true
+      }
+    },
+    "feature_groups": [
+      "Hosted runtime + workflow coverage",
+      "Automation-heavy usage",
+      "Operator-led budget follow-up"
+    ]
+  },
+  {
+    "tier_id": "agency",
+    "label": "Agency",
+    "package_alias": "Agency",
+    "usage_band": "150,000 AI credits per month.",
+    "positioning": "Commercial Agency package for custom or multi-site Cloud runtime detail with higher AI credit, batch, and resource headroom.",
+    "monthly_included_points": 150000,
+    "site_limit": 25,
+    "max_vector_documents": 10000,
+    "max_media_images": 25000,
+    "budgets_template": {
+      "max_ai_credits_per_period": 150000,
+      "max_runs_per_period": 0,
+      "max_tokens_per_period": "[redacted]",
+      "max_cost_cny_per_period": 0.0
+    },
+    "concurrency_template": {
+      "max_active_runs": 10
+    },
+    "max_batch_items": 100,
+    "nightly_inspection_runs_per_period": 0,
+    "nightly_inspection_retention_days": 30,
+    "nightly_inspection_payload_modes": [
+      "metadata_only",
+      "excerpt"
+    ],
+    "automation_enabled": true,
+    "api_enabled": true,
+    "openclaw_enabled": true,
+    "package_operator_note": "Agency represents custom/high-volume coverage; AI credits remain the primary high-cost consumption control.",
+    "policy_baseline": {
+      "grace_period_days": 7,
+      "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development."
+    },
+    "canonical_shell": {
+      "entitlements": {
+        "ability_families": [
+          "*"
+        ],
+        "channels": [
+          "*"
+        ],
+        "execution_kinds": [
+          "*"
+        ],
+        "execution_tiers": [
+          "cloud"
+        ],
+        "data_classifications": [
+          "*"
+        ]
+      },
+      "budgets": {
+        "max_ai_credits_per_period": 150000,
+        "max_runs_per_period": 0,
+        "max_tokens_per_period": "[redacted]",
+        "max_cost_cny_per_period": 0.0
+      },
+      "concurrency": {
+        "max_active_runs": 10
+      },
+      "policy": {
+        "subscription": {
+          "grace_period_days": 7,
+          "downgrade_policy": {}
+        },
+        "budgets": {
+          "ai_credits": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "runs": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "tokens": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          },
+          "cost": {
+            "grace_requests": 0,
+            "downgrade_policy": {}
+          }
+        },
+        "reconciliation": {
+          "tolerance": {
+            "runs": 0.0,
+            "provider_calls": 0.0,
+            "tokens_total": 0.0,
+            "cost": 0.0
+          }
+        }
+      },
+      "metadata": {
+        "tier_id": "agency",
+        "package_alias": "Agency",
+        "monthly_included_points": 150000,
+        "site_limit": 25,
+        "max_vector_documents": 10000,
+        "max_media_images": 25000,
+        "max_batch_items": 100,
+        "nightly_inspection_runs_per_period": 0,
+        "nightly_inspection_retention_days": 30,
+        "nightly_inspection_payload_modes": [
+          "metadata_only",
+          "excerpt"
+        ],
+        "automation_enabled": true,
+        "api_enabled": true,
+        "openclaw_enabled": true
+      }
+    },
+    "feature_groups": [
+      "Higher hosted concurrency",
+      "Multi-site commercial headroom",
+      "Sustained workflow and automation operations"
+    ]
+  }
+]

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
+import { buildInitialForm, type PlanIntent } from '@/features/admin/plans/plan-projection';
+import { parameters, planConfirmation, planDetail, planWrite } from '../fixtures/admin-plan-parameters';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 const evidenceRoot = process.env.NPCINK_PLAN_CONCURRENCY_EVIDENCE;
@@ -22,6 +24,10 @@ for (const { width, colorScheme } of [
     let writes = 0;
     let readFails = false;
     const submitted: Record<string, unknown>[] = [];
+    let intent: PlanIntent;
+    await page.route('**/api/admin/plans/pro/parameter-operations/**', async route => {
+      await route.fulfill({ json: buildAdminApiEnvelope(planConfirmation(intent)) });
+    });
     await page.route('**/api/admin/plans/pro', async (route) => {
       const method = route.request().method();
       if (method === 'PATCH') {
@@ -34,7 +40,9 @@ for (const { width, colorScheme } of [
           price = body.sales_price_cny;
           points = body.monthly_included_points;
           currentRevision = revision('c');
-          await route.fulfill({ json: buildAdminApiEnvelope({ plan_version_id: 'pro_v1' }) });
+          const { revision: sourceRevision, ...values } = body;
+          intent = { operation_id: route.request().headers()['idempotency-key'], plan_id: 'pro', plan_version_id: 'pro_v1', revision: sourceRevision, values, form: buildInitialForm(planDetail('pro', values)) };
+          await route.fulfill({ json: buildAdminApiEnvelope(planWrite(intent)) });
         }
         return;
       }
@@ -43,22 +51,7 @@ for (const { width, colorScheme } of [
         await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable', 'service.unavailable') });
         return;
       }
-      await route.fulfill({ json: buildAdminApiEnvelope({
-        revision: currentRevision,
-        plan: { plan_id: 'pro', name: 'Pro', status: 'active', description: 'Existing package' },
-        latest_version: {
-          plan_version_id: 'pro_v1', version_label: 'v1', status: 'published',
-          budgets: { max_ai_credits_per_period: points, max_cost_cny_per_period: 0 },
-          concurrency: { max_active_runs: 0 }, policy: { subscription: { grace_period_days: 0 } },
-          metadata: { site_limit: 5, max_vector_documents: 0, max_media_images: 0, max_batch_items: 0 },
-        },
-        sales_offer: { amount: price, currency: 'CNY', status: 'active' },
-        tier_summary: {
-          tier_id: 'pro', package_alias: 'Pro', monthly_included_points: points, site_limit: 5,
-          max_vector_documents: 0, max_media_images: 0, max_batch_items: 0, feature_groups: [],
-          canonical_shell: { budgets: {}, concurrency: {}, policy: {}, metadata: {} },
-        }, package_fit_cues: [], subscriptions: [],
-      }) });
+      await route.fulfill({ json: buildAdminApiEnvelope(planDetail('pro', { ...parameters, sales_price_cny: price, monthly_included_points: points }, currentRevision === revision('b') ? 'b' : 'a')) });
     });
     await page.goto('/admin/plans?focus=pro');
     const dialog = page.locator('[data-ui="admin-workbench-dialog"]');

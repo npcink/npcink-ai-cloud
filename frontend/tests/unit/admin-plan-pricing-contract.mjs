@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const planPage = readFileSync(fromFrontendRoot('src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
+const planProjection = readFileSync(fromFrontendRoot('src/features/admin/plans/plan-projection.ts'), 'utf8');
+const planEditor = readFileSync(fromFrontendRoot('src/features/admin/plans/use-plan-editor.ts'), 'utf8');
 const i18n = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
 assert.match(
@@ -16,9 +18,19 @@ assert.match(
   'Admin package editor must explain customer price and internal cost-budget purposes'
 );
 assert.match(
-  planPage,
-  /sales_price_cny: Number\(form\.sales_price_cny/,
-  'Admin package publish request must send the customer-facing sales price'
+  planProjection,
+  /export const parameterFields = \[[^\]]*'sales_price_cny'/,
+  'The submitted parameter snapshot must include the customer-facing sales price'
+);
+assert.match(
+  planEditor,
+  /values: formParameters\(formRef\.current\)/,
+  'The editor must capture the current form into its submitted parameter snapshot'
+);
+assert.match(
+  planEditor,
+  /body: \{ \.\.\.submitted\.values, revision: submitted\.revision \}/,
+  'The publish request must send the complete captured snapshot and its revision'
 );
 assert.match(
   i18n,

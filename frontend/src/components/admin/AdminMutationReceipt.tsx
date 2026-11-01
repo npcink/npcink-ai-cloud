@@ -104,9 +104,11 @@ export function adminMutationReceiptSummaryKey(receipt: AdminMutationReceiptPayl
 export function AdminMutationReceipt({
   receipt,
   title,
+  summary,
 }: {
   receipt: AdminMutationReceiptPayload | null | undefined;
   title?: string;
+  summary?: string;
 }) {
   const { t } = useLocale();
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -147,7 +149,7 @@ export function AdminMutationReceipt({
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <p role={operationFailed || receipt.outcome === 'partial' ? 'alert' : 'status'} className="text-sm font-medium text-slate-950 dark:text-white">
-          {t(adminMutationReceiptSummaryKey(receipt))}
+          {summary || t(adminMutationReceiptSummaryKey(receipt))}
         </p>
         {auditTrailHref ? (
           <Link href={auditTrailHref} className="shrink-0 text-sm font-medium text-blue-600 hover:underline dark:text-blue-300">

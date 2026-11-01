@@ -48,6 +48,21 @@ class CommercialServiceAuditRepository:
             ServiceAuditEvent.scope_id == site_id,
         ).limit(2)))
 
+    def find_plan_parameter_events(
+        self, *, plan_id: str, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "plan_version.publish",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == f"/internal/service/admin/plans/{plan_id}",
+            ServiceAuditEvent.plan_id == plan_id,
+            ServiceAuditEvent.scope_kind == "plan_version",
+        ).limit(2)))
+
     def record_service_audit_event(
         self,
         *,
