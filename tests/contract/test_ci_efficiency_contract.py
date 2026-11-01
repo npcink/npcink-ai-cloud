@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -882,3 +884,54 @@ def test_totp_public_composition_selects_actual_frontend_lane(changed: str) -> N
     assert result["frontend_required"] == "true"
     assert result["frontend_e2e_required"] == "true"
     assert result["docs_only"] == "false"
+
+
+def test_complete_backend_shards_cover_real_collection(monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = ["tests/core", "tests/api", "tests/contract", "tests/domain", "tests/workers"]
+    workflow = CI_WORKFLOW.read_text()
+    gate = BACKEND_GATE.read_text()
+    assert " ".join(roots) in workflow
+    assert " ".join(roots) in gate
+    scheduler = runpy.run_path(str(ROOT / "scripts/select-pytest-shard.py"))
+    monkeypatch.chdir(ROOT)
+    files = scheduler["discover_test_files"]([Path(root) for root in roots])
+    shards = scheduler["assign_files"](files, {}, 4)
+    selectors = [selector for shard in shards for selector in shard.selectors]
+    assert len(selectors) == len(set(selectors))
+    assert set(selectors) == {path.as_posix() for path in files}
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *roots],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    nodes = [
+        line.split("::", 1)[0]
+        for line in collected.stdout.splitlines()
+        if line.startswith("tests/") and "::" in line
+    ]
+    assert nodes
+    assert set(nodes) <= set(selectors)
+    assert any(path.startswith("tests/core/") for path in nodes)
+    assert any(path.startswith("tests/workers/") for path in nodes)
+
+
+@pytest.mark.parametrize(
+    "source, suite",
+    [
+        ("app/core/secrets.py", "tests/core"),
+        ("app/workers/runtime_queue.py", "tests/workers"),
+        ("tests/workers/test_runtime_queue_worker_schedule.py", "tests/workers"),
+    ],
+)
+def test_core_and_worker_changes_select_executable_tests(source: str, suite: str) -> None:
+    selected = subprocess.run(
+        [sys.executable, str(BACKEND_SELECTOR), source],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert selected and any(path.startswith(suite + "/") for path in selected)
+    assert all((ROOT / path).is_file() for path in selected)
