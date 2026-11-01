@@ -85,8 +85,12 @@ export default function AdminCreditPacksPage() {
     });
     const query = params.toString();
     if (query === searchParams.toString()) return;
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, router, searchParams]);
+    const state = { ...window.history.state };
+    // Let Next sync useSearchParams and restore its own markers; passing them
+    // back would bypass that sync. Keep other state and the tracked position.
+    delete state.__NA; delete state._N;
+    window.history.replaceState(state, '', `${pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  }, [pathname, searchParams]);
 
   const activeCount = useMemo(() => items.filter((item) => item.active).length, [items]);
   const defaultValidityDays = catalog?.default_validity_days;

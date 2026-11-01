@@ -255,6 +255,7 @@ test('late confirmation after leaving cannot replace a new context or release pe
   await page.locator('[data-ui="admin-workspace-navigation"] a[href="/admin/plans"]').evaluate(a => (a as HTMLAnchorElement).click());
   await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
   await expect(page).toHaveURL(/\/admin\/plans/);
+  await expect(page.locator('[data-ui="plan-catalog-item"]').first()).toBeVisible();
   state.delayConfirmation = false; state.release();
   await expect.poll(() => state.reads.filter(path => path.includes('/operations/')).length).toBe(1);
   expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
@@ -390,6 +391,7 @@ test('late retry and confirmation after route departure preserve intent and cann
   await page.locator('[data-ui="admin-workspace-navigation"] a[href="/admin/plans"]').click();
   await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
   await expect(page).toHaveURL(/\/admin\/plans/);
+  await expect(page.locator('[data-ui="plan-catalog-item"]').first()).toBeVisible();
   state.releaseCatalog(); state.release();
   await inventories.get(page)!.beforeReload();
   expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
@@ -399,4 +401,112 @@ test('late retry and confirmation after route departure preserve intent and cann
   await page.goto('/admin/credit-packs'); await expect(pending(page)).toBeVisible();
   await expect(numbers(page).nth(1)).toHaveValue('88'); await expect(save(page)).toBeDisabled();
   expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+});
+
+async function localQueryEvidence(page: Page, start: number, name: string, info: TestInfo) {
+  await page.waitForLoadState('networkidle');
+  const requests = inventories.get(page)!.raw.requests.slice(start);
+  const navigationFlight = requests.filter(request => new URL(request.url).pathname === '/admin/credit-packs'
+    && request.headers.rsc === '1' && !request.headers['next-router-prefetch']);
+  expect(navigationFlight).toEqual([]);
+  const evidence = { url: page.url(), navigationFlight, requests,
+    history: await page.evaluate(() => ({ length: history.length, position: history.state.__adminHistoryPosition,
+      custom: history.state.localQueryProbe, nextState: Boolean(history.state.__NA && history.state.__PRIVATE_NEXTJS_INTERNALS_TREE) })) };
+  const root = process.env.NPCINK_CREDIT_PACK_EVIDENCE;
+  if (root) await mkdir(root, { recursive: true });
+  const path = root ? `${root}/${name}.json` : info.outputPath(`${name}.json`);
+  await writeFile(path, JSON.stringify(evidence, null, 2));
+  await info.attach(name, { path, contentType: 'application/json' });
+}
+
+test('local focus and status update selection without navigation Flight or replacing history evidence', async ({ page }, info) => {
+  const state = await harness(page); state.items[2].active = false;
+  await page.goto('/admin/credit-packs?focus=pack_medium&keep=a&keep=b#catalog');
+  await expect(page.locator('[data-pack-id="pack_medium"]')).toHaveAttribute('data-selected', 'true');
+  await page.waitForLoadState('networkidle');
+  const before = await page.evaluate(() => {
+    history.replaceState({ ...history.state, localQueryProbe: { retained: 'external-state' } }, '', location.href);
+    return { length: history.length, position: history.state.__adminHistoryPosition };
+  });
+  const start = inventories.get(page)!.raw.requests.length;
+  for (const target of ['pack_small', 'pack_medium']) {
+    await page.locator(`[data-pack-id="${target}"]`).getByRole('button').click();
+    await expect(page).toHaveURL(new RegExp(`focus=${target}&keep=a&keep=b#catalog$`));
+    await expect(page.locator(`[data-pack-id="${target}"]`)).toHaveAttribute('data-selected', 'true');
+    await expect(numbers(page).first()).toHaveValue(target === 'pack_small' ? '10000' : '35000');
+    await workbench(page).locator('[data-ui="admin-workbench-close"]').click();
+    await expect(workbench(page)).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: /^Inactive$|^未启用$|^未啟用$/ }).click();
+  await expect(page).toHaveURL(/\?keep=a&keep=b&status=inactive#catalog$/);
+  await expect(page.locator('[data-pack-id]')).toHaveCount(1);
+  await expect(page.locator('[data-pack-id="pack_large"]')).toHaveAttribute('data-selected', 'true');
+  await screenshot(page, 'local-status-inactive', info);
+  await page.getByRole('button', { name: /^All$|^全部$/ }).click();
+  await expect(page).toHaveURL(/\?keep=a&keep=b#catalog$/); await expect(page.locator('[data-pack-id]')).toHaveCount(3);
+  expect(await page.evaluate(() => ({ length: history.length, position: history.state.__adminHistoryPosition }))).toEqual(before);
+  expect(await page.evaluate(() => history.state.localQueryProbe)).toEqual({ retained: 'external-state' });
+  expect(await page.evaluate(() => Boolean(history.state.__NA && history.state.__PRIVATE_NEXTJS_INTERNALS_TREE))).toBe(true);
+  expect(state.reads).toHaveLength(1); expect(state.writes).toHaveLength(0);
+  await localQueryEvidence(page, start, 'local-focus-status-evidence', info);
+});
+
+test('direct filtered focus entry clears locally and remains consistent after refresh', async ({ page }, info) => {
+  const state = await harness(page); state.items[2].active = false;
+  await page.goto('/admin/credit-packs?focus=pack_large&status=active&keep=inbound#catalog');
+  await expect(page.locator('[data-pack-id]')).toHaveCount(2);
+  await expect(page.locator('[data-pack-id][data-selected="true"]')).toHaveCount(0);
+  await page.waitForLoadState('networkidle');
+  const start = inventories.get(page)!.raw.requests.length;
+  await page.getByRole('button', { name: /^Clear$|^清除$/ }).click();
+  await expect(page).toHaveURL(/\?status=active&keep=inbound#catalog$/);
+  await expect(page.locator('[data-pack-id="pack_small"]')).toHaveAttribute('data-selected', 'true');
+  await screenshot(page, 'local-clear-filtered-focus', info);
+  await localQueryEvidence(page, start, 'local-clear-focus-evidence', info);
+  await inventories.get(page)!.beforeReload(); await page.reload();
+  await expect(page.locator('[data-pack-id]')).toHaveCount(2);
+  await expect(page.locator('[data-pack-id="pack_small"]')).toHaveAttribute('data-selected', 'true');
+  expect(state.reads).toHaveLength(2); expect(state.writes).toHaveLength(0);
+});
+
+test('local pending filter preserves original intent through actual SPA return and guarded back forward', async ({ page }, info) => {
+  const state = await harness(page); state.mode = 'before-drop'; state.items[2].active = false; await open(page);
+  await numbers(page).nth(1).fill('88'); await save(page).click(); await expect(read(page)).toBeEnabled();
+  const snapshot = await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'));
+  const before = await page.evaluate(() => ({ length: history.length, position: history.state.__adminHistoryPosition }));
+  await workbench(page).locator('[data-ui="admin-workbench-close"]').click();
+  await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
+  const start = inventories.get(page)!.raw.requests.length;
+  await page.getByRole('button', { name: /^Inactive$|^未启用$|^未啟用$/ }).click();
+  await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
+  await expect(page).toHaveURL(/\?status=inactive$/); await expect(pending(page)).toBeVisible();
+  await expect(page.locator('[data-pack-id="pack_large"]')).toBeVisible();
+  expect(await page.evaluate(() => ({ length: history.length, position: history.state.__adminHistoryPosition }))).toEqual(before);
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+  await localQueryEvidence(page, start, 'local-pending-filter-evidence', info);
+  const marker = await page.evaluate(() => { const value = crypto.randomUUID(); document.documentElement.dataset.spaProbe = value; return value; });
+  await page.locator('[data-ui="admin-workspace-navigation"] a[href="/admin/plans"]').click();
+  await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
+  await expect(page).toHaveURL(/\/admin\/plans/);
+  await expect(page.locator('[data-ui="plan-catalog-item"]').first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await page.locator('[data-ui="admin-workspace-navigation"] a[href="/admin/credit-packs"]').click();
+  await expect(numbers(page).nth(1)).toHaveValue('88'); await expect(save(page)).toBeDisabled();
+  await page.evaluate(() => history.back());
+  await expect(page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Cancel$|^取消$/ }).last().click();
+  await expect(page).toHaveURL(/\/admin\/credit-packs$/); await expect(numbers(page).nth(1)).toHaveValue('88');
+  await page.evaluate(() => history.back());
+  await page.getByRole('button', { name: /Leave and keep pending|离开并保留待确认/ }).click();
+  await expect(page).toHaveURL(/\/admin\/plans/);
+  await expect(page.locator('[data-ui="plan-catalog-item"]').first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(() => history.forward());
+  await expect(numbers(page).nth(1)).toHaveValue('88'); await expect(save(page)).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.dataset.spaProbe)).toBe(marker);
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+  expect(state.writes).toHaveLength(1); await read(page).click(); await expect(read(page)).toBeEnabled();
+  await expect(pending(page)).toBeVisible(); expect(state.writes).toHaveLength(1);
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.credit-pack-catalog.v1'))).toBe(snapshot);
+  await screenshot(page, 'local-pending-spa-history-restored', info);
 });
