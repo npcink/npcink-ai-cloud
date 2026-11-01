@@ -1,8 +1,9 @@
 'use client';
 
-import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FormEvent, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
+import { readSubscriptionQueue, subscriptionSnapshotCost, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -47,7 +48,7 @@ interface Subscription {
   current_period_start: string;
   current_period_end: string;
   billing_summary?: {
-    total_cost: number;
+    total_cost: number | null;
     latest_snapshot_id?: string;
   };
   billing_snapshot_status?: {
@@ -63,57 +64,6 @@ interface Subscription {
   };
 }
 
-interface SubscriptionApiItem {
-  subscription?: {
-    subscription_id?: string;
-    account_id?: string;
-    status?: string;
-    plan_id?: string;
-    plan_version_id?: string;
-    current_period_start_at?: string;
-    current_period_end_at?: string;
-  };
-  account?: {
-    account_id?: string;
-    name?: string;
-    metadata?: Record<string, unknown>;
-  };
-  covered_sites?: Array<{
-    site_id?: string;
-    name?: string;
-  }>;
-  coverage?: {
-    site_count?: number;
-    package_alias?: string;
-  };
-  expiry?: {
-    current_period_end_at?: string;
-  };
-  latest_billing_snapshots?: Array<{
-    totals?: {
-      cost?: number;
-    };
-    snapshot_id?: string;
-  }>;
-  billing_snapshot_status?: {
-    status?: string;
-    summary?: string;
-    fresh_site_count?: number;
-    stale_site_count?: number;
-    missing_site_count?: number;
-  };
-  operator_risk?: {
-    level?: string;
-    reason_code?: string;
-  };
-}
-
-interface SubscriptionsPayload {
-  items?: SubscriptionApiItem[];
-  total?: number;
-  summary?: Partial<Record<RiskLevel, number>>;
-}
-
 type QueueSort = 'priority' | 'expiry' | 'customer';
 type RiskLevel = 'critical' | 'warning' | 'monitor' | 'stable';
 type RiskFilter = 'needs_action' | 'all' | RiskLevel;
@@ -121,7 +71,6 @@ type RiskFilter = 'needs_action' | 'all' | RiskLevel;
 const PAGE_SIZE = 10;
 const ALLOWED_STATUSES = new Set(['', 'past_due', 'expired', 'trialing', 'active', 'suspended', 'canceled']);
 const ALLOWED_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
-const ALLOWED_RISK_LEVELS = new Set<RiskLevel>(['critical', 'warning', 'monitor', 'stable']);
 const ALLOWED_RISK_FILTERS = new Set<RiskFilter>(['needs_action', 'all', 'critical', 'warning', 'monitor', 'stable']);
 const subscriptionsClient = createApiClient({ idempotencyPrefix: 'admin_subscriptions' });
 
@@ -132,49 +81,44 @@ function daysUntil(raw?: string): number | null {
   return Math.ceil(ms / 86400000);
 }
 
-function normalizeSubscription(item: SubscriptionApiItem): Subscription {
-  const subscription = item.subscription || {};
-  const account = item.account || {};
-  const sites = Array.isArray(item.covered_sites) ? item.covered_sites : [];
-  const snapshots = Array.isArray(item.latest_billing_snapshots) ? item.latest_billing_snapshots : [];
+function normalizeSubscription(item: SubscriptionQueueItem): Subscription {
+  const subscription = item.subscription;
+  const account = item.account;
+  const sites = item.covered_sites;
+  const snapshots = item.latest_billing_snapshots;
 
   return {
-    subscription_id: subscription.subscription_id || '',
-    account_id: subscription.account_id || account.account_id || '',
-    account_name: customerLabel(account, ''),
-    site_count: Number(item.coverage?.site_count || sites.length || 0),
+    subscription_id: subscription.subscription_id,
+    account_id: subscription.account_id,
+    account_name: account ? customerLabel(account, '') : '',
+    site_count: item.coverage.site_count,
     covered_sites: sites
       .map((site) => ({
-        site_id: String(site.site_id || ''),
-        name: String(site.name || site.site_id || ''),
-      }))
-      .filter((site) => site.site_id),
-    status: subscription.status || 'unknown',
-    plan_id: subscription.plan_id || '',
-    plan_version_id: subscription.plan_version_id || '',
-    package_alias: item.coverage?.package_alias || '',
+        site_id: site.site_id,
+        name: site.name || site.site_id,
+      })),
+    status: subscription.status,
+    plan_id: subscription.plan_id,
+    plan_version_id: subscription.plan_version_id,
+    package_alias: item.coverage.package_alias,
     current_period_start: subscription.current_period_start_at || '',
-    current_period_end: subscription.current_period_end_at || item.expiry?.current_period_end_at || '',
+    current_period_end: subscription.current_period_end_at || '',
     billing_summary: {
-      total_cost: snapshots.reduce((sum, snapshot) => sum + Number(snapshot.totals?.cost || 0), 0),
+      total_cost: subscriptionSnapshotCost(item),
       latest_snapshot_id: snapshots[0]?.snapshot_id,
     },
     billing_snapshot_status: {
-      status: item.billing_snapshot_status?.status || 'unknown',
-      summary: item.billing_snapshot_status?.summary || '',
-      fresh_site_count: Number(item.billing_snapshot_status?.fresh_site_count || 0),
-      stale_site_count: Number(item.billing_snapshot_status?.stale_site_count || 0),
-      missing_site_count: Number(item.billing_snapshot_status?.missing_site_count || 0),
+      status: item.billing_snapshot_status.status,
+      summary: item.billing_snapshot_status.summary,
+      fresh_site_count: item.billing_snapshot_status.fresh_site_count,
+      stale_site_count: item.billing_snapshot_status.stale_site_count,
+      missing_site_count: item.billing_snapshot_status.missing_site_count,
     },
     operator_risk: {
-      level: normalizeRiskLevel(item.operator_risk?.level),
-      reason_code: item.operator_risk?.reason_code || 'snapshot_unknown',
+      level: item.operator_risk.level,
+      reason_code: item.operator_risk.reason_code,
     },
   };
-}
-
-function normalizeRiskLevel(value?: string): RiskLevel {
-  return value && ALLOWED_RISK_LEVELS.has(value as RiskLevel) ? (value as RiskLevel) : 'monitor';
 }
 
 function normalizeRiskFilter(value: string | null): RiskFilter {
@@ -275,6 +219,9 @@ function SubscriptionsContent() {
     return params.toString();
   }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, appliedStatusGroup, offset, sort]);
 
+  const currentRequestKeyRef = useRef(requestKey);
+  useLayoutEffect(() => { currentRequestKeyRef.current = requestKey; }, [requestKey]);
+
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
     Object.entries(patch).forEach(([key, value]) => {
@@ -300,18 +247,14 @@ function SubscriptionsContent() {
     else setIsLoading(true);
 
     try {
-      const payload = (await subscriptionsClient.request<SubscriptionsPayload>(
+      const payload = (await subscriptionsClient.request<unknown>(
         `/api/admin/subscriptions?${requestKey}`
       )).data;
-      const nextItems = (payload.items || []).map(normalizeSubscription);
-      const nextTotal = Number(payload.total ?? nextItems.length);
-      const nextSummary = {
-        critical: Number(payload.summary?.critical || 0),
-        warning: Number(payload.summary?.warning || 0),
-        monitor: Number(payload.summary?.monitor || 0),
-        stable: Number(payload.summary?.stable || 0),
-      };
-      if (mountedRef.current && requestSequenceRef.current === sequence) {
+      const validated = readSubscriptionQueue(payload, requestKey);
+      const nextItems = validated.items.map(normalizeSubscription);
+      const nextTotal = validated.total;
+      const nextSummary = validated.summary;
+      if (mountedRef.current && currentRequestKeyRef.current === requestKey && requestSequenceRef.current === sequence) {
         setSubscriptions(nextItems);
         setTotal(nextTotal);
         setSummary(nextSummary);
@@ -321,8 +264,10 @@ function SubscriptionsContent() {
         setHasLoaded(true);
       }
     } catch (err) {
-      if (mountedRef.current && requestSequenceRef.current === sequence) {
-        setError(resolveUiErrorMessage(err, t('error.failed_load')));
+      if (mountedRef.current && currentRequestKeyRef.current === requestKey && requestSequenceRef.current === sequence) {
+        setError(err instanceof SubscriptionEvidenceError
+          ? t('admin.subscriptions.evidence_invalid', {}, 'Subscription evidence is incomplete or does not match this request. Retry the read.')
+          : resolveUiErrorMessage(err, t('error.failed_load')));
       }
     } finally {
       if (requestSequenceRef.current === sequence) {
@@ -910,7 +855,7 @@ function SubscriptionsContent() {
                     [t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics'), t(`status.${selectedSubscription.billing_snapshot_status?.status || 'unknown'}`, undefined, selectedSubscription.billing_snapshot_status?.status || 'unknown')],
                     [t('admin.period_start'), formatDate(selectedSubscription.current_period_start)],
                     [t('admin.period_end'), formatDate(selectedSubscription.current_period_end)],
-                    [t('admin.usage_cost'), formatAdminCurrency(selectedSubscription.billing_summary?.total_cost || 0)],
+                    [t('admin.usage_cost'), selectedSubscription.billing_summary?.total_cost == null ? t('common.unknown') : formatAdminCurrency(selectedSubscription.billing_summary.total_cost)],
                   ].map(([label, value]) => (
                     <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800">
                       <dt>{label}</dt>

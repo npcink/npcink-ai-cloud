@@ -1,6 +1,6 @@
 # Admin 商业目录一致性契约 v1
 
-范围：已有积分包目录的多人保存正确性，以及套餐活跃计数与订阅下钻。
+范围：已有积分包目录的多人保存正确性、套餐活跃计数与订阅下钻，以及订阅读取证据。
 这是现有商业路径维护，不开放新销售能力，不改变价格、权益、资格、试用或订单快照。
 遵守[商业阶段边界](engineering/commercial-development-next-stage-v1.md)与
 [Admin 信息层级规范](cloud-admin-visual-information-architecture-review-standard-v1.md)。
@@ -58,6 +58,43 @@
 - 仅原 PATCH 的明确拒绝可解除 sent intent；确认 GET 的 409/422 不能清除它。
   只有完整写投影与绑定原操作的持久回执及当前目录均通过验证，才替换目录、关闭
   表单、清理意图并提示成功。确认读取不会触发第二次 PATCH。
+
+## 订阅读取证据（第五批组 3）
+
+订阅队列与详情在采用响应前验证真实 serializer 的消费字段，不把缺失集合、
+风险计数、预算或用量解释为空目录、0 或稳定状态。
+
+- 队列验证必需 items/total/summary/filters/pagination 与原请求范围；风险排序仍由
+  后端负责。summary 在风险过滤和分页前计算，不要求其总和等于 total；合法空页、
+  越界空页和真实 0 保留。页长必须为 `min(limit, max(total - offset, 0))`，
+  不能采用空首页但 total>0 或有行但 total=0 的坏元组。失败刷新保留旧结果、旧范围和成功读取时间并常显陈旧。
+- 详情必须匹配路由 subscription_id 及账户/套餐/coverage 关系。account、plan、
+  plan_version 可以明确为 null，此时保留有效指标、标记待核实并阻止依赖操作；
+  缺字段不伪造空对象。当前 published plan version 可不同于订阅存储版本，按父套餐
+  验证；不改变实时参数策略。meter 聚合可以稀疏，Token 读取 budget_state.tokens
+  的权威 current_total，不能用不存在的 usage.tokens 补 0；limit <= 0 仍合法。
+- covered_sites 单独验证：坏集合数量未知；坏条目、重复目标双方及跨账户条目逐项
+  标明不可用，有效详情和站点继续可读。坏站点不生成链接，依赖操作保持禁用。
+  billing 条目必须有唯一站点、有效状态及匹配站点的 snapshot（missing 时为 null）；
+  三类计数与条目一致，聚合按 stale→missing→fresh，next_action 仅在非空 stale/missing 时为既有重建操作。
+  covered 集合完整时核对 billing 的 eligible 站点及 latest snapshot 的覆盖站点关系，
+  archived/released 排除在 billing 外；covered 自身损坏仍局部隔离，不用不完整集合做跨集合拒绝。
+  两份 snapshot 投影来自同一 per-site map：非空 billing snapshot 的 ID、订阅和消费的 totals
+  必须与对应 latest snapshot 一致；missing 必须对应 map 无该站点，fresh 必须属于当前订阅。
+  此内部一致性检查不依赖 covered 完整性；只有站点会员关系使用完整 covered 集合。
+  历史 stale snapshot 的账户、订阅及存储版本不强制等于当前对象或 live version。
+- 队列检查器没有快照、部分站点缺快照或 totals 缺 cost 时显示未知；只有明确完整的数值证据才能显示金额，显式 cost:0 保留。
+- 只有当前有效的客户或站点范围才挂载审计面板；已验证 account 优先，summary/trail
+  均保持 account 范围，不叠加首个 site，也不信任响应中的任意链接或请求全局审计。
+  原查看审计记录入口保留。路由切换隔离旧 GET、错误、POST 完成及其读回。
+- 重建仍使用既有目标端点和幂等策略；本组只验证证据/目标并保护成功后的读回。
+  写入成功但读回损坏时保留待确认与旧详情，只有一个 GET Retry，失败重试不再 POST。
+  未扩展 S03 的未知提交恢复、新 key 或持久化协议。
+
+隔离 mock 浏览器和合成 SQLite API 响应只证明本地消费行为。SQLite 导出观测段
+33 条 SELECT 不代表真实客户数据库全链零写。严格浏览器里的部分 header RSC
+200→ERR_ABORTED 仍为失败；历史基线同签名不构成自动豁免。
+本地交接与反例见[组 3 记录](history/engineering/2026/admin-subscription-evidence-2026-11-02.md)。
 
 ## 套餐活跃集合
 

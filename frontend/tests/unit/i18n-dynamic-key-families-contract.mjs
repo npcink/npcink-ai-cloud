@@ -89,6 +89,8 @@ export const FAMILY_SOURCES = {
     'src/app/admin/subscriptions/page.tsx; ALLOWED_RISK_FILTERS values',
   'admin.subscriptions.risk_':
     'src/app/admin/subscriptions/page.tsx; ALLOWED_RISK_LEVELS values from backend operator risk levels',
+  'admin.subscription_detail.site_issue_':
+    'src/app/admin/subscriptions/[subscriptionId]/page.tsx; bounded SiteEvidence issue reasons invalid/duplicate/account from src/features/admin/subscriptions/evidence.ts; collection uses a separate literal key',
   'admin.runtime_profiles.':
     'src/app/admin/runtime-profiles/page.tsx copy(); suffix-only literals plus profileLabelKey(profile.profile_id) over the bounded runtime profile map',
   'admin.ai_resources.':

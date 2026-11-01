@@ -1,0 +1,207 @@
+{
+  "kind": "queue",
+  "requestKey": "risk=all&sort=priority&limit=10",
+  "data": {
+    "filters": {
+      "status": "",
+      "status_group": "",
+      "account_id": "",
+      "customer": "",
+      "plan_id": "",
+      "expires_before": null,
+      "risk": "all",
+      "sort": "priority",
+      "offset": 0,
+      "limit": 10
+    },
+    "summary": {
+      "critical": 0,
+      "warning": 1,
+      "monitor": 0,
+      "stable": 1
+    },
+    "items": [
+      {
+        "subscription": {
+          "subscription_id": "sub_serializer",
+          "account_id": "acct_serializer",
+          "plan_id": "serializer-plan",
+          "plan_version_id": "serializer-v1",
+          "status": "active",
+          "tier_id": "",
+          "plan_kind": "",
+          "package_kind": "tier_package",
+          "package_alias": "",
+          "display_package_label": "Pro",
+          "coverage_state": "covered",
+          "current_period_start_at": "2026-11-01T20:41:41.636376+00:00",
+          "current_period_end_at": "2026-12-01T20:41:41.636376+00:00",
+          "started_at": "2026-11-01T20:41:41.636376+00:00",
+          "canceled_at": null,
+          "suspended_at": null,
+          "scheduled_plan_id": "",
+          "scheduled_plan_version_id": "",
+          "scheduled_change_at": null,
+          "metadata": {},
+          "created_at": "2026-11-01T20:41:41+00:00",
+          "updated_at": "2026-11-01T20:41:41+00:00"
+        },
+        "account": {
+          "account_id": "acct_serializer",
+          "name": "Synthetic serializer account",
+          "status": "active",
+          "metadata": {},
+          "created_at": "2026-11-01T20:41:41+00:00",
+          "updated_at": "2026-11-01T20:41:41+00:00"
+        },
+        "covered_sites": [
+          {
+            "site_id": "site_archived",
+            "account_id": "acct_serializer",
+            "name": "Synthetic archived site",
+            "status": "archived",
+            "site_url": "",
+            "platform_kind": "wordpress",
+            "metadata": {},
+            "provisioned_at": null,
+            "activated_at": null,
+            "suspended_at": null,
+            "suspension_reason": "",
+            "ownership_released_at": null,
+            "relink_cooldown_until": null,
+            "created_at": "2026-11-01T20:41:41+00:00",
+            "updated_at": "2026-11-01T20:41:41+00:00"
+          },
+          {
+            "site_id": "site_serializer",
+            "account_id": "acct_serializer",
+            "name": "Synthetic active site",
+            "status": "active",
+            "site_url": "",
+            "platform_kind": "wordpress",
+            "metadata": {},
+            "provisioned_at": null,
+            "activated_at": null,
+            "suspended_at": null,
+            "suspension_reason": "",
+            "ownership_released_at": null,
+            "relink_cooldown_until": null,
+            "created_at": "2026-11-01T20:41:41+00:00",
+            "updated_at": "2026-11-01T20:41:41+00:00"
+          }
+        ],
+        "coverage": {
+          "covered_by_subscription_id": "sub_serializer",
+          "subscription_status": "active",
+          "plan_id": "serializer-plan",
+          "plan_version_id": "serializer-v1",
+          "current_period_end_at": "2026-12-01T20:41:41.636376+00:00",
+          "site_count": 2,
+          "site_limit": 0,
+          "display_package_label": "Pro",
+          "package_kind": "tier_package",
+          "coverage_state": "covered",
+          "package_alias": ""
+        },
+        "expiry": {
+          "current_period_end_at": "2026-12-01T20:41:41.636376+00:00",
+          "days_until_end": 29,
+          "is_expired": false
+        },
+        "latest_billing_snapshots": [],
+        "billing_snapshot_status": {
+          "status": "missing",
+          "summary": "Current-period billing snapshots are still missing for at least one covered site.",
+          "site_count": 1,
+          "fresh_site_count": 0,
+          "stale_site_count": 0,
+          "missing_site_count": 1,
+          "next_action": {
+            "action": "rebuild_current_period_billing_snapshots",
+            "label": "Rebuild current-period billing snapshots",
+            "detail": "Refresh current-period billing snapshots for every covered site before treating billing posture as reconciled."
+          },
+          "items": [
+            {
+              "site_id": "site_serializer",
+              "status": "missing",
+              "snapshot": null
+            }
+          ]
+        },
+        "operator_risk": {
+          "level": "warning",
+          "reason_code": "snapshot_missing"
+        }
+      },
+      {
+        "subscription": {
+          "subscription_id": "sub_nullable",
+          "account_id": "",
+          "plan_id": "",
+          "plan_version_id": "",
+          "status": "active",
+          "tier_id": "",
+          "plan_kind": "",
+          "package_kind": "unknown",
+          "package_alias": "",
+          "display_package_label": "Unknown",
+          "coverage_state": "uncovered",
+          "current_period_start_at": "2026-11-01T20:41:41.636376+00:00",
+          "current_period_end_at": null,
+          "started_at": "2026-11-01T20:41:41.636376+00:00",
+          "canceled_at": null,
+          "suspended_at": null,
+          "scheduled_plan_id": "",
+          "scheduled_plan_version_id": "",
+          "scheduled_change_at": null,
+          "metadata": {},
+          "created_at": "2026-11-01T20:41:41+00:00",
+          "updated_at": "2026-11-01T20:41:41+00:00"
+        },
+        "account": null,
+        "covered_sites": [],
+        "coverage": {
+          "covered_by_subscription_id": "sub_nullable",
+          "subscription_status": "active",
+          "plan_id": "",
+          "plan_version_id": "",
+          "current_period_end_at": null,
+          "site_count": 0,
+          "site_limit": 0,
+          "display_package_label": "Unknown",
+          "package_kind": "unknown",
+          "coverage_state": "uncovered",
+          "package_alias": ""
+        },
+        "expiry": {
+          "current_period_end_at": null,
+          "days_until_end": null,
+          "is_expired": false
+        },
+        "latest_billing_snapshots": [],
+        "billing_snapshot_status": {
+          "status": "fresh",
+          "summary": "Current-period billing snapshots are fresh for every covered site.",
+          "site_count": 0,
+          "fresh_site_count": 0,
+          "stale_site_count": 0,
+          "missing_site_count": 0,
+          "next_action": null,
+          "items": []
+        },
+        "operator_risk": {
+          "level": "stable",
+          "reason_code": "stable"
+        }
+      }
+    ],
+    "total": 2,
+    "pagination": {
+      "offset": 0,
+      "limit": 10,
+      "total": 2,
+      "has_more": false
+    }
+  }
+}
