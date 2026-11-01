@@ -213,3 +213,21 @@ def test_revision_is_required_bound_to_target_and_checked_after_existing_auth(tm
     assert wrong_target.status_code == 409
     assert wrong_target.json()["error_code"] == "service.admin_plan_revision_conflict"
     assert service.get_admin_plan("pro") == current
+
+
+def test_existing_version_can_still_move_between_plans(tmp_path: Path):
+    database_url, client = _build_client(tmp_path)
+    for plan_id in ["plan_move_a", "plan_move_b"]:
+        assert client.post(
+            "/internal/service/plans", json={"plan_id": plan_id, "name": plan_id},
+            headers=build_internal_headers(idempotency_key=f"move-create-{plan_id}"),
+        ).status_code == 200
+        response = client.post(
+            f"/internal/service/plans/{plan_id}/versions",
+            json={"plan_version_id": "move_same_version", "version_label": "v1"},
+            headers=build_internal_headers(idempotency_key=f"move-publish-{plan_id}"),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["plan_id"] == plan_id
+    with get_session(database_url) as session:
+        assert session.get(PlanVersion, "move_same_version").plan_id == "plan_move_b"

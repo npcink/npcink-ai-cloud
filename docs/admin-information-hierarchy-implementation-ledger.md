@@ -870,3 +870,22 @@ PC1440×1050、1056×1050 的正常、冲突、读取保草稿、串行保存由
 PG隔离测试明确pending（本机无Docker daemon）；新增7项的执行注入见并发契约。
 CI、merged、M4 candidate、M4 accepted、人工及生产均未宣称通过；
 套餐导航草稿/未知结果/广泛投影验证仍属未放行的1B。
+
+### B5-01 第一次独立审核 handback 补证
+
+同页新增 PC1440×1050 暗色冲突及读取保草稿场景，复用既有模拟API浏览器流，
+`review-2/dark-browser.log` 为1项通过。代理已目检
+`review-2/screenshots/pc-1440-dark-{conflict,read-retains-draft}.png`：
+冲突原因、最新积分/价格/状态及两个恢复动作可读，草稿与已读取快照区分明确，
+保存禁用可辨认；无主题实现改动、无golden更新、未重复全后台或56项套件。
+证据仍位于本节上述本机会话根，人工接受与集成 admission 仍pending。
+M4命令已用实际CLI dry-run修正为受支持双target；真实PG仍由集成会话执行。
+调查阶段证实跨父Plan版本移动在本地API可达，先记录缺口并交集成会话决定修复。
+随后按 R3 定向授权，参数保存改为先锁 Plan，再按稳定顺序锁 Version 集合并刷新，
+再锁 Offer、投影和比较revision；保留既有移动语义及普通GET。
+[并发契约](admin-plan-parameters-concurrency-v1.md#cross-parent-version-movement-repair-postgresql-proof-pending)
+记录两种写入顺序的PG锁等待测试与预期；此后端修复没有改变上述四类页面信息处置。
+`review-2/r3-local-tests-corrected.log` 为38项通过，质量检查通过；
+原误写不存在测试文件导致的零收集失败保留在 `review-2/r3-local-tests.log`。
+当前PG选择为9项Plan加1项Portal对照，本机10项均skip，仍由集成会话隔离实测；
+未将SQLite、命令dry-run或测试收集作为PG锁覆盖证明，未宣称admission。

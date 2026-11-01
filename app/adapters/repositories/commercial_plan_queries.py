@@ -56,6 +56,7 @@ class CommercialPlanQueries:
         plan_id: str | None = None,
         status: str | None = None,
         limit: int | None = None,
+        for_update: bool = False,
     ) -> list[PlanVersion]:
         statement = select(PlanVersion).order_by(
             PlanVersion.created_at.desc(),
@@ -67,6 +68,13 @@ class CommercialPlanQueries:
             statement = statement.where(PlanVersion.status == status)
         if limit is not None and limit > 0:
             statement = statement.limit(limit)
+        if for_update:
+            # Lock the actual children before building a revision. Under PG
+            # READ COMMITTED a row moved out while this SELECT waits is
+            # rechecked against plan_id and excluded; stale ORM objects must
+            # not reintroduce its old ownership or values. The existing
+            # created_at/id ordering is stable across version retargets.
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         return list(self.session.scalars(statement))
 
     def get_plan_offer(self, offer_id: str) -> PlanOffer | None:

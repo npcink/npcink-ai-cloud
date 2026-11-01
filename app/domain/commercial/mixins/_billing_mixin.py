@@ -956,7 +956,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 )
             versions = [
                 self._serialize_plan_version(item)
-                for item in repository.list_plan_versions(plan_id=plan_id)
+                for item in repository.list_plan_versions(plan_id=plan_id, for_update=True)
             ]
             latest_version = self._select_latest_plan_version(versions)
             tier_id = self._infer_plan_tier_id(plan, versions)

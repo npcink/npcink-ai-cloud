@@ -5,9 +5,15 @@ import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } 
 const evidenceRoot = process.env.NPCINK_PLAN_CONCURRENCY_EVIDENCE;
 const revision = (letter: string) => `plan-v1:${letter.repeat(64)}`;
 
-for (const width of [1440, 1056]) {
-  test(`plan conflict retains draft and requires explicit fresh start at PC ${width}`, async ({ page }, testInfo) => {
+for (const { width, colorScheme } of [
+  { width: 1440, colorScheme: 'light' as const },
+  { width: 1056, colorScheme: 'light' as const },
+  { width: 1440, colorScheme: 'dark' as const },
+]) {
+  test(`plan conflict retains draft and requires explicit fresh start at PC ${width} ${colorScheme}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1050 });
+    await page.emulateMedia({ colorScheme });
+    await page.addInitScript((scheme) => { localStorage.setItem('theme', scheme); }, colorScheme);
     await installAdminMocks(page);
     let points = 10000;
     let price = 99;
@@ -59,11 +65,14 @@ for (const width of [1440, 1056]) {
     const inputs = dialog.locator('input[type="number"]');
     const save = dialog.getByRole('button', { name: /^Save$|^保存$/ });
     const screenshot = async (state: string) => {
-      const path = evidenceRoot ? `${evidenceRoot}/pc-${width}-${state}.png` : testInfo.outputPath(`${state}.png`);
+      const themeSuffix = colorScheme === 'dark' ? '-dark' : '';
+      const path = evidenceRoot ? `${evidenceRoot}/pc-${width}${themeSuffix}-${state}.png` : testInfo.outputPath(`${state}.png`);
       if (evidenceRoot) await mkdir(evidenceRoot, { recursive: true });
       await page.screenshot({ path, fullPage: true });
       await testInfo.attach(state, { path, contentType: 'image/png' });
     };
+    if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/dark/);
+    else await expect(page.locator('html')).not.toHaveClass(/dark/);
     await expect(inputs.nth(0)).toHaveValue('99');
     await expect(inputs.nth(1)).toHaveValue('10000');
     await screenshot('normal');
