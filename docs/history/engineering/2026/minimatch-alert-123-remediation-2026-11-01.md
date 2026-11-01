@@ -97,8 +97,9 @@ Cloud 环境后才导入会初始化应用的集成测试模块，缺少生产�
 
 按依赖更新规范用单独 [PR #1343](https://github.com/npcink/npcink-ai-cloud/pull/1343)
 将 fixture 导入移到环境清理之前，不改应用、runner、fixture 或任何原断言。
-修正后独立用例 1 passed、全文件 9 passed、ruff 通过；依赖 PR 必须刷新到
-该修正合并后的 master 再看完整检查结果。原红 CI 与本地复现证据保留。
+修正后独立用例 1 passed、全文件 9 passed、ruff 通过；#1343 全部检查通过，
+于 2026-11-01T11:31:23Z 合并为 `6360b073`。依赖分支已合入该 master，
+须以新 head 的完整检查结果为准。原红 CI 与本地复现证据保留。
 
 编辑验证仅推进了准备层：现有 `magick-ai` 站点只读 readiness 为 ready，
 Addon/Toolbox 实际挂载路径已核对；`check:editor-assist-quality` 28 项通过，
