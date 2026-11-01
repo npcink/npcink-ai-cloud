@@ -46,6 +46,7 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialServiceError,
     CommercialValidationError,
+    PaymentGatewayRefundRejectedError,
 )
 from app.domain.commercial.mixins._audit_mixin import (
     CommercialServiceAuditMixin,
@@ -1158,9 +1159,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
         except CommercialServiceError as error:
             status = (
-                PAYMENT_REFUND_STATUS_UNKNOWN
-                if "status_unknown" in error.error_code
-                else PAYMENT_REFUND_STATUS_FAILED
+                PAYMENT_REFUND_STATUS_FAILED
+                if isinstance(error, PaymentGatewayRefundRejectedError)
+                else PAYMENT_REFUND_STATUS_UNKNOWN
             )
             self._record_payment_refund_gateway_outcome(
                 refund_id=refund_id,
@@ -1225,8 +1226,14 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
     ) -> None:
         service = cast(Any, self)
         with get_session(service.database_url) as session:
-            refund = CommercialRepository(session).get_payment_refund(refund_id)
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund(refund_id)
             if refund is None:
+                return
+            repository.get_payment_order_for_update(refund.order_id)
+            session.refresh(refund)
+            # A callback/reconciliation may have confirmed success during HTTP IO.
+            if refund.status == PAYMENT_REFUND_STATUS_SUCCEEDED:
                 return
             refund.status = status
             if status == PAYMENT_REFUND_STATUS_FAILED:
@@ -1267,6 +1274,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_order_not_found",
                     f"payment order '{refund.order_id}' was not found",
                 )
+            session.refresh(refund)
             event = self._record_payment_event_once(
                 repository=repository,
                 provider=refund.provider,

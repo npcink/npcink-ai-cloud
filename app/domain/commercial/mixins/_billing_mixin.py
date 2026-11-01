@@ -1956,14 +1956,16 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         now: datetime,
     ) -> tuple[AccountSubscription, AccountEntitlementSnapshot | None, bool]:
         start_at, end_at = self._resolve_period(subscription, now)
-        if end_at >= now:
+        if end_at > now:
             snapshot = repository.get_active_entitlement_snapshot(
                 subscription.account_id,
                 subscription_id=subscription.subscription_id,
             )
             return subscription, snapshot, False
 
-        if subscription.status == SUBSCRIPTION_STATUS_TRIALING:
+        if subscription.status == SUBSCRIPTION_STATUS_TRIALING or cast(
+            Any, self
+        )._is_payment_backed_subscription(subscription):
             cast(Any, self)._reconcile_account_subscription_state_in_session(
                 repository=repository,
                 account_id=subscription.account_id,

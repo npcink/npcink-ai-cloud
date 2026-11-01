@@ -31,7 +31,16 @@ changes:
 
 Creating a payment order must not grant entitlement. Requesting a refund must
 not revoke entitlement. Only confirmed provider success events may change
-entitlement.
+entitlement. Requested/unknown credit-pack refunds temporarily freeze their grant
+for runtime spending without changing the subscription entitlement; a confirmed
+failure releases it and a confirmed success reverses it atomically.
+
+Payment-backed subscription periods are half-open: at `current_period_end_at`
+the paid subscription expires unless another settled order already covers the
+next period. Runtime and administrative reads reconcile the same state. An
+unpaid/pending order never extends paid entitlement; when no other active or
+trialing subscription remains, the registered-account Free fallback applies.
+Free and explicitly managed subscriptions retain their separate renewal policy.
 
 ## 2. Tables
 

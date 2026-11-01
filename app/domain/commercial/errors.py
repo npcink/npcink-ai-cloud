@@ -59,3 +59,7 @@ class CommercialValidationError(CommercialServiceError):
         data: dict[str, object] | None = None,
     ) -> None:
         super().__init__(400, error_code, message, data=data)
+
+
+class PaymentGatewayRefundRejectedError(CommercialValidationError):
+    """The provider's signed response explicitly rejected this refund."""

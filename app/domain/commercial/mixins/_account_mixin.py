@@ -34,6 +34,7 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
     Account,
+    AccountSubscription,
     AccountUserMembership,
     Principal,
 )
@@ -524,6 +525,66 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         )
         return payload
 
+    @staticmethod
+    def _is_payment_backed_subscription(subscription: AccountSubscription) -> bool:
+        metadata = dict(subscription.metadata_json or {})
+        return bool(metadata.get("payment_order_id")) or metadata.get("source") in {
+            "payment_order",
+            "subscription_order",
+            "subscription_order_full_refund_restore",
+        }
+
+    def _expire_paid_subscriptions_in_session(
+        self,
+        *,
+        repository: CommercialSubscriptionLifecycleRepository,
+        account_id: str,
+        now: datetime,
+    ) -> None:
+        expired = []
+        for subscription in repository.list_account_subscriptions(account_id):
+            if (
+                subscription.status != SUBSCRIPTION_STATUS_ACTIVE
+                or not self._is_payment_backed_subscription(subscription)
+                or subscription.current_period_end_at is None
+                or self._normalize_datetime(subscription.current_period_end_at) > now
+            ):
+                continue
+            subscription.status = SUBSCRIPTION_STATUS_CANCELED
+            subscription.canceled_at = now
+            subscription.metadata_json = {
+                **dict(subscription.metadata_json or {}),
+                "paid_period_expired_at": self._serialize_datetime(now),
+            }
+            repository.supersede_entitlement_snapshots(
+                account_id,
+                subscription_id=subscription.subscription_id,
+            )
+            expired.append(subscription.subscription_id)
+        if not expired:
+            return
+        repository.session.flush()
+        if not any(
+            item.status in {SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIALING}
+            for item in repository.list_account_subscriptions(account_id)
+        ):
+            self._restore_default_free_subscription_for_account_in_session(
+                repository=repository,
+                account_id=account_id,
+                now=now,
+                reason="paid_period_expired",
+            )
+        self._record_service_audit_in_session(
+            repository=repository,
+            audit_context=None,
+            event_kind="subscription.paid.expire",
+            outcome="succeeded",
+            account_id=account_id,
+            scope_kind="account",
+            scope_id=account_id,
+            payload_json={"expired_subscription_ids": expired},
+        )
+
     def _reconcile_account_subscription_state_in_session(
         self,
         *,
@@ -538,6 +599,12 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             now=now,
         )
         activated_orders = cast(Any, self)._activate_due_subscription_orders_in_session(
+            repository=repository,
+            account_id=account_id,
+            now=now,
+        )
+        # Paid scheduled orders activate first; only uncovered paid periods expire.
+        self._expire_paid_subscriptions_in_session(
             repository=repository,
             account_id=account_id,
             now=now,
