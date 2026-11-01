@@ -215,7 +215,7 @@ deleting the old decision history.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
-- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
+- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md) — source/runtime/release 证据分级；§13 归纳付费到期、退款并发与原文验签、幂等身份、分页/DST、队列及真实 CI 覆盖的反例与回归要求。
 - [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](history/engineering/2026/historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
 - [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
