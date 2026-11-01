@@ -5,6 +5,12 @@ import { parameters, planCatalog, planConfirmation, planDetail, planRevision, pl
 const intent: PlanIntent = { plan_id: 'pro', plan_version_id: 'pro_v1', operation_id: 'original-key', revision: planRevision(), values: parameters, form: buildInitialForm(planDetail()) };
 
 describe('plan evidence contracts', () => {
+  it('preserves distinct edited sales price and internal cost budget in the submitted snapshot', () => {
+    const form = { ...buildInitialForm(planDetail()), sales_price_cny: '88.88', max_cost_cny_per_period: '12.34' };
+    const submitted = formParameters(form);
+    expect(submitted.sales_price_cny).toBe(88.88);
+    expect(submitted.max_cost_cny_per_period).toBe(12.34);
+  });
   it('accepts actual plan projection and zero limits, preserving nine submitted fields', () => {
     expect(requirePlanDetail(planDetail(), 'pro')).toEqual(planDetail());
     expect(formParameters(buildInitialForm(planDetail()))).toEqual(parameters);

@@ -47,14 +47,18 @@ def read(client, revision, operation="plan-confirm-original", plan="pro"):
 
 
 @pytest.mark.parametrize("cookie", [False, True])
-def test_exact_receipt_current_values_and_authorized_chain_are_select_only(tmp_path, monkeypatch, cookie):
+def test_exact_receipt_current_values_and_authorized_chain_are_select_only(
+    tmp_path, monkeypatch, cookie
+):
     database_url, client, revision, values = setup_operation(tmp_path, cookie=cookie)
 
     def forbidden(*args, **kwargs):
         pytest.fail("confirmation entered a write/heavy projection")
 
-    for name in ["get_admin_plan", "get_admin_site", "list_admin_plans", "update_admin_plan_parameters",
-                 "reconcile_billing_snapshot", "_record_service_audit_in_session"]:
+    for name in [
+        "get_admin_plan", "get_admin_site", "list_admin_plans", "update_admin_plan_parameters",
+        "reconcile_billing_snapshot", "_record_service_audit_in_session",
+    ]:
         monkeypatch.setattr(CommercialService, name, forbidden)
     monkeypatch.setattr(Session, "commit", forbidden)
     statements = []
@@ -74,9 +78,15 @@ def test_exact_receipt_current_values_and_authorized_chain_are_select_only(tmp_p
             assert result["receipt"]["parameters"] == values
             assert result["current"]["parameters"] == values
             assert result["current"]["revision"] != revision
-        for result in [read(client, revision, operation="not-sent"), read(client, revision, plan="plus"),
-                       read(client, "plan-v1:" + "a" * 64)]:
-            assert result["state"] == "unconfirmed" and result["current"] is None and result["receipt"] is None
+        for result in [
+            read(client, revision, operation="not-sent"), read(client, revision, plan="plus"),
+            read(client, "plan-v1:" + "a" * 64),
+        ]:
+            assert (
+                result["state"] == "unconfirmed"
+                and result["current"] is None
+                and result["receipt"] is None
+            )
         assert statements and "SELECT" in statements
     finally:
         event.remove(engine, "before_cursor_execute", inspect_sql)
@@ -90,10 +100,17 @@ def test_exact_receipt_current_values_and_authorized_chain_are_select_only(tmp_p
 def test_missing_wrong_or_ambiguous_evidence_never_confirms_same_value(tmp_path, damage):
     database_url, client, revision, values = setup_operation(tmp_path)
     with get_session(database_url) as session:
-        row = session.scalar(select(ServiceAuditEvent).where(ServiceAuditEvent.idempotency_key == "plan-confirm-original"))
+        row = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.idempotency_key == "plan-confirm-original"
+            )
+        )
         assert row is not None
         payload = deepcopy(row.payload_json)
-        if damage in {"actor_kind", "actor_ref", "method", "path", "event_kind", "outcome", "plan_id", "scope_kind", "scope_id"}:
+        if damage in {
+            "actor_kind", "actor_ref", "method", "path", "event_kind", "outcome", "plan_id",
+            "scope_kind", "scope_id",
+        }:
             setattr(row, damage, "wrong")
         elif damage == "key":
             row.idempotency_key = "other-key"
@@ -126,4 +143,8 @@ def test_missing_wrong_or_ambiguous_evidence_never_confirms_same_value(tmp_path,
         row.payload_json = payload
         session.commit()
     result = read(client, revision)
-    assert result["state"] == "unconfirmed" and result["current"] is None and result["receipt"] is None
+    assert (
+        result["state"] == "unconfirmed"
+        and result["current"] is None
+        and result["receipt"] is None
+    )
