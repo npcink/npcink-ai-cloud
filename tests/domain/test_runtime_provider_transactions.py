@@ -251,3 +251,88 @@ def test_unknown_dispatch_failure_preserves_evidence_and_never_automatically_rep
             assert len(list(session.scalars(select(UsageMeterEvent)))) == 1
             claims = list(session.scalars(select(ProviderBudgetClaim)))
             assert len(claims) == 2 and all(c.status == "claimed" for c in claims)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"storage_mode": "no_store"},
+        {"retention_ttl": 120},
+        {"timeout_seconds": 12},
+        {"retry_max": 1},
+        {"task_backend": {"enabled": True}},
+        {"canonical_run_id": "changed"},
+    ],
+)
+def test_idempotency_rejects_changed_client_execution_contract(
+    tmp_path: Path, changes: dict
+) -> None:
+    from dataclasses import replace
+
+    from app.domain.runtime.errors import RuntimeIdempotencyConflictError
+
+    adapter = provider()
+    adapter.before_execute = lambda request: None
+    with runtime_harness(tmp_path, [adapter]) as harness:
+        request = runtime_request(
+            idempotency_key="contract-identity", allow_fallback=False, retry_max=0
+        )
+        harness.service.execute(request)
+        with pytest.raises(RuntimeIdempotencyConflictError):
+            harness.service.execute(replace(request, **changes))
+        assert len(adapter.attempts) == 1
+
+
+def test_idempotency_replays_before_resolving_current_routes(tmp_path: Path, monkeypatch) -> None:
+    adapter = provider()
+    adapter.before_execute = lambda request: None
+    with runtime_harness(tmp_path, [adapter]) as harness:
+        request = runtime_request(
+            idempotency_key="route-independent", allow_fallback=False, retry_max=0
+        )
+        first = harness.service.execute(request)
+
+        def unavailable(**kwargs):
+            raise AssertionError("replay must not resolve current health/prices/routes")
+
+        monkeypatch.setattr(harness.service.routing_service, "resolve", unavailable)
+        replay = harness.service.execute(request)
+        assert replay.run_id == first.run_id and replay.idempotent_replay
+        assert len(adapter.attempts) == 1
+        with get_session(harness.database_url) as session:
+            assert sum(c.ai_credit_delta for c in session.scalars(select(CreditLedgerEntry))) == -2
+
+
+def test_legacy_identity_can_replay_and_upgrade_without_current_candidates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    adapter = provider()
+    adapter.before_execute = lambda request: None
+    with runtime_harness(tmp_path, [adapter]) as harness:
+        request = runtime_request(idempotency_key="legacy", allow_fallback=False, retry_max=0)
+        service = harness.service
+        resolution = service.routing_service.resolve(
+            profile_id=request.profile_id, execution_kind=request.execution_kind
+        )
+        old_policy = service._apply_routing_snapshot(
+            service._merge_policy(resolution.default_policy, request.policy),
+            resolution,
+        )
+        old_hash = service.run_lifecycle_service.build_request_fingerprint(request, old_policy)
+        first = service.execute(request)
+        with get_session(harness.database_url) as session:
+            run = session.get(RunRecord, first.run_id)
+            policy = dict(run.policy_json)
+            policy.pop("request_identity_version", None)
+            run.policy_json = policy
+            run.request_fingerprint = old_hash
+            session.commit()
+        monkeypatch.setattr(
+            service.routing_service, "resolve", lambda **kw: pytest.fail("resolved legacy route")
+        )
+        replay = service.execute(request)
+        assert replay.run_id == first.run_id and replay.idempotent_replay
+        with get_session(harness.database_url) as session:
+            run = session.get(RunRecord, first.run_id)
+            assert run.policy_json["request_identity_version"] == 2
+        assert len(adapter.attempts) == 1
