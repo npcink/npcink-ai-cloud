@@ -3229,3 +3229,80 @@ test('site usage day drill-down back restores the exact day-table scroll positio
     }
   }
 });
+
+test.describe('site usage bounded day records', () => {
+  test.use({ timezoneId: 'America/New_York' });
+  test('site usage server pagination preserves full 25-hour summary through wait, retry and return', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await installPortalMocks(page);
+    await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
+    const start = '2026-11-01T04:00:00Z';
+    const end = '2026-11-02T05:00:00Z';
+    const offsets: number[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let failOnce = true;
+    await page.route(/\/(?:api\/portal|portal\/v1)\/account\/credit-(?:events|event-buckets|event-days)(?:\?|$)/, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/credit-event-days')) {
+        await fulfillJson(route, {
+          items: [{ day: '2026-11-01', start_at: start, end_at: end, event_count: 2001,
+            consumed_ai_credits: 2007, feature_totals: [] }],
+          pagination: { total: 1, has_more: false }, summary: { feature_totals: [] },
+        });
+      } else if (url.pathname.endsWith('/credit-event-buckets')) {
+        expect(url.searchParams.get('start_at')).toBe(start);
+        expect(url.searchParams.get('end_at')).toBe(end);
+        await fulfillJson(route, {
+          generated_at: '2026-11-03T12:00:00Z', pagination: { has_more: false },
+          items: [{ start_at: '2026-11-01T05:00:00Z', consumed_ai_credits: 2000, event_count: 2000 },
+            { start_at: '2026-11-02T04:00:00Z', consumed_ai_credits: 7, event_count: 1 }],
+        });
+      } else if (url.searchParams.has('start_at')) {
+        await gate;
+        if (failOnce) {
+          failOnce = false;
+          await fulfillError(route, 'service.entitlements_temporarily_unavailable');
+          return;
+        }
+        const offset = Number(url.searchParams.get('offset') || 0);
+        expect(url.searchParams.get('limit')).toBe('20');
+        offsets.push(offset);
+        await fulfillJson(route, {
+          items: Array.from({ length: Math.min(20, 2001 - offset) }, (_, index) => ({
+            event_id: `day-${offset + index}`, support_reference: `day-${offset + index}`,
+            created_at: '2026-11-01T05:30:00Z', feature_key: 'content_generation',
+            feature_label: `Call ${offset + index}`, consumed_ai_credits: 1,
+            component_count: 1, components: [],
+          })),
+          summary: { event_count: 2001, consumed_ai_credits: 2007 },
+          pagination: { total: 2001, has_more: offset + 20 < 2001 },
+        });
+      } else await route.fallback();
+    });
+    await page.goto('/portal/billing');
+    await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+    const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+    await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: '30 天' }).click();
+    await dialog.getByRole('tab', { name: /AI 积分记录/ }).click();
+    await dialog.locator('[data-portal-usage="records-day-row"] button').click();
+    const drill = dialog.locator('[data-portal-usage="records-day-drill"]');
+    await expect(drill.getByText(/加载中|Loading/).first()).toBeVisible();
+    release();
+    await expect(drill.getByRole('button', { name: /重试|Retry/ })).toBeVisible();
+    await drill.getByRole('button', { name: /重试|Retry/ }).click();
+    await expect(drill.locator('[data-portal-usage="records-row"]')).toHaveCount(20);
+    await expect(drill.locator('[data-trend-points="25"]')).toBeVisible();
+    await expect(dialog.locator('[data-portal-usage="site-dialog-summary-text"]')).toContainText('2,007');
+    await expect(drill.locator('[data-portal-usage="trend-bucket"]').last()).toHaveAttribute('data-credits', '7');
+    await expect(drill.locator('[data-portal-usage="trend-bucket"]').nth(1)).toHaveAttribute('aria-label', /GMT-4/);
+    await expect(drill.locator('[data-portal-usage="trend-bucket"]').nth(2)).toHaveAttribute('aria-label', /GMT-5/);
+    await dialog.getByRole('button', { name: /下一页/ }).click();
+    await expect(dialog.locator('[data-portal-usage="records-pagination"] p')).toContainText('21');
+    expect(offsets).toEqual([0, 20]);
+    await expect(dialog.locator('[data-portal-usage="site-dialog-summary-text"]')).toContainText('2,007');
+    await page.screenshot({ path: 'test-results/site-day-pagination-1280.png' });
+    await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
+    await expect(dialog.locator('[data-portal-usage="records-day-row"]')).toHaveCount(1);
+  });
+});

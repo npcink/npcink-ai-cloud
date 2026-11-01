@@ -4157,6 +4157,8 @@ async def get_portal_account_credit_event_buckets(
     window: Literal["24h", "7d", "30d", "period"] = Query(default="7d"),  # noqa: B008
     site_id: str = Query(default="", max_length=191),  # noqa: B008
     feature: str = Query(default="", max_length=64),  # noqa: B008
+    start_at: datetime | None = Query(default=None),  # noqa: B008
+    end_at: datetime | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=20, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -4196,6 +4198,8 @@ async def get_portal_account_credit_event_buckets(
             feature=feature,
             limit=limit,
             offset=offset,
+            range_start_at=start_at,
+            range_end_at=end_at,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

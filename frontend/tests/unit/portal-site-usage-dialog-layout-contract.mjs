@@ -94,7 +94,8 @@ assert.match(dialog, /savedDayScrollRef/, 'back restores scroll');
 assert.match(dialog, /useLayoutEffect\(\(\) => \{\s*const top = pendingDayScrollRestoreRef\.current;\s*if \(drillDay \|\| top === null \|\| !dayRows\) return;/, 'restore after cached day rows render, not from the click handler');
 assert.match(dialog, /new ResizeObserver\(apply\)/, 're-apply scroll restore until the container is tall enough (no max-scroll clamp)');
 assert.doesNotMatch(dialog, /requestAnimationFrame\(\(\) => scrollContainer\(\)\?\.scrollTo\(\{ top \}\)\)/, 'no racing rAF restore in closeDay');
-assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
+assert.match(dialog, /limit: creditEventPageSize, offset: nextPage \* creditEventPageSize/, 'day records use server pagination');
+assert.doesNotMatch(dialog, /page < 40|offset: collected\.length/, 'no silent bulk-fetch cutoff');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
 assert.match(dialog, /records-feature-filter/, 'service filter stays');
 assert.match(
