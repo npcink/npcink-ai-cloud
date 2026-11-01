@@ -72,6 +72,14 @@ peers. A frozen install and ordinary test run can both pass without exercising
 the coverage plugin. Run the actual coverage path when that peer changes, and
 check installed container versions after the dependency-aware M4 deployment.
 
+For a transitive security override across major versions, scope the override
+to the actual parent, inspect removed APIs against that parent's calls, and
+exercise the consumer as well as the advisory counterexample. Resolve the
+test dependency through the parent so an unrelated safe copy cannot hide the
+old version. Record any remaining audit findings without suppressing them;
+remove the override once the parent admits a fixed compatible version and
+the consumer regression still passes. See the [minimatch #123 record](history/engineering/2026/minimatch-alert-123-remediation-2026-11-01.md).
+
 Serialize updates that overlap a manifest or lockfile. Refresh each on current
 master and inspect its final diff so it preserves previously integrated source
 and dependencies. For major updates, check the release's runtime floors,

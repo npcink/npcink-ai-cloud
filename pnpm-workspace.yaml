@@ -2,6 +2,9 @@ packages:
   - 'frontend'
 
 overrides:
+  # GHSA-g3hv-75wg-m249: remove when this consumer admits a fixed release.
+  # Other ESLint consumers use the incompatible minimatch 3.x API.
+  '@typescript-eslint/typescript-estree>minimatch': '11.0.1'
   '@babel/core': '7.29.6'
   browserslist: '>=4.28.9'
   postcss-selector-parser: '>=6.1.3'
