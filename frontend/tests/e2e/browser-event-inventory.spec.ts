@@ -54,14 +54,22 @@ test('collector reload synchronization finishes old document prefetch and script
   await page.route('**/admin/collector-side-work**', async route => { await held; await route.fulfill({ contentType: 'text/plain', body: 'prefetch completed' }); });
   await page.route('**/_next/static/chunks/collector-side-work.js', async route => { await held; await route.fulfill({ contentType: 'application/javascript', body: 'window.collectorSideWorkFinished = true' }); });
   await page.goto('/collector-reload');
+  // Reproduce a previously reached load state: later same-document requests
+  // must still drain even when waitForLoadState can resolve immediately.
+  await page.waitForLoadState('networkidle');
   await page.evaluate(() => {
     void fetch('/admin/collector-side-work?_rsc=side', { headers: { rsc: '1', 'next-router-prefetch': '1', 'next-router-segment-prefetch': '/_tree' } });
     const script = document.createElement('script'); script.src = '/_next/static/chunks/collector-side-work.js'; document.head.append(script);
   });
   await expect.poll(() => collector.raw.requests.filter(request => request.url.includes('collector-side-work')).length).toBe(2);
   let settled = false;
-  const settle = collector.beforeReload().then(() => { settled = true; });
-  expect(settled).toBe(false); release(); await settle;
+  const settle = collector.beforeReload().then(() => { settled = true; return null; }, (error: Error) => error);
+  try {
+    await expect.poll(() => collector.raw.lifecycle.some(event => event.event === 'explicit-reload-drain-wait'), { timeout: 2000 }).toBe(true);
+    expect(settled).toBe(false);
+    expect(collector.raw.requests.filter(request => request.url.includes('collector-side-work')).every(request => !request.finishedAt)).toBe(true);
+  } finally { release(); }
+  expect(await settle).toBeNull();
   expect(await page.evaluate(() => (window as Window & { collectorSideWorkFinished?: boolean }).collectorSideWorkFinished)).toBe(true);
   await page.reload();
   expect(collector.raw.requestfailed).toEqual([]); expect(collector.classify().unexpected.requestfailed).toEqual([]);
@@ -72,4 +80,34 @@ test('collector reload synchronization finishes old document prefetch and script
   await mkdir(root, { recursive: true }); const path = `${root}/collector-reload-control.json`;
   await writeFile(path, JSON.stringify({ raw: collector.raw, classified: collector.classify() }, null, 2));
   await info.attach('reload-lifecycle-control', { path, contentType: 'application/json' });
+});
+
+test('collector reload drain times out with active-request evidence while a real request stays held', async ({ page }, info) => {
+  const collector = collectBrowserEvents(page);
+  await page.route('**/collector-timeout', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>timeout control</title>' }));
+  let release: () => void = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/collector-never-finishes', async route => { await held; await route.fulfill({ body: 'cleanup after timeout assertion' }); });
+  await page.goto('/collector-timeout'); await page.waitForLoadState('networkidle');
+  await page.evaluate(() => { void fetch('/collector-never-finishes'); });
+  await expect.poll(() => collector.raw.requests.some(request => request.url.endsWith('/collector-never-finishes'))).toBe(true);
+  const request = collector.raw.requests.find(request => request.url.endsWith('/collector-never-finishes'))!;
+  let failure: Error | null = null;
+  let atTimeout: unknown;
+  try {
+    failure = await collector.beforeReload(250).then(() => null, (error: Error) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure!.message).toContain('250ms'); expect(failure!.message).toContain(request.url);
+    expect(failure!.message).toContain(`"id":${request.id}`); expect(failure!.message).toContain('"resourceType":"fetch"');
+    expect(request.finishedAt).toBeUndefined();
+    expect(collector.raw.lifecycle.some(event => event.event === 'explicit-reload-ready')).toBe(false);
+    expect(collector.raw.lifecycle.at(-1)?.activeRequestIds).toContain(request.id);
+    atTimeout = structuredClone(collector.raw);
+  } finally { release(); }
+  await expect.poll(() => request.finishedAt).toBeDefined();
+  expect(collector.classify().unexpected).toEqual({ pageerror: [], consoleError: [], httpFailures: [], requestfailed: [] });
+  const root = process.env.NPCINK_PLAN_EVIDENCE || info.outputDir;
+  await mkdir(root, { recursive: true }); const path = `${root}/collector-drain-timeout-control.json`;
+  await writeFile(path, JSON.stringify({ message: failure?.message, atTimeout, afterCleanup: collector.raw, classified: collector.classify() }, null, 2));
+  await info.attach('bounded-drain-timeout-control', { path, contentType: 'application/json' });
 });

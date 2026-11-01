@@ -7,6 +7,9 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.adapters.repositories.credit_pack_catalog_repository import (
     catalog_revision,
     replace_catalog,
@@ -191,6 +194,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "revision": revision,
                 "updated_at": service._serialize_datetime(now),
             }
+            result["catalog_operation"] = {
+                "expected_revision": expected_revision, "items": normalized_items,
+            }
             service._record_service_audit_in_session(
                 repository=repository,
                 audit_context=audit_context,
@@ -201,6 +207,58 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 payload_json=result,
             )
             session.commit()
+            return result
+
+    def confirm_admin_credit_pack_catalog(
+        self, *, operation_id: str, expected_revision: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # This dedicated chain performs SELECTs only. Do not use a customer or
+        # ledger projection here: GET alone does not establish absence of writes.
+        service = cast(Any, self)
+        result: dict[str, object] = {
+            "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
+            "operation_id": operation_id, "expected_revision": expected_revision,
+            "state": "unconfirmed", "current": None, "receipt": None,
+        }
+        with get_session(service.database_url) as session:
+            events = CommercialServiceAuditRepository(session).find_credit_pack_catalog_events(
+                operation_id=operation_id, actor_kind=audit_context.actor_kind,
+                actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json
+            if not isinstance(payload, dict):
+                return result
+            operation = payload.get("catalog_operation")
+            row = session.get(ServiceSetting, SERVICE_SETTING_CREDIT_PACK_CATALOG)
+            config = row.config_json if row is not None else None
+            if (
+                not isinstance(operation, dict) or not isinstance(config, dict)
+                or operation.get("expected_revision") != expected_revision
+                or not isinstance(operation.get("items"), list)
+                or operation["items"] != config.get("items")
+                or payload.get("setting_id") != SERVICE_SETTING_CREDIT_PACK_CATALOG
+                or not isinstance(payload.get("revision"), str)
+                or payload["revision"] == expected_revision
+                or payload["revision"] != catalog_revision(row)
+                or payload.get("items") != config.get("items")
+            ):
+                return result
+            result.update(
+                state="confirmed", current=payload,
+                receipt={"operation_id": operation_id,
+                         "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
+                         "expected_revision": expected_revision,
+                         "revision": payload["revision"], "items": operation["items"],
+                         "actor_kind": event.actor_kind, "actor_ref": event.actor_ref,
+                         "method": event.method, "path": event.path,
+                         "event_kind": event.event_kind, "outcome": event.outcome,
+                         "scope_kind": event.scope_kind, "scope_id": event.scope_id,
+                         "audit_event_id": event.id},
+            )
             return result
 
     def _effective_credit_pack_items_from_session(

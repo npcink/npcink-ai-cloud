@@ -2749,6 +2749,24 @@ async def get_admin_credit_pack_catalog(request: Request) -> Any:
     )
 
 
+@router.get("/admin/credit-packs/operations/{operation_id}")
+async def confirm_admin_credit_pack_catalog(
+    request: Request, operation_id: str,
+    expected_revision: str = Query(min_length=1, max_length=128),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_credit_pack_catalog,
+        operation_id=operation_id, expected_revision=expected_revision,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="credit pack operation confirmation", data=result, revision="m6",
+    )
+
+
 @router.patch("/admin/credit-packs")
 async def update_admin_credit_pack_catalog(
     request: Request,
