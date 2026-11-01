@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -26,6 +28,7 @@ from app.core.models import (
     AccountEntitlementSnapshot,
     AccountSubscription,
     BillingSnapshot,
+    Plan,
     PlanVersion,
     ServiceSetting,
     Site,
@@ -298,66 +301,103 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            if repository.get_plan(plan_id) is None:
-                raise CommercialNotFoundError(
-                    "service.plan_not_found",
-                    f"plan '{plan_id}' was not found",
-                )
-            label_conflict = next(
-                (
-                    version
-                    for version in repository.list_plan_versions(plan_id=plan_id, limit=None)
-                    if version.version_label == version_label
-                    and version.plan_version_id != plan_version_id
-                ),
-                None,
-            )
-            if label_conflict is not None:
-                raise CommercialConflictError(
-                    "service.plan_version_label_conflict",
-                    (
-                        f"plan '{plan_id}' already has version label '{version_label}' "
-                        f"on plan version '{label_conflict.plan_version_id}'"
-                    ),
-                )
-            plan_version = repository.upsert_plan_version(
-                plan_version_id=plan_version_id,
+            payload = self._publish_plan_version_in_session(
+                repository=repository,
                 plan_id=plan_id,
+                plan_version_id=plan_version_id,
                 version_label=version_label,
                 status=status,
-                currency=self._normalize_plan_currency(currency),
-                entitlements_json=self._normalize_entitlements(entitlements_json),
-                budgets_json=self._normalize_budgets(budgets_json),
-                concurrency_json=self._normalize_concurrency(concurrency_json),
-                policy_json=self._normalize_commercial_policy(policy_json),
+                currency=currency,
+                entitlements_json=entitlements_json,
+                budgets_json=budgets_json,
+                concurrency_json=concurrency_json,
+                policy_json=policy_json,
                 metadata_json=metadata_json,
-            )
-            tier_id = self._infer_plan_tier_id(
-                repository.get_plan(plan_id),
-                [self._serialize_plan_version(plan_version)],
-            )
-            if status == PLAN_VERSION_STATUS_PUBLISHED and tier_id in {"plus", "pro"}:
-                cast(Any, self)._sync_standard_plan_offer_in_session(
-                    repository,
-                    tier_id=tier_id,
-                    plan_id=plan_id,
-                    plan_version_id=plan_version.plan_version_id,
-                    sales_price_cny=sales_price_cny,
-                )
-            payload = self._serialize_plan_version(plan_version)
-            self._record_service_audit_in_session(
-                repository=repository,
+                sales_price_cny=sales_price_cny,
                 audit_context=audit_context,
-                event_kind="plan_version.publish",
-                outcome="succeeded",
-                plan_id=plan_id,
-                plan_version_id=plan_version.plan_version_id,
-                scope_kind="plan_version",
-                scope_id=plan_version.plan_version_id,
-                payload_json=payload,
             )
             session.commit()
             return payload
+
+    def _publish_plan_version_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        plan_id: str,
+        plan_version_id: str,
+        version_label: str,
+        status: str = PLAN_VERSION_STATUS_PUBLISHED,
+        currency: str = "CNY",
+        entitlements_json: dict[str, object] | None = None,
+        budgets_json: dict[str, object] | None = None,
+        concurrency_json: dict[str, object] | None = None,
+        policy_json: dict[str, object] | None = None,
+        metadata_json: dict[str, object] | None = None,
+        sales_price_cny: float | None = None,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        if repository.get_plan_for_update(plan_id) is None:
+            raise CommercialNotFoundError(
+                "service.plan_not_found",
+                f"plan '{plan_id}' was not found",
+            )
+        label_conflict = next(
+            (
+                version
+                for version in repository.list_plan_versions(plan_id=plan_id, limit=None)
+                if version.version_label == version_label
+                and version.plan_version_id != plan_version_id
+            ),
+            None,
+        )
+        if label_conflict is not None:
+            raise CommercialConflictError(
+                "service.plan_version_label_conflict",
+                (
+                    f"plan '{plan_id}' already has version label '{version_label}' "
+                    f"on plan version '{label_conflict.plan_version_id}'"
+                ),
+            )
+        plan_version = repository.upsert_plan_version(
+            plan_version_id=plan_version_id,
+            plan_id=plan_id,
+            version_label=version_label,
+            status=status,
+            currency=self._normalize_plan_currency(currency),
+            entitlements_json=self._normalize_entitlements(entitlements_json),
+            budgets_json=self._normalize_budgets(budgets_json),
+            concurrency_json=self._normalize_concurrency(concurrency_json),
+            policy_json=self._normalize_commercial_policy(policy_json),
+            metadata_json=metadata_json,
+        )
+        tier_id = self._infer_plan_tier_id(
+            repository.get_plan(plan_id),
+            [self._serialize_plan_version(plan_version)],
+        )
+        if status == PLAN_VERSION_STATUS_PUBLISHED and tier_id in {"plus", "pro"}:
+            cast(Any, self)._sync_standard_plan_offer_in_session(
+                repository,
+                tier_id=tier_id,
+                plan_id=plan_id,
+                plan_version_id=plan_version.plan_version_id,
+                sales_price_cny=sales_price_cny,
+            )
+        payload = self._serialize_plan_version(plan_version)
+        self._record_service_audit_in_session(
+            repository=repository,
+            audit_context=audit_context,
+            event_kind="plan_version.publish",
+            outcome="succeeded",
+            plan_id=plan_id,
+            plan_version_id=plan_version.plan_version_id,
+            scope_kind="plan_version",
+            scope_id=plan_version.plan_version_id,
+            payload_json=payload,
+        )
+        plan = repository.get_plan(plan_id)
+        assert plan is not None
+        plan.metadata_json = {**(plan.metadata_json or {}), "admin_parameters_epoch": uuid4().hex}
+        return payload
 
     def rebuild_billing_snapshot(
         self,
@@ -838,6 +878,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "tier_summary": tier_summary,
             "latest_version": latest_version,
             "sales_offer": sales_offer,
+            "revision": self._admin_plan_revision(plan, latest_version, sales_offer),
             "package_fit_cues": self._build_plan_package_fit_cues(
                 tier_summary=tier_summary,
                 latest_version=latest_version,
@@ -860,10 +901,38 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             ],
         }
 
+    @staticmethod
+    def _admin_plan_revision(
+        plan: Plan, version: dict[str, object] | None, offer: dict[str, object] | None
+    ) -> str:
+        # No timestamp assumptions. The durable epoch invalidates ABA / same-value
+        # publications; the semantic fingerprint also covers pre-existing records.
+        semantic_version = {
+            key: value
+            for key, value in (version or {}).items()
+            if key not in {"created_at", "updated_at"}
+        }
+        material = {
+            "plan_id": plan.plan_id,
+            "status": plan.status,
+            "metadata": plan.metadata_json or {},
+            "version": semantic_version,
+            "sales_offer": offer,
+        }
+        return (
+            "plan-v1:"
+            + hashlib.sha256(
+                json.dumps(
+                    material, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+                ).encode()
+            ).hexdigest()
+        )
+
     def update_admin_plan_parameters(
         self,
         *,
         plan_id: str,
+        revision: str,
         monthly_included_points: float,
         site_limit: int,
         max_vector_documents: int,
@@ -878,52 +947,84 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         def _copy_mapping(value: object) -> dict[str, object]:
             return dict(value) if isinstance(value, dict) else {}
 
-        detail = self.get_admin_plan(plan_id)
-        latest_version = _copy_mapping(detail.get("latest_version"))
-        if not latest_version:
-            raise CommercialNotFoundError(
-                "service.plan_version_not_found",
-                f"plan '{plan_id}' has no current version to update",
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            plan = repository.get_plan_for_update(plan_id)
+            if plan is None:
+                raise CommercialNotFoundError(
+                    "service.plan_not_found", f"plan '{plan_id}' was not found"
+                )
+            versions = [
+                self._serialize_plan_version(item)
+                for item in repository.list_plan_versions(plan_id=plan_id)
+            ]
+            latest_version = self._select_latest_plan_version(versions)
+            tier_id = self._infer_plan_tier_id(plan, versions)
+            offer = repository.get_plan_offer_for_update(f"{tier_id}_monthly_v1")
+            sales_offer = (
+                cast(Any, self)._serialize_plan_offer(offer)
+                if offer is not None
+                and offer.plan_id == plan_id
+                and offer.account_id is None
+                and offer.purchase_mode == "self_serve"
+                else None
+            )
+            if not revision or revision != self._admin_plan_revision(
+                plan, latest_version, sales_offer
+            ):
+                raise CommercialConflictError(
+                    "service.admin_plan_revision_conflict",
+                    "Package parameters or sales availability changed. Read the latest values before saving.",
+                )
+            latest_version = _copy_mapping(latest_version)
+            if not latest_version:
+                raise CommercialNotFoundError(
+                    "service.plan_version_not_found",
+                    f"plan '{plan_id}' has no current version to update",
+                )
+
+            budgets = _copy_mapping(latest_version.get("budgets"))
+            budgets.update(
+                {
+                    "max_ai_credits_per_period": monthly_included_points,
+                    "max_cost_cny_per_period": max_cost_cny_per_period,
+                }
+            )
+            concurrency = _copy_mapping(latest_version.get("concurrency"))
+            concurrency["max_active_runs"] = max_active_runs
+            policy = _copy_mapping(latest_version.get("policy"))
+            subscription_policy = _copy_mapping(policy.get("subscription"))
+            subscription_policy["grace_period_days"] = grace_period_days
+            policy["subscription"] = subscription_policy
+            metadata = _copy_mapping(latest_version.get("metadata"))
+            metadata.update(
+                {
+                    "monthly_included_points": monthly_included_points,
+                    "site_limit": site_limit,
+                    "max_vector_documents": max_vector_documents,
+                    "max_media_images": max_media_images,
+                    "max_batch_items": max_batch_items,
+                }
             )
 
-        budgets = _copy_mapping(latest_version.get("budgets"))
-        budgets.update(
-            {
-                "max_ai_credits_per_period": monthly_included_points,
-                "max_cost_cny_per_period": max_cost_cny_per_period,
-            }
-        )
-        concurrency = _copy_mapping(latest_version.get("concurrency"))
-        concurrency["max_active_runs"] = max_active_runs
-        policy = _copy_mapping(latest_version.get("policy"))
-        subscription_policy = _copy_mapping(policy.get("subscription"))
-        subscription_policy["grace_period_days"] = grace_period_days
-        policy["subscription"] = subscription_policy
-        metadata = _copy_mapping(latest_version.get("metadata"))
-        metadata.update(
-            {
-                "monthly_included_points": monthly_included_points,
-                "site_limit": site_limit,
-                "max_vector_documents": max_vector_documents,
-                "max_media_images": max_media_images,
-                "max_batch_items": max_batch_items,
-            }
-        )
+            payload = self._publish_plan_version_in_session(
+                repository=repository,
+                plan_id=plan_id,
+                plan_version_id=str(latest_version.get("plan_version_id") or ""),
+                version_label=str(latest_version.get("version_label") or ""),
+                status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
+                currency=str(latest_version.get("currency") or "CNY"),
+                entitlements_json=_copy_mapping(latest_version.get("entitlements")),
+                budgets_json=budgets,
+                concurrency_json=concurrency,
+                policy_json=policy,
+                metadata_json=metadata,
+                sales_price_cny=sales_price_cny,
+                audit_context=audit_context,
+            )
 
-        return self.publish_plan_version(
-            plan_id=plan_id,
-            plan_version_id=str(latest_version.get("plan_version_id") or ""),
-            version_label=str(latest_version.get("version_label") or ""),
-            status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
-            currency=str(latest_version.get("currency") or "CNY"),
-            entitlements_json=_copy_mapping(latest_version.get("entitlements")),
-            budgets_json=budgets,
-            concurrency_json=concurrency,
-            policy_json=policy,
-            metadata_json=metadata,
-            sales_price_cny=sales_price_cny,
-            audit_context=audit_context,
-        )
+            session.commit()
+            return payload
 
     def list_admin_subscriptions(
         self,
@@ -1430,6 +1531,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             )
 
         plan_id, plan_version_id = CANONICAL_TIER_PLAN_IDS[tier_id]
+        repository.get_plan_for_update(plan_id)
         existing_versions = repository.list_plan_versions(
             plan_id=plan_id,
             status=PLAN_VERSION_STATUS_PUBLISHED,

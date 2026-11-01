@@ -49,3 +49,25 @@ it('does not open other methods or nested sales routes', async () => {
   })).status).toBe(404);
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+
+it('requires catalog management before forwarding parameter writes and preserves revision/key', async () => {
+  const planContext = { params: Promise.resolve({ path: ['plans', 'plus'] }) };
+  const body = JSON.stringify({ revision: `plan-v1:${'a'.repeat(64)}`, sales_price_cny: 88.88 });
+  const planRequest = () => new NextRequest('https://cloud.test/api/admin/plans/plus', {
+    method: 'PATCH', headers: {
+      cookie: 'npcink_admin_session_token=admin-test', 'content-type': 'application/json',
+      'idempotency-key': 'plan-original-key',
+    }, body,
+  });
+  const denied = backend(false);
+  expect((await PATCH(planRequest(), planContext)).status).toBe(403);
+  expect(denied).toHaveBeenCalledOnce();
+  const allowed = backend(true);
+  expect((await PATCH(planRequest(), planContext)).status).toBe(200);
+  expect(allowed).toHaveBeenLastCalledWith(
+    'http://api:8000/internal/service/admin/plans/plus', expect.objectContaining({
+      method: 'PATCH', body, headers: expect.objectContaining({ 'Idempotency-Key': 'plan-original-key' }),
+    })
+  );
+});

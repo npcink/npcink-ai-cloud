@@ -555,6 +555,8 @@ class PlanVersionPayload(BaseModel):
 class AdminPlanParametersPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    revision: str = Field(min_length=1, max_length=128)
+
     monthly_included_points: float = Field(ge=0)
     site_limit: int = Field(ge=1)
     max_vector_documents: int = Field(ge=0)
@@ -4475,6 +4477,7 @@ async def update_admin_plan_parameters(
         result = await run_in_threadpool(
             _get_commercial_service(request).update_admin_plan_parameters,
             plan_id=plan_id,
+            revision=payload.revision,
             monthly_included_points=payload.monthly_included_points,
             site_limit=payload.site_limit,
             max_vector_documents=payload.max_vector_documents,

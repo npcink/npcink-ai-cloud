@@ -843,3 +843,30 @@ B4-06–10 集成补记（2026-11-01）：操作者明确接受credits页签取�
 外观，并允许更新对应golden。Darwin/Linux分别采用原生actual并重验原失败场景，
 各1 passed；旧32/1及差异图保留，不放宽阈值。此接受仅覆盖该外观，整批产品
 人工验收与生产授权继续独立。集成详情见本组dated交付记录及外部integration-3回执。
+
+## B5-01 套餐参数并发保存保护 — 2026-11-01 本地候选
+
+分支 `codex/admin-plan-concurrency`，基线 `7c561eeac4f7335f53ba6b9522c343ce3afcf8cf`。
+范围为 `/admin/plans?focus=<plan>` 的既有参数工作台；
+[并发契约与验证入口](admin-plan-parameters-concurrency-v1.md)。
+
+| 类别 | 本次处置 / 入口 |
+| --- | --- |
+| 常显 | 保留套餐目标、订阅影响及原参数；明确409时显示冲突原因、草稿保留、保存阻断和GET恢复按钮。读取成功后单独显示最新积分/价格/销售状态，输入仍为草稿；只有明确放弃草稿才填入最新值。读取失败保留草稿和保存阻断。 |
+| 按需 | 原字段解释、诊断TAB和高级成本阈值入口保持；不把冲突或恢复动作移入折叠/hover。 |
+| 技术证据 | revision随GET/PATCH传递；保留原receipt/诊断/审计入口，技术epoch不新增操作字段。 |
+| 删除重复 | 本轮没有移走既有内容，无新增重复目录摘要、运营指标、订阅入口或“已就绪”说明。 |
+
+本地定向 API/domain、proxy/capability、Admin结构/类型/lint已验证；
+PC1440×1050、1056×1050 的正常、冲突、读取保草稿、串行保存由真实Chromium
+配合模拟API验证。读取最新不会发PATCH，冲突后保存不可用；窄PC保持页内滚动和固定footer，
+新冲突/恢复信息在首屏可见。截图经代理目检，无横向溢出或控件重叠；不视为人工视觉接受。
+本轮未改主题颜色或共享primitive，不重跑全后台视觉矩阵、不更新任何golden。
+
+原始证据根（本机）：
+`/Users/muze/.codex/visualizations/2026/11/01/01a1929f-2271-7550-b73e-07abd2a0a629/admin-plan-concurrency/`。
+`browser-5.log`、`screenshots/pc-{1440,1056}-{normal,conflict,read-retains-draft,saved}.png`
+及最终manifest记录命令、退出码和SHA256。早期失败与修正日志保留，不能标成整轮一次通过。
+PG隔离测试明确pending（本机无Docker daemon）；新增7项的执行注入见并发契约。
+CI、merged、M4 candidate、M4 accepted、人工及生产均未宣称通过；
+套餐导航草稿/未知结果/广泛投影验证仍属未放行的1B。

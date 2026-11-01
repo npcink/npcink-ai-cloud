@@ -15,7 +15,7 @@ import {
   localizePackageFitCue,
 } from '@/lib/admin-plan-copy';
 import { createApiClient } from '@/lib/api-client';
-import { resolveUiErrorMessage } from '@/lib/errors';
+import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 import { formatNumber as formatInteger } from '@/lib/utils';
 
@@ -68,6 +68,7 @@ type PackageFitCue = {
 };
 
 type PlanDetailPayload = {
+  revision: string;
   plan: PlanRecord;
   latest_version?: PlanVersionRecord | null;
   sales_offer?: {
@@ -217,6 +218,8 @@ export function PlanManagementWorkbench({
   useEffect(() => { translationRef.current = t; }, [t]);
   const savingRef = useRef(false);
   const [awaitingRead, setAwaitingRead] = useState(false);
+  const [revisionConflict, setRevisionConflict] = useState(false);
+  const [conflictRead, setConflictRead] = useState<PlanDetailPayload | null>(null);
   const [detail, setDetail] = useState<PlanDetailPayload | null>(null);
   const [form, setForm] = useState<PlanVersionFormState>(() => buildInitialForm(null));
   const [activeTab, setActiveTab] = useState<ManagementTab>('parameters');
@@ -226,7 +229,7 @@ export function PlanManagementWorkbench({
   const [notice, setNotice] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
 
-  const loadDetail = useCallback(async (showLoading = true) => {
+  const loadDetail = useCallback(async (showLoading = true, preserveDraft = false) => {
     if (!planId) return;
     if (showLoading) setIsLoading(true);
     setError(null);
@@ -234,9 +237,17 @@ export function PlanManagementWorkbench({
       const payload = (await planManagementClient.request<PlanDetailPayload>(
         `/api/admin/plans/${encodeURIComponent(planId)}`
       )).data;
-      setAwaitingRead(false);
-      setDetail(payload);
-      setForm(buildInitialForm(payload));
+      if (typeof payload.revision !== 'string' || !/^plan-v1:[a-f0-9]{64}$/.test(payload.revision)
+        || payload.plan.plan_id !== planId) {
+        throw new Error(translationRef.current('admin.plans.revision_unavailable', {}, 'Package revision is unavailable. Reload before saving.'));
+      }
+      if (preserveDraft) {
+        setConflictRead(payload);
+      } else {
+        setAwaitingRead(false);
+        setDetail(payload);
+        setForm(buildInitialForm(payload));
+      }
     } catch (loadError) {
       setError(resolveUiErrorMessage(loadError, translationRef.current('error.failed_load')));
     } finally {
@@ -247,6 +258,8 @@ export function PlanManagementWorkbench({
   useEffect(() => {
     if (!open || !planId) return;
     setAwaitingRead(false);
+    setRevisionConflict(false);
+    setConflictRead(null);
     setDetail(null);
     setNotice(null);
     setLastReceipt(null);
@@ -306,7 +319,7 @@ export function PlanManagementWorkbench({
   };
 
   const handleSave = async () => {
-    if (!detail || isSaving || savingRef.current || awaitingRead) return;
+    if (!detail || isSaving || savingRef.current || awaitingRead || revisionConflict) return;
     savingRef.current = true;
     setIsSaving(true);
     setError(null);
@@ -314,6 +327,7 @@ export function PlanManagementWorkbench({
     setLastReceipt(null);
     try {
       const payload = {
+        revision: detail.revision,
         monthly_included_points: Number(form.monthly_included_points || 0),
         site_limit: Number(form.site_limit || 0),
         max_vector_documents: Number(form.max_vector_documents || 0),
@@ -340,7 +354,13 @@ export function PlanManagementWorkbench({
       await loadDetail(false);
       await onSaved();
     } catch (saveError) {
-      setError(resolveUiErrorMessage(saveError, t('error.failed_save', {}, 'Failed to save.')));
+      if (saveError instanceof ApiError && saveError.errorCode === 'service.admin_plan_revision_conflict') {
+        setRevisionConflict(true);
+        setConflictRead(null);
+        setError(null);
+      } else {
+        setError(resolveUiErrorMessage(saveError, t('error.failed_save', {}, 'Failed to save.')));
+      }
     } finally {
       savingRef.current = false;
       setIsSaving(false);
@@ -382,7 +402,7 @@ export function PlanManagementWorkbench({
           <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={onClose}>
             {t('common.close', {}, 'Close')}
           </button>
-          <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving || awaitingRead}>
+          <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving || awaitingRead || revisionConflict}>
             {isSaving ? t('common.saving', {}, 'Saving...') : t('common.save', {}, 'Save')}
           </button>
         </div>
@@ -405,6 +425,28 @@ export function PlanManagementWorkbench({
         </div>
       ) : null}
 
+      {revisionConflict ? (
+        <div role="alert" data-ui="plan-revision-conflict" className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-slate-950 dark:border-amber-700 dark:bg-amber-950/20 dark:text-white">
+          <p>{t('admin.plans.revision_conflict', {}, 'This package changed after you loaded it. Your draft is retained. Saving is blocked until you review the latest values.')}</p>
+          <button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadDetail(true, true)}>
+            {t('admin.plans.read_latest', {}, 'Read latest values (keep draft)')}
+          </button>
+          {conflictRead ? (
+            <div className="space-y-2">
+              <p>{t('admin.plans.latest_values_review', { price: String(conflictRead.sales_offer?.amount ?? '—'), credits: buildInitialForm(conflictRead).monthly_included_points, status: translateStatusLabel(conflictRead.sales_offer?.status || conflictRead.plan.status, t) }, 'Latest saved package: {{credits}} AI credits, CNY {{price}}; sales: {{status}}. Your inputs below are still your draft.')}</p>
+              <button type="button" className="btn btn-secondary" onClick={() => {
+                setDetail(conflictRead);
+                setForm(buildInitialForm(conflictRead));
+                setRevisionConflict(false);
+                setConflictRead(null);
+                setError(null);
+              }}>
+                {t('admin.plans.replace_draft_latest', {}, 'Discard draft and edit latest values')}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {awaitingRead ? <div role="status" className="space-y-2 text-sm">
         <p>{t('admin.saved_awaiting_read', {}, 'Write succeeded. Reload to confirm the saved state before editing again.')}</p>
         <button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadDetail()}>{t('common.retry')}</button>
@@ -437,7 +479,7 @@ export function PlanManagementWorkbench({
                   key={planId}
                   planId={planId}
                   status={detail.sales_offer.status}
-                  disabled={isSaving || hasUnsavedChanges}
+                  disabled={isSaving || hasUnsavedChanges || revisionConflict}
                   onSavingChange={setIsSaving}
                   onSaved={async (status) => {
                     setDetail((current) => current?.sales_offer ? {
