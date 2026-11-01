@@ -2,22 +2,15 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 import { buildInitialForm, type PlanIntent } from '@/features/admin/plans/plan-projection';
+import { collectBrowserEvents, noUnexpectedBrowserEvents } from './helpers/browser-event-inventory';
 import { parameters, planCatalog, planConfirmation, planDetail, planWrite } from '../fixtures/admin-plan-parameters';
 
-type BrowserInventory = { pageerror: string[]; consoleError: { text: string; url: string }[]; requestfailed: { url: string; failure: string | null }[]; httpFailures: { url: string; status: number }[]; injectedFailures: { url: string; reason: string }[] };
-const inventories = new WeakMap<Page, BrowserInventory>();
-test.beforeEach(async ({ page }) => {
-  const events: BrowserInventory = { pageerror: [], consoleError: [], requestfailed: [], httpFailures: [], injectedFailures: [] };
-  inventories.set(page, events);
-  page.on('pageerror', error => events.pageerror.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') events.consoleError.push({ text: message.text(), url: message.location().url }); });
-  page.on('requestfailed', request => events.requestfailed.push({ url: request.url(), failure: request.failure()?.errorText || null }));
-  page.on('response', response => { if (response.status() >= 400) events.httpFailures.push({ url: response.url(), status: response.status() }); });
-});
+const inventories = new WeakMap<Page, ReturnType<typeof collectBrowserEvents>>();
+test.beforeEach(async ({ page }) => { inventories.set(page, collectBrowserEvents(page)); });
 test.afterEach(async ({ page }, info) => {
   const events = inventories.get(page)!;
-  const inventory = { test: info.title, statusAtCollection: info.status, ...events,
-    explanation: 'HTTP 422/409 are deliberate original-PATCH or confirmation-GET rejection injections; 503 is deliberate read failure. Connection resets and delayed PATCHes are explicitly recorded under injectedFailures. All events are retained.',
+  const inventory = { test: info.title, statusAtCollection: info.status, ...events.raw, classified: events.classify(),
+    explanation: 'Every raw event is retained. Only explicit Next RSC prefetch cancellations or exact request-bound fault injections are classified; JS/document/ordinary fetch failures remain unexpected.',
   };
   const root = process.env.NPCINK_PLAN_EVIDENCE;
   const filename = `events-${info.title.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 150)}.json`;
@@ -25,10 +18,7 @@ test.afterEach(async ({ page }, info) => {
   if (root) await mkdir(root, { recursive: true });
   await writeFile(path, JSON.stringify(inventory, null, 2));
   await info.attach('browser-event-inventory', { path, contentType: 'application/json' });
-  expect(events.pageerror).toEqual([]);
-  expect(events.consoleError.filter(event => !events.httpFailures.some(http => http.url === event.url && event.text.includes(String(http.status)))
-    && !(events.injectedFailures.some(fault => fault.url === event.url) && event.text.includes('ERR_CONNECTION_RESET')))).toEqual([]);
-  expect(events.requestfailed.filter(event => !(events.injectedFailures.some(fault => fault.url === event.url) && /ERR_CONNECTION_RESET|ERR_ABORTED/.test(event.failure || '')))).toEqual([]);
+  expect(inventory.classified.unexpected).toEqual(noUnexpectedBrowserEvents);
 });
 
 type Mode = 'normal' | 'before-drop' | 'after-drop' | 'malformed' | 'wrong-target' | 'old-body' | 'rejected' | 'delayed';
@@ -56,8 +46,8 @@ async function harness(page: Page) {
     const planId = path.split('/')[4];
     if (path.includes('/parameter-operations/')) {
       if (state.delayConfirmation) await new Promise<void>(resolve => { state.confirmRelease = resolve; });
-      if (state.confirmationError) { await route.fulfill({ status: state.confirmationError.status, json: buildAdminApiErrorEnvelope('injected confirmation failure', state.confirmationError.code) }); return; }
-      if (state.confirmation === 'failed') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return; }
+      if (state.confirmationError) { inventories.get(page)!.injectFailure(req, 'Injected confirmation GET rejection', { status: state.confirmationError.status }); await route.fulfill({ status: state.confirmationError.status, json: buildAdminApiErrorEnvelope('injected confirmation failure', state.confirmationError.code) }); return; }
+      if (state.confirmation === 'failed') { inventories.get(page)!.injectFailure(req, 'Injected confirmation GET unavailable', { status: 503 }); await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return; }
       const original = state.writes.find(intent => path.endsWith(intent.operation_id));
       let value: unknown = original ? planConfirmation(original, state.recorded ? 'confirmed' : 'unconfirmed') : {};
       if (original && state.confirmation === 'wrong') value = { ...planConfirmation(original), plan_id: 'wrong' };
@@ -70,12 +60,12 @@ async function harness(page: Page) {
       const intent: PlanIntent = { operation_id: req.headers()['idempotency-key'], plan_id: planId, revision, values, plan_version_id: `${planId}_v1`,
         form: buildInitialForm(planDetail(planId, values)) };
       state.writes.push(intent);
-      if (state.writeError) { await route.fulfill({ status: state.writeError.status, json: buildAdminApiErrorEnvelope('unknown', state.writeError.code) }); return; }
-      if (state.mode === 'rejected') { await route.fulfill({ status: 422, json: buildAdminApiErrorEnvelope('invalid price', 'request.validation_error') }); return; }
-      if (state.mode === 'before-drop') { inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate pre-execution connection reset' }); await route.abort('connectionreset'); return; }
+      if (state.writeError) { inventories.get(page)!.injectFailure(req, 'Injected original PATCH rejection', { status: state.writeError.status }); await route.fulfill({ status: state.writeError.status, json: buildAdminApiErrorEnvelope('unknown', state.writeError.code) }); return; }
+      if (state.mode === 'rejected') { inventories.get(page)!.injectFailure(req, 'Injected original PATCH validation rejection', { status: 422 }); await route.fulfill({ status: 422, json: buildAdminApiErrorEnvelope('invalid price', 'request.validation_error') }); return; }
+      if (state.mode === 'before-drop') { inventories.get(page)!.injectFailure(req, 'Deliberate pre-execution connection reset', { failure: 'net::ERR_CONNECTION_RESET' }); await route.abort('connectionreset'); return; }
       state.recorded = true; state.values = values;
-      if (state.mode === 'after-drop') { inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate post-commit connection reset' }); await route.abort('connectionreset'); return; }
-      if (state.mode === 'delayed') inventories.get(page)!.injectedFailures.push({ url: req.url(), reason: 'Deliberate delayed PATCH for timeout/late-response isolation' });
+      if (state.mode === 'after-drop') { inventories.get(page)!.injectFailure(req, 'Deliberate post-commit connection reset', { failure: 'net::ERR_CONNECTION_RESET' }); await route.abort('connectionreset'); return; }
+      if (state.mode === 'delayed') inventories.get(page)!.injectFailure(req, 'Deliberate delayed PATCH for timeout/late-response isolation', { failure: 'net::ERR_ABORTED' });
       if (state.mode === 'delayed') await new Promise<void>(resolve => { state.release = resolve; });
       const value = state.mode === 'malformed' ? {} : state.mode === 'wrong-target' ? { ...planWrite(intent), plan_id: 'wrong' }
         : state.mode === 'old-body' ? { ...planWrite(intent), budgets: { max_ai_credits_per_period: 1 } } : planWrite(intent);
@@ -88,7 +78,7 @@ async function harness(page: Page) {
     if (state.detail === 'concurrency' && value.latest_version) value.latest_version.concurrency = {};
     if (state.detail === 'policy' && value.latest_version) value.latest_version.policy = {};
     if (state.detail === 'offer' && value.sales_offer) value.sales_offer.plan_id = 'other-plan';
-    if (state.detail === 'failed') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('detail unavailable') }); return; }
+    if (state.detail === 'failed') { inventories.get(page)!.injectFailure(req, 'Injected detail GET unavailable', { status: 503 }); await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('detail unavailable') }); return; }
     await route.fulfill({ json: buildAdminApiEnvelope(state.detail === 'wrong' ? planDetail('wrong') : state.detail === 'old' ? planDetail(planId) : value) });
   });
   return state;
@@ -136,6 +126,7 @@ for (const { width, dark } of [{ width: 1440, dark: false }, { width: 1056, dark
     await expect(page.locator('[data-ui="plan-pending-directory"]')).toContainText('pro');
     await page.getByRole('button', { name: /Open pending package|打开待确认套餐/ }).click();
     await expect(inputs(page).first()).toHaveValue('88.88');
+    await inventories.get(page)!.beforeReload();
     page.once('dialog', dialog => dialog.accept());
     await page.reload();
     await expect(pending(page)).toBeVisible();
@@ -238,6 +229,7 @@ test('ordinary drafts protect close Escape history internal links and refresh; e
   await page.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
   await expect(page).toHaveURL(/focus=pro/);
   // The real beforeunload dialog is canceled, not a synthetic event assertion.
+  await inventories.get(page)!.beforeReload();
   const dialog = page.waitForEvent('dialog', { timeout: 3000 });
   const reload = page.reload({ timeout: 3000 }).catch(() => {});
   await (await dialog).dismiss();
@@ -348,7 +340,7 @@ test('pending recovery stays reachable with failed catalog and wrong detail read
   await inputs(page).first().fill('88'); await save(page).click(); await expect(read(page)).toBeEnabled();
   await workbench(page).locator('[data-ui="admin-workbench-close"]').click();
   await page.getByRole('button', { name: /Leave and keep|离开并保留/ }).click();
-  state.catalog = 'missing'; state.detail = 'wrong'; await page.reload();
+  state.catalog = 'missing'; state.detail = 'wrong'; await inventories.get(page)!.beforeReload(); await page.reload();
   await page.getByRole('button', { name: /Open pending package|打开待确认套餐/ }).click();
   await expect(read(page)).toBeEnabled(); await expect(save(page)).toBeDisabled();
   expect(JSON.parse((await page.evaluate(() => sessionStorage.getItem('admin.plan-parameters.v1:pro')))! ).form.sales_price_cny).toBe('88');
@@ -493,5 +485,5 @@ test('review R3 nested confirmation traps Tab and Escape returns exact trigger f
   await trigger.press('Enter'); await expect(upper).toBeVisible();
   await upper.getByRole('button', { name: /^Cancel$|^取消$/ }).click(); await expect(trigger).toBeFocused();
   expect(state.writes).toHaveLength(0);
-  expect(inventories.get(page)).toEqual({ pageerror: [], consoleError: [], requestfailed: [], httpFailures: [], injectedFailures: [] });
+  expect(inventories.get(page)!.classify().unexpected).toEqual(noUnexpectedBrowserEvents);
 });
