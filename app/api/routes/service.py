@@ -3779,6 +3779,30 @@ async def get_admin_support_request(request: Request, request_id: str) -> Any:
     )
 
 
+@router.get("/admin/support-requests/{request_id}/operations/{operation_id}")
+async def confirm_admin_support_operation(
+    request: Request,
+    request_id: str,
+    operation_id: str,
+    action: str = Query(pattern="^(message|attachment|status)$"),
+    digest: str = Query(pattern="^[a-f0-9]{64}$"),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_support_operation,
+        request_id=request_id,
+        operation_id=operation_id,
+        action=action,
+        digest=digest,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="support operation evidence loaded", data=result, revision="m6"
+    )
+
+
 @router.post("/admin/support-requests/{request_id}/messages")
 async def create_admin_support_request_message(
     request: Request,
@@ -3798,7 +3822,11 @@ async def create_admin_support_request_message(
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    notification = _send_support_request_update_notification(request, result=result)
+    notification = (
+        {"attempted": False, "delivered": False, "reason": "operation_replayed"}
+        if result.get("replayed")
+        else _send_support_request_update_notification(request, result=result)
+    )
     return build_envelope(
         status="ok",
         message="support request message created",
@@ -3884,7 +3912,7 @@ async def update_admin_support_request(
     return build_envelope(
         status="ok",
         message="support request updated",
-        data={"request": result},
+        data={"request": result, "operation_receipt": result.get("operation_receipt")},
         revision="m6",
     )
 
