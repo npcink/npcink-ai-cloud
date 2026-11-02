@@ -1,9 +1,15 @@
 # minimatch #123 安全维护记录 — 2026-11-01
 
 状态：[PR #1342](https://github.com/npcink/npcink-ai-cloud/pull/1342)
-已合并，M4 已 accepted；#123 刷新后仍 open，报告版本从 10.2.5 变为 3.1.5。
-10.x 放大机制已修复，3.x 与公告范围的差异待上游确认，安全扫描未清零。
+已合并，M4 已 accepted；截至 2026-11-01 刷新后 #123 仍 open，报告版本从
+10.2.5 变为 3.1.5。10.x 放大机制已修复，3.x 与公告范围的差异当时待确认。
 不构成生产部署或真实 Provider 调用授权。
+
+2026-11-02 收口：GitHub Dependabot #123 已按 `inaccurate` dismiss。该操作只
+关闭与公告范围不符的告警记录，不表示把 3.x 宣称为无任何安全问题；本记录下方
+保存版本、机制、消费者兼容性和可执行反例证据。`pnpm audit` 仍会按 npm 公布的
+宽范围报告 3.1.5，未添加 ignore 或 audit suppression，待 npm/GitHub 公告数据
+刷新后复查。
 
 ## 范围与依据
 
@@ -60,9 +66,9 @@ allowDefaultProject 允许/拒绝路径；保留 ESLint 3.x 的可调用与 make
 - Node 22.22.3、pnpm 10.33.0；frozen install、root lock 校验、完整 ESLint、
   TypeScript、67 文件 / 752 项 Vitest、全部前端契约、release-policy 通过。
 - Next 生产构建通过；构建自动生成的 next-env 类型引用已精确恢复，未纳入 PR。
-- `pnpm audit --json` 仍 exit 1：同一 GHSA 的 `<11.0.1` 范围把 3.1.5
+- `pnpm audit --json` 在 2026-11-01 及本次复核仍 exit 1：同一 GHSA 的 `<11.0.1` 范围把 3.1.5
   列为中危，路径为 frontend → eslint → minimatch。未添加 ignore、
-  audit suppression，未手动 dismiss GitHub 告警。
+  audit suppression；在本次范围证据形成前未手动 dismiss GitHub 告警。
 - 实查 3.1.5 没有 optimizationLevel、firstPhasePreProcess 实现；同一八段
   反例只产生一项，没有本公告的放大机制。这是具体机制核对，不能表述成
   3.x 不存在任何漏洞或扫描已经通过。公告范围仍需上游确认/修订；
@@ -78,7 +84,34 @@ allowDefaultProject 允许/拒绝路径；保留 ESLint 3.x 的可调用与 make
 - 合并后直接读取 GitHub #123：`state=open`、`fixed_at=null`、
   `version_requirement=3.1.5`；当次开放告警共一条。GitHub 标为 runtime，
   与本地生产依赖图不一致，不能仅据扫描标签判断公网可利用性。
-  已准备未发送的上游澄清草稿；未以通知、dismiss 或 ignore 代替修复。
+  该状态已在 2026-11-02 的范围复核后变为 `state=dismissed`、
+  `dismissed_reason=inaccurate`；没有发送外部消息，也没有以 dismiss 代替
+  10.x 的实际修复。
+
+## 2026-11-02 告警范围复核与收口证据
+
+GitHub 公告 GHSA-g3hv-75wg-m249 / CVE-2026-118764 的描述明确针对
+`firstPhasePreProcess()` 在 `optimizationLevel >= 2` 时生成 `globParts`，
+再由 `secondPhasePreProcess()` 做成对处理；公告推荐 11.0.1。
+
+针对实际剩余路径 `frontend → eslint → minimatch@3.1.5` 做了独立 npm tarball
+复核：
+
+- `minimatch@3.1.5` 的 `minimatch.js` 没有
+  `optimizationLevel`、`firstPhasePreProcess` 或 `secondPhasePreProcess`；
+  只有旧实现的 `globParts` 字段。
+- 同一个八段 `**/../a/b` 反例，设置
+  `{optimizationLevel: 2, braceExpandMax: 64}` 后，3.1.5 的 `set.length=1`；
+  已受影响的 10.2.5 为 `256`，定向修复的 11.0.1 为 `64`。
+- 3.1.5 的 callable CommonJS 与 `makeRe()` 仍是 ESLint 及插件的实际契约；
+  全局改成 11.x 会破坏该消费者接口。TypeScript ESLint 路径继续使用父级限定
+  的 11.0.1 override，未改变 ESLint 的 3.x 副本。
+
+据此于 2026-11-02 通过 GitHub Dependabot API 将 #123 标记为
+`dismissed_reason=inaccurate`，评论仅包含上述机制、版本反例和兼容性结论。
+当前 API 状态为 `state=dismissed`、`fixed_at=null`、依赖版本仍为 `3.1.5`。
+本次关闭的是错误匹配的公告范围；若公告补充 3.x 复现、3.x 发布新的相关修复，
+或生产镜像出现不同依赖路径，必须重新打开调查，不得沿用本次 dismiss。
 
 ## M4、回滚与后续编辑验证
 

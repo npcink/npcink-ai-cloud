@@ -64,8 +64,13 @@ seventh acceptance condition.
    that its alert closed. When the published range and version-specific
    mechanism disagree, preserve a bounded reproducer and consumer API evidence,
    report the unresolved alert, and seek upstream range clarification through
-   an authorized channel. Do not suppress it or force an incompatible global
-   override solely to obtain a green scan.
+   an authorized channel. If the evidence proves that the installed version
+   does not contain the published mechanism, an authorized maintainer may
+   dismiss the alert as `inaccurate`; record the exact API state, reason,
+   version, mechanism and probe. This closes the false match only. It does not
+   make the package generally safe, and it does not authorize a package-manager
+   audit ignore. Do not force an incompatible global override solely to obtain
+   a green scan.
 
 Do not deploy production merely because a Dependabot PR merged. Production
 promotion remains governed by `docs/cloud-production-release-policy-v1.md`.
