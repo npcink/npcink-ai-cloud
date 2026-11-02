@@ -267,6 +267,9 @@ test('ticket operator preserves queue context through failed and successful publ
   });
 
   await backLink.click();
+  const discardDraft = page.getByRole('dialog', { name: /Discard unsaved ticket draft|丢弃未保存的工单草稿/ });
+  await expect(discardDraft).toBeVisible();
+  await discardDraft.getByRole('button', { name: /Discard draft and leave|丢弃草稿并离开/ }).click();
   await expect(page).toHaveURL(/status=open/);
   await expect(page).toHaveURL(/q=Payment/);
   await expect(page).toHaveURL(new RegExp(`focus=${requestId}`));

@@ -296,6 +296,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 - [Customer Operations, Runtime Evidence and Authentication Closeout — 2026-10-27](history/customer-operations-observation-auth-closeout-2026-10-27.md) — dated implementation and validation evidence; PR/M4 acceptance and production are separate states.
 
+- [Admin support drafts and directory v1](admin-support-drafts-directory-v1.md) — ordinary-draft navigation protection, validated directory evidence and append-only new-note editing
 - [Admin support write recovery v1](admin-support-write-recovery-v1.md) — bounded durable intent, actor/key dedup, read-only confirmation and serializer validation for existing ticket writes
 - [Cloud personal data copy v1](portal-personal-data-copy-v1.md) — bounded own-profile/support/notification JSON download with dedicated email reauthentication; excludes commercial and WordPress data
 - [主 checkout 九篇历史文档对账与开发经验 — 2026-10-25](history/engineering/2026/primary-checkout-intent-reconciliation-2026-10-25.md) — 旧意图的现行承接、纠偏与未完成边界，不是发布授权

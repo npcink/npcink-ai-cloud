@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "request_id": "sr_reply",
+      "account_id": "acct_reply",
+      "site_id": "",
+      "principal_id": "prn_reply",
+      "email": "reply@example.com",
+      "topic": "general",
+      "title": "A support question",
+      "description": "Details",
+      "status": "open",
+      "priority": "normal",
+      "source_path": "",
+      "admin_note": "",
+      "context": {},
+      "first_operator_response_at": null,
+      "last_customer_activity_at": null,
+      "last_operator_public_activity_at": null,
+      "waiting_on": "operator",
+      "waiting_since": null,
+      "created_at": "2026-11-01T00:00:00+00:00",
+      "updated_at": "2026-11-01T00:00:00+00:00",
+      "resolved_at": null,
+      "closed_at": null
+    }
+  ],
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "total": 1,
+    "has_more": false
+  },
+  "summary": {
+    "open": 1,
+    "in_progress": 0,
+    "critical": 0,
+    "warning": 1,
+    "monitor": 0,
+    "stable": 0,
+    "waiting_for_operator": 1,
+    "waiting_for_customer": 0,
+    "overdue": 0
+  }
+}

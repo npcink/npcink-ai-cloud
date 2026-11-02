@@ -4,14 +4,14 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
 import { generateIdempotencyKey } from '@/lib/idempotency';
-import { hasSupportMessage, normalizeSupportMessage, normalizeSupportFilename, normalizeSupportContentType } from './support-text';
+import { hasSupportMessage, normalizeSupportMessage, normalizeSupportFilename, normalizeSupportContentType, normalizeSupportNote } from './support-text';
 import { readSupportConfirmation, readSupportDetail, readSupportIntent, readSupportWrite,
   operationPath, sha256, supportDigest, type SupportAction, type SupportDetail, type SupportIntent, type SupportValues } from './detail-evidence';
 
 export const supportDetailClient = createApiClient({ idempotencyPrefix: 'admin_support_detail' });
 const storageKey = (id: string) => `admin.support-intent.v1:${id}`;
-type Draft = { publicReply: string; internalNote: string; status: string; file: File | null; visibility: 'public' | 'internal'; statusDirty: boolean };
-const emptyDraft = (): Draft => ({ publicReply: '', internalNote: '', status: 'open', file: null, visibility: 'public', statusDirty: false });
+type Draft = { publicReply: string; internalNote: string; status: string; statusNote: string; file: File | null; visibility: 'public' | 'internal'; statusDirty: boolean };
+const emptyDraft = (): Draft => ({ publicReply: '', internalNote: '', status: 'open', statusNote: '', file: null, visibility: 'public', statusDirty: false });
 async function currentActor(): Promise<string> {
   const response = await supportDetailClient.request<{ principal_id?: string; identity_type?: string; capabilities?: { can_manage_accounts?: boolean } }>('/admin/session');
   const actor = response.data;
@@ -86,7 +86,7 @@ export function useSupportDetail(requestId: string) {
           // Restore only the submitted field; preserve unrelated ordinary drafts.
           const field = restored.action === 'message' ? restored.values.visibility === 'public' ? 'publicReply' : 'internalNote' : 'status';
           if (restored.action !== 'attachment') {
-            const next = { ...draftRef.current, [field]: restored.action === 'message' ? restored.values.body : restored.values.status };
+            const next = { ...draftRef.current, ...(restored.action === 'status' ? { statusNote: restored.values.admin_note, statusDirty: true } : {}), [field]: restored.action === 'message' ? restored.values.body : restored.values.status };
             draftRef.current = next; setDraft(next); drafts.current.set(requestId, next);
           }
         }
@@ -118,7 +118,10 @@ export function useSupportDetail(requestId: string) {
       const field = submitted.values.visibility === 'public' ? 'publicReply' : 'internalNote';
       if (normalizeSupportMessage(next[field]) === submitted.values.body) next[field] = '';
     } else if (submitted.action === 'attachment') next.file = null;
-    else next.statusDirty = false;
+    else {
+      next.statusDirty = false;
+      if (normalizeSupportNote(next.statusNote) === submitted.values.admin_note) next.statusNote = '';
+    }
     setDraftValue(next);
     // Read current state after historical proof; never apply an old request
     // snapshot over another operator's later state or over a newer draft.
@@ -154,7 +157,11 @@ export function useSupportDetail(requestId: string) {
         const text = normalizeSupportMessage(visibility === 'public' ? snapshot.publicReply : snapshot.internalNote);
         if (!hasSupportMessage(text)) return;
         values = body = { body: text, visibility: visibility || 'public' };
-      } else if (action === 'status') values = body = { status: snapshot.status, admin_note: '' };
+      } else if (action === 'status') {
+        const admin_note = normalizeSupportNote(snapshot.statusNote);
+        if (Array.from(admin_note).length > 2000) throw new Error('Note too long');
+        values = body = { status: snapshot.status, admin_note };
+      }
       else {
         const file = snapshot.file;
         if (!file) return;
@@ -192,7 +199,26 @@ export function useSupportDetail(requestId: string) {
       } else if (contextRef.current === epoch) setError('write');
     } finally { if (contextRef.current === epoch) { busyRef.current = false; setBusy(false); } }
   }
+  // Already-sent snapshots belong to durable recovery, never the discardable
+  // draft set. Other fields remain ordinary drafts even beside an unknown write.
+  const ordinary = {
+    publicReply: Boolean(draft.publicReply) && !(intent?.action === 'message' && intent.values.visibility === 'public'),
+    internalNote: Boolean(draft.internalNote) && !(intent?.action === 'message' && intent.values.visibility === 'internal'),
+    status: draft.statusDirty && (!detail || draft.status !== detail.request.status) && intent?.action !== 'status',
+    statusNote: Boolean(draft.statusNote) && intent?.action !== 'status',
+    file: Boolean(draft.file) && intent?.action !== 'attachment',
+  };
+  function discardOrdinaryDrafts() {
+    setDraftValue({ ...draftRef.current,
+      ...(ordinary.publicReply ? { publicReply: '' } : {}),
+      ...(ordinary.internalNote ? { internalNote: '' } : {}),
+      ...(ordinary.status ? { status: detailRef.current?.request.status || 'open', statusDirty: false } : {}),
+      ...(ordinary.statusNote ? { statusNote: '' } : {}),
+      ...(ordinary.file ? { file: null, visibility: 'public' as const } : {}),
+    });
+  }
   return { detail: detail?.request.request_id === requestId ? detail : null, draft, updateDraft, intent, lastReceipt,
+    hasOrdinaryDraft: Object.values(ordinary).some(Boolean), discardOrdinaryDrafts,
     loading, busy, ready, readError, storageBlocked, error, notice, load, submit, confirm,
     locked: !ready || !identityReady || detail?.request.request_id !== requestId || storageBlocked || busy || Boolean(intent) };
 }
