@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from sqlalchemy import event, select
@@ -265,3 +267,41 @@ def test_note_only_status_intent_replays_without_duplicate_message(support_db):
     again = service.update_admin_support_request(**values)
     assert again["status"] == "open"
     assert _counts(support_db) == (1, 1, 0)
+
+
+UNICODE_FIXTURE = json.loads(
+    (Path(__file__).parents[2] / "frontend/tests/fixtures/admin-support-unicode.json").read_text()
+)
+
+
+@pytest.mark.parametrize("sample", UNICODE_FIXTURE["cases"], ids=lambda sample: sample["name"])
+def test_unicode_fixture_matches_real_serializers_and_original_confirmation(support_db, sample):
+    service = CommercialService(support_db)
+    for action in ("message", "attachment"):
+        expected = sample[f"{action}Response"]
+        ctx = context(action, key=expected["operation_receipt"]["operation_id"])
+        if action == "message":
+            actual = send(service, ctx, body=sample["rawMessage"])
+            fields = ("body", "visibility")
+        else:
+            actual = service.create_admin_support_request_attachment(
+                request_id="sr_reply",
+                filename=sample["rawFilename"],
+                content_type="text/plain",
+                content_base64=base64.b64encode(b"proof").decode(),
+                visibility="internal",
+                audit_context=ctx,
+            )
+            fields = ("filename", "content_type", "byte_size", "visibility", "message_id")
+        assert actual["request"].keys() == expected["request"].keys()
+        assert actual[action].keys() == expected[action].keys()
+        for field in fields:
+            assert actual[action][field] == expected[action][field]
+        assert actual["operation_receipt"]["digest"] == expected["operation_receipt"]["digest"]
+        assert confirm(service, expected["operation_receipt"], ctx)["state"] == "confirmed"
+
+
+def test_unicode_fixture_covers_python_whitespace_table():
+    assert UNICODE_FIXTURE["pythonWhitespaceCodepoints"] == [
+        cp for cp in range(0x110000) if chr(cp).isspace()
+    ]

@@ -5,6 +5,7 @@ import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } 
 import { collectBrowserEvents, noUnexpectedBrowserEvents } from './helpers/browser-event-inventory';
 import { supportDetail, supportTicket, supportMessage, supportAttachment } from '../fixtures/admin-support-detail';
 import type { SupportAction, SupportIntent } from '@/features/admin/support-requests/detail-evidence';
+import unicodeVectors from '../fixtures/admin-support-unicode.json' with { type: 'json' };
 
 const actor = 'platform:operator-e2e', target = 'sr_synthetic', key = `admin.support-intent.v1:${target}`;
 const inventories = new WeakMap<Page, ReturnType<typeof collectBrowserEvents>>();
@@ -60,6 +61,7 @@ async function harness(page: Page) {
   const unhandled: string[] = []; unmatched.set(page, unhandled);
   await installAdminMocks(page, { unhandledAdminRequests: unhandled });
   const state = { mode: 'normal' as Mode, read: 'normal', confirmation: 'normal', confirmationStatus: 0, identity: actor,
+    unicode: null as (typeof unicodeVectors.cases)[number] | null,
     writes: [] as SupportIntent[], reads: [] as string[], committed: new Map<string, ReturnType<typeof result>>(),
     detail: new Map<string, ReturnType<typeof supportDetail>>(), release: () => {}, unhandled };
   await page.route('**/admin/session', route => route.fulfill({ json: buildAdminApiEnvelope({ principal_id: state.identity, identity_type: 'platform_admin', role: 'platform_admin', capabilities: { can_manage_accounts: true } }) }));
@@ -70,12 +72,13 @@ async function harness(page: Page) {
       await route.fulfill({ status: http, json: buildAdminApiErrorEnvelope('Synthetic failure', code) });
     };
     if (url.pathname.includes('/operations/')) {
-      state.reads.push(url.pathname);
+      state.reads.push(url.pathname + url.search);
       if (state.confirmationStatus) { await fail(state.confirmationStatus); return; }
       const operation = decodeURIComponent(url.pathname.split('/').at(-1)!);
       const saved = state.committed.get(operation);
+      const matches = saved && saved.operation_receipt.digest === url.searchParams.get('digest') && saved.operation_receipt.action === url.searchParams.get('action');
       const value = { request_id: id, operation_id: operation, action: url.searchParams.get('action'), digest: url.searchParams.get('digest'),
-        state: saved && state.confirmation !== 'missing' ? 'confirmed' : 'unconfirmed', result: saved && state.confirmation !== 'missing' ? saved : null };
+        state: matches && state.confirmation !== 'missing' ? 'confirmed' : 'unconfirmed', result: matches && state.confirmation !== 'missing' ? saved : null };
       await route.fulfill({ json: buildAdminApiEnvelope(state.confirmation === 'bad' ? {} : state.confirmation === 'wrong' ? { ...value, operation_id: 'other' } : value) }); return;
     }
     if (req.method() === 'GET' && /^\/api\/admin\/support-requests\/[^/]+$/.test(url.pathname)) {
@@ -98,6 +101,14 @@ async function harness(page: Page) {
     state.writes.push(intent);
     if (state.mode === 'rejected') { await fail(422, 'request.validation_error'); return; }
     const saved = result(intent, state.writes.length), detail = state.detail.get(id) || supportDetail(id);
+    if (state.unicode && action !== 'status') {
+      // Actual Python serializer vectors, with only synthetic identity/key/time
+      // mapped to this browser request. Do not normalize with the UI helper.
+      const ownership = { request_id: id, account_id: intent.account_id, site_id: detail.request.site_id };
+      if (action === 'message') saved.message = { ...state.unicode.messageResponse.message, ...ownership, message_id: saved.message!.message_id };
+      else saved.attachment = { ...state.unicode.attachmentResponse.attachment, ...ownership, attachment_id: saved.attachment!.attachment_id };
+      saved.operation_receipt.digest = (action === 'message' ? state.unicode.messageResponse : state.unicode.attachmentResponse).operation_receipt.digest;
+    }
     saved.request = { ...detail.request, ...(action === 'status' ? { status: intent.values.status } : {}) };
     detail.request = saved.request;
     if (saved.message) detail.messages.push(saved.message);
@@ -282,4 +293,53 @@ test('restoring a stored digest keeps all writes closed until verification finis
   await expect(status(page)).toBeDisabled(); expect(h.writes).toHaveLength(1);
   await page.evaluate(() => (window as Window & { releaseSupportDigest?: () => void }).releaseSupportDigest?.());
   await expect(confirm(page)).toBeEnabled(); await expect(status(page)).toBeDisabled(); await expect(reply(page)).toHaveValue('Synthetic stored intent'); expect(h.writes).toHaveLength(1);
+});
+
+for (const sample of unicodeVectors.cases) for (const action of ['message', 'attachment'] as const) for (const mode of ['normal', 'lost'] as const) {
+  test(`Unicode ${sample.name} ${action} ${mode} matches Python and releases only original intent`, async ({ page }, info) => {
+    const h = await harness(page); h.unicode = sample; h.mode = mode; await open(page);
+    const expected = action === 'message' ? sample.messageResponse : sample.attachmentResponse;
+    if (action === 'message') {
+      await reply(page).fill(sample.rawMessage); await send(page).click();
+    } else {
+      await attachments(page);
+      await page.getByRole('combobox', { name: 'Attachment visibility', exact: true }).selectOption('internal');
+      await page.getByLabel('Attachments', { exact: true }).setInputFiles({ name: sample.rawFilename, mimeType: 'text/plain', buffer: Buffer.from('proof') });
+      await upload(page).click();
+    }
+    await expect.poll(() => h.writes.length).toBe(1);
+    const original = h.writes[0];
+    expect(original.digest).toBe(expected.operation_receipt.digest);
+    if (action === 'message') expect(original.body.body).toBe(sample.messageResponse.message.body);
+    else expect(original.body.filename).toBe(sample.attachmentResponse.attachment.filename);
+    let stored: unknown = null;
+    if (mode === 'lost') {
+      await expect(confirm(page)).toBeEnabled();
+      stored = await page.evaluate(k => JSON.parse(sessionStorage.getItem(k)!), key);
+      expect(stored).toMatchObject({ operation_id: original.operation_id, digest: original.digest, body: original.body });
+      await inventories.get(page)!.beforeReload(); await page.reload(); await expect(confirm(page)).toBeEnabled();
+      await confirm(page).click();
+      await expect.poll(() => h.reads.filter(r => r.includes('/operations/')).length).toBe(1);
+      const reads = h.reads.filter(r => r.includes('/operations/'));
+      expect(reads).toHaveLength(1); expect(reads[0]).toContain(`/operations/${original.operation_id}?`); expect(reads[0]).toContain(`digest=${original.digest}`);
+    }
+    await expect(pending(page)).toHaveCount(0); await expect(status(page)).toBeEnabled();
+    await expect(reply(page)).toHaveValue('');
+    if (action === 'attachment') { if (mode === 'lost') await attachments(page); await expect(upload(page)).toBeDisabled(); }
+    expect(await page.evaluate(k => sessionStorage.getItem(k), key)).toBeNull(); expect(h.writes).toHaveLength(1);
+    await writeFile(await evidencePath(info, `unicode-${sample.name}-${action}-${mode}.json`), JSON.stringify({
+      sample: sample.name, action, mode, data: 'synthetic actual Python serializer vector', expectedDigest: expected.operation_receipt.digest,
+      original, storedBeforeReload: stored, confirmationReads: h.reads.filter(r => r.includes('/operations/')), writeCount: h.writes.length,
+      pendingCount: await pending(page).count(), clearedDraft: await reply(page).inputValue(), statusActionEnabled: await status(page).isEnabled(),
+    }, null, 2));
+  });
+}
+
+test('Unicode separators and single codepoint never enable a short message', async ({ page }) => {
+  const h = await harness(page); await open(page);
+  for (const raw of ['\u0085\u001c\u001d\u001e\u001f', '\u0085a\u001f', '\u0085🙂\u001c']) {
+    await reply(page).fill(raw); await expect(send(page)).toBeDisabled();
+    await note(page).fill(raw); await expect(saveNote(page)).toBeDisabled();
+  }
+  expect(h.writes).toHaveLength(0);
 });

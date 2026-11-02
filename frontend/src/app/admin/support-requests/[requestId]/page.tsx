@@ -15,6 +15,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { supportDetailClient, useSupportDetail } from '@/features/admin/support-requests/use-support-detail';
 import { readSupportDownload, type SupportAttachment } from '@/features/admin/support-requests/detail-evidence';
+import { hasSupportMessage } from '@/features/admin/support-requests/support-text';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
 import {
@@ -245,7 +246,7 @@ export default function AdminSupportRequestDetailPage() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={locked || publicReply.trim().length < 2}
+              disabled={locked || !hasSupportMessage(publicReply)}
               data-ui="support-public-action"
               onClick={() => void controller.submit('message', 'public')}
             >
@@ -298,7 +299,7 @@ export default function AdminSupportRequestDetailPage() {
           <button
             type="button"
             className="btn btn-secondary mt-3 w-full"
-            disabled={locked || internalNote.trim().length < 2}
+            disabled={locked || !hasSupportMessage(internalNote)}
             data-ui="support-internal-action"
               onClick={() => void controller.submit('message', 'internal')}
           >

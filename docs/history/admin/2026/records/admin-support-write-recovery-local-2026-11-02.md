@@ -89,3 +89,51 @@ merged：未合并。human：未验收。production：未授权、未操作。
 回滚方式：在review/merge lane revert本组聚焦提交，无数据库回滚；不得清空
 已发送未知意图或以新key重发作为回滚。integrator独立复核、PG并发实证、PR/CI与
 开发合并另行执行。builder提交clean local-ready后冻结，保留原lock/worktree。
+
+## R1 Unicode 规范返修
+
+integrator 在独立审核中实际复现：JS trim/空白分词与 Python strip/split不同，
+U+0085正文被后端去边缘、文件名被折叠，原意图digest与持久成功回执不一致，
+导致未知确认不释放。原 `314e17fd`未admission；本节是原分支的独立增量提交，
+最终 HEAD/tree/增量文件hash见原证据根 `r1/handoff.json`，不覆盖初版证据清单。
+
+前端新增窄文本规范模块，精确涵盖Python29个空白码点，保留BOM/零宽字符。
+正文values/body/digest、finish草稿比较、恢复校验、按钮和处理函数最小长度一致；
+长度按码点，正文限制2–4000。文件名去路径、折叠、码点截断，并去截断暴露的
+空白边缘，保证发送值再次经过后端规范仍不变。后端业务/鉴权/事务规则和receipt
+精确断言未放松；旧版损坏的未知意图不自动迁移或清除，不换key重发。
+
+真实serializer夹具由一次性合成SQLite通过CommercialService生成，含NEL、
+四个控制分隔符、全部Python空白＋中文emoji、BOM/零宽保留四组正文/附件输出。
+后端回归重验字段、digest及原GET确认；不把SQLite当PG并发证据。
+
+`r1/`原始结果：
+
+- `unicode-serializer`：17 passed（包含新增5项真实serializer/完整空白表对照）。
+- `unicode-unit`：20 passed（既有parser14、新增Unicode6）；类型、定向lint、
+  changed Python质量通过，最终静态回执另外保留。
+- `unicode-browser-final`：**同一次21 passed**，Unicode正常/丢响应正文与附件16项，
+  短正文1项；普通四写、普通丢响应、5MiB附件和异步恢复门禁4个对照。
+  丢响应8项都刷新恢复原意图，只一次写入、一次原key/digest确认GET，成功清对应
+  草稿与意图并开放后续操作。每项单列合成操作/确认JSON及原事件清单。
+- 负对照：临时替换回314e17fd的应用三文件后运行新严格断言，正文NEL原摘要
+  `82487134…`再次与实际`499a8211…`不符；文件名在修正internal visibility的
+  独立负对照仍摘要不符。命令、失败图/trace保留，随后逐字恢复返修源码。
+
+首次负对照因Node JSON import缺少type属性而未执行测试；修正测试导入后复现。
+首次正向20项8pass/12fail：夹具附件默认public而serializer为internal导致8个
+错误预期，4个确认请求计数在异步发起前读取；测试选择internal并等待原GET后，
+最终21项全通过。未修改应用来适配夹具，也未放宽事件collector/错误分类/阈值。
+首次负对照的附件可见性也存在该夹具问题，故另补修正visibility后的文件名负对照。
+所有失败及最终产物分目录保留；后一次负对照不改变已通过21项的返修源码。
+
+本轮仅补上述受影响门禁和相关PC取证，未全后台扫图、未更新golden。
+local：R1本地候选待独立审核；CI未运行，M4candidate/accepted未执行、未合并、
+人工未验收、production未授权未操作。PG4仍待既有专用runner，不因本轮通过而消除。
+原worktree/branch/lock保留；无push/PR/M4/ops/后两组扩展。
+
+R1五轴自查：完整Python空白表、BOM保留及码点边界有真实serializer/浏览器对照；
+文件名截断暴露空白后再次去边缘，避免二次规范改变提交值。规范集中在既有工单
+模块，无通用框架/依赖/后端规则变化；保留原身份、精确回执、未知门禁，未迁移旧
+意图。处理仅线性字符串扫描，没有附件字节副本或额外网络请求。最终type/lint、
+完整test文件ruff、Admin契约及docs618/618通过，交由integrator独立审核。

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { isValidIdempotencyKey } from '@/lib/idempotency';
+import { hasSupportMessage, normalizeSupportMessage, normalizeSupportNote, normalizeSupportFilename,
+  normalizeSupportContentType, stripSupportWhitespace } from './support-text';
 
 const id = z.string().min(1).refine(v => v.trim() === v);
 const time = z.string().refine(v => Number.isFinite(Date.parse(v)));
@@ -77,9 +79,11 @@ export function readSupportIntent(value: unknown, requestId: string, actor: stri
     || raw.path !== operationPath(requestId, raw.action as SupportAction) || raw.method !== (raw.action === 'status' ? 'PATCH' : 'POST')
     || !Number.isSafeInteger(raw.revision) || Number(raw.revision) < 0) throw new Error('Invalid stored support intent');
   time.parse(raw.created_at);
-  const messageValues = z.object({ body: z.string().min(2).max(4000).refine(v => v.trim() === v), visibility }).strict();
-  const statusValues = z.object({ status: supportStatus, admin_note: z.string().max(2000) }).strict();
-  const attachmentBody = z.object({ filename: z.string().min(1).max(191), content_type: z.string().min(1), visibility, message_id: z.string() }).strict();
+  const messageValues = z.object({ body: z.string().refine(v => hasSupportMessage(v) && normalizeSupportMessage(v) === v), visibility }).strict();
+  const statusValues = z.object({ status: supportStatus, admin_note: z.string().refine(v => normalizeSupportNote(v) === v && Array.from(v).length <= 2000) }).strict();
+  const attachmentBody = z.object({ filename: z.string().min(1).refine(v => normalizeSupportFilename(v) === v),
+    content_type: z.string().min(1).refine(v => normalizeSupportContentType(v) === v), visibility,
+    message_id: z.string().refine(v => stripSupportWhitespace(v) === v) }).strict();
   const schema = raw.action === 'message' ? messageValues : raw.action === 'status' ? statusValues : attachmentBody;
   const body = schema.parse(raw.body);
   const values = raw.action === 'attachment'

@@ -14,6 +14,14 @@ WordPress 写入、草稿导航保护或目录能力。
 附件仅保存 filename/type/visibility/message_id、byte_size、内容 SHA256 和 digest，
 不保存文件字节或 `content_base64`。文件最大 5 MiB，字节仅供当次 POST。
 
+正文与文件名使用既有 Python `str.strip/split` 空白语义，包括 U+001C–001F、
+U+0085；BOM、零宽空格不属于该空白集，必须保留。正文 values/body/digest、
+提交后草稿比较、最小长度与恢复意图验证使用同一规范；长度按 Unicode 码点，
+正文为 2–4000 码点。文件名折叠空白、去路径并按码点限制为191；截断后若暴露
+空白边缘，发送前再去边缘，确保后端处理不再改变提交值。后端规范保持原样，
+回执仍须精确匹配本地原意图；不能以采纳 server digest 来掩盖不一致。
+旧版已经保存的不规范未知意图仍保守阻塞，不迁移原 key/digest、不清空或重发。
+
 网络失败、泛化 5xx、`auth.replay_blocked`、冲突和坏/错目标成功体均是未知结果，
 保留意图与草稿，阻止全部后续写入。刷新恢复同一意图；确认动作只 GET，
 绝不自动 POST/PATCH 或换 key 重发。存储读/写/清除失败、意图损坏或 actor 变化
@@ -102,6 +110,10 @@ event ID、时间和适用的 message/attachment ID。原有业务数据字段�
 - `frontend/tests/vitest/admin-support-detail-evidence.test.ts`、
   `admin-support-confirmation-proxy.test.ts` 与 `admin-support-write-recovery.spec.ts`：
   校验、权限、未知恢复、storage、串行、迟到响应、初读恢复与 PC 双宽。
+- `frontend/tests/fixtures/admin-support-unicode.json`：一次性合成数据库的实际
+  领域 serializer 正文/附件输出；后端同文件回归验证其字段、digest 和原确认，
+  `admin-support-unicode.test.ts`及定向浏览器验证两端空白规范、BOM保留、
+  码点长度、正常及丢响应恢复。SQLite仅证明规范/序列化，不证明PG锁。
 
 浏览器仅合成 mock，未匹配 API fail closed；原始事件逐条保留，沿用现有 collector，
 未放宽错误分类或截图 golden。PG、CI、M4、合并、生产与人工验收必须单独报告。

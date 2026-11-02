@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
 import { generateIdempotencyKey } from '@/lib/idempotency';
+import { hasSupportMessage, normalizeSupportMessage, normalizeSupportFilename, normalizeSupportContentType } from './support-text';
 import { readSupportConfirmation, readSupportDetail, readSupportIntent, readSupportWrite,
   operationPath, sha256, supportDigest, type SupportAction, type SupportDetail, type SupportIntent, type SupportValues } from './detail-evidence';
 
@@ -115,7 +116,7 @@ export function useSupportDetail(requestId: string) {
     const next = { ...draftRef.current };
     if (submitted.action === 'message') {
       const field = submitted.values.visibility === 'public' ? 'publicReply' : 'internalNote';
-      if (next[field].trim() === submitted.values.body) next[field] = '';
+      if (normalizeSupportMessage(next[field]) === submitted.values.body) next[field] = '';
     } else if (submitted.action === 'attachment') next.file = null;
     else next.statusDirty = false;
     setDraftValue(next);
@@ -150,8 +151,8 @@ export function useSupportDetail(requestId: string) {
       if (actor !== actorRef.current) { setStorageBlocked(true); return; }
       let body: SupportValues, values: SupportValues, content = '';
       if (action === 'message') {
-        const text = (visibility === 'public' ? snapshot.publicReply : snapshot.internalNote).trim();
-        if (text.length < 2) return;
+        const text = normalizeSupportMessage(visibility === 'public' ? snapshot.publicReply : snapshot.internalNote);
+        if (!hasSupportMessage(text)) return;
         values = body = { body: text, visibility: visibility || 'public' };
       } else if (action === 'status') values = body = { status: snapshot.status, admin_note: '' };
       else {
@@ -164,8 +165,8 @@ export function useSupportDetail(requestId: string) {
         let binary = '';
         for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
         content = btoa(binary);
-        body = { filename: file.name.trim().replaceAll('\\', '/').split('/').at(-1)!.split(/\s+/).join(' ').slice(0, 191),
-          content_type: (file.type || 'application/octet-stream').toLowerCase().split(';')[0].trim(), visibility: snapshot.visibility, message_id: '' };
+        body = { filename: normalizeSupportFilename(file.name),
+          content_type: normalizeSupportContentType(file.type || 'application/octet-stream'), visibility: snapshot.visibility, message_id: '' };
         values = { ...body, content_sha256: await sha256(bytes) };
       }
       const digest = await supportDigest(action, values);
