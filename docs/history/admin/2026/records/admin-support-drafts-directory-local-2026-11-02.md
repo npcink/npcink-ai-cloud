@@ -54,6 +54,14 @@ browser 子目录保存 PNG、结构化 JSON、严格事件清单与原始 test-
 真实 fixture 由 pytest 检查，不修改默认生产守卫。
 最终视觉微调后 types-closeout/lint-closeout/contract-closeout 定向检查通过，未重复无关全后台浏览器。
 
+## R3/R4 admission 修正
+
+integrator 独立审核发现原目录校验把所有 operator 等同 overdue，并未绑定 q 的后端
+五字段范围；两项已在现有分支修正。`isSupportRequestOverdue` 接受显式 `asOf`，覆盖
+null、48 小时边界、未到期和 waiting_for_operator；`matchesSupportRequestQuery` 覆盖
+大小写、trim、request/email/title/account/site 命中、不命中和空 q。新增目录单测共23项
+通过；未改变后端 serializer、写入/锁/鉴权或既有 GET recovery。
+
 ## PC 证据与限制
 
 browser-3：1440/1056 的 draft-exit、queue-pending、directory-row-issues、

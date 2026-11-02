@@ -43,6 +43,12 @@ has_more。分页须匹配本次请求、原始条目数量和总数；合法空
 序列化可空/可选日期允许 null 或省略。既有 critical/urgent 与 low/normal/high
 在目录与详情共享读取枚举；本组没有优先级写入入口。
 
+`attention=waiting_for_operator` 只绑定 `waiting_on=operator`；`attention=overdue`
+额外绑定 `waiting_since` 可解析且不晚于固定读取时点前 48 小时，缺失、无效或未到期
+行局部报 issue。`q` 使用 trim/lower 后的 substring 绑定 request_id、email、title、
+account_id、site_id 五个后端 LIKE 字段；空 q 合法，非空 q 无字段命中局部报 issue。
+这些规则由纯函数接收显式 `asOf`，回归不依赖可变系统时间。
+
 null、坏字段、错筛选范围或重复工单行局部隔离，列出数量/位置并保留合法行
 服务端顺序。全部坏行显示「记录未通过校验」，不能说没有工单。顶层/摘要/分页
 无效则整次读取失败，不缓存伪空目录或补零。保留已有成功页并显示读取失败/旧范围；

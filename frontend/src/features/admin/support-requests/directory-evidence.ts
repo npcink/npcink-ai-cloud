@@ -24,9 +24,33 @@ const directory = z.object({
     monitor: count, stable: count, waiting_for_operator: count, waiting_for_customer: count, overdue: count }),
 });
 
+const SUPPORT_REQUEST_OVERDUE_HOURS = 48;
+
+/** Mirrors the repository's overdue predicate without reading mutable UI state. */
+export function isSupportRequestOverdue(
+  request: Pick<SupportRequestListPayload['items'][number], 'waiting_on' | 'waiting_since'>,
+  asOf: Date
+): boolean {
+  if (request.waiting_on !== 'operator' || !request.waiting_since) return false;
+  const waitingSince = Date.parse(request.waiting_since);
+  return Number.isFinite(waitingSince)
+    && waitingSince <= asOf.getTime() - SUPPORT_REQUEST_OVERDUE_HOURS * 60 * 60 * 1000;
+}
+
+/** Mirrors list_admin_support_requests' five-field normalized LIKE scope. */
+export function matchesSupportRequestQuery(
+  request: Pick<SupportRequestListPayload['items'][number], 'request_id' | 'email' | 'title' | 'account_id' | 'site_id'>,
+  query: string
+): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [request.request_id, request.email, request.title, request.account_id, request.site_id || '']
+    .some(value => value.toLowerCase().includes(normalized));
+}
+
 // Match list_admin_support_requests, including nullable serializer dates. A bad
 // envelope is a failed read; individual rows are isolated with visible evidence.
-export function readSupportDirectory(value: unknown, requestKey: string): SupportRequestListPayload {
+export function readSupportDirectory(value: unknown, requestKey: string, asOf = new Date()): SupportRequestListPayload {
   const parsed = directory.parse(value), params = new URLSearchParams(requestKey);
   const { limit, offset, total, has_more } = parsed.pagination;
   if (limit !== Number(params.get('limit') || 100) || offset !== Number(params.get('offset') || 0)
@@ -38,7 +62,9 @@ export function readSupportDirectory(value: unknown, requestKey: string): Suppor
     if (!result.success || seen.has(result.data.request_id)
       || (params.get('status') && result.data.status !== params.get('status'))
       || (params.get('topic') && result.data.topic !== params.get('topic'))
-      || (params.get('attention') && result.data.waiting_on !== 'operator')) {
+      || (params.get('attention') === 'waiting_for_operator' && result.data.waiting_on !== 'operator')
+      || (params.get('attention') === 'overdue' && !isSupportRequestOverdue(result.data, asOf))
+      || !matchesSupportRequestQuery(result.data, params.get('q') || '')) {
       issues.push(`items[${index + 1}]`); continue;
     }
     seen.add(result.data.request_id); items.push(result.data);
