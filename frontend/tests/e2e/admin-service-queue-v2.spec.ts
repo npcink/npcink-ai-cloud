@@ -284,12 +284,12 @@ async function coverageRange(page: Page, start: number, end: number, total: numb
 }
 function directoryItems(count: number) {
   return Array.from({ length: count }, (_, index) => ({
-    account: { account_id: `acct_directory_${index}`, name: `Directory customer ${String(index).padStart(2, '0')}` },
-    severity: 'warning', reason_code: 'subscription_lifecycle_risk', reason: 'Subscription ending soon',
-    suggested_action: 'inspect_subscription_lifecycle', action_label: 'Inspect subscription', action_href: `/admin/subscriptions/sub_directory_${index}`,
-    package: { display_package_label: 'Plus' },
-    primary_subscription: { subscription_id: `sub_directory_${index}`, status: 'active' },
-    evidence: { site_count: 1, active_site_count: 1, missing_key_site_count: 0, days_until_end: index + 1 },
+    account: { account_id: `acct_directory_${index}`, name: `Directory customer ${String(index).padStart(2, '0')}`, status: 'active' },
+    severity: 'warning', priority: 10, reason_code: 'subscription_lifecycle_risk', reason_label: 'Subscription ending soon',
+    recommended_action: 'repair_subscription_lifecycle', action_label: 'Inspect subscription', action_href: `/admin/subscriptions/sub_directory_${index}`,
+    package: { display_package_label: 'Plus', package_kind: 'paid', coverage_state: 'covered' },
+    primary_subscription: { subscription_id: `sub_directory_${index}`, status: 'active', current_period_end_at: null },
+    evidence: { site_count: 1, active_site_count: 1, active_key_site_count: 1, missing_key_site_count: 0, days_until_end: index + 1, subscription_status: 'active', current_period_end_at: null, billing_snapshot_status: { status: 'fresh', summary: '', fresh_site_count: 1, stale_site_count: 0, missing_site_count: 0 } },
   }));
 }
 async function installDirectory(page: Page, items = directoryItems(21), maxReturned?: number) {
@@ -324,7 +324,8 @@ async function installDirectory(page: Page, items = directoryItems(21), maxRetur
     const limit = Number(params.get('limit'));
     const pageItems = filtered.slice(offset, offset + Math.min(limit, maxReturned ?? limit));
     await route.fulfill({ json: buildAdminApiEnvelope({
-      generated_at: '2026-10-23T10:11:12Z', summary: counts, hidden_internal_total: 7, total: filtered.length,
+      generated_at: '2026-10-23T10:11:12Z', summary: { ...counts, visible: pageItems.length },
+      filters: { q: terms.join(' '), status: params.get('status'), reason: params.get('reason') || '', sort: params.get('sort'), offset, limit }, hidden_internal_total: 7, total: filtered.length,
       pagination: { offset, limit, total: filtered.length, has_more: offset + pageItems.length < filtered.length }, items: pageItems,
     }) });
   });
@@ -502,7 +503,7 @@ test('Quiet service status normalizes far pages only after their own successful 
   expect(mocks.unhandledAdminRequests).toEqual([]);
 });
 
-test('Quiet service status initial failure retries its URL and reports actual partial page length', async ({ page }) => {
+test('Quiet service status initial failure retries its URL and reports actual partial page length', async ({ page }, testInfo) => {
   const mocks = await installDirectory(page, directoryItems(21), 3);
   mocks.setUnavailable(true);
   await page.goto('/admin/coverage?status=warning');
@@ -514,6 +515,12 @@ test('Quiet service status initial failure retries its URL and reports actual pa
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await coverageRange(page, 1, 3, 21);
   await expect(coverageRows(page)).toHaveCount(3);
+  await expect(page.locator('[data-ui="coverage-evidence-issues"]')).toContainText(/page completeness is unverified|分页证据不完整/);
+  await page.screenshot({ path: testInfo.outputPath('coverage-short-page-incomplete.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1056, height: 1050 });
+  await expect(page.locator('[data-ui="coverage-evidence-issues"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
+  await page.screenshot({ path: testInfo.outputPath('coverage-short-page-incomplete-1056.png'), fullPage: true, animations: 'disabled' });
   await expect(page).toHaveURL(/status=warning/);
   expect(mocks.requests.length).toBe(beforeRetry + 1);
   expect(mocks.unhandledAdminRequests).toEqual([]);

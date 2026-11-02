@@ -114,7 +114,7 @@ export default function AdminTroubleshootingPage() {
           { signal: controller.signal }
         );
         if (sequence !== requestSequenceRef.current) return;
-        setSnapshot({ scope: telemetryScope, data: normalizeRuntimeTelemetry(response.data) });
+        setSnapshot({ scope: telemetryScope, data: normalizeRuntimeTelemetry(response.data, params.toString()) });
         loadedScopeRef.current = telemetryScope;
       } catch (loadError) {
         if (sequence !== requestSequenceRef.current) return;
@@ -164,7 +164,7 @@ export default function AdminTroubleshootingPage() {
   const runEvidence = runEvidenceState.items;
   const runEvidenceLoading = runEvidenceState.loading;
   const refreshInProgress = loading || initialLoading || refreshing;
-  const conclusionStatus = data?.alertSummary.status || (initialLoading ? 'pending' : 'inactive');
+  const conclusionStatus = error || data?.issues.length ? 'inactive' : data?.alertSummary.status || (initialLoading ? 'pending' : 'inactive');
   const conclusionLabel = statusTone(conclusionStatus) === 'success'
     ? t('admin.troubleshooting.status_healthy', {}, 'Healthy')
     : statusTone(conclusionStatus) === 'error'
@@ -172,7 +172,9 @@ export default function AdminTroubleshootingPage() {
       : statusTone(conclusionStatus) === 'warning'
         ? t('admin.troubleshooting.status_warning', {}, 'Needs attention')
         : t('admin.troubleshooting.status_unknown', {}, 'Awaiting evidence');
-  const conclusionSummary = issues.length
+  const conclusionSummary = error || data?.issues.length
+    ? t('admin.evidence.invalid_scope')
+    : issues.length
     ? ''
     : data?.totals.runs === 0
       ? t('admin.troubleshooting.no_requests', {}, 'No requests in this period; runtime health cannot be assessed.')
@@ -285,6 +287,11 @@ export default function AdminTroubleshootingPage() {
         <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
         {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
       </div>
+      {data?.issues.length ? <div role="alert" data-ui="runtime-diagnostic-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
+        <p>{t('admin.evidence.invalid_rows', { count: String(data.issues.length) })}</p>
+        <p className="mt-1 break-all text-xs">{data.issues.join(', ')}</p>
+        <button className="btn btn-secondary btn-sm mt-2" onClick={() => setRefreshSignal(value => value + 1)}>{t('common.retry')}</button>
+      </div> : null}
       {data?.sampleLimited ? <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.sample_limited')}</p> : null}
       {data?.totals.providerEvidencePendingRuns ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.pending_evidence_note', { count: String(data.totals.providerEvidencePendingRuns) })}</p> : null}
       {since && data ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.review_scope_note')}</p> : null}
@@ -425,6 +432,7 @@ export default function AdminTroubleshootingPage() {
                   <button type="button" className="btn btn-secondary btn-sm" aria-pressed={evidenceScope === 'context'} onClick={() => updateUrl({ evidence: 'context' })}>{t('admin.troubleshooting.context_records')}</button>
                   <span className="text-slate-500">{t(evidenceScope === 'context' ? 'admin.troubleshooting.context_scope_note' : 'admin.troubleshooting.gap_scope_note')}</span>
                 </div> : null}
+                {runEvidenceState.issues.length ? <div role="alert" data-ui="runtime-run-evidence-issues" className="text-sm text-amber-700 dark:text-amber-300"><p>{t('admin.evidence.invalid_rows', { count: String(runEvidenceState.issues.length) })}</p><p className="break-all text-xs">{runEvidenceState.issues.join(', ')}</p><button className="btn btn-secondary btn-sm" onClick={runEvidenceState.retry}>{t('admin.troubleshooting.retry_evidence')}</button></div> : null}
                 {runEvidenceState.failedScopes ? <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300"><p>{t(runEvidence.length ? 'admin.troubleshooting.run_evidence_partial_error' : 'admin.troubleshooting.run_evidence_error')}</p><button type="button" className="btn btn-secondary btn-sm" onClick={runEvidenceState.retry}>{t('admin.troubleshooting.retry_evidence')}</button></div> : null}
                 {runEvidenceLoading ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_loading')}</p> : null}
                 {records.length ? <div className="overflow-x-auto"><table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.run_evidence_title')}>
@@ -448,7 +456,7 @@ export default function AdminTroubleshootingPage() {
                       <td className="px-2 py-2 align-top"><button type="button" className="whitespace-nowrap text-blue-700 hover:underline dark:text-blue-300" onClick={() => openDetail('record', record.id)}>{t('admin.troubleshooting.view_record')}</button></td>
                     </tr>;
                   })}</tbody>
-                </table></div> : !runEvidenceLoading && !runEvidenceState.failedScopes ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_unavailable')}</p> : null}
+                </table></div> : !runEvidenceLoading && !runEvidenceState.failedScopes && !runEvidenceState.issues.length ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_unavailable')}</p> : null}
                 {records.length > visibleCount ? <button type="button" className="text-xs text-blue-700 hover:underline dark:text-blue-300" onClick={() => setRecordPage({ key: evidenceContext, count: visibleCount + 5 })}>{t('admin.troubleshooting.more_records')}</button> : null}
               </section>
 

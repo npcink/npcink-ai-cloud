@@ -247,6 +247,12 @@ export function AdminAuditWorkspace() {
         />
       ) : null}
 
+      {data?.issues?.length ? <div role="alert" data-ui="admin-audit-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
+        <p>{t(data.issues.includes('pagination.items') ? 'admin.evidence.invalid_page' : 'admin.evidence.invalid_rows', { count: String(data.issues.length) })}</p>
+        <p className="mt-1 break-all text-xs">{data.issues.join(', ')}</p>
+        <button className="btn btn-secondary btn-sm mt-2" onClick={() => void query.refetch()}>{t('common.retry')}</button>
+      </div> : null}
+
       {data ? (
         <div
           className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
@@ -496,8 +502,8 @@ export function AdminAuditWorkspace() {
         ) : !data ? null : (
           <BackofficeEmptyState
             className="m-5 md:m-6"
-            title={t('admin.audit_workspace.empty_title', {}, 'No matching audit evidence')}
-            description={t('admin.audit_workspace.empty_description', {}, 'Change or clear the filters. No operation is available from this read-only surface.')}
+            title={t(data?.issues?.length ? 'admin.evidence.unverified' : 'admin.audit_workspace.empty_title', {}, 'No matching audit evidence')}
+            description={t(data?.issues?.length ? 'admin.evidence.invalid_scope' : 'admin.audit_workspace.empty_description', {}, 'Change or clear the filters. No operation is available from this read-only surface.')}
           />
         )}
         </div>

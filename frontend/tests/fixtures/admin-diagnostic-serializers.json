@@ -1,0 +1,765 @@
+{
+  "coverage": {
+    "generated_at": "2026-11-02T06:00:00+00:00",
+    "filters": {
+      "q": "",
+      "status": "all",
+      "reason": "",
+      "sort": "priority",
+      "offset": 0,
+      "limit": 10
+    },
+    "summary": {
+      "total": 1,
+      "visible": 1,
+      "needs_action": 1,
+      "error": 1,
+      "warning": 0,
+      "ok": 0,
+      "inactive": 0,
+      "reason_counts": {
+        "customer_identity_missing": 1
+      }
+    },
+    "total": 1,
+    "hidden_internal_total": 0,
+    "pagination": {
+      "offset": 0,
+      "limit": 10,
+      "total": 1,
+      "has_more": false
+    },
+    "items": [
+      {
+        "account": {
+          "account_id": "acct_contract",
+          "name": "Contract Customer",
+          "status": "active",
+          "metadata": {},
+          "created_at": "2026-11-02T06:00:00+00:00",
+          "updated_at": "2026-11-02T06:00:00+00:00"
+        },
+        "primary_identity": null,
+        "identity_relationship_state": "missing",
+        "primary_subscription": null,
+        "package": {
+          "display_package_label": "Unknown",
+          "package_kind": "unknown",
+          "coverage_state": "uncovered",
+          "package_alias": "",
+          "plan_id": "",
+          "plan_version_id": ""
+        },
+        "severity": "error",
+        "priority": 0,
+        "reason_code": "customer_identity_missing",
+        "reason_label": "Customer has no owner login identity.",
+        "recommended_action": "repair_customer_access",
+        "action_label": "Open customer access",
+        "action_href": "/admin/accounts/acct_contract#customer-access",
+        "evidence": {
+          "site_count": 0,
+          "active_site_count": 0,
+          "active_key_site_count": 0,
+          "missing_key_site_count": 0,
+          "subscription_status": "missing",
+          "billing_snapshot_status": {
+            "status": "not_applicable",
+            "summary": "",
+            "fresh_site_count": 0,
+            "stale_site_count": 0,
+            "missing_site_count": 0
+          },
+          "current_period_end_at": null,
+          "days_until_end": null,
+          "identity_relationship_state": "missing"
+        }
+      }
+    ]
+  },
+  "audit": {
+    "items": [
+      {
+        "event_id": 1,
+        "account_id": "acct_contract",
+        "site_id": "site_contract",
+        "key_id": "",
+        "subscription_id": "",
+        "plan_id": "",
+        "plan_version_id": "",
+        "scope_kind": "account",
+        "scope_id": "acct_contract",
+        "event_kind": "contract.saved",
+        "outcome": "succeeded",
+        "method": "",
+        "path": "",
+        "trace_id": "",
+        "idempotency_key": "contract-key",
+        "actor_kind": "platform_admin",
+        "actor_ref": "operator",
+        "created_at": "2026-11-02T06:00:00+00:00"
+      }
+    ],
+    "total": 1,
+    "filters": {
+      "event_id": 0,
+      "site_id": "",
+      "site_ids": [],
+      "account_id": "",
+      "event_kind": "",
+      "outcome": "",
+      "idempotency_key": "",
+      "actor_ref": "",
+      "scope_kind": "",
+      "scope_id": "",
+      "created_from": null,
+      "created_to": null
+    },
+    "pagination": {
+      "limit": 10,
+      "offset": 0,
+      "total": 1,
+      "has_more": false,
+      "next_offset": null,
+      "last_offset": 0,
+      "is_out_of_range": false
+    },
+    "generated_at": "2026-11-02T06:00:00+00:00",
+    "diagnostics": {
+      "returned_count": 1,
+      "query_duration_ms": 0
+    },
+    "sort": {
+      "created_at": "desc",
+      "event_id": "desc"
+    }
+  },
+  "telemetryEmpty": {
+    "filters": {
+      "site_id": "",
+      "capability": "",
+      "recent_minutes": 1440,
+      "since": "2026-11-01T06:00:00+00:00",
+      "limit": 25
+    },
+    "generated_at": "2026-11-02T06:00:00+00:00",
+    "window": {
+      "since": "2026-11-01T06:00:00+00:00",
+      "until": "2026-11-02T06:00:00+00:00"
+    },
+    "totals": {
+      "runs": 0,
+      "ai_evidence_required_runs": 0,
+      "provider_evidence_required_runs": 0,
+      "provider_evidence_pending_runs": 0,
+      "non_ai_zero_credit_runs": 0,
+      "provider_calls": 0,
+      "usage_meter_events": 0,
+      "provider_call_run_coverage_rate": 1.0,
+      "metered_run_coverage_rate": 1.0
+    },
+    "provider_failures": [],
+    "evidence_limits": {
+      "runs_truncated": false,
+      "provider_calls_truncated": false,
+      "meter_events_truncated": false,
+      "capability_groups_truncated": false
+    },
+    "usage_statistics": {
+      "runs": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "success_rate": null,
+      "avg_latency_ms": null,
+      "latency_samples": 0,
+      "succeeded_avg_latency_ms": null,
+      "failed_avg_latency_ms": null,
+      "active_sites": 0,
+      "sample_limit": 5000,
+      "possibly_truncated": false,
+      "sites": [],
+      "functions": [],
+      "timeline": [
+        {
+          "day": "2026-11-01",
+          "runs": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "success_rate": null,
+          "avg_latency_ms": null,
+          "latency_samples": 0,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": null
+        },
+        {
+          "day": "2026-11-02",
+          "runs": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "success_rate": null,
+          "avg_latency_ms": null,
+          "latency_samples": 0,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": null
+        }
+      ],
+      "timezone": "UTC",
+      "comparison": {
+        "sites": {
+          "series": [],
+          "other": [],
+          "group_count": 0,
+          "series_limit": 5,
+          "ranking": "runs_desc_id_asc"
+        },
+        "functions": {
+          "series": [],
+          "other": [],
+          "group_count": 0,
+          "series_limit": 5,
+          "ranking": "runs_desc_id_asc"
+        }
+      }
+    },
+    "capability_groups": [],
+    "profile_groups": [],
+    "execution_kind_groups": [],
+    "provider_model_groups": [],
+    "governance_gaps": {
+      "unmetered_capabilities": [],
+      "missing_provider_call_capabilities": [],
+      "unmetered_run_count": 0,
+      "runs_without_provider_call_count": 0,
+      "review_guidance": "Recent runtime providers have meter coverage in this window."
+    },
+    "issue_daily_counts": {
+      "hosted_model.unmetered_runs": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 0
+        }
+      ],
+      "hosted_model.provider_call_gap": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 0
+        }
+      ],
+      "hosted_model.provider_errors": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 0
+        }
+      ],
+      "hosted_model.failed_runs": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 0
+        }
+      ]
+    },
+    "boundary": {
+      "surface": "internal_operator_diagnostics",
+      "cloud_role": "hosted_runtime_detail",
+      "local_control_plane": "wordpress_plugin",
+      "direct_wordpress_write": false,
+      "contains_prompt_or_result_payloads": false
+    },
+    "alert_summary": {
+      "status": "inactive",
+      "summary": "No runtime runs were observed in this telemetry window.",
+      "next_action": "continue_monitoring",
+      "href": "/admin/troubleshooting",
+      "alerts": [],
+      "alert_count": 0,
+      "daily_digest": {
+        "runs": 0,
+        "ai_evidence_required_runs": 0,
+        "non_ai_zero_credit_runs": 0,
+        "provider_calls": 0,
+        "meter_events": 0,
+        "metered_run_coverage_rate": 1.0,
+        "provider_call_run_coverage_rate": 1.0,
+        "unmetered_run_count": 0,
+        "runs_without_provider_call_count": 0
+      },
+      "boundary": {
+        "surface": "internal_admin_summary",
+        "cloud_role": "hosted_runtime_detail",
+        "local_control_plane": "wordpress_plugin",
+        "direct_wordpress_write": false,
+        "contains_prompt_or_result_payloads": false
+      }
+    }
+  },
+  "telemetry": {
+    "filters": {
+      "site_id": "",
+      "capability": "",
+      "recent_minutes": 1440,
+      "since": "2026-11-01T06:00:00+00:00",
+      "limit": 25
+    },
+    "generated_at": "2026-11-02T06:00:00+00:00",
+    "window": {
+      "since": "2026-11-01T06:00:00+00:00",
+      "until": "2026-11-02T06:00:00+00:00"
+    },
+    "totals": {
+      "runs": 1,
+      "ai_evidence_required_runs": 1,
+      "provider_evidence_required_runs": 1,
+      "provider_evidence_pending_runs": 0,
+      "non_ai_zero_credit_runs": 0,
+      "provider_calls": 0,
+      "usage_meter_events": 0,
+      "provider_call_run_coverage_rate": 0.0,
+      "metered_run_coverage_rate": 0.0
+    },
+    "provider_failures": [],
+    "evidence_limits": {
+      "runs_truncated": false,
+      "provider_calls_truncated": false,
+      "meter_events_truncated": false,
+      "capability_groups_truncated": false
+    },
+    "usage_statistics": {
+      "runs": 1,
+      "succeeded": 0,
+      "failed": 1,
+      "success_rate": 0.0,
+      "avg_latency_ms": 60000.0,
+      "latency_samples": 1,
+      "succeeded_avg_latency_ms": null,
+      "failed_avg_latency_ms": 60000.0,
+      "active_sites": 1,
+      "sample_limit": 5000,
+      "possibly_truncated": false,
+      "sites": [
+        {
+          "id": "site_contract",
+          "runs": 1,
+          "succeeded": 0,
+          "failed": 1,
+          "success_rate": 0.0,
+          "avg_latency_ms": 60000.0,
+          "latency_samples": 1,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": 60000.0
+        }
+      ],
+      "functions": [
+        {
+          "id": "text.contract",
+          "runs": 1,
+          "succeeded": 0,
+          "failed": 1,
+          "success_rate": 0.0,
+          "avg_latency_ms": 60000.0,
+          "latency_samples": 1,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": 60000.0
+        }
+      ],
+      "timeline": [
+        {
+          "day": "2026-11-01",
+          "runs": 0,
+          "succeeded": 0,
+          "failed": 0,
+          "success_rate": null,
+          "avg_latency_ms": null,
+          "latency_samples": 0,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": null
+        },
+        {
+          "day": "2026-11-02",
+          "runs": 1,
+          "succeeded": 0,
+          "failed": 1,
+          "success_rate": 0.0,
+          "avg_latency_ms": 60000.0,
+          "latency_samples": 1,
+          "succeeded_avg_latency_ms": null,
+          "failed_avg_latency_ms": 60000.0
+        }
+      ],
+      "timezone": "UTC",
+      "comparison": {
+        "sites": {
+          "series": [
+            {
+              "id": "site_contract",
+              "points": [
+                {
+                  "day": "2026-11-01",
+                  "runs": 0,
+                  "failed": 0
+                },
+                {
+                  "day": "2026-11-02",
+                  "runs": 1,
+                  "failed": 1
+                }
+              ]
+            }
+          ],
+          "other": [],
+          "group_count": 1,
+          "series_limit": 5,
+          "ranking": "runs_desc_id_asc"
+        },
+        "functions": {
+          "series": [
+            {
+              "id": "text.contract",
+              "points": [
+                {
+                  "day": "2026-11-01",
+                  "runs": 0,
+                  "failed": 0
+                },
+                {
+                  "day": "2026-11-02",
+                  "runs": 1,
+                  "failed": 1
+                }
+              ]
+            }
+          ],
+          "other": [],
+          "group_count": 1,
+          "series_limit": 5,
+          "ranking": "runs_desc_id_asc"
+        }
+      }
+    },
+    "capability_groups": [
+      {
+        "group_kind": "ability_family",
+        "group_id": "text",
+        "runs_total": 1,
+        "succeeded": 0,
+        "failed": 1,
+        "queued": 0,
+        "running": 0,
+        "canceled": 0,
+        "provider_calls": 0,
+        "provider_errors": 0,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost": 0.0,
+        "meter_events": 0,
+        "meter_totals": {},
+        "profile_ids": [
+          "text.contract"
+        ],
+        "execution_kinds": [
+          "provider_hosted"
+        ],
+        "provider_ids": [],
+        "model_ids": [],
+        "instance_ids": [],
+        "data_classifications": [
+          "internal"
+        ],
+        "ai_evidence_required_runs": 1,
+        "provider_evidence_required_runs": 1,
+        "provider_call_gap_runs": 1,
+        "tokens_total": 0,
+        "avg_latency_ms": 0.0,
+        "provider_error_rate": 0.0,
+        "provider_call_run_coverage_rate": 0.0,
+        "metered_run_coverage_rate": 0.0
+      }
+    ],
+    "profile_groups": [
+      {
+        "group_kind": "profile_id",
+        "group_id": "text.contract",
+        "runs_total": 1,
+        "succeeded": 0,
+        "failed": 1,
+        "queued": 0,
+        "running": 0,
+        "canceled": 0,
+        "provider_calls": 0,
+        "provider_errors": 0,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost": 0.0,
+        "meter_events": 0,
+        "meter_totals": {},
+        "profile_ids": [
+          "text.contract"
+        ],
+        "execution_kinds": [
+          "provider_hosted"
+        ],
+        "provider_ids": [],
+        "model_ids": [],
+        "instance_ids": [],
+        "data_classifications": [
+          "internal"
+        ],
+        "ai_evidence_required_runs": 1,
+        "provider_evidence_required_runs": 1,
+        "provider_call_gap_runs": 1,
+        "tokens_total": 0,
+        "avg_latency_ms": 0.0,
+        "provider_error_rate": 0.0,
+        "provider_call_run_coverage_rate": 0.0,
+        "metered_run_coverage_rate": 0.0
+      }
+    ],
+    "execution_kind_groups": [
+      {
+        "group_kind": "execution_kind",
+        "group_id": "provider_hosted",
+        "runs_total": 1,
+        "succeeded": 0,
+        "failed": 1,
+        "queued": 0,
+        "running": 0,
+        "canceled": 0,
+        "provider_calls": 0,
+        "provider_errors": 0,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost": 0.0,
+        "meter_events": 0,
+        "meter_totals": {},
+        "profile_ids": [
+          "text.contract"
+        ],
+        "execution_kinds": [
+          "provider_hosted"
+        ],
+        "provider_ids": [],
+        "model_ids": [],
+        "instance_ids": [],
+        "data_classifications": [
+          "internal"
+        ],
+        "ai_evidence_required_runs": 1,
+        "provider_evidence_required_runs": 1,
+        "provider_call_gap_runs": 1,
+        "tokens_total": 0,
+        "avg_latency_ms": 0.0,
+        "provider_error_rate": 0.0,
+        "provider_call_run_coverage_rate": 0.0,
+        "metered_run_coverage_rate": 0.0
+      }
+    ],
+    "provider_model_groups": [],
+    "governance_gaps": {
+      "unmetered_capabilities": [
+        "text"
+      ],
+      "missing_provider_call_capabilities": [
+        "text"
+      ],
+      "unmetered_run_count": 1,
+      "runs_without_provider_call_count": 1,
+      "review_guidance": "Inspect capabilities below full metering coverage before enabling new runtime providers at higher traffic."
+    },
+    "issue_daily_counts": {
+      "hosted_model.unmetered_runs": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 1
+        }
+      ],
+      "hosted_model.provider_call_gap": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 1
+        }
+      ],
+      "hosted_model.provider_errors": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 0
+        }
+      ],
+      "hosted_model.failed_runs": [
+        {
+          "day": "2026-11-01",
+          "count": 0
+        },
+        {
+          "day": "2026-11-02",
+          "count": 1
+        }
+      ]
+    },
+    "boundary": {
+      "surface": "internal_operator_diagnostics",
+      "cloud_role": "hosted_runtime_detail",
+      "local_control_plane": "wordpress_plugin",
+      "direct_wordpress_write": false,
+      "contains_prompt_or_result_payloads": false
+    },
+    "alert_summary": {
+      "status": "error",
+      "summary": "Runtime telemetry has coverage or provider errors that need review.",
+      "next_action": "inspect_metering_callback_or_usage_event_mapping",
+      "href": "/admin/troubleshooting",
+      "alerts": [
+        {
+          "code": "hosted_model.unmetered_runs",
+          "severity": "error",
+          "title": "Runtime meter coverage gap",
+          "summary": "Some runtime runs are not represented in usage metering.",
+          "count": 1,
+          "capabilities": [
+            "text"
+          ],
+          "suggested_action": "inspect_metering_callback_or_usage_event_mapping",
+          "daily_counts": [
+            {
+              "day": "2026-11-01",
+              "count": 0
+            },
+            {
+              "day": "2026-11-02",
+              "count": 1
+            }
+          ],
+          "href": "/admin/troubleshooting"
+        },
+        {
+          "code": "hosted_model.failed_runs",
+          "severity": "warning",
+          "title": "Runtime runs failed",
+          "summary": "Runtime runs are failing before or during provider execution.",
+          "count": 1,
+          "capabilities": [
+            "text"
+          ],
+          "suggested_action": "inspect_runtime_failure_detail",
+          "daily_counts": [
+            {
+              "day": "2026-11-01",
+              "count": 0
+            },
+            {
+              "day": "2026-11-02",
+              "count": 1
+            }
+          ],
+          "href": "/admin/troubleshooting"
+        },
+        {
+          "code": "hosted_model.provider_call_gap",
+          "severity": "warning",
+          "title": "Provider call coverage gap",
+          "summary": "Some runtime runs do not have matching provider call telemetry.",
+          "count": 1,
+          "capabilities": [
+            "text"
+          ],
+          "suggested_action": "inspect_provider_call_recording_for_hosted_profiles",
+          "daily_counts": [
+            {
+              "day": "2026-11-01",
+              "count": 0
+            },
+            {
+              "day": "2026-11-02",
+              "count": 1
+            }
+          ],
+          "href": "/admin/troubleshooting"
+        }
+      ],
+      "alert_count": 3,
+      "daily_digest": {
+        "runs": 1,
+        "ai_evidence_required_runs": 1,
+        "non_ai_zero_credit_runs": 0,
+        "provider_calls": 0,
+        "meter_events": 0,
+        "metered_run_coverage_rate": 0.0,
+        "provider_call_run_coverage_rate": 0.0,
+        "unmetered_run_count": 1,
+        "runs_without_provider_call_count": 1
+      },
+      "boundary": {
+        "surface": "internal_admin_summary",
+        "cloud_role": "hosted_runtime_detail",
+        "local_control_plane": "wordpress_plugin",
+        "direct_wordpress_write": false,
+        "contains_prompt_or_result_payloads": false
+      }
+    }
+  },
+  "runs": {
+    "filters": {
+      "site_id": "site_contract",
+      "run_id": "",
+      "capability": "",
+      "issue_code": "",
+      "evidence_scope": "affected",
+      "recent_minutes": 1440,
+      "since": "2026-11-01T06:00:00+00:00",
+      "limit": 25
+    },
+    "generated_at": "2026-11-02T06:00:00+00:00",
+    "freshness": "snapshot",
+    "sampled": false,
+    "truncated": false,
+    "items": [
+      {
+        "run_id": "run_contract",
+        "site_id": "site_contract",
+        "ability_name": "contract/rewrite",
+        "ability_family": "text",
+        "profile_id": "text.contract",
+        "status": "failed",
+        "error_code": "runtime.rejected",
+        "started_at": "2026-11-01T21:55:00+00:00",
+        "finished_at": "2026-11-01T21:56:00+00:00",
+        "duration_ms": 60000,
+        "provider_call_count": 0,
+        "provider_evidence_state": "failed_without_call",
+        "has_meter_event": false,
+        "selected_provider_id": null,
+        "selected_model_id": null
+      }
+    ],
+    "boundary": {
+      "contains_prompt_or_result_payloads": false,
+      "contains_credentials": false
+    }
+  }
+}

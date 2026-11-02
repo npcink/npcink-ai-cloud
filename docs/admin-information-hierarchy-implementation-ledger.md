@@ -1123,3 +1123,28 @@ R1 返修：按 Python 空白与码点语义统一正文/文件名、最小长�
 [实现契约](admin-support-drafts-directory-v1.md)；
 [命令、失败记录及完整外置证据根](history/admin/2026/records/admin-support-drafts-directory-local-2026-11-02.md)。
 本项为本地候选，不覆盖首组合并/M4以外的本组独立验收状态，不授权第三组或生产。
+
+## B6-09/10/11/12 诊断读取证据 — 2026-11-02 本地候选
+
+沿用服务状态目录、审计元数据目录和运行诊断模型；不新增页面/TAB/drawer，
+不改变后台写入、工单草稿、actor/key/未知恢复或暂停边界。
+
+| 信息层级 | 处置与入口 | PC 证据与限制 |
+| --- | --- | --- |
+| 常显 | B6-09 服务覆盖与 B6-10 审计显示坏行数量/位置、原范围、失败和 Retry；合法行保留，全坏页不称无记录；必需 envelope/范围内空页矛盾失败走原错误壳。 | `browser-partial-compatibility-final` 双宽 partial/refresh-failed/empty；原筛选分页/迟到/恢复用既有脚本复验。 |
+| 常显 | B6-11 缺失指标不补0/空告警；证据异常或读取失败不能给出健康/无异常结论。B6-12 普通列表与精确run都拒绝跨site；capability按后端family/name/profile的OR语义。 | 双宽 runtime-partial/refresh-failed/empty；精确错目标、合法0、pending/nonAI与范围反例；仅本地mock。 |
+| 按需 | 原服务查看证据、审计查看证据、runtime详情入口保持；坏目标链接不进入可操作行。 | 双宽打开合法行drawer并Escape关闭；错站点不进入详情。 |
+| 技术证据 | 常显坏行位置，完整元数据仍在原Inspector；真实Python serializer fixture、局部坏行/缺字段/范围单测和外置浏览器回执。 | 不含原始请求/结果payload；临时SQLite有初始化/seed写入，浏览器业务API为GET mocks。 |
+| 删除重复 | 无内容搬迁或重复字段恢复；只拒绝坏链接、缺字段推导的零/无异常及与请求不符的证据。 | collector、阈值、golden均未改；既有错误/旧证据语义保持。 |
+
+规范§8–11核对：仍是原目录/诊断场景，动态阻塞不藏在hover或标题帮助；
+页面范围、样本限制、原刷新动作及未知/陈旧保护常显。没有新业务字段或布局选型。
+1056诊断表沿用已有窄列换行；本项不扩展为后台重排。代理视觉复查不等于人工验收。
+整合审核补强：按真实total/offset/limit应有条数核对；非空短页保留合法行并常显
+分页证据不完整和Retry，不能作为完整稳定页。两页1440/1056证据见
+`browser-pagination-warning-final-artifacts`；没有把旧部分页mock作为生产契约。
+
+[读取契约](admin-diagnostic-evidence-validation-v1.md)；
+[本地结果、失败历史与外置证据根](history/admin/2026/records/admin-diagnostic-evidence-validation-local-2026-11-02.md)。
+仅local候选；本组CI/PR/M4 candidate/merged/M4 accepted/production均未执行，
+human acceptance pending；由整合会话“系统检查管理后台问题”独立审核接管。

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createApiClient } from '@/lib/api-client';
+import { readRuntimeRuns } from './run-evidence';
 import type { RuntimeRunEvidence } from './runtimeTelemetry';
 
 const client = createApiClient({ idempotencyPrefix: 'runtime_run_evidence' });
@@ -12,6 +13,7 @@ type EvidenceSnapshot = {
   items: RuntimeRunEvidence[];
   truncated: boolean;
   failedScopes: number;
+  issues: string[];
 };
 
 export function useRuntimeRunEvidence({ issueCode, site, capability, windowHours, refreshSignal, since = '', evidenceScope = 'affected', runId = '' }: {
@@ -44,24 +46,19 @@ export function useRuntimeRunEvidence({ issueCode, site, capability, windowHours
       params.set('evidence_scope', query.evidenceScope);
       if (query.site) params.set('site_id', query.site);
       if (scope) params.set('capability', scope);
-      const response = await client.request<{ items: RuntimeRunEvidence[]; sampled?: boolean; truncated?: boolean }>(
+      const response = await client.request<unknown>(
         `/api/admin/runtime-telemetry/runs?${params}`, { signal: controller.signal },
       );
-      if (!Array.isArray(response.data.items) || response.data.items.some(run =>
-        (query.runId && (run?.run_id !== query.runId || run?.site_id !== query.site)) ||
-        !run || typeof run.run_id !== 'string' || !run.run_id.trim() ||
-        (run.started_at != null && typeof run.started_at !== 'string')
-      )) throw new Error('Invalid runtime evidence response');
-      return response.data;
+      return readRuntimeRuns(response.data, { site: query.site, capability: scope, runId: query.runId });
     })).then((results) => {
       if (controller.signal.aborted) return;
       const fulfilled = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
       const rows = [...new Map(fulfilled.flatMap((result) => result.items).map((run) => [run.run_id, run])).values()]
         .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '') || b.run_id.localeCompare(a.run_id));
-      setSnapshot({ key, items: rows.slice(0, sampleLimit), failedScopes: results.length - fulfilled.length,
+      setSnapshot({ key, items: rows.slice(0, sampleLimit), failedScopes: results.length - fulfilled.length, issues: fulfilled.flatMap(result => result.issues),
         truncated: rows.length > sampleLimit || fulfilled.some((result) => result.sampled || result.truncated) });
     }).catch(() => {
-      if (!controller.signal.aborted) setSnapshot({ key, items: [], truncated: false, failedScopes: scopes.length });
+      if (!controller.signal.aborted) setSnapshot({ key, items: [], truncated: false, failedScopes: scopes.length, issues: [] });
     });
     return () => controller.abort();
   }, [key]);
@@ -72,6 +69,7 @@ export function useRuntimeRunEvidence({ issueCode, site, capability, windowHours
     loading: Boolean(issueCode || (runId && site)) && !current,
     failedScopes: current?.failedScopes ?? 0,
     truncated: current?.truncated ?? false,
+    issues: current?.issues ?? [],
     retry: () => setAttempt((value) => value + 1),
   };
 }

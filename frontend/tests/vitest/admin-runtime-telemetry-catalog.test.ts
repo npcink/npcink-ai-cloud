@@ -1,3 +1,4 @@
+import serializers from '../fixtures/admin-diagnostic-serializers.json';
 import { describe, expect, it } from 'vitest';
 import {
   formatRate,
@@ -25,14 +26,15 @@ const identityT = (key: string, params?: Record<string, string>, fallback?: stri
 };
 
 function alert(code: string, severity: string, count: number) {
-  return { code, severity, title: '', summary: '', count, capabilities: [], suggested_action: '', href: '' };
+  return { code, severity, title: '', summary: '', count, capabilities: [], suggested_action: '', href: '', daily_counts: [] };
 }
 
 describe('normalizeRuntimeTelemetry alert ordering', () => {
   it('ranks severity first, then count, then code for stability', () => {
     const summary = normalizeRuntimeTelemetry({
+      ...serializers.telemetry,
       alert_summary: {
-        status: 'warning',
+        ...serializers.telemetry.alert_summary, status: 'warning', alert_count: 4,
         alerts: [
           alert('hosted_model.provider_errors', 'warning', 4),
           alert('hosted_model.failed_runs', 'warning', 9),
@@ -49,27 +51,23 @@ describe('normalizeRuntimeTelemetry alert ordering', () => {
     ]);
   });
 
-  it('keeps an empty alert list and defaults the status', () => {
-    const summary = normalizeRuntimeTelemetry({});
+  it('rejects missing evidence and accepts an actual empty serializer', () => {
+    expect(() => normalizeRuntimeTelemetry({})).toThrow();
+    const summary = normalizeRuntimeTelemetry(serializers.telemetryEmpty);
     expect(summary.alertSummary.alerts).toEqual([]);
     expect(summary.alertSummary.status).toBe('inactive');
     expect(summary.totals.runs).toBe(0);
   });
 
-  it('keeps missing counts unavailable on older payloads and discloses capped evidence', () => {
-    const legacy = normalizeRuntimeTelemetry({ capability_groups: [{ group_id: 'text' }] });
-    expect(legacy.capabilityGroups[0].providerGapRuns).toBeNull();
-    expect(legacy.totals.providerEvidenceRequiredRuns).toBeNull();
-    const current = normalizeRuntimeTelemetry({
-      evidence_limits: { provider_calls_truncated: true },
-      totals: { provider_evidence_required_runs: 0, provider_evidence_pending_runs: 3 },
-      capability_groups: [{ group_id: 'text', provider_call_gap_runs: 0 }],
-    });
-    expect(current.sampleLimited).toBe(true);
-    expect(current.capabilityGroups[0].providerGapRuns).toBe(0);
-    expect(current.totals.providerEvidenceRequiredRuns).toBe(0);
-    expect(current.totals.providerEvidencePendingRuns).toBe(3);
+  it('keeps optional group gaps unavailable and discloses capped evidence', () => {
+    const value = structuredClone(serializers.telemetry);
+    delete (value.capability_groups[0] as { provider_call_gap_runs?: number }).provider_call_gap_runs;
+    expect(normalizeRuntimeTelemetry(value).capabilityGroups[0].providerGapRuns).toBeNull();
+    value.evidence_limits.provider_calls_truncated = true;
+    expect(normalizeRuntimeTelemetry(value).sampleLimited).toBe(true);
+    expect(normalizeRuntimeTelemetry(serializers.telemetryEmpty).totals.providerEvidenceRequiredRuns).toBe(0);
   });
+
 });
 
 describe('runtime issue catalog copy mappings', () => {

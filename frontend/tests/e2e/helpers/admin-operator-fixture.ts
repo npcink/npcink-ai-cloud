@@ -1,3 +1,4 @@
+import { buildRuntimeTelemetryFixture } from './runtime-telemetry-fixture';
 import { subscriptionFixture, subscriptionQueueFixture } from '../../fixtures/admin-subscriptions';
 import { canonicalTier } from '../../fixtures/admin-plan-parameters';
 import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
@@ -417,6 +418,7 @@ export async function installAdminMocks(
       }
       const auditItems = [
         {
+          key_id: '', plan_id: '', plan_version_id: '',
           event_id: 101,
           account_id: LONG_ACCOUNT_ID,
           site_id: 'site_mvp',
@@ -434,6 +436,7 @@ export async function installAdminMocks(
           created_at: '2026-04-08T09:45:00Z',
         },
         {
+          key_id: '', plan_id: '', plan_version_id: '',
           event_id: 102,
           account_id: LONG_ACCOUNT_ID,
           site_id: 'site_mvp',
@@ -731,7 +734,7 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/runtime-telemetry') {
-      await fulfillJson(route, {
+      await fulfillJson(route, buildRuntimeTelemetryFixture({
         generated_at: '2026-04-08T10:00:00Z',
         usage_statistics: {
           runs: 6,
@@ -925,7 +928,7 @@ export async function installAdminMocks(
           direct_wordpress_write: false,
           contains_prompt_or_result_payloads: false,
         },
-      });
+      }, searchParams));
       return;
     }
 
@@ -979,14 +982,14 @@ export async function installAdminMocks(
           action_href:
             reasonCode === 'subscription_lifecycle_risk' && subscriptionId
               ? `/admin/subscriptions/${subscriptionId}`
-              : `/admin/accounts/${item.account.account_id}#coverage-actions`,
+              : `/admin/accounts/${item.account.account_id}${isUncovered ? '#coverage-actions' : ''}`,
           evidence: {
             site_count: item.site_count,
             active_site_count: item.site_count,
             active_key_site_count: isUncovered ? 0 : item.site_count,
             missing_key_site_count: isUncovered ? item.site_count : 0,
             subscription_status: isPrimary ? primaryAccountSubscription.status : subscriptionId ? 'active' : 'missing',
-            current_period_end_at: item.nearest_expiry_at || '',
+            current_period_end_at: item.nearest_expiry_at || null,
             days_until_end: isPrimary ? 6 : null,
             billing_snapshot_status: {
               status: isUncovered ? 'missing' : 'fresh',

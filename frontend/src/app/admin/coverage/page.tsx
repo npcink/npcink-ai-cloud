@@ -2,6 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { readCoverageQueue, type CoverageQueueItem, type CoverageWorkQueue } from '@/features/admin/coverage/evidence';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
@@ -23,84 +24,6 @@ import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 type QueueSeverity = 'error' | 'warning' | 'ok' | 'inactive';
 type QueueView = 'needs_action' | 'all' | QueueSeverity;
 type QueueSort = 'priority' | 'expiry' | 'customer';
-
-type CoverageQueueItem = {
-  account: {
-    account_id: string;
-    name?: string;
-    status?: string;
-    metadata?: Record<string, unknown>;
-  };
-  primary_subscription?: {
-    subscription_id?: string;
-    status?: string;
-    current_period_end_at?: string;
-  } | null;
-  package?: {
-    display_package_label?: string;
-    package_kind?: string;
-    coverage_state?: string;
-  };
-  primary_identity?: {
-    email?: string;
-    status?: string;
-  } | null;
-  identity_relationship_state?: 'healthy' | 'missing' | 'conflict' | 'access_disabled';
-  severity: QueueSeverity;
-  priority?: number;
-  reason_code: string;
-  reason_label: string;
-  recommended_action: string;
-  action_label: string;
-  action_href: string;
-  evidence: {
-    site_count?: number;
-    active_site_count?: number;
-    active_key_site_count?: number;
-    missing_key_site_count?: number;
-    subscription_status?: string;
-    current_period_end_at?: string;
-    days_until_end?: number | null;
-    billing_snapshot_status?: {
-      status?: string;
-      summary?: string;
-      fresh_site_count?: number;
-      stale_site_count?: number;
-      missing_site_count?: number;
-    };
-  };
-};
-
-type CoverageWorkQueue = {
-  generated_at?: string;
-  filters?: {
-    q?: string;
-    status?: QueueView;
-    reason?: string;
-    sort?: QueueSort;
-    offset?: number;
-    limit?: number;
-  };
-  summary?: {
-    total?: number;
-    visible?: number;
-    needs_action?: number;
-    error?: number;
-    warning?: number;
-    ok?: number;
-    inactive?: number;
-    reason_counts?: Record<string, number>;
-  };
-  total?: number;
-  hidden_internal_total?: number;
-  pagination?: {
-    offset?: number;
-    limit?: number;
-    total?: number;
-    has_more?: boolean;
-  };
-  items?: CoverageQueueItem[];
-};
 
 const coverageClient = createApiClient({ idempotencyPrefix: 'admin_coverage' });
 
@@ -278,12 +201,12 @@ function AdminCoverageContent() {
     setIsRefreshing(true);
     setError('');
     try {
-      const coveragePayload = await readJsonData<CoverageWorkQueue>(
+      const coveragePayload = await readJsonData<unknown>(
         `/api/admin/coverage-work-queue?${coverageRequestKey}`,
         abortController.signal
       );
       if (mountedRef.current && coverageRequestSequenceRef.current === requestSequence) {
-        setQueue(coveragePayload);
+        setQueue(readCoverageQueue(coveragePayload, coverageRequestKey));
         setQueueRequestKey(coverageRequestKey);
       }
     } catch (err) {
@@ -428,7 +351,7 @@ function AdminCoverageContent() {
       !isRefreshing &&
       offset > 0 &&
       pagination.total <= offset &&
-      visibleItems.length === 0
+      visibleItems.length === 0 && activeQueue.issues.length === 0
     ) {
       const previousOffset = Math.max(0, Math.floor((pagination.total - 1) / limit) * limit);
       setOffset(previousOffset);
@@ -511,6 +434,12 @@ function AdminCoverageContent() {
           </button>
         </div>
       ) : null}
+
+      {activeQueue.issues.length ? <div role="alert" data-ui="coverage-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
+        <p>{t(activeQueue.issues.includes('pagination.items') ? 'admin.evidence.invalid_page' : 'admin.evidence.invalid_rows', { count: String(activeQueue.issues.length) })}</p>
+        <p className="mt-1 break-all text-xs">{activeQueue.issues.join(', ')}</p>
+        <button className="btn btn-secondary btn-sm mt-2" onClick={() => void loadCoverage(true)}>{t('common.retry')}</button>
+      </div> : null}
 
       <BackofficeSectionPanel
         data-ui="coverage-workspace"
@@ -827,13 +756,13 @@ function AdminCoverageContent() {
           ) : (
             <BackofficeEmptyState
               className="m-5 md:m-6"
-              title={t('admin.coverage.no_match_title', {}, 'No customers match these filters')}
-              description={t(
+              title={activeQueue.issues.length ? t('admin.evidence.unverified') : t('admin.coverage.no_match_title', {}, 'No customers match these filters')}
+              description={activeQueue.issues.length ? t('admin.evidence.invalid_scope') : t(
                 'admin.coverage.no_match_desc',
                 {},
                 'Clear or adjust the current status, reason, and search filters. The source queue has not been changed.'
               )}
-              action={visibleSummary.total === 0 ? (
+              action={!activeQueue.issues.length && visibleSummary.total === 0 ? (
                 <Link href="/admin/accounts" className="btn btn-secondary btn-sm">
                   {t('admin.coverage_open_customer_register_action', {}, 'Open customer register')}
                 </Link>
