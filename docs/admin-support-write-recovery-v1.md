@@ -2,7 +2,8 @@
 
 Status: implementation contract；开发候选证据见
 [2026-11-02 本地记录](history/admin/2026/records/admin-support-write-recovery-local-2026-11-02.md)。
-仅覆盖 B6-03/04/05/06。Cloud 工单既有写入的正确性维护；不增加通知产品、
+首组覆盖 B6-03/04/05/06；普通草稿与目录后续实现见
+[工单草稿与目录](admin-support-drafts-directory-v1.md)。Cloud 工单既有写入的正确性维护；不增加通知产品、
 WordPress 写入、草稿导航保护或目录能力。
 
 ## 提交与未知结果
@@ -96,7 +97,7 @@ event ID、时间和适用的 message/attachment ID。原有业务数据字段�
 详情按实际 serializer 校验身份与必需字段，合法空集合可读；null、重复、坏字段和
 跨目标子记录局部隔离并明确提示。初读失败或错目标时所有依赖写入关闭，保留
 显式 GET 重试；坏成功体保留未知意图。下载校验目标、附件 ID/元数据和字节数。
-本组不承诺第二组的普通草稿导航/刷新保护。
+首组不承诺普通草稿导航/刷新保护；该后续行为由草稿与目录契约规定。
 
 ## 验证入口
 

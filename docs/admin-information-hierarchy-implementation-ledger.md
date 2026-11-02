@@ -1101,3 +1101,25 @@ R1 返修：按 Python 空白与码点语义统一正文/文件名、最小长�
 恢复校验，修复 U+0085 等合法输入导致未知永久阻塞的问题；保留 BOM/零宽字符。
 上述四层入口及布局不变，无字段迁移。真实 serializer 合成对照、正文/附件
 正常与原 key 丢响应确认的定向浏览器回执见同一本地记录的 R1 节；独立验收仍待定。
+
+
+## B6-01/02/07/08 工单草稿与目录 — 2026-11-02 本地候选
+
+沿用队列表格/Inspect/单编辑弹窗与详情会话模型。B6-01 详情输入保护复用首组，
+只补影响回归；目录编辑共用同一持久意图/串行 hook，不产生第二套可重发 PATCH。
+
+| 信息层级 | 处置与入口 | 当前 PC 证据 |
+| --- | --- | --- |
+| 常显 | 坏行数量、当前目录失败/旧范围和禁写事实、Retry；编辑工单身份、未知阻塞及 GET 确认。退出确认明确普通草稿丢弃与已提交意图保留。全坏行显示不可核实，不显示没有工单。 | browser-3 的 directory-row-issues/retained、draft-exit/queue-pending；browser-4 全坏；browser-5 queue-draft-exit、browser-6 最终queue-unknown/全坏，均1440/1056。 |
+| 按需 | 历史内部备注继续在 Inspect「内部处理」；原有附件、键盘提示、全文会话入口保持。仅真正离开脏稿时出现共享确认弹窗，取消保留文字/状态/文件。 | public/internal/status/file、侧栏/历史/刷新取消、弹窗 Escape/取消/丢弃；原队列11项与closure2。 |
+| 技术证据 | 编辑未知的操作证据按需展示原 actor/key/time/status/note；存储原快照不会被普通丢弃清理。坏行位置配数量保留定位依据。 | 原快照逐字比较、关闭重开、GET-only确认；真实 serializer fixture＋domain append/replay。 |
+| 删除重复 | 删除编辑框默认复制旧备注，改为空的「新增内部备注」。没有删除历史内容：旧备注仍在 Inspect；空输入不清历史。 | 状态-only无新消息、历史仍可见、新备注仅一次；双宽未知/退出图。 |
+
+规范§8–11核对：没有新字段业务能力/新TAB/drawer/页面模式；新增退出确认使用
+既有 ConfirmModal/useAdminNavigationGuard。原有未知/陈旧/待确认、草稿保护与
+暂停边界保持；urgent/critical读取枚举与目录既有语义统一，不增加优先级写入。
+没有移动核心阻塞到hover，没有以刷新golden代替复查。代理复查不等于人工验收。
+
+[实现契约](admin-support-drafts-directory-v1.md)；
+[命令、失败记录及完整外置证据根](history/admin/2026/records/admin-support-drafts-directory-local-2026-11-02.md)。
+本项为本地候选，不覆盖首组合并/M4以外的本组独立验收状态，不授权第三组或生产。

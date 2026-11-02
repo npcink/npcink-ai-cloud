@@ -31,24 +31,12 @@ export type SupportRequest = {
 };
 
 export type SupportRequestListPayload = {
-  items?: SupportRequest[];
-  pagination?: {
-    total?: number;
-    limit?: number;
-    offset?: number;
-    has_more?: boolean;
-  };
-  summary?: {
-    open?: number;
-    in_progress?: number;
-    critical?: number;
-    warning?: number;
-    monitor?: number;
-    stable?: number;
-    waiting_for_operator?: number;
-    waiting_for_customer?: number;
-    overdue?: number;
-  };
+  items: SupportRequest[];
+  pagination: { total: number; limit: number; offset: number; has_more: boolean };
+  summary: { open: number; in_progress: number; critical: number; warning: number;
+    monitor: number; stable: number; waiting_for_operator: number;
+    waiting_for_customer: number; overdue: number };
+  issues: string[];
 };
 
 export type SupportRequestsQueryData = SupportRequestListPayload & {
@@ -61,10 +49,4 @@ export type SupportRequestFilters = {
   status: string;
   topic: string;
   attention: SupportRequestAttention;
-};
-
-export type SupportRequestUpdateInput = {
-  requestId: string;
-  status: SupportRequestStatus;
-  adminNote: string;
 };

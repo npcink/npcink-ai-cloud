@@ -1,11 +1,9 @@
 import {
   keepPreviousData,
-  useMutation,
   useQuery,
-  useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { fetchSupportRequests, updateSupportRequest } from './api';
+import { fetchSupportRequests } from './api';
 import type { SupportRequestsQueryData } from './types';
 
 export const supportRequestKeys = {
@@ -39,17 +37,4 @@ export function getLatestSupportRequestsDirectoryData(
       },
       { updatedAt: 0 }
     ).data;
-}
-
-export function useSupportRequestUpdate() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: updateSupportRequest,
-    retry: false,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: supportRequestKeys.directories(),
-      });
-    },
-  });
 }

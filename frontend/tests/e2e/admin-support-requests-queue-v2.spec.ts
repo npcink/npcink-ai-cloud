@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -117,6 +118,7 @@ async function installSupportQueueMocks(page: Page, initial = initialTickets()) 
   let failQuery = '';
   const requests: URLSearchParams[] = [];
 
+  await page.route('**/admin/session', route => route.fulfill({ json: buildAdminApiEnvelope({ principal_id: 'platform:operator-e2e', identity_type: 'platform_admin', role: 'platform_admin', capabilities: { can_manage_accounts: true } }) }));
   await page.route('**/api/admin/support-requests?*', async (route) => {
     requestCount += 1;
     const url = new URL(route.request().url());
@@ -183,22 +185,31 @@ async function installSupportQueueMocks(page: Page, initial = initialTickets()) 
   });
 
   await page.route('**/api/admin/support-requests/*', async (route: Route) => {
-    if (route.request().method() !== 'PATCH') {
-      await route.fallback();
+    if (route.request().method() === 'GET') {
+      const requestId = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() || '');
+      const ticket = tickets.find(item => item.request_id === requestId);
+      await route.fulfill({ json: buildAdminApiEnvelope({ request: { ...ticket, principal_id: 'principal_synthetic' }, messages: [], attachments: [], feedback: null }) });
       return;
     }
+    if (route.request().method() !== 'PATCH') { await route.fallback(); return; }
     const requestId = decodeURIComponent(route.request().url().split('/').pop() || '');
     const payload = route.request().postDataJSON() as { status: TicketFixture['status']; admin_note: string };
     let updated: TicketFixture | undefined;
     tickets = tickets.map((ticket) => {
       if (ticket.request_id !== requestId) return ticket;
-      updated = { ...ticket, status: payload.status, admin_note: payload.admin_note, updated_at: '2026-07-12T07:00:00Z' };
+      updated = { ...ticket, status: payload.status, admin_note: payload.admin_note || ticket.admin_note, updated_at: '2026-07-12T07:00:00Z' };
       return updated;
     });
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({ request: updated })),
+      body: JSON.stringify(buildAdminApiEnvelope({ request: { ...updated, principal_id: 'principal_synthetic' }, operation_receipt: {
+        operation_id: route.request().headers()['idempotency-key'], request_id: requestId, action: 'status',
+        digest: createHash('sha256').update(JSON.stringify({ action: 'status', values: { admin_note: payload.admin_note, status: payload.status } })).digest('hex'),
+        actor_kind: 'platform_admin', actor_ref: 'platform:operator-e2e', method: 'PATCH',
+        path: `/internal/service/admin/support-requests/${requestId}`, event_kind: 'support_request.updated', event_id: 1,
+        created_at: '2026-07-12T07:00:00Z',
+      } })),
     });
   });
 
@@ -316,7 +327,7 @@ test('ticket drawer inspects context and shared dialog owns bounded internal han
   const editor = page.getByRole('dialog', { name: /Edit internal handling|编辑内部处理/i });
   const statusSelect = editor.getByRole('combobox', { name: /Status for|的状态/i });
   await statusSelect.selectOption('in_progress');
-  await editor.getByLabel(/Internal note for|内部备注/i).fill('Provider confirmation is being reconciled.');
+  await editor.getByLabel(/New internal note|新增内部备注/i).fill('Provider confirmation is being reconciled.');
   await editor.getByRole('button', { name: /^Save$|^保存$/i }).click();
 
   await expect(page.getByText(/Ticket updated|工单已更新/i).first()).toBeVisible();

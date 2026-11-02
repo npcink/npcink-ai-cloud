@@ -15,6 +15,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { supportDetailClient, useSupportDetail } from '@/features/admin/support-requests/use-support-detail';
 import { readSupportDownload, type SupportAttachment } from '@/features/admin/support-requests/detail-evidence';
+import { useSupportDraftNavigation } from '@/features/admin/support-requests/use-support-draft-navigation';
 import { hasSupportMessage } from '@/features/admin/support-requests/support-text';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
@@ -67,6 +68,7 @@ export default function AdminSupportRequestDetailPage() {
   );
   const { t } = useLocale();
   const controller = useSupportDetail(requestId);
+  const { confirmation } = useSupportDraftNavigation(controller.hasOrdinaryDraft, controller.discardOrdinaryDrafts);
   const { detail, draft, updateDraft, intent, locked, busy, loading: isLoading, readError, storageBlocked, lastReceipt } = controller;
   const supportRequest = detail?.request || null;
   const messages = detail?.messages || [], attachments = detail?.attachments || [], feedback = detail?.feedback || null;
@@ -376,6 +378,7 @@ export default function AdminSupportRequestDetailPage() {
         </div>
       </BackofficeDisclosure>
 
+      {confirmation}
     </BackofficePageStack>
   );
 }

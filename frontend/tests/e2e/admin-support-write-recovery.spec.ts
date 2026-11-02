@@ -243,7 +243,7 @@ test('five MB attachment persists only minimal unknown evidence and confirms wit
 });
 test('late response cannot clear original intent or mutate another target', async ({ page }) => {
   const h = await harness(page); h.mode = 'delay'; await open(page); await reply(page).fill('Original target draft'); await send(page).click(); await expect.poll(() => h.writes.length).toBe(1);
-  await page.route('**/api/admin/support-requests?*', route => route.fulfill({ json: buildAdminApiEnvelope({ items: [supportTicket('sr_other')], pagination: { total: 1, limit: 100, offset: 0, has_more: false }, summary: {} }) }));
+  await page.route('**/api/admin/support-requests?*', route => route.fulfill({ json: buildAdminApiEnvelope({ items: [supportTicket('sr_other')], pagination: { total: 1, limit: 10, offset: 0, has_more: false }, summary: { open: 1, in_progress: 0, critical: 0, warning: 1, monitor: 0, stable: 0, waiting_for_operator: 1, waiting_for_customer: 0, overdue: 0 } }) }));
   await page.getByRole('link', { name: 'Back', exact: true }).click();
   await page.getByRole('link', { name: 'Open conversation', exact: true }).click();
   await expect(page).toHaveURL(/sr_other/); await expect(page.locator('main h1')).toHaveText('Synthetic ticket sr_other'); await expect(status(page)).toBeEnabled();

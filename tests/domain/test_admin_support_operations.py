@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -305,3 +306,44 @@ def test_unicode_fixture_covers_python_whitespace_table():
     assert UNICODE_FIXTURE["pythonWhitespaceCodepoints"] == [
         cp for cp in range(0x110000) if chr(cp).isspace()
     ]
+
+
+def test_status_only_preserves_historical_note_without_appending(support_db):
+    service = CommercialService(support_db)
+    service.update_admin_support_request(
+        request_id="sr_reply",
+        admin_note="Existing history",
+        audit_context=context("status", key="old-note"),
+    )
+    before = _counts(support_db)
+    updated = service.update_admin_support_request(
+        request_id="sr_reply",
+        status="resolved",
+        admin_note="",
+        audit_context=context("status", key="status-only"),
+    )
+    assert updated["status"] == "resolved"
+    assert updated["admin_note"] == "Existing history"
+    assert _counts(support_db) == (before[0], before[1] + 1, before[2])
+    service.update_admin_support_request(
+        request_id="sr_reply",
+        status="resolved",
+        admin_note="",
+        audit_context=context("status", key="status-only"),
+    )
+    assert _counts(support_db) == (before[0], before[1] + 1, before[2])
+
+
+def test_directory_fixture_is_the_real_serializer_with_nullable_dates(support_db):
+    with get_session(support_db) as session:
+        ticket = session.get(SupportRequest, "sr_reply")
+        ticket.created_at = ticket.updated_at = datetime(2026, 11, 1, tzinfo=UTC)
+        ticket.waiting_since = None
+        session.commit()
+    expected = json.loads(
+        (
+            Path(__file__).parents[2]
+            / "frontend/tests/fixtures/admin-support-directory-serializer.json"
+        ).read_text()
+    )
+    assert CommercialService(support_db).list_admin_support_requests(limit=10, offset=0) == expected

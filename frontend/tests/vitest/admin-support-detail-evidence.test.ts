@@ -9,6 +9,10 @@ const intent = async (): Promise<SupportIntent> => ({ request_id: 'sr_synthetic'
   method: 'POST', path: '/api/admin/support-requests/sr_synthetic/messages', digest: await supportDigest('message', { body: 'Intended reply', visibility: 'public' }), created_at: '2026-11-01T01:00:00Z', revision: 1 });
 const result = (i: SupportIntent) => ({ request: supportTicket(), message: supportMessage(), operation_receipt: { request_id: i.request_id, operation_id: i.operation_id, action: i.action, digest: i.digest, actor_ref: actor, actor_kind: 'platform_admin', method: 'POST', path: '/internal/service/admin/support-requests/sr_synthetic/messages', event_kind: 'support_request.message_created', event_id: 1, message_id: 'message_synthetic', created_at: i.created_at } });
 describe('support detail consumer boundary', () => {
+  it.each(['critical', 'urgent'])('accepts existing %s queue priority without disabling detail', priority => {
+    const detail = supportDetail(); detail.request.priority = priority;
+    expect(readSupportDetail(detail, 'sr_synthetic').request.priority).toBe(priority);
+  });
   it('accepts true empty child lists', () => { expect(readSupportDetail(supportDetail(), 'sr_synthetic').issues).toEqual([]); });
   it.each(['request_id', 'status', 'priority', 'created_at'])('rejects invalid request %s', field => {
     const d = supportDetail(); Object.assign(d.request, { [field]: field === 'request_id' ? 'other' : null });

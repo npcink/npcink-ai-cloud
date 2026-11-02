@@ -9,7 +9,7 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
-import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { SupportRequestEditor } from './SupportRequestEditor';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -22,7 +22,6 @@ import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
-import { resolveUiErrorMessage } from '@/lib/errors';
 import {
   ADMIN_QUEUE_PATHNAMES,
   buildAdminDetailHref,
@@ -44,7 +43,7 @@ import {
 } from './directory-model';
 import {
   getLatestSupportRequestsDirectoryData,
-  useSupportRequestUpdate,
+  supportRequestKeys,
   useSupportRequestsDirectory,
 } from './queries';
 import type {
@@ -52,8 +51,6 @@ import type {
   SupportRequestAttention,
   SupportRequestStatus,
 } from './types';
-
-const NEXT_STATUSES: SupportRequestStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
 
 function statusTone(status: SupportRequestStatus): string {
   if (status === 'open') return 'warning';
@@ -85,8 +82,8 @@ export function SupportRequestsWorkspace() {
   const focusedRequestId = queueParams.get('focus') || '';
 
   const [queryDraft, setQueryDraft] = useState(appliedQuery);
-  const [actionError, setActionError] = useState('');
   const [editRequest, setEditRequest] = useState<SupportRequest | null>(null);
+  const savedToastRef = useRef<string | null>(null);
   const inspectorTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const requestKey = useMemo(
@@ -104,7 +101,6 @@ export function SupportRequestsWorkspace() {
     [appliedAttention, appliedQuery, appliedStatus, appliedTopic, offset, sort]
   );
   const directoryQuery = useSupportRequestsDirectory(requestKey);
-  const updateRequest = useSupportRequestUpdate();
   const fallbackDirectory = directoryQuery.isError
     ? getLatestSupportRequestsDirectoryData(queryClient)
     : undefined;
@@ -115,15 +111,14 @@ export function SupportRequestsWorkspace() {
     isPlaceholderData: directoryQuery.isPlaceholderData,
     hasError: directoryQuery.isError,
   });
-  const summary = directory?.summary || {};
+  const summary = directory?.summary;
   const total = Number(directory?.pagination?.total || 0);
   const loadedAt = directory?.loadedAt ? new Date(directory.loadedAt) : null;
   const hasLoaded = Boolean(directory);
   const isLoading = directoryQuery.isPending && !hasLoaded;
   const isRefreshing = directoryQuery.isFetching;
-  const loadError = directoryQuery.error
-    ? resolveUiErrorMessage(directoryQuery.error, t('error.failed_load'))
-    : '';
+  const directoryBlocked = displayScope.isRetainedScope || directoryQuery.isError || isRefreshing || Boolean(directory?.issues?.length);
+  const loadError = directoryQuery.isError ? t('error.failed_load') : '';
 
   const updateQueueUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(queueParamsKey);
@@ -202,31 +197,6 @@ export function SupportRequestsWorkspace() {
     });
   };
 
-  const handleUpdate = async (formData: FormData) => {
-    if (!editRequest) return;
-    const requestedStatus = String(formData.get('status') || '');
-    if (!NEXT_STATUSES.includes(requestedStatus as SupportRequestStatus)) {
-      setActionError(t('error.failed_save'));
-      return;
-    }
-    setActionError('');
-    try {
-      const data = await updateRequest.mutateAsync({
-        requestId: editRequest.request_id,
-        status: requestedStatus as SupportRequestStatus,
-        adminNote: String(formData.get('admin_note') || ''),
-      });
-      if (!data.request) {
-        throw new Error(t('error.failed_save'));
-      }
-      updateQueueUrl({ focus: editRequest.request_id });
-      setEditRequest(null);
-      toast.success(t('admin.support_requests_updated_notice', {}, 'Ticket updated.'), t('admin.support_requests_updated_title', {}, 'Ticket saved'));
-    } catch (error) {
-      setActionError(resolveUiErrorMessage(error, t('error.failed_save')));
-    }
-  };
-
   if (loadError && !hasLoaded) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -262,7 +232,7 @@ export function SupportRequestsWorkspace() {
         : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
   const closeInspector = () => updateQueueUrl({ focus: null });
   const openEditor = (item: SupportRequest) => {
-    setActionError('');
+    if (savedToastRef.current) { toast.removeToast(savedToastRef.current); savedToastRef.current = null; }
     setEditRequest(item);
   };
 
@@ -299,6 +269,13 @@ export function SupportRequestsWorkspace() {
           {t('admin.support_requests_retained_notice', {}, 'Showing the last successfully loaded page; it may not match the current filters. Updates are disabled until the current view loads.')}
         </div>
       ) : null}
+
+      {directory?.issues?.length ? <div role="alert" data-ui="support-directory-issues" className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-200">
+        <p>{t('admin.support_drafts.directory_issues', { count: String(directory.issues.length) })}</p>
+        <p>{directory.issues.join(', ')}</p>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={isRefreshing} onClick={() => void directoryQuery.refetch()}>{t('common.retry')}</button>
+      </div> : null}
+      {loadError && !displayScope.isRetainedScope ? <p role="status" className="text-sm">{t('admin.support_drafts.directory_blocked')}</p> : null}
 
       <AdminDataTableFrame
         title={t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}
@@ -431,8 +408,8 @@ export function SupportRequestsWorkspace() {
                 <tr>
                   <td colSpan={6} className="px-3 py-3">
                     <AdminEmptyState className="mx-auto max-w-2xl text-center">
-                      <p className="font-semibold text-slate-700 dark:text-slate-200">{hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}</p>
-                      <p className="mt-1">{hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{directory?.issues.length ? t('admin.support_drafts.rows_unavailable') : hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}</p>
+                      <p className="mt-1">{directory?.issues.length ? t('admin.support_drafts.directory_blocked') : hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}</p>
                       {hasFilters ? <button type="button" className="btn btn-secondary btn-sm mt-2" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
                     </AdminEmptyState>
                   </td>
@@ -453,7 +430,7 @@ export function SupportRequestsWorkspace() {
         returnFocusRef={inspectorTriggerRef}
         footer={selectedRequest ? (
           <>
-            <button type="button" className="btn btn-secondary" disabled={displayScope.isRetainedScope} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
+            <button type="button" className="btn btn-secondary" disabled={directoryBlocked} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
             <Link className="btn btn-primary" href={supportRequestDetailHref(selectedRequest.request_id)}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
           </>
         ) : null}
@@ -494,38 +471,13 @@ export function SupportRequestsWorkspace() {
         ) : null}
       </AdminContextDrawer>
 
-      <AdminWorkbenchDialog
-        key={editRequest?.request_id || 'closed-support-request-editor'}
-        open={Boolean(editRequest)}
-        title={t('admin.support_requests_edit_title', { title: editRequest?.title || '' }, 'Edit internal handling')}
-        titleId="support-request-edit-title"
-        saving={updateRequest.isPending}
-        error={actionError}
-        closeLabel={t('common.close')}
-        cancelLabel={t('common.cancel')}
-        saveLabel={t('common.save')}
-        savingLabel={t('common.saving', {}, 'Saving...')}
-        footerNotice={t('admin.support_requests_edit_notice', {}, 'This changes the Cloud ticket status and internal note only.')}
-        width="compact"
-        density="compact"
-        onClose={() => setEditRequest(null)}
-        onSubmit={(formData) => void handleUpdate(formData)}
-      >
-        {editRequest ? (
-          <>
-            <label className="block text-sm text-slate-700 dark:text-slate-200">
-              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_status_edit_label', { title: editRequest.title }, `Status for ${editRequest.title}`)}</span>
-              <select name="status" className="input w-full" defaultValue={editRequest.status}>
-                {NEXT_STATUSES.map((status) => <option key={status} value={status}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-              </select>
-            </label>
-            <label className="block text-sm text-slate-700 dark:text-slate-200">
-              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_note_edit_label', { title: editRequest.title }, `Internal note for ${editRequest.title}`)}</span>
-              <textarea name="admin_note" className="input min-h-32 w-full" defaultValue={editRequest.admin_note || ''} placeholder={t('admin.support_requests_note_placeholder', {}, 'Internal handling note')} />
-            </label>
-          </>
-        ) : null}
-      </AdminWorkbenchDialog>
+      {editRequest ? <SupportRequestEditor key={editRequest.request_id} request={editRequest}
+        directoryBlocked={directoryBlocked} onClose={() => setEditRequest(null)}
+        onSaved={() => {
+          void queryClient.invalidateQueries({ queryKey: supportRequestKeys.directories() });
+          updateQueueUrl({ focus: editRequest.request_id }); setEditRequest(null);
+          savedToastRef.current = toast.success(t('admin.support_requests_updated_notice'), t('admin.support_requests_updated_title'));
+        }} /> : null}
     </BackofficePageStack>
   );
 }
