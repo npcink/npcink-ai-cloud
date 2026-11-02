@@ -1307,9 +1307,9 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/support-requests' && route.request().method() === 'GET') {
-      await fulfillJson(route, buildAdminApiEnvelope({
+      await fulfillJson(route, {
         items: [],
-        pagination: { total: 0, limit: 20, offset: 0, has_more: false },
+        pagination: { total: 0, limit: 10, offset: 0, has_more: false },
         summary: {
           open: 0,
           in_progress: 0,
@@ -1321,7 +1321,7 @@ export async function installAdminMocks(
           waiting_for_customer: 0,
           overdue: 0,
         },
-      }));
+      });
       return;
     }
 
