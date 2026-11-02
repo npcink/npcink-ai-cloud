@@ -15,6 +15,7 @@ from app.domain.commercial.payment_gateways import (
     PAYMENT_GATEWAY_CONTRACT_VERSION,
     PaymentGatewayCloseRequest,
     PaymentGatewayOrderRequest,
+    PaymentGatewayRefundQueryRequest,
     PaymentGatewayRefundRequest,
     get_payment_gateway_provider,
     normalize_payment_gateway_provider,
@@ -325,6 +326,75 @@ def test_real_alipay_gateway_submits_and_verifies_refund(
     assert result.provider_payload["gateway_mode"] == "alipay_trade_refund"
     assert result.provider_payload["refund_status"] == "succeeded"
     assert result.provider_payload["provider_refund_no"] == "202607270000000001"
+
+
+def test_real_alipay_gateway_queries_refund_with_stable_request_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, private_pem, public_pem = _alipay_test_keys()
+    config = {
+        "configured": True,
+        "enabled": True,
+        "app_id": "2026000000000001",
+        "private_key": private_pem,
+        "public_key": public_pem,
+        "gateway_url": "https://openapi.alipay.com/gateway.do",
+    }
+    captured: dict[str, object] = {}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        @property
+        def text(self) -> str:
+            query_payload = {
+                "code": "10000",
+                "msg": "Success",
+                "trade_no": "202607270000000001",
+                "out_trade_no": "pay_query_001",
+                "out_request_no": "ref_query_001",
+                "refund_amount": "29.00",
+            }
+            signed_content = json.dumps(query_payload, ensure_ascii=False, indent=2)
+            signature = private_key.sign(  # type: ignore[attr-defined]
+                signed_content.encode("utf-8"),
+                padding.PKCS1v15(),
+                hashes.SHA256(),
+            )
+            return (
+                '{"alipay_trade_fastpay_refund_query_response":'
+                + signed_content
+                + ',"sign":'
+                + json.dumps(base64.b64encode(signature).decode("ascii"))
+                + "}"
+            )
+
+    def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
+        captured.update({"url": url, "data": data, "timeout": timeout})
+        return _Response()
+
+    monkeypatch.setattr("app.domain.commercial.payment_gateways.httpx.post", _post)
+    gateway = get_payment_gateway_provider("alipay", config=config)
+    result = gateway.query_refund(
+        PaymentGatewayRefundQueryRequest(
+            provider="alipay",
+            refund_id="ref_query_001",
+            order_id="pay_query_001",
+            amount=29.0,
+            currency="CNY",
+            metadata={},
+        )
+    )
+
+    assert captured["data"]["method"] == "alipay.trade.fastpay.refund.query"  # type: ignore[index]
+    assert json.loads(captured["data"]["biz_content"]) == {  # type: ignore[index]
+        "out_trade_no": "pay_query_001",
+        "out_request_no": "ref_query_001",
+    }
+    assert result.status == "succeeded"
+    assert result.amount == 29.0
+    assert result.provider_refund_no == "202607270000000001"
 
 
 def test_real_alipay_gateway_accepts_bare_pkcs1_private_key() -> None:

@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     runtime_callback_max_attempts: int = Field(default=3)
     runtime_callback_retry_backoff_seconds: int = Field(default=30)
     ops_cadence_poll_seconds: int = Field(default=30)
+    payment_refund_reconciliation_interval_seconds: int = Field(default=300)
+    payment_refund_reconciliation_batch_size: int = Field(default=25, ge=1, le=100)
+    payment_refund_reconciliation_max_attempts: int = Field(default=5, ge=1, le=20)
     retention_cleanup_interval_seconds: int = Field(default=3600)
     retention_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     plugin_observability_retention_days: int = Field(default=180)
@@ -563,6 +566,8 @@ class Settings(BaseSettings):
             )
         if self.ops_cadence_poll_seconds < 5:
             raise ValueError("ops_cadence_poll_seconds must be at least 5")
+        if self.payment_refund_reconciliation_interval_seconds < 60:
+            raise ValueError("payment_refund_reconciliation_interval_seconds must be at least 60")
         if self.runtime_callback_worker_poll_seconds < 1:
             raise ValueError("runtime_callback_worker_poll_seconds must be at least 1")
         if self.worker_heartbeat_interval_seconds < 30:

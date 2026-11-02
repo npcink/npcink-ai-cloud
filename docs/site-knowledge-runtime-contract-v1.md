@@ -609,6 +609,12 @@ ranking. Toolbox and other consumers may request a granularity, but they must
 not implement independent semantic dedupe or relevance scoring. Existing
 callers that omit the field continue to receive chunk-level results.
 
+The PostgreSQL JSON fallback is bounded to the newest `5000` indexed chunks.
+Its `result_grouping` metadata includes `candidate_window_limit=5000` and sets
+`candidate_window_limited=true` when the candidate window reaches that bound.
+That flag is a retrieval warning, not evidence that older content has no match.
+Production Zilliz retrieval remains responsible for scalable candidate search.
+
 Search also verifies that indexed chunks and the current query use the same
 embedding space, identified as `provider_id:model_id`. Embeddings produced by
 different models are different vector spaces and must not be compared, even

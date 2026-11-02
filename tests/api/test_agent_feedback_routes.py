@@ -858,8 +858,60 @@ def test_agent_feedback_idempotency_dedupes_meter_event(tmp_path: Path) -> None:
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["data"]["feedback_event_id"] == second.json()["data"]["feedback_event_id"]
+    assert second.json()["data"]["local_outcome"] == payload["local_outcome"]
     with get_session(database_url) as session:
         assert len(list(session.scalars(select(UsageMeterEvent)))) == 1
+
+
+def test_agent_feedback_idempotency_replays_stored_receipt_fields(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    first_payload = _feedback_payload(local_outcome="rejected")
+    second_payload = _feedback_payload(local_outcome="accepted")
+
+    first = _post_feedback(
+        client,
+        first_payload,
+        idempotency_key="agent-feedback-receipt-replay",
+        nonce="nonce-agent-feedback-receipt-a",
+    )
+    second = _post_feedback(
+        client,
+        second_payload,
+        idempotency_key="agent-feedback-receipt-replay",
+        nonce="nonce-agent-feedback-receipt-b",
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["data"]["feedback_event_id"] == first.json()["data"]["feedback_event_id"]
+    assert second.json()["data"]["local_outcome"] == "rejected"
+    with get_session(database_url) as session:
+        event = session.scalar(select(UsageMeterEvent))
+        assert event is not None
+        assert event.payload_json["local_outcome"] == "rejected"
+
+
+def test_agent_feedback_engineering_samples_are_excluded_from_quality_rates(
+    tmp_path: Path,
+) -> None:
+    _database_url, client = _build_client(tmp_path)
+    response = _post_feedback(
+        client,
+        _feedback_payload(
+            source_runtime="model_flow_smoke",
+            local_surface="admin_preview_smoke",
+            local_outcome="accepted",
+        ),
+        idempotency_key="agent-feedback-engineering-only",
+    )
+    assert response.status_code == 200
+
+    data = _get_feedback_summary(client).json()["data"]
+    assert data["events_total"] == 1
+    assert data["engineering_events_total"] == 1
+    assert data["quality_events_total"] == 0
+    assert data["rates"]["accepted_rate"] is None
+    assert data["scenarios"] == []
 
 
 def test_agent_feedback_summary_rolls_up_outcomes_and_labels(tmp_path: Path) -> None:

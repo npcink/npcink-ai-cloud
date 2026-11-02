@@ -941,6 +941,27 @@ def test_openai_adapter_executes_chat_completions_over_http() -> None:
     assert result.cost == 0.000012
 
 
+@pytest.mark.parametrize("body", [b"[]", b"null", b"<html>upstream error</html>"])
+def test_openai_adapter_classifies_malformed_text_success_responses(body: bytes) -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=body)),
+    )
+
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="chat_completions",
+                model_id="gpt-4.1-mini",
+                input_payload={"messages": [{"role": "user", "content": "hello"}]},
+            )
+        )
+
+    assert error.value.error_code == "provider.output_contract_invalid"
+    assert error.value.message == "provider response must be a JSON object"
+
+
 def test_openai_adapter_estimates_deepseek_cache_aware_pricing() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/chat/completions")

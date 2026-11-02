@@ -34,7 +34,9 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialValidationError,
 )
+from app.domain.commercial.mixins import _payment_mixin as payment_mixin_module
 from app.domain.commercial.payment_gateways import (
+    PaymentGatewayRefundQueryResult,
     PaymentGatewayRefundRequest,
     PaymentGatewayRefundResult,
 )
@@ -1324,6 +1326,141 @@ def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription
         entries = list(session.scalars(select(CreditLedgerEntry)))
         assert sorted(entry.ai_credit_delta for entry in entries) == [-10000.0, 10000.0]
 
+    dispose_engine(database_url)
+
+
+def test_refund_reconciliation_queries_once_and_reuses_success_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("reconcile-order-create"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="reconcile-order-paid",
+        amount=199.0,
+        audit_context=_audit("reconcile-order-paid"),
+    )
+    refund = service.request_payment_refund(
+        order_id=str(order["order_id"]),
+        amount=199.0,
+        reason="reconcile",
+        audit_context=_audit("reconcile-refund-request"),
+    )
+    calls: list[str] = []
+
+    class _QueryGateway:
+        def query_refund(self, request: object) -> PaymentGatewayRefundQueryResult:
+            calls.append("query")
+            return PaymentGatewayRefundQueryResult(
+                provider="alipay",
+                external_refund_no=str(refund["refund_id"]),
+                provider_refund_no="provider-refund-001",
+                status="succeeded",
+                amount=199.0,
+                provider_payload={
+                    "provider": "alipay",
+                    "refund_status": "succeeded",
+                    "response_verified": True,
+                },
+            )
+
+    monkeypatch.setattr(
+        payment_mixin_module,
+        "get_payment_gateway_provider",
+        lambda _provider, config=None: _QueryGateway(),
+    )
+    first = service.reconcile_payment_refund(refund_id=str(refund["refund_id"]))
+    second = service.reconcile_payment_refund(refund_id=str(refund["refund_id"]))
+
+    assert first["refund"]["status"] == PAYMENT_REFUND_STATUS_SUCCEEDED
+    assert second["refund"]["status"] == PAYMENT_REFUND_STATUS_SUCCEEDED
+    assert second["reconciliation"]["outcome"] == "skipped"
+    assert calls == ["query"]
+    dispose_engine(database_url)
+
+
+def test_refund_reconciliation_is_bounded_and_never_reissues_refund(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("bounded-reconcile-order-create"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="bounded-reconcile-order-paid",
+        amount=199.0,
+        audit_context=_audit("bounded-reconcile-order-paid"),
+    )
+    refund = service.request_payment_refund(
+        order_id=str(order["order_id"]),
+        amount=199.0,
+        reason="reconcile",
+        audit_context=_audit("bounded-reconcile-refund-request"),
+    )
+    calls: list[str] = []
+
+    class _UnknownGateway:
+        def create_refund(self, request: object) -> None:
+            raise AssertionError("reconciliation must not create a second refund")
+
+        def query_refund(self, request: object) -> PaymentGatewayRefundQueryResult:
+            calls.append("query")
+            return PaymentGatewayRefundQueryResult(
+                provider="alipay",
+                external_refund_no=str(refund["refund_id"]),
+                provider_refund_no="",
+                status="unknown",
+                amount=None,
+                provider_payload={"refund_status": "unknown"},
+            )
+
+    monkeypatch.setattr(
+        payment_mixin_module,
+        "get_payment_gateway_provider",
+        lambda _provider, config=None: _UnknownGateway(),
+    )
+    first = service.reconcile_payment_refunds(limit=1)
+    assert first["unknown"] == 1
+    assert calls == ["query"]
+    stored = service.get_payment_refund(refund_id=str(refund["refund_id"]))
+    reconciliation = stored["metadata"]["refund_reconciliation"]
+    assert reconciliation["attempts"] == 1
+    assert reconciliation["next_attempt_at"]
+
+    with get_session(database_url) as session:
+        row = session.get(PaymentRefund, str(refund["refund_id"]))
+        assert row is not None
+        metadata = dict(row.metadata_json or {})
+        metadata["refund_reconciliation"] = {
+            "attempts": 5,
+            "next_attempt_at": "",
+            "lease_expires_at": "",
+        }
+        row.metadata_json = metadata
+        session.commit()
+    exhausted = service.reconcile_payment_refund(refund_id=str(refund["refund_id"]))
+    assert exhausted["refund"]["status"] == PAYMENT_REFUND_STATUS_UNKNOWN
+    assert exhausted["reconciliation"]["next_action"] == "manual_review"
+    assert calls == ["query"]
     dispose_engine(database_url)
 
 

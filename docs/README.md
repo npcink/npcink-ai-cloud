@@ -32,6 +32,7 @@ product work or override the current Phase 1 expansion freeze.
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查 e2e 基线重扫与过期断言判定经验（继承失败数字是负债、过期断言 vs 产品 bug、定向选择盲区、视觉基线不随手重生成） | [开发会话操作经验记录 — 2026-10-23](development-session-notes-2026-10-23.md) |
+| 查本轮运行时/反馈/回调/退款核对收口与仓库状态 | [开发会话操作经验记录 — 2026-11-02](development-session-notes-2026-11-02.md) |
 | 收口可恢复暂停、音频播放与 M4 状态 | [可恢复暂停最终收口与清理 — 2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md) — 合并链、M4 accepted、历史音频播放、分支/worktree 清理与下一阶段建议 |
 | 查三仓 pause 对照（任务 id / runtime 键 / 错误码 / 冒烟行归属） | [可恢复功能暂停 v1 — Cross-repo对照](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists) — Cloud `PAUSED_*`；互链 Addon [PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) / `docs/reversible-feature-pauses-v1.md` 与 Toolbox 同名文档；**不解冻** |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
@@ -64,7 +65,7 @@ product work or override the current Phase 1 expansion freeze.
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
 | 查延迟观测第二观测点补充 | [延迟观测补充](domestic-latency-observation-supplement-2026-09-22.md) — 跨云 ECS P95≈138ms，结论不变 |
 | 查推荐质量试批与第二性能窗口结论 | [推荐试批与观察窗口记录](history/trials/2026/recommendation-trial-batch-and-second-observation-window-2026-09-22.md) — 8 篇 93 候选有用率 51.6%；锚点修复无回归；正式优化延后至真实使用反馈 |
-| 查退款能力缺口 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 静态盘点：网关/状态机/幂等已实现未验证；回调、对账、失败终态、运营入口未实现 |
+| 查退款能力与剩余验证 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 当前代码已有退款通知分发、Admin 退款入口、`refund.query` 对账与状态机/幂等测试；Portal 自助退款冻结，真实网关/生产验证仍未完成 |
 | 一个人先把本地流程用起来，暂缓商业化投入 | [本地优先阶段总结与行动计划](local-first-validation-stage-2026-09-21.md) — 当前个人试用计划，非验收通过证明 |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
 | 理解产品三层定位与数据互联方向 | [战略定位 v1](strategy-positioning-v1-2026-09-21.md) |

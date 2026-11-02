@@ -108,7 +108,7 @@ class HttpRuntimeCallbackDispatcher:
                 headers=headers,
             )
             self._pin_outbound_target(outbound_request, resolved_target=resolved_target)
-            response = client.send(outbound_request, follow_redirects=False)
+            response = client.send(outbound_request, follow_redirects=False, stream=True)
         except httpx.TimeoutException as error:
             raise RuntimeCallbackDispatchError(
                 "runtime.callback_timeout",
@@ -122,15 +122,18 @@ class HttpRuntimeCallbackDispatcher:
                 retryable=True,
             ) from error
 
-        if 200 <= response.status_code < 300:
-            return RuntimeCallbackDispatchResult(status_code=response.status_code)
+        try:
+            if 200 <= response.status_code < 300:
+                return RuntimeCallbackDispatchResult(status_code=response.status_code)
 
-        raise RuntimeCallbackDispatchError(
-            "runtime.callback_delivery_failed",
-            f"callback endpoint returned HTTP {response.status_code}",
-            retryable=response.status_code >= 500 or response.status_code in {408, 409, 429},
-            status_code=response.status_code,
-        )
+            raise RuntimeCallbackDispatchError(
+                "runtime.callback_delivery_failed",
+                f"callback endpoint returned HTTP {response.status_code}",
+                retryable=response.status_code >= 500 or response.status_code in {408, 409, 429},
+                status_code=response.status_code,
+            )
+        finally:
+            response.close()
 
     @staticmethod
     def _pin_outbound_target(

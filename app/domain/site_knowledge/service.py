@@ -1145,6 +1145,8 @@ class SiteKnowledgeService:
             max_results=max_results,
             result_granularity=result_granularity,
         )
+        result_grouping["candidate_window_limit"] = MAX_FALLBACK_SEARCH_CHUNKS
+        result_grouping["candidate_window_limited"] = len(scored) >= MAX_FALLBACK_SEARCH_CHUNKS
         workflow_support = _workflow_support_for_intent(intent)
         evidence_gate = _evidence_gate(results, evidence_policy)
 

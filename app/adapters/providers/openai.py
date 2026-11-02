@@ -585,19 +585,14 @@ class OpenAIProviderAdapter:
         try:
             response_json = response.json()
         except ValueError as error:
-            if result_request.endpoint_variant == "image_generations":
-                raise ProviderExecutionError(
-                    "provider.output_contract_invalid",
-                    "image generation response must be a JSON object",
-                ) from error
-            raise
-        if result_request.endpoint_variant == "image_generations" and not isinstance(
-            response_json,
-            dict,
-        ):
             raise ProviderExecutionError(
                 "provider.output_contract_invalid",
-                "image generation response must be a JSON object",
+                "provider response must be a JSON object",
+            ) from error
+        if not isinstance(response_json, dict):
+            raise ProviderExecutionError(
+                "provider.output_contract_invalid",
+                "provider response must be a JSON object",
             )
         latency_ms = max(1, int((time.monotonic() - started_at) * 1000))
         result = self._build_http_result(result_request, response_json, latency_ms)

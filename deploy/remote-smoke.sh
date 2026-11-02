@@ -301,6 +301,7 @@ task_id_values = {
     "artifact_cleanup",
     "artifact_inventory_reconciliation",
     "payment_order_expiration",
+    "payment_refund_reconciliation",
 }
 freshness_values = {"attention", "stale", "missing"}
 last_outcome_values = {"succeeded", "error"}

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.models import (
     PAYMENT_ORDER_STATUS_CANCELED,
     PAYMENT_ORDER_STATUS_PENDING,
+    PAYMENT_REFUND_STATUS_REQUESTED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     PaymentEvent,
     PaymentOrder,
     PaymentRefund,
@@ -157,6 +159,25 @@ class CommercialPaymentQueries:
                 select(PaymentRefund)
                 .where(PaymentRefund.order_id == order_id)
                 .order_by(PaymentRefund.created_at.desc(), PaymentRefund.refund_id.desc())
+            )
+        )
+
+    def list_payment_refunds_for_reconciliation(
+        self,
+        *,
+        limit: int = 25,
+    ) -> list[PaymentRefund]:
+        bounded_limit = max(1, min(int(limit), 100))
+        return list(
+            self.session.scalars(
+                select(PaymentRefund)
+                .where(
+                    PaymentRefund.status.in_(
+                        (PAYMENT_REFUND_STATUS_REQUESTED, PAYMENT_REFUND_STATUS_UNKNOWN)
+                    )
+                )
+                .order_by(PaymentRefund.requested_at.asc(), PaymentRefund.refund_id.asc())
+                .limit(bounded_limit)
             )
         )
 
