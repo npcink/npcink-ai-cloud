@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
@@ -29,6 +30,7 @@ const supportRequest = {
   request_id: requestId,
   account_id: 'acct_beta',
   site_id: 'site_beta',
+  principal_id: 'principal_beta',
   email: 'beta@example.com',
   topic: 'payment',
   title: 'Payment confirmation is still missing',
@@ -44,11 +46,13 @@ const supportRequest = {
 
 async function installSupportRequestClosureHarness(page: Page) {
   await installAdminMocks(page, { unhandledAdminRequests });
+  await page.route('**/admin/session', route => route.fulfill({ json: buildAdminApiEnvelope({ principal_id: 'platform:operator-e2e', identity_type: 'platform_admin', role: 'platform_admin', capabilities: { can_manage_accounts: true } }) }));
   let publicReplyAttempts = 0;
   const messages = [
     {
       message_id: 'msg_customer_initial',
       request_id: requestId,
+      account_id: 'acct_beta', site_id: 'site_beta',
       author_kind: 'customer',
       visibility: 'public',
       body: 'Could you confirm whether the payment was received?',
@@ -101,15 +105,16 @@ async function installSupportRequestClosureHarness(page: Page) {
     });
     if (publicReplyAttempts === 1) {
       await route.fulfill({
-        status: 503,
+        status: 422,
         contentType: 'application/json',
-        body: JSON.stringify(buildAdminApiErrorEnvelope('temporary public reply failure')),
+        body: JSON.stringify(buildAdminApiErrorEnvelope('synthetic pre-commit rejection', 'request.validation_error')),
       });
       return;
     }
     const message = {
       message_id: 'msg_operator_confirmed',
       request_id: requestId,
+      account_id: 'acct_beta', site_id: 'site_beta',
       author_kind: 'operator',
       visibility: 'public',
       body: payload.body || '',
@@ -129,6 +134,10 @@ async function installSupportRequestClosureHarness(page: Page) {
           updated_at: '2026-07-12T09:00:00Z',
         },
         message,
+        operation_receipt: { operation_id: route.request().headers()['idempotency-key'], request_id: requestId, action: 'message',
+          digest: createHash('sha256').update(JSON.stringify({ action: 'message', values: { body: payload.body, visibility: payload.visibility } })).digest('hex'),
+          actor_kind: 'platform_admin', actor_ref: 'platform:operator-e2e', method: 'POST',
+          path: `/internal/service/admin/support-requests/${requestId}/messages`, event_kind: 'support_request.message_created', event_id: 1, message_id: message.message_id, created_at: message.created_at },
         notification: { delivered: true },
       })),
     });
@@ -212,8 +221,8 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(sendReply).toBeDisabled();
   await reply.fill('The payment is now confirmed. Your order is active.');
   await sendReply.click();
-  await expect(page.getByText(/保存失败|Failed to save changes\./)).toBeVisible();
-  await expect(page.getByText('temporary public reply failure', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/保存前被明确拒绝|rejected before it was saved/)).toBeVisible();
+  await expect(page.getByText('synthetic pre-commit rejection', { exact: true })).toHaveCount(0);
   await expect(reply).toHaveValue('The payment is now confirmed. Your order is active.');
   await expect(sendReply).toBeEnabled();
 
@@ -236,11 +245,12 @@ test('ticket operator preserves queue context through failed and successful publ
     route: '/admin/support-requests/[requestId]',
     pageModel: 'detail',
     testedStates: ['ready', 'action_error', 'action_success', 'return_context'],
-    humanAcceptance: 'not_required',
+    humanAcceptance: 'pending',
+    dataMode: 'mocked',
     pageTitle: page.locator('main h1').filter({ hasText: supportRequest.title }),
     workingSurface: detailWorkspace,
     browserEvidence,
-    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
+    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 422 \(Unprocessable Entity\)$/],
     routeRuleResults: [
       { id: 'single-primary-action', status: 'pass', evidence: 'Send public reply is the only primary action in the reply workbench' },
       { id: 'textual-status', status: 'pass', evidence: 'the ticket status is exposed as an Open text badge' },
@@ -250,7 +260,7 @@ test('ticket operator preserves queue context through failed and successful publ
       { id: 'context-stability', status: 'pass', evidence: 'failure preserved the exact reply draft, success cleared it, and Back retained the queue return context' },
     ],
     interactionResults: [
-      { id: 'public-reply-failure', status: 'pass', evidence: 'the 503 failure remained visible in the current ticket and preserved the reply draft' },
+      { id: 'public-reply-failure', status: 'pass', evidence: 'the explicit pre-commit 422 rejection remained visible in the current ticket and preserved the reply draft' },
       { id: 'public-reply-retry', status: 'pass', evidence: 'the same action succeeded on retry, appended the reply, and reported notification delivery' },
       { id: 'queue-return-contract', status: 'pass', evidence: 'the Back link retained status, search, and focused ticket parameters' },
     ],
@@ -274,11 +284,12 @@ test('ticket operator preserves queue context through failed and successful publ
     route: '/admin/support-requests',
     pageModel: 'queue',
     testedStates: ['ready', 'filtered', 'selected', 'returned'],
-    humanAcceptance: 'not_required',
+    humanAcceptance: 'pending',
+    dataMode: 'mocked',
     pageTitle: page.getByRole('heading', { name: /^Tickets$|^工单$/i }),
     workingSurface: page.locator('[data-ui="support-request-table"]'),
     browserEvidence,
-    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
+    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 422 \(Unprocessable Entity\)$/],
     routeRuleResults: [
       { id: 'single-primary-action', status: 'pass', evidence: 'Apply owns the filter region and Open conversation owns each ticket action region' },
       { id: 'textual-status', status: 'pass', evidence: 'risk and ticket status are both visible as text labels' },

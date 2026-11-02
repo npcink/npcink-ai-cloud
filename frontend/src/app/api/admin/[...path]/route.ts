@@ -82,7 +82,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
-    pattern: /^support-requests\/[^/]+(?:\/attachments\/[^/]+)?$/,
+    pattern: /^support-requests\/[^/]+(?:\/attachments\/[^/]+|\/operations\/[^/]+)?$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_accounts',
   },
