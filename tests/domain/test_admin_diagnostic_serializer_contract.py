@@ -1,8 +1,12 @@
 """Keep frontend fault tests grounded in the current read-only serializers."""
 import json
+import os
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
@@ -18,6 +22,18 @@ class FixedDateTime(datetime):
 
 
 def serializer_examples(tmp_path):
+    # SQLite drops tzinfo; the real run serializer treats naive values as local.
+    # Fix only this synthetic generation environment and restore libc TZ even
+    # when serialization raises. patch.dict restores an absent TZ as absent.
+    try:
+        with patch.dict(os.environ, {"TZ": "UTC"}):
+            time.tzset()
+            return _serializer_examples(tmp_path)
+    finally:
+        time.tzset()
+
+
+def _serializer_examples(tmp_path):
     database_url = f"sqlite+pysqlite:///{tmp_path / 'diagnostic-contract.sqlite3'}"
     init_schema(database_url)
     settings = Settings(environment="test")
@@ -62,9 +78,37 @@ def serializer_examples(tmp_path):
 
 
 def test_frontend_diagnostic_fixture_matches_actual_serializers(tmp_path):
+    original_tz = os.environ.get("TZ")
+    original_localtime = time.localtime(0)
     actual = serializer_examples(tmp_path)
+    assert os.environ.get("TZ") == original_tz
+    assert time.localtime(0) == original_localtime
     fixture = (
         Path(__file__).parents[2]
         / "frontend/tests/fixtures/admin-diagnostic-serializers.json"
     )
     assert json.loads(fixture.read_text()) == actual
+
+
+@pytest.mark.parametrize("original_tz", [None, "UTC", "Asia/Shanghai"])
+def test_serializer_timezone_restores_on_error(tmp_path, original_tz):
+    def broken_serializer(_tmp_path):
+        assert os.environ["TZ"] == "UTC"
+        assert time.localtime(0).tm_hour == 0
+        raise RuntimeError("synthetic serializer failure")
+
+    try:
+        with patch.dict(os.environ):
+            if original_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original_tz
+            time.tzset()
+            original_localtime = time.localtime(0)
+            with patch(f"{__name__}._serializer_examples", broken_serializer):
+                with pytest.raises(RuntimeError, match="synthetic serializer failure"):
+                    serializer_examples(tmp_path)
+            assert os.environ.get("TZ") == original_tz
+            assert time.localtime(0) == original_localtime
+    finally:
+        time.tzset()
