@@ -15,6 +15,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { localDateTimeValue, serializeDateTimeFilter } from './datetime-filters';
 import { resolveAuditLoadedRange, resolveAuditPaginationRecovery } from './pagination';
 import { useAdminAuditWorkspace } from './queries';
 import type { AdminAuditEvent } from './types';
@@ -67,18 +68,6 @@ function identifier(value: string | undefined, fallback: string): string {
   return value?.trim() || fallback;
 }
 
-function localDateTimeValue(value: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 23);
-}
-
-function serializeDateTimeFilter(value: string, existingValue: string | null): string {
-  if (existingValue && value === localDateTimeValue(existingValue)) return existingValue;
-  return new Date(value).toISOString();
-}
 
 function auditScope(event: AdminAuditEvent, fallback: string): string {
   const kind = identifier(event.scope_kind, 'scope');
@@ -246,6 +235,12 @@ export function AdminAuditWorkspace() {
           onRetry={() => void query.refetch()}
         />
       ) : null}
+
+      {data?.issues?.length ? <div role="alert" data-ui="admin-audit-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
+        <p>{t(data.issues.includes('pagination.items') ? 'admin.evidence.invalid_page' : 'admin.evidence.invalid_rows', { count: String(data.issues.length) })}</p>
+        <p className="mt-1 break-all text-xs">{data.issues.join(', ')}</p>
+        <button className="btn btn-secondary btn-sm mt-2" onClick={() => void query.refetch()}>{t('common.retry')}</button>
+      </div> : null}
 
       {data ? (
         <div
@@ -496,8 +491,8 @@ export function AdminAuditWorkspace() {
         ) : !data ? null : (
           <BackofficeEmptyState
             className="m-5 md:m-6"
-            title={t('admin.audit_workspace.empty_title', {}, 'No matching audit evidence')}
-            description={t('admin.audit_workspace.empty_description', {}, 'Change or clear the filters. No operation is available from this read-only surface.')}
+            title={t(data?.issues?.length ? 'admin.evidence.unverified' : 'admin.audit_workspace.empty_title', {}, 'No matching audit evidence')}
+            description={t(data?.issues?.length ? 'admin.evidence.invalid_scope' : 'admin.audit_workspace.empty_description', {}, 'Change or clear the filters. No operation is available from this read-only surface.')}
           />
         )}
         </div>

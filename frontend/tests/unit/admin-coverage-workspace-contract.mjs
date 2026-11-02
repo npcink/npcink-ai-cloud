@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { frontendRoot } from './_paths.mjs';
 
 const coverageSource = readFileSync(resolve(frontendRoot, 'src/app/admin/coverage/page.tsx'), 'utf8');
+const evidenceSource = readFileSync(resolve(frontendRoot, 'src/features/admin/coverage/evidence.ts'), 'utf8');
 const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
 const navigationSource = readFileSync(resolve(frontendRoot, 'src/features/admin/navigation.ts'), 'utf8');
 const i18nSource = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
@@ -73,8 +74,8 @@ assert.match(
 );
 
 assert.match(
-  coverageSource + serviceSource,
-  /primary_identity\?[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
+  evidenceSource + coverageSource + serviceSource,
+  /primary_identity[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
   'Coverage must search customer login identity and route identity problems to customer access'
 );
 
@@ -187,3 +188,5 @@ assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQ
 assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQuery \|\| !pagination.hasMore\}/, 'next keeps backend has_more and the query boundary');
 
 console.log('admin_coverage_workspace_contract: ok');
+
+assert.match(coverageSource, /setQueue\(readCoverageQueue\(coveragePayload, coverageRequestKey\)\)/, 'only validated scoped coverage evidence reaches the page');

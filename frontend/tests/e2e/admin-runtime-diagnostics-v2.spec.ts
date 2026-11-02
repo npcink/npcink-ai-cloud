@@ -1,3 +1,4 @@
+import { buildRuntimeTelemetryFixture, buildRuntimeRunsFixture } from './helpers/runtime-telemetry-fixture';
 import { expect, test, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import {
@@ -46,7 +47,7 @@ test('missing-call investigation separates comparison records and retains recove
         { code: issueCode, severity: 'warning', count: 1, capabilities: ['text'] },
       ] },
     };
-    await route.fulfill({ json: buildAdminApiEnvelope(data) });
+    await route.fulfill({ json: buildAdminApiEnvelope((url.pathname.endsWith('/runs') ? buildRuntimeRunsFixture(data) : buildRuntimeTelemetryFixture(data, url.searchParams))) });
   });
   await page.goto(`/admin/troubleshooting?focus=${issueCode}&site=site-alpha`);
   await page.getByRole('button', { name: /Inspect missing-call runs|查看缺失调用的运行/, exact: true }).click();
@@ -264,7 +265,7 @@ test('editorial quality detail remains available on the dedicated statistics vie
 test('anomaly selection keeps counts honest and preserves the diagnostic time window', async ({ page }) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-04-08T10:00:00Z',
       totals: { runs: 10, provider_call_run_coverage_rate: 1, metered_run_coverage_rate: 1 },
       capability_groups: [],
@@ -273,7 +274,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
         { code: 'hosted_model.failed_runs', severity: 'warning', count: 2, capabilities: ['text'], suggested_action: 'inspect_runtime_failure_detail' },
         { code: 'hosted_model.unmetered_runs', severity: 'error', count: 1, capabilities: ['knowledge'], suggested_action: 'inspect_metering_callback_or_usage_event_mapping' },
       ] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.goto('/admin/troubleshooting?window=720');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]').first()).toContainText(/Usage records missing|计量记录缺失/i);
@@ -306,11 +307,11 @@ test('no traffic is distinct from no monitored anomaly', async ({ page }) => {
   await installAdminMocks(page);
   let runs = 0;
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-04-08T10:00:00Z',
       totals: { runs },
       alert_summary: { status: runs ? 'ok' : 'inactive', alert_count: 0, alerts: [] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.goto('/admin/troubleshooting');
   const queue = page.locator('[data-ui="runtime-diagnostic-table-frame"]');
@@ -439,17 +440,17 @@ test('editor quality keeps sample sufficiency separate from candidate status', a
 test('provider failure details explain cause, export evidence and keep recovery unverified', async ({ page }) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-09-10T10:00:00Z', totals: { runs: 45 },
       provider_failures: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', profile_id: 'wp-ai.classification', provider_id: 'openai', model_id: 'gpt-5.5', reason: 'output_schema_invalid', error_code: 'provider.invalid_request', occurred_at: '2026-09-05T10:00:00Z', recovery: 'unverified' }],
       alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 3, capabilities: ['text'] }] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeRunsFixture({
       generated_at: '2026-09-10T10:00:00Z', sampled: false, truncated: false,
       items: [{ selected_provider_id: 'historical-provider', selected_model_id: 'historical-model', run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
-    })) });
+    }))) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
   await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
@@ -486,10 +487,10 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   await installAdminMocks(page);
   await page.setViewportSize({ width: 628, height: 837 });
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeRunsFixture({
       sampled: false, truncated: false,
       items: [{ run_id: 'run-success-with-evidence-gap', site_id: 'site-alpha', ability_name: 'npcink-cloud/site-knowledge-status', ability_family: 'knowledge', profile_id: 'site-knowledge.managed', status: 'SUCCEEDED', error_code: null, duration_ms: 118, provider_call_count: 0, has_meter_event: true }],
-    })) });
+    }))) });
   });
   await page.goto('/admin/troubleshooting');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
@@ -557,7 +558,7 @@ test('issue evidence ignores display-group limits, isolates failures, and retrie
     const url = new URL(route.request().url());
     if (!url.pathname.endsWith('/runs')) {
       if (url.searchParams.get('recent_minutes') === '43200') await new Promise((resolve) => setTimeout(resolve, 500));
-      await route.fulfill({ json: buildAdminApiEnvelope(summary) });
+      await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeTelemetryFixture(summary, url.searchParams)) });
       return;
     }
     requests.push(url);
@@ -569,11 +570,11 @@ test('issue evidence ignores display-group limits, isolates failures, and retrie
       await route.fulfill({ json: buildAdminApiEnvelope({ items: [{ run_id: null }, { run_id: null }] }) });
       return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({ items: ['text', 'knowledge', 'unlisted'].map(scope => ({
+    await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ items: ['text', 'knowledge', 'unlisted'].map(scope => ({
       run_id: `run-${scope}`, site_id: 'site-alpha', ability_name: `inspect-${scope}`, ability_family: scope,
       profile_id: `${scope}.managed`, status: 'succeeded', duration_ms: 118, provider_call_count: 0,
       has_meter_event: true, started_at: '2026-10-07T10:00:00Z',
-    })), sampled: false, truncated: false }) });
+    })), sampled: false, truncated: false })) });
   });
   await page.goto('/admin/troubleshooting?site=site-alpha');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(3);
@@ -630,14 +631,14 @@ test('four anomalies keep a five-record default, a short queue and a single-unit
   await page.route(/\/api\/admin\/runtime-telemetry(?:\/runs)?\?/, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/runs')) {
-      await route.fulfill({ json: buildAdminApiEnvelope({ sampled: true, truncated: true, items: Array.from({ length: 13 }, (_, index) => ({
+      await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ sampled: true, truncated: true, items: Array.from({ length: 13 }, (_, index) => ({
         run_id: `run-sample-${index}`, site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text',
         profile_id: 'text.managed', status: url.searchParams.get('issue_code') === 'hosted_model.provider_errors' ? 'failed' : 'succeeded', duration_ms: 1000, provider_call_count: 1, has_meter_event: false,
         started_at: `2026-10-07T10:${String(index).padStart(2, '0')}:00Z`,
-      })) }) });
+      })) })) });
       return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({
+    await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-10-07T10:00:00Z', totals: { runs: 1858, provider_call_run_coverage_rate: 0.94, metered_run_coverage_rate: 0.91 },
       capability_groups: [
         { group_id: 'knowledge', runs_total: 151, metered_run_coverage_rate: 0.54 },
@@ -648,7 +649,7 @@ test('four anomalies keep a five-record default, a short queue and a single-unit
         count: [166, 122, 102, 60][index], capabilities: index === 0 ? ['text', 'knowledge'] : ['text', 'vision'],
         daily_counts: [{ day: '2026-10-06', count: [100, 110, 90, 50][index] }, { day: '2026-10-07', count: [66, 12, 12, 10][index] }],
       })) },
-    }) });
+    }, new URL(route.request().url()).searchParams)) });
   });
   await page.goto('/admin/troubleshooting?focus=hosted_model.unmetered_runs');
   const inspector = page.locator('#runtime-diagnostic-inspector');

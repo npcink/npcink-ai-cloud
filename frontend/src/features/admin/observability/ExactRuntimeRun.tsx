@@ -19,6 +19,7 @@ export function ExactRuntimeRun({ runId, site, windowHours, since, refreshSignal
     <div className="mt-2"><BackofficeIdentifier value={runId} /></div>
     {!site ? <p role="status" className="mt-2 text-sm">{c('精确定位需要站点范围，请使用带站点的记录链接。', 'Exact lookup requires a site. Use a record link that includes its site.')}</p>
       : evidence.loading ? <p role="status" className="mt-2 text-sm">{t('common.loading')}</p>
+      : evidence.issues.length ? <p role="alert" data-ui="runtime-exact-evidence-issues" className="mt-2 text-sm">{t('admin.evidence.invalid_scope')} <button className="btn btn-secondary btn-sm" onClick={evidence.retry}>{t('common.retry')}</button></p>
       : evidence.failedScopes ? <p role="alert" className="mt-2 text-sm">{c('运行证据读取失败。', 'Run evidence could not be loaded.')} <button className="btn btn-secondary btn-sm" onClick={evidence.retry}>{t('common.retry')}</button></p>
       : !run ? <p role="status" className="mt-2 text-sm">{c('当前站点、时间范围或留存记录中未找到此运行。可扩大时间范围；未展示其他运行。', 'This run was not found in the current site, time range or retained records. Widen the window if needed; no other run is shown.')}</p>
       : <dl className="mt-3 grid gap-3 text-sm md:grid-cols-3">
