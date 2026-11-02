@@ -15,6 +15,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { localDateTimeValue, serializeDateTimeFilter } from './datetime-filters';
 import { resolveAuditLoadedRange, resolveAuditPaginationRecovery } from './pagination';
 import { useAdminAuditWorkspace } from './queries';
 import type { AdminAuditEvent } from './types';
@@ -67,18 +68,6 @@ function identifier(value: string | undefined, fallback: string): string {
   return value?.trim() || fallback;
 }
 
-function localDateTimeValue(value: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 23);
-}
-
-function serializeDateTimeFilter(value: string, existingValue: string | null): string {
-  if (existingValue && value === localDateTimeValue(existingValue)) return existingValue;
-  return new Date(value).toISOString();
-}
 
 function auditScope(event: AdminAuditEvent, fallback: string): string {
   const kind = identifier(event.scope_kind, 'scope');

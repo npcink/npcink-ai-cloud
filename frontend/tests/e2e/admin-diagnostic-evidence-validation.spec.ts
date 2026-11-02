@@ -55,13 +55,16 @@ const refresh = (page: Page) => page.getByRole('button', { name: /^Refresh$|^刷
 for (const width of [1440, 1056]) {
   test(`audit review fixes site precedence microseconds and response scope at PC ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1050 }); const state = await harness(page);
+    const settle = () => page.waitForLoadState('networkidle');
     const navigate = async (url: string) => {
+      // Finish the previous action's document/icon/API requests before replacement.
+      await settle();
       await page.goto(url);
-      // Let this document finish its chunk requests before replacing it.
-      await page.waitForLoadState('networkidle');
+      await settle();
     };
     let mode: 'normal' | 'wrong-empty' | 'missing' | 'sort' | 'empty' = 'normal';
     let created = '2026-11-02T06:00:00.000001Z';
+    let responseSequence = 0;
     await page.route('**/api/admin/audit-events?*', async route => {
       const data: any = structuredClone(serializers.audit);
       if (mode === 'wrong-empty') data.filters.site_id = 'site_other';
@@ -69,6 +72,7 @@ for (const width of [1440, 1056]) {
       else if (mode === 'sort') data.sort.created_at = 'asc';
       else Object.assign(data, buildAuditMetadata(new URL(route.request().url()).searchParams));
       data.items[0].created_at = created;
+      data.items[0].actor_ref = `audit-review-response-${++responseSequence}`;
       if (mode === 'wrong-empty' || mode === 'empty') {
         data.items = []; data.total = data.pagination.total = data.diagnostics.returned_count = 0;
       }
@@ -94,14 +98,52 @@ for (const width of [1440, 1056]) {
       expect(new URL(state.api.at(-1)!.slice(4)).searchParams.get(key)).toBe(bound);
     }
     await picture(page, testInfo, 'audit-review-microsecond-rejected', state, '[data-ui="admin-audit-directory"]');
-    created = '2026-11-02T06:00:00.000001Z';
-    const instant = '2026-11-02T14:00:00.000001+08:00';
-    await navigate(`/admin/audit?${new URLSearchParams({ site_id: 'site_contract', created_from: instant, created_to: instant })}`);
-    await expect(rows).toHaveCount(1); await expect(issues).toHaveCount(0);
-    await page.getByText(/More filters|更多筛选/, { exact: true }).click();
-    await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
-    expect(new URL(page.url()).searchParams.get('created_from')).toBe(instant);
-    expect(new URL(page.url()).searchParams.get('created_to')).toBe(instant);
+    const roundTrips: object[] = [];
+    const applyAndVerify = async (expected: string) => {
+      const controls = await page.locator('input[type="datetime-local"]').evaluateAll(inputs => inputs.map(input => {
+        const field = input as HTMLInputElement;
+        return { name: field.name, defaultValue: field.defaultValue, submitted: field.value };
+      }));
+      const responsePending = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/audit-events');
+      await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
+      const response = await responsePending;
+      expect(await response.finished()).toBeNull();
+      expect(response.ok()).toBe(true);
+      const request = new URL(response.request().url());
+      expect(request.searchParams.get('created_from')).toBe(expected);
+      expect(request.searchParams.get('created_to')).toBe(expected);
+      await expect(page).toHaveURL(url => url.searchParams.get('created_from') === expected && url.searchParams.get('created_to') === expected);
+      const body = await response.json();
+      await expect(rows).toHaveCount(1);
+      await expect(rows).toContainText(body.data.items[0].actor_ref);
+      await expect(issues).toHaveCount(0);
+      await expect(page.locator('[data-ui="admin-audit-table-scroll"]')).toHaveAttribute('aria-busy', 'false');
+      await settle();
+      roundTrips.push({ expected, controls, request: request.href, url: page.url(), responseActor: body.data.items[0].actor_ref, renderedRows: await rows.innerText() });
+    };
+    for (const [instant, equivalentUtcRow] of [
+      ['2026-11-02T14:00:00.000001+08:00', '2026-11-02T06:00:00.000001Z'],
+      ['2026-11-02T14:00:01.000001+08:00', '2026-11-02T06:00:01.000001Z'],
+      ['2026-11-02T14:00:00.001001+08:00', '2026-11-02T06:00:00.001001Z'],
+      ['2026-11-02T14:00:00.100001+08:00', '2026-11-02T06:00:00.100001Z'],
+    ]) {
+      created = equivalentUtcRow;
+      await navigate(`/admin/audit?${new URLSearchParams({ site_id: 'site_contract', created_from: instant, created_to: instant })}`);
+      await expect(rows).toHaveCount(1); await expect(issues).toHaveCount(0);
+      await page.getByText(/More filters|更多筛选/, { exact: true }).click();
+      await applyAndVerify(instant);
+    }
+    await picture(page, testInfo, 'audit-review-time-roundtrip', state, '[data-ui="admin-audit-directory"]');
+    // Editing both controls must use the newly selected local time, not retain
+    // the old microsecond value. Compute the new UTC instant in this browser zone.
+    const edited = '2026-11-02T15:01:02.003';
+    const editedInstant = await page.evaluate(value => new Date(value).toISOString(), edited);
+    created = editedInstant;
+    await page.locator('input[name="created_from"]').fill(edited);
+    await page.locator('input[name="created_to"]').fill(edited);
+    await applyAndVerify(editedInstant);
+    await testInfo.attach('audit-time-roundtrips', { body: JSON.stringify({ timezone: await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), roundTrips }, null, 2), contentType: 'application/json' });
+    await picture(page, testInfo, 'audit-review-time-edited', state, '[data-ui="admin-audit-directory"]');
     for (const fault of ['wrong-empty', 'missing', 'sort'] as const) {
       mode = fault; await navigate('/admin/audit?site_id=site_contract');
       await expect(page.locator('main [role="alert"]')).toBeVisible();
@@ -112,7 +154,7 @@ for (const width of [1440, 1056]) {
     mode = 'empty'; await refresh(page);
     await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/)).toBeVisible();
     await expect(page.locator('main [role="alert"]')).toHaveCount(0);
-    mode = 'normal'; await refresh(page); await expect(rows).toHaveCount(1); verifyBrowser(state);
+    mode = 'normal'; await refresh(page); await expect(rows).toHaveCount(1); await settle(); verifyBrowser(state);
   });
 
   test(`coverage preserves valid evidence and rejects broken targets at PC ${width}`, async ({ page }, testInfo) => {

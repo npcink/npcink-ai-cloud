@@ -33,6 +33,15 @@ The run envelope requires `items`, `sampled` and `truncated`; telemetry owns the
 validated observation window. These limits are intentional and are not claims
 that all server evidence has been independently reconstructed.
 
+The audit datetime-local control displays millisecond precision. On Apply,
+compare the submitted local wall-clock components with the displayed original,
+allowing the browser to omit zero seconds or trailing fractional zeros. An
+unchanged display retains the original RFC3339 offset and microseconds; a real
+edit serializes the newly selected local time. This display comparison does not
+replace the separate microsecond-accurate evidence boundary. Browser proof waits
+for the post-Apply audit response, final URL and its newly rendered row before
+replacing the document; reading the pre-Apply URL is insufficient.
+
 ## Information hierarchy
 
 - Always visible: selected scope, counts/sample limits, invalid-row count,

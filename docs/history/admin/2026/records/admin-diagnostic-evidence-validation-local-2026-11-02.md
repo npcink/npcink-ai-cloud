@@ -100,3 +100,40 @@ Admin route 的参数传递及 `_parse_audit_rfc3339_filter` 的 datetime.fromis
 临时数据库初始化/seed有写入，业务浏览器仍为本地GET mocks。
 返修提交/head/tree及完整29文件 base..head SHA256以 review-1/local-ready.json为准。
 保持本地候选、clean committed后再冻结；CI/PR/M4/合并/生产/人工验收状态不变。
+
+
+## M4 返修 R4 — 2026-11-02
+
+`88ffe6600d6c46e80be7b9ca98bf04a9fe3e7faa` 原已本地准入，但整合会话在 M4
+候选同步后撤回准入等待R4。该同步成功用时45.820秒，候选身份/dirty=false已记录；
+10项M4矩阵停于4通过/2失败/4未跑，不改称全部通过。1440取消icon.svg；1056另有
+Apply后马上goto取消审计API。整合会话独立HTML证据表明Chromium159会省略零秒/
+零小数；旧同步URL断言读取的仍是Apply前地址，未证明时间往返。
+原M4日志、两个失败trace和独立规范化证据按原路径/hash复制保存在
+`review-2-r4/independent-inputs/`，原证据不覆盖。构建会话未操作M4。
+
+只解冻审计时间helper、精确回归与本地必要文档。原helper按原逻辑抽取为
+`datetime-filters.ts`后，`unit-r4-red` 11项中5失败/6通过；
+`browser-r4-red` PC1056加强实际请求断言后复现：未编辑Apply把
+`.000001+08:00`降为`.000Z`，不是仅网络等待问题。
+
+修复为比较显示的本地日期时间各分量，容许浏览器省略零秒及小数尾零；
+显示未改变则保留原RFC3339字符串、时区和微秒。真实编辑仍序列化所选新时间，
+不以Date解析后的瞬时相等来判断本地控件未编辑。证据reader的微秒比较未修改。
+新增11个helper回归覆盖零/非零毫秒、非零秒、等价时区、小数尾零与真实编辑；
+测试显式隔离TZ，`unit-r4-green`三文件86项通过。
+
+浏览器仅补1440/1056的精确audit-review：等待Apply产生的实际审计响应完成，
+核对请求参数与最终URL、含本次响应唯一标识的渲染行和aria-busy=false；
+再等待文档网络完成才替换页面。四种原始微秒值使用等价UTC行，另查真实时间编辑。
+`browser-r4-green`双宽2通过；随后补显式UTC行对照和逐次控件/请求/URL/行附件，
+`browser-r4-final`双宽2通过。两次不累计成4项，不机械重跑其他已过M4场景。
+没有sleep、icon/static/API取消豁免、collector/断言/阈值/golden放宽。
+类型、定向lint、审计静态契约和文档可达性通过；无布局、颜色或内容入口搬迁。
+双宽时间往返/实际编辑及原拒绝状态截图和源指纹在
+`review-2-r4/browser-r4-final-artifacts`。人工视觉验收仍独立。
+
+新提交必须以88ffe660为parent；完整base..head源hash与本轮artifact hash见
+`review-2-r4/local-ready.json`及manifest。旧R1–R3关闭仍有效；R4待整合会话独立复审。
+本地提交后重新冻结。CI/PR/新M4 candidate/merged/M4 accepted未由本会话执行；
+旧M4候选失败单列，production untouched，human pending；无push或新批次。
