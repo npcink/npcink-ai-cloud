@@ -4,12 +4,14 @@ import { readCoverageQueue } from '@/features/admin/coverage/evidence';
 import { readAdminAuditEvidence } from '@/features/admin/audit/evidence';
 import { normalizeRuntimeTelemetry } from '@/features/admin/observability/runtimeTelemetry';
 import { readRuntimeRuns } from '@/features/admin/observability/run-evidence';
+import { buildAuditMetadata } from '../fixtures/admin-audit-metadata';
 
 const coverageKey = 'status=all&sort=priority&offset=0&limit=10';
 const auditKey = 'limit=10&offset=0&include_payload=false';
 const telemetryKey = 'recent_minutes=1440&limit=25';
 const runScope = { site: 'site_contract', capability: '', runId: '' };
 const copy = <T,>(value: T): T => structuredClone(value);
+const auditForQuery = (key: string) => ({ ...copy(serializers.audit), ...buildAuditMetadata(new URLSearchParams(key)) });
 
 describe('serializer-backed diagnostic evidence', () => {
   it('accepts actual serializers, real zeros, optional nulls and no-AI coverage', () => {
@@ -85,8 +87,8 @@ describe('serializer-backed diagnostic evidence', () => {
     }
   });
   it.each(['site_id', 'account_id', 'actor_ref', 'scope_kind', 'scope_id', 'idempotency_key', 'event_kind', 'outcome', 'event_id'])('binds exact audit %s to actual rows', key => {
-    const p = new URLSearchParams(auditKey); p.set(key, 'wrong');
-    expect(readAdminAuditEvidence(serializers.audit, p.toString()).issues).toEqual(['items[1]']);
+    const p = new URLSearchParams(auditKey); p.set(key, key === 'event_id' ? '999' : 'wrong');
+    expect(readAdminAuditEvidence(auditForQuery(p.toString()), p.toString()).issues).toEqual(['items[1]']);
   });
   it('quarantines bad audit rows; strips payloads; rejects missing diagnostics and wrong pagination', () => {
     const data: any = copy(serializers.audit); data.items[0].payload = { secret: 'synthetic payload excluded' };
@@ -97,9 +99,64 @@ describe('serializer-backed diagnostic evidence', () => {
     expect(() => readAdminAuditEvidence(serializers.audit, 'limit=10&offset=10')).toThrow();
   });
   it('binds audit precise RFC3339 instants without losing offsets or subsecond values', () => {
-    expect(readAdminAuditEvidence(serializers.audit, auditKey + '&created_from=2026-11-02T06:00:00.001Z').issues).toHaveLength(1);
-    expect(readAdminAuditEvidence(serializers.audit, auditKey + '&created_to=2026-11-02T05:59:59.999Z').issues).toHaveLength(1);
-    expect(readAdminAuditEvidence(serializers.audit, auditKey + '&created_from=2026-11-02T14:00:00%2B08:00').issues).toEqual([]);
+    for (const [suffix, expected] of [['&created_from=2026-11-02T06:00:00.001Z', 1], ['&created_to=2026-11-02T05:59:59.999Z', 1], ['&created_from=2026-11-02T14:00:00%2B08:00', 0]] as const) {
+      const key = auditKey + suffix;
+      expect(readAdminAuditEvidence(auditForQuery(key), key).issues).toHaveLength(expected);
+    }
+  });
+  it('matches repository site precedence over account without weakening other exact fields', () => {
+    for (const [suffix, accepted] of [['&site_id=site_contract&account_id=acct_other', true], ['&site_id=site_contract', true], ['&account_id=acct_contract', true], ['&account_id=acct_other', false], ['&site_id=site_other&account_id=acct_contract', false], ['&site_id=site_contract&account_id=acct_other&actor_ref=other', false]] as const) {
+      const key = auditKey + suffix;
+      expect(readAdminAuditEvidence(auditForQuery(key), key).issues).toEqual(accepted ? [] : ['items[1]']);
+    }
+  });
+  it.each([
+    ['2026-11-02T06:00:00.000001Z', 'created_from', '2026-11-02T06:00:00.000002Z', false],
+    ['2026-11-02T06:00:00.000002Z', 'created_to', '2026-11-02T06:00:00.000001Z', false],
+    ['2026-11-02T06:00:00.000001Z', 'created_from', '2026-11-02T06:00:00.000001Z', true],
+    ['2026-11-02T06:00:00.000001Z', 'created_to', '2026-11-02T06:00:00.000001Z', true],
+    ['2026-11-02T06:00:00.000001Z', 'created_from', '2026-11-02T14:00:00.000001+08:00', true],
+    ['2026-11-02T01:00:00.000001-05:00', 'created_to', '2026-11-02T14:00:00.000001+08:00', true],
+    ['2026-11-02T06:00:00.000001Z', 'created_from', '2026-11-02T14:00:00.000002+08:00', false],
+    ['2026-11-02T06:00:00.000001Z', 'created_to', '2026-11-02T06:00:00.0000019Z', true],
+    ['2026-11-02T06:00:00.000001Z', 'created_from', '2026-11-02t06:00:00.000001z', true],
+  ] as const)('compares backend microseconds: %s against %s=%s', (created, key, bound, accepted) => {
+    const params = new URLSearchParams(auditKey); params.set(key, bound);
+    const data = auditForQuery(params.toString()); data.items[0].created_at = created;
+    const parsed = readAdminAuditEvidence(data, params.toString());
+    expect(parsed.items).toHaveLength(accepted ? 1 : 0);
+    expect(parsed.issues).toEqual(accepted ? [] : ['items[1]']);
+    expect(params.get(key)).toBe(bound);
+  });
+  it('requires honest audit filters and sort even for an otherwise legal empty page', () => {
+    const key = auditKey + '&site_id=site_contract';
+    const empty = auditForQuery(key); empty.items = [];
+    empty.total = empty.pagination.total = empty.diagnostics.returned_count = 0;
+    expect(readAdminAuditEvidence(empty, key)).toMatchObject({ items: [], issues: [] });
+    expect(readAdminAuditEvidence(auditForQuery(key), key).items).toHaveLength(1);
+    empty.filters.site_id = 'site_other';
+    expect(() => readAdminAuditEvidence(empty, key)).toThrow();
+    for (const block of ['filters', 'sort']) {
+      const missing: any = auditForQuery(key); delete missing[block];
+      expect(() => readAdminAuditEvidence(missing, key)).toThrow();
+    }
+  });
+  it.each(['event_id', 'site_id', 'site_ids', 'account_id', 'event_kind', 'outcome', 'idempotency_key', 'actor_ref', 'scope_kind', 'scope_id', 'created_from', 'created_to', 'sort'])('rejects contradictory audit metadata %s', key => {
+    const data: any = copy(serializers.audit);
+    if (key === 'sort') data.sort.event_id = 'asc';
+    else data.filters[key] = key === 'event_id' ? 99 : key === 'site_ids' ? ['other']
+      : key.startsWith('created_') ? '2026-11-02T06:00:00.000001Z' : 'other';
+    expect(() => readAdminAuditEvidence(data, auditKey)).toThrow();
+  });
+  it('matches UTC-equivalent response time echoes at backend microsecond precision', () => {
+    const params = new URLSearchParams(auditKey);
+    params.set('created_from', '2026-11-02T14:00:00.000001+08:00');
+    params.set('created_to', '2026-11-02T01:00:00.000001-05:00');
+    const data = auditForQuery(params.toString()); data.items[0].created_at = '2026-11-02T06:00:00.000001Z';
+    data.filters.created_from = data.filters.created_to = '2026-11-02T06:00:00.000001+00:00';
+    expect(readAdminAuditEvidence(data, params.toString()).issues).toEqual([]);
+    data.filters.created_from = '2026-11-02T06:00:00.000002Z';
+    expect(() => readAdminAuditEvidence(data, params.toString())).toThrow();
   });
   it.each(['runs', 'provider_calls', 'usage_meter_events', 'provider_call_run_coverage_rate', 'metered_run_coverage_rate', 'provider_evidence_pending_runs'])('never defaults missing/invalid required metric %s to zero', key => {
     for (const value of [undefined, null, -1, '0', NaN, Infinity]) {

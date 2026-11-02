@@ -61,3 +61,42 @@ refresh-failed、empty，共18张PNG及JSON；含范围、源指纹、geometry�
 状态为本地候选。CI、PR、M4 candidate、merged、M4 accepted、production均未执行；
 human acceptance pending。builder在clean committed local-ready后冻结；
 后续源码复审、M4、PR/CI及合并由integrator独立接管，本会话不启动新批次。
+
+
+## 整合返修 R1/R2/R3 — 2026-11-02
+
+初始本地提交 `3228511b283efb7af1139f09bb4179424795ce76` 未获准入；
+整合会话在同一组内仅退回 B6-10。保留原根目录回执，新增证据写入
+`admin-diagnostic-evidence-validation/review-1/`，不追随移动中的 master。
+
+- R1：真实 repository 是 site 优先、无 site 才按 account，而非两者交集。
+  行校验改为该优先级；其他精确筛选仍严格检查。响应 filters 仍须回显两个请求参数。
+- R2：原 Date.parse 会抹掉毫秒以下差异。现在分离整秒与六位微秒比较，
+  与 Python datetime 一致；边界包含、等价时区、小写 RFC3339 请求及更细小数截断有回归。
+  URL 和重新应用的请求保留原始时间字符串。
+- R3：必需真实 filters/sort；核对参数回显、未提供参数默认值、空 site_ids 和固定倒序。
+  时间回显按等价瞬时比较。错误筛选的合法空页与缺失元数据均拒绝，不认证“无证据”。
+  正常样本显式补齐元数据，坏注入绕过 helper，通用 fulfill/collector/阈值不改。
+
+`frozen-parent-five-repros` 在不可变旧提交上复现五个反例（退出0表示探针运行完成，
+不表示旧代码通过）；`unit-before-fix` 红测4失败/5通过。修正后
+`unit-with-rfc3339-case` 两文件75通过，类型和定向 lint 通过。
+`browser-audit-r1-r3` 25项中23通过/2失败：旧正常视觉样本未回显筛选；
+新增双宽用例过快跳转取消静态chunk。补齐样本并等待当前文档请求结束，
+不放宽网络断言；`browser-audit-rerun` 仅重跑相关3项，全部通过。
+失败trace、截图及原始网络事件均保留，不重称初轮25项全绿，也不累计重复通过数。
+
+返修最终截图为 `review-1/browser-audit-rerun-artifacts` 下双宽
+`audit-review-site-precedence`、`audit-review-microsecond-rejected`、
+`audit-review-metadata-rejected`；含URL范围、浏览器事件与测试时源指纹。
+已复查1056坏行及元数据失败、1440站点优先图：原筛选、不可核实/失败、Retry常显，
+未出现页面横向溢出。人工视觉与完整焦点验收仍待定。
+没有布局/主题/字段入口移动；只重验审计相关浏览器、单测、类型/lint/静态契约及文档可达性。
+未改动模块的原本地门禁明确复用，不代表新跑全后台。
+
+后端契约依据：`_service_audit_filters` 的 if/elif、审计 serializer 的 filters/sort、
+Admin route 的参数传递及 `_parse_audit_rfc3339_filter` 的 datetime.fromisoformat。
+整合会话另有真实临时SQLite反例证明；本次未重跑或冒称生产查询。
+临时数据库初始化/seed有写入，业务浏览器仍为本地GET mocks。
+返修提交/head/tree及完整29文件 base..head SHA256以 review-1/local-ready.json为准。
+保持本地候选、clean committed后再冻结；CI/PR/M4/合并/生产/人工验收状态不变。

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { buildAuditMetadata } from '../fixtures/admin-audit-metadata';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -12,7 +13,7 @@ import {
 test('audit preserves failed and unknown outcomes and reports missing focused evidence', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 900, height: 1050 });
   const requests = await installAuditBoundaryHarness(page, async (route, url) => {
-    await route.fulfill({ json: buildAdminApiEnvelope(url.searchParams.get('event_id') === '999' ? auditPage(0, 0) : { ...auditPage(1, 0), items: auditPage(1, 0).items.map(row => ({ ...row, site_id: 'bounded-site', outcome: url.searchParams.get('outcome') || '' })) }) });
+    await route.fulfill({ json: buildAdminApiEnvelope({ ...(url.searchParams.get('event_id') === '999' ? auditPage(0, 0) : { ...auditPage(1, 0), items: auditPage(1, 0).items.map(row => ({ ...row, site_id: 'bounded-site', outcome: url.searchParams.get('outcome') || '' })) }), ...buildAuditMetadata(url.searchParams) }) });
   });
   for (const outcome of ['failed', 'future-outcome']) {
     await page.goto(`/admin/audit?outcome=${outcome}&site_id=bounded-site&focus=999`);
@@ -182,6 +183,7 @@ test('audit workspace exposes an initial failure and retry path', async ({ page 
 function auditPage(total: number, offset: number, includeOffset = true) {
   const count = Math.max(0, Math.min(10, total - offset));
   return {
+    ...buildAuditMetadata(new URLSearchParams()),
     items: Array.from({ length: count }, (_, index) => ({
       account_id: '', site_id: '', key_id: '', subscription_id: '', plan_id: '', plan_version_id: '',
       method: '', path: '', actor_kind: 'platform_admin', idempotency_key: '',
@@ -301,9 +303,9 @@ test('audit deep recovery stays server-owned and guarded during refresh', async 
   const requests = await installAuditBoundaryHarness(page, async (route, url) => {
     if (refreshing) await held;
     const offset = Number(url.searchParams.get('offset'));
-    await route.fulfill({ json: buildAdminApiEnvelope(offset === 83
+    await route.fulfill({ json: buildAdminApiEnvelope({ ...(offset === 83
       ? auditPage(40, 83)
-      : { ...auditPage(40, offset), items: auditPage(40, offset).items.map(row => ({ ...row, site_id: 'site-original' })) }) });
+      : { ...auditPage(40, offset), items: auditPage(40, offset).items.map(row => ({ ...row, site_id: 'site-original' })) }), ...buildAuditMetadata(url.searchParams) }) });
   });
   try {
     await page.goto('/admin/audit?offset=83&site_id=site-original');
@@ -336,9 +338,9 @@ test('audit deep recovery stays server-owned and guarded during refresh', async 
 
 test('audit failure is not successful empty and same-URL Apply retries the current scope', async ({ page }) => {
   let fail = true;
-  const requests = await installAuditBoundaryHarness(page, route => route.fulfill(fail
+  const requests = await installAuditBoundaryHarness(page, (route, url) => route.fulfill(fail
     ? { status: 503, json: buildAdminApiErrorEnvelope('bounded fixture failure') }
-    : { json: buildAdminApiEnvelope(auditPage(0, 0)) }));
+    : { json: buildAdminApiEnvelope({ ...auditPage(0, 0), ...buildAuditMetadata(url.searchParams) }) }));
   await page.goto('/admin/audit?site_id=site-original');
   await expect(page.getByRole('alert').filter({ hasText: /审计证据加载失败|Failed to load audit evidence\./ })).toBeVisible();
   await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/)).toHaveCount(0);
@@ -358,7 +360,7 @@ test('audit scope errors discard old rows and a late response cannot replace a n
     const key = url.searchParams.get('idempotency_key');
     if (key === 'failed-scope') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('bounded scope failure') }); return; }
     if (key === 'slow-scope') { slowRequested = true; await held; }
-    await route.fulfill({ json: buildAdminApiEnvelope({ ...auditPage(1, 0), items: [{ ...auditPage(1, 0).items[0], actor_ref: key || 'initial-scope' }] }) });
+    await route.fulfill({ json: buildAdminApiEnvelope({ ...auditPage(1, 0), ...buildAuditMetadata(url.searchParams), items: [{ ...auditPage(1, 0).items[0], idempotency_key: key || '', actor_ref: key || 'initial-scope' }] }) });
     if (key === 'slow-scope') slowFinished = true;
   });
   try {
@@ -393,7 +395,7 @@ test('audit retains all eleven precise filters and keeps drawer focus outside qu
     const offset = Number(url.searchParams.get('offset'));
     const data = auditPage(1, offset);
     data.items = data.items.map(row => ({ ...row, ...filters, event_id: 101, created_at: '2026-10-25T01:46:00Z' }));
-    return route.fulfill({ json: buildAdminApiEnvelope(data) });
+    return route.fulfill({ json: buildAdminApiEnvelope({ ...data, ...buildAuditMetadata(url.searchParams) }) });
   });
   await page.goto(`/admin/audit?${new URLSearchParams({ ...filters, offset: '83', focus: '999' })}`);
   await expect(page.locator('[data-ui="admin-audit-pagination-recovery"]')).toBeVisible();
@@ -429,7 +431,7 @@ test('audit Quiet PC workspace keeps filters outside table scrolling in both lan
       failNextRefresh = false;
       return route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('bounded visual refresh failure') });
     }
-    return route.fulfill({ json: buildAdminApiEnvelope(auditPage(21, Number(url.searchParams.get('offset')))) });
+    return route.fulfill({ json: buildAdminApiEnvelope({ ...auditPage(21, Number(url.searchParams.get('offset'))), ...buildAuditMetadata(url.searchParams) }) });
   });
   const measurements = [];
   await page.goto('/admin/audit');

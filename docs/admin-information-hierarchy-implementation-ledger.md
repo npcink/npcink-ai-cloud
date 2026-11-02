@@ -1148,3 +1148,16 @@ R1 返修：按 Python 空白与码点语义统一正文/文件名、最小长�
 [本地结果、失败历史与外置证据根](history/admin/2026/records/admin-diagnostic-evidence-validation-local-2026-11-02.md)。
 仅local候选；本组CI/PR/M4 candidate/merged/M4 accepted/production均未执行，
 human acceptance pending；由整合会话“系统检查管理后台问题”独立审核接管。
+
+
+### B6-10 整合返修 R1/R2/R3 — 2026-11-02 本地候选
+
+| 信息层级 | 处置与入口 | PC 证据 |
+| --- | --- | --- |
+| 常显 | 沿用原范围、坏行/不可核实、读取失败及 Retry；按真实 site 优先和微秒边界隔离行；缺失或矛盾 filters/sort 不能显示无记录。 | review-1/browser-audit-rerun-artifacts 双宽三类 audit-review 图；本地GET mocks，人工待验收。 |
+| 按需 | 原审计查看证据 drawer；site/account 双参数时合法站点行可打开，原时间筛选字符串重新应用保留。 | 双宽行详情/关闭与等价时区回归；旧 Quiet PC 视觉交互定向通过。 |
+| 技术证据 | 请求回显与行匹配分别检查；空页也要求 filters/sort。旧提交五反例、75单测及失败/重跑trace保留。 | 本地历史记录及独立 review-1 回执，未覆盖原冻结证据。 |
+| 删除重复 | 无内容搬迁、重复字段恢复或新字段/TAB/drawer。 | 布局、主题和既有未知/陈旧/暂停边界保持；不以基线更新代替视觉复查。 |
+
+仍采用规范§8–11既有目录场景和状态入口。原提交未获准入，本返修待整合会话独立复审；
+不把 local、CI、M4 candidate、merged、M4 accepted、production 或 human 状态合并。

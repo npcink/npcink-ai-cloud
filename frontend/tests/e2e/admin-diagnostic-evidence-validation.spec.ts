@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import serializers from '../fixtures/admin-diagnostic-serializers.json' with { type: 'json' };
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 import { buildRuntimeTelemetryFixture } from './helpers/runtime-telemetry-fixture';
+import { buildAuditMetadata } from '../fixtures/admin-audit-metadata';
 
 type Mode = 'normal' | 'broken' | 'rows' | 'empty' | 'failure';
 async function harness(page: Page) {
@@ -52,6 +53,68 @@ function verifyBrowser(state: Awaited<ReturnType<typeof harness>>) {
 const refresh = (page: Page) => page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
 
 for (const width of [1440, 1056]) {
+  test(`audit review fixes site precedence microseconds and response scope at PC ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1050 }); const state = await harness(page);
+    const navigate = async (url: string) => {
+      await page.goto(url);
+      // Let this document finish its chunk requests before replacing it.
+      await page.waitForLoadState('networkidle');
+    };
+    let mode: 'normal' | 'wrong-empty' | 'missing' | 'sort' | 'empty' = 'normal';
+    let created = '2026-11-02T06:00:00.000001Z';
+    await page.route('**/api/admin/audit-events?*', async route => {
+      const data: any = structuredClone(serializers.audit);
+      if (mode === 'wrong-empty') data.filters.site_id = 'site_other';
+      else if (mode === 'missing') delete data.filters;
+      else if (mode === 'sort') data.sort.created_at = 'asc';
+      else Object.assign(data, buildAuditMetadata(new URL(route.request().url()).searchParams));
+      data.items[0].created_at = created;
+      if (mode === 'wrong-empty' || mode === 'empty') {
+        data.items = []; data.total = data.pagination.total = data.diagnostics.returned_count = 0;
+      }
+      await route.fulfill({ json: buildAdminApiEnvelope(data) });
+    });
+    const rows = page.locator('[data-ui="admin-audit-directory"] tbody tr');
+    const issues = page.locator('[data-ui="admin-audit-evidence-issues"]');
+    await navigate('/admin/audit?site_id=site_contract&account_id=acct_other');
+    await expect(rows).toHaveCount(1); await expect(issues).toHaveCount(0);
+    await rows.getByRole('button').click(); await expect(page.getByRole('dialog')).toContainText('acct_contract');
+    await page.keyboard.press('Escape');
+    await picture(page, testInfo, 'audit-review-site-precedence', state, '[data-ui="admin-audit-directory"]');
+    await navigate('/admin/audit?account_id=acct_other');
+    await expect(rows).toHaveCount(0); await expect(issues).toContainText('items[1]');
+    await navigate('/admin/audit?site_id=site_contract'); await expect(rows).toHaveCount(1);
+    for (const [key, bound, rowTime] of [
+      ['created_from', '2026-11-02T06:00:00.000002Z', '2026-11-02T06:00:00.000001Z'],
+      ['created_to', '2026-11-02T06:00:00.000001Z', '2026-11-02T06:00:00.000002Z'],
+    ]) {
+      created = rowTime;
+      await navigate(`/admin/audit?${new URLSearchParams({ site_id: 'site_contract', [key]: bound })}`);
+      await expect(rows).toHaveCount(0); await expect(issues).toContainText('items[1]');
+      expect(new URL(state.api.at(-1)!.slice(4)).searchParams.get(key)).toBe(bound);
+    }
+    await picture(page, testInfo, 'audit-review-microsecond-rejected', state, '[data-ui="admin-audit-directory"]');
+    created = '2026-11-02T06:00:00.000001Z';
+    const instant = '2026-11-02T14:00:00.000001+08:00';
+    await navigate(`/admin/audit?${new URLSearchParams({ site_id: 'site_contract', created_from: instant, created_to: instant })}`);
+    await expect(rows).toHaveCount(1); await expect(issues).toHaveCount(0);
+    await page.getByText(/More filters|更多筛选/, { exact: true }).click();
+    await page.getByRole('button', { name: /Apply filters|应用筛选/ }).click();
+    expect(new URL(page.url()).searchParams.get('created_from')).toBe(instant);
+    expect(new URL(page.url()).searchParams.get('created_to')).toBe(instant);
+    for (const fault of ['wrong-empty', 'missing', 'sort'] as const) {
+      mode = fault; await navigate('/admin/audit?site_id=site_contract');
+      await expect(page.locator('main [role="alert"]')).toBeVisible();
+      await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/)).toHaveCount(0);
+      await expect(rows).toHaveCount(0);
+    }
+    await picture(page, testInfo, 'audit-review-metadata-rejected', state, '[data-ui="admin-audit-directory"]');
+    mode = 'empty'; await refresh(page);
+    await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/)).toBeVisible();
+    await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+    mode = 'normal'; await refresh(page); await expect(rows).toHaveCount(1); verifyBrowser(state);
+  });
+
   test(`coverage preserves valid evidence and rejects broken targets at PC ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1050 }); const state = await harness(page);
     let mode: Mode = 'broken';
@@ -90,6 +153,7 @@ for (const width of [1440, 1056]) {
     await page.route('**/api/admin/audit-events?*', async route => {
       if (mode === 'failure') { await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('synthetic audit read failure') }); return; }
       const data: any = structuredClone(serializers.audit);
+      Object.assign(data, buildAuditMetadata(new URL(route.request().url()).searchParams));
       if (mode === 'rows') { data.items.push(null, { ...data.items[0], event_id: 999, site_id: 'site_other' }); data.total = data.pagination.total = data.diagnostics.returned_count = 3; }
       if (mode === 'empty') { data.items = []; data.total = data.pagination.total = data.diagnostics.returned_count = 0; }
       await route.fulfill({ json: buildAdminApiEnvelope(mode === 'broken' ? {} : data) });
@@ -112,6 +176,7 @@ for (const width of [1440, 1056]) {
     await page.setViewportSize({ width, height: 1050 }); const state = await harness(page); let partial = true;
     await page.route('**/api/admin/audit-events?*', async route => {
       const data = structuredClone(serializers.audit);
+      Object.assign(data, buildAuditMetadata(new URL(route.request().url()).searchParams));
       if (partial) {
         data.total = data.pagination.total = 2; data.pagination.has_more = true; data.pagination.next_offset = 1;
       }

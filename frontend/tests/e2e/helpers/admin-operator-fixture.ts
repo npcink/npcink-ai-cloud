@@ -1,4 +1,5 @@
 import { buildRuntimeTelemetryFixture } from './runtime-telemetry-fixture';
+import { buildAuditMetadata } from '../../fixtures/admin-audit-metadata';
 import { subscriptionFixture, subscriptionQueueFixture } from '../../fixtures/admin-subscriptions';
 import { canonicalTier } from '../../fixtures/admin-plan-parameters';
 import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
@@ -474,6 +475,7 @@ export async function installAdminMocks(
         ? Math.floor((filteredItems.length - 1) / limit) * limit
         : 0;
       await fulfillJson(route, {
+        ...buildAuditMetadata(searchParams),
         total: filteredItems.length,
         items,
         generated_at: '2026-04-08T10:00:00Z',
