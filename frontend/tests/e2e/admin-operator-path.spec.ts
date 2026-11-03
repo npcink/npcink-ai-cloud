@@ -501,10 +501,18 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await expect(workspaceTabs.getByRole('link')).toHaveCount(0);
 
   await page.goto('/admin/accounts');
-  await expect(workspaceTabs.getByRole('link')).toHaveCount(2);
+  await expect(workspaceTabs.getByRole('link')).toHaveCount(3);
+  expect(await workspaceTabs.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([
+    '/admin/accounts', '/admin/customer-notifications', '/admin/support-requests',
+  ]);
   await expect(workspaceTabs.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
   await expect(workspaceTabs.locator('a[href="/admin/support-requests"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
+
+  await workspaceTabs.locator('a[href="/admin/customer-notifications"]').click();
+  await expect(page).toHaveURL(/\/admin\/customer-notifications$/);
+  await expect(adminPrimaryNav.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/customer-notifications"]')).toHaveAttribute('aria-current', 'page');
 
   await page.goto('/admin/support-requests');
   await expect(adminPrimaryNav.locator('a[href="/admin/accounts"]')).toHaveAttribute('aria-current', 'page');
