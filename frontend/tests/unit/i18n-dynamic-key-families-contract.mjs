@@ -33,6 +33,8 @@ export const FAMILY_SOURCES = {
   'admin.agent_feedback.recommendation_':
     'src/features/admin/agent-feedback/RecommendationQuality.tsx; bounded metric array and internal_links/related_articles family identifiers',
   'admin.economics.': 'src/app/admin/economics/page.tsx; table labels and backend family labels with literal unknown fallback',
+  'admin.notices.reason_':
+    'src/app/admin/customer-notifications/page.tsx; bounded recipient eligibility and change reasons',
   'portal.notifications.event_':
     'src/app/portal/notifications/page.tsx; bounded support_request_replied or unknown notification event label',
   'admin.ai_advisor.metric_':

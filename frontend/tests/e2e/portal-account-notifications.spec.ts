@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const BASE_URL = process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || 'http://127.0.0.1:3325';
-type Scenario = { empty?: boolean; failInbox?: boolean; failRead?: boolean; failRequest?: boolean; failConfirm?: boolean; pendingCode?: boolean };
+type Scenario = { empty?: boolean; failInbox?: boolean; failRead?: boolean; failRequest?: boolean; failConfirm?: boolean; pendingCode?: boolean; serviceNotices?: boolean };
 
 async function installMocks(page: Page, scenario: Scenario = {}, locale = 'en') {
   const unexpected: string[] = [];
@@ -13,6 +13,13 @@ async function installMocks(page: Page, scenario: Scenario = {}, locale = 'en') 
     title: `Ticket reply ${index + 1}`, body: 'Your site connection question has an answer.',
     link_href: `/portal/support/sr_${index + 1}`, is_read: false, created_at: '2026-10-23T08:00:00Z', read_at: null,
   }));
+  if (scenario.serviceNotices) {
+    Object.assign(items[0], { event_type: 'service.manual_notice', title: 'Maintenance notice', link_href: '/portal/support' });
+    Object.assign(items[1], { event_type: 'subscription.trial_expired', title: 'Trial ended', link_href: '/portal/billing' });
+    Object.assign(items[2], { event_type: 'runtime.ai_credits_denied', title: 'Credits exhausted', link_href: '/portal/usage' });
+    Object.assign(items[3], { event_type: 'service.manual_notice', title: 'Unsafe link', link_href: '//outside.example.test' });
+    Object.assign(items[4], { event_type: 'service.manual_notice', title: 'Traversal link', link_href: '/portal/../admin' });
+  }
   let signedIn = true;
   await page.context().addCookies([
     { name: 'npcink_portal_session_token', value: 'e2e-portal-session', url: BASE_URL },
@@ -165,5 +172,21 @@ test('closure code error, cancellation and successful sign-out', async ({ page }
   await dialog.getByLabel('Account closure verification code', { exact: true }).fill('654321');
   await confirm.click(); await expect(page).toHaveURL(/\/portal\/login/);
   await expect(page.locator('[data-portal-nav="notifications"]')).toHaveCount(0);
+  expect(mock.unexpected).toEqual([]);
+});
+
+
+test('service and lifecycle notices display bounded destinations', async ({ page }, info) => {
+  const mock = await installMocks(page, { serviceNotices: true });
+  await page.goto(`${BASE_URL}/portal/notifications`);
+  for (const [id, href] of [[1, '/portal/support'], [2, '/portal/billing'], [3, '/portal/usage']]) {
+    await expect(page.locator(`[data-notification-id="pnotif_${id}"] a`)).toHaveAttribute('href', String(href));
+  }
+  await expect(page.locator('[data-notification-id="pnotif_1"]')).toContainText('Service notice');
+  await expect(page.locator('[data-notification-id="pnotif_2"]')).toContainText('Trial ended');
+  await expect(page.locator('[data-notification-id="pnotif_3"]')).toContainText('AI credit reminder');
+  await expect(page.locator('[data-notification-id="pnotif_4"] a')).toHaveCount(0);
+  await expect(page.locator('[data-notification-id="pnotif_5"] a')).toHaveCount(0);
+  await screenshot(page, info, 'notifications-service-events');
   expect(mock.unexpected).toEqual([]);
 });

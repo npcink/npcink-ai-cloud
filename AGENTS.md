@@ -27,7 +27,9 @@ Paused product entrypoints (retain code; do not re-enable via settings):
 
 Commercial freeze (Phase 1) remains in effect outside the bounded existing-sales
 exception below. Do not start new commercial features, customer notification
-expansion, or broad Admin operations. Keep existing commercial reads and
+expansion, or broad Admin operations outside the operator-approved
+[2026-11-03 bounded manual service-notice scope](docs/customer-service-notifications-v1.md).
+Keep existing commercial reads and
 credit/entitlement paths operational; do not delete or disable existing code.
 Follow [commercial-development-next-stage-v1.md](docs/engineering/commercial-development-next-stage-v1.md).
 

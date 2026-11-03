@@ -131,7 +131,8 @@ specialist tasks. Code is retained; restoration needs a reviewed source change.
 Commercial expansion remains frozen outside the bounded existing-sales and
 shared-trial exception in
 [commercial-development-next-stage-v1.md](commercial-development-next-stage-v1.md).
-Customer notification and broad Admin expansion remain deferred. This exception
+Customer notification and broad Admin expansion remain deferred outside the
+[operator-authorized 2026-11-03 manual service-notice scope](../customer-service-notifications-v1.md). This exception
 neither completes the editor loop nor authorizes production sales activation,
 real transactions, or specialist restoration.
 
