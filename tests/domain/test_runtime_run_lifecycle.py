@@ -350,13 +350,16 @@ def test_fingerprints_and_idempotent_replay_are_canonical_and_conflict_exactly(
         request,
         {**policy, "retention_ttl": 120},
     )
-    assert fingerprint != service.build_request_fingerprint(
-        replace(request, storage_mode="no_store"),
-        policy,
+    identity = service.build_request_fingerprint(request, policy, client_identity=True)
+    assert identity != service.build_request_fingerprint(
+        replace(request, storage_mode="no_store"), policy, client_identity=True,
     )
-    assert fingerprint != service.build_request_fingerprint(
-        replace(request, timeout_seconds=1),
-        policy,
+    assert identity != service.build_request_fingerprint(
+        replace(request, timeout_seconds=1), policy, client_identity=True,
+    )
+    # The legacy hash must remain byte-compatible for saved pre-v2 requests.
+    assert fingerprint == service.build_request_fingerprint(
+        replace(request, storage_mode="no_store", timeout_seconds=1), policy,
     )
     assert service.build_media_derivative_request_fingerprint(
         "site_alpha",

@@ -1409,7 +1409,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         bounded_limit = max(1, min(int(limit), 100))
         with get_session(service.database_url) as session:
             refunds = CommercialRepository(session).list_payment_refunds_for_reconciliation(
-                limit=bounded_limit
+                limit=bounded_limit,
+                now=service.now_factory(),
+                max_attempts=service.settings.payment_refund_reconciliation_max_attempts,
             )
             refund_ids = [refund.refund_id for refund in refunds]
         results: list[dict[str, object]] = []
@@ -1543,11 +1545,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
             session.commit()
 
-        gateway = get_payment_gateway_provider(
-            request.provider,
-            config=self._payment_gateway_runtime_config(request.provider),
-        )
         try:
+            gateway = get_payment_gateway_provider(
+                request.provider,
+                config=self._payment_gateway_runtime_config(request.provider),
+            )
             query = gateway.query_refund(request)
         except CommercialServiceError as error:
             return self._record_payment_refund_query_unknown(
@@ -1570,8 +1572,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 now=now,
                 max_attempts=max_attempts,
             )
-        if query.amount is None or round(float(query.amount), 6) != round(
-            float(request.amount), 6
+        if (
+            query.provider != request.provider
+            or query.external_refund_no != request.refund_id
+            or query.amount is None
+            or round(float(query.amount), 6) != round(float(request.amount), 6)
         ):
             return self._record_payment_refund_query_unknown(
                 refund_id=refund_id,
@@ -2042,7 +2047,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "credit pack payment order metadata is invalid",
             )
         ai_credits = float(cast(int, pack["ai_credits"]))
-        if refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED:
+        newly_succeeded = refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED
+        if newly_succeeded:
             refund.status = PAYMENT_REFUND_STATUS_SUCCEEDED
             refund.provider_refund_no = (
                 str(provider_refund_no or "").strip() or refund.provider_refund_no
@@ -2089,10 +2095,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             },
             created_at=refund.succeeded_at or succeeded_at,
         )
-        repository.refund_paid_credit_grant(
-            payment_order_id=order.order_id,
-            ai_credits=refunded_ai_credits,
-        )
+        if newly_succeeded:
+            repository.refund_paid_credit_grant(
+                payment_order_id=order.order_id,
+                ai_credits=refunded_ai_credits,
+            )
         payload = {
             "order": self._serialize_credit_pack_payment_order(order),
             "refund": self._serialize_payment_refund(refund),

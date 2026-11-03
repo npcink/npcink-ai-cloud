@@ -566,10 +566,7 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
             )
         response_order_id = str(response_payload.get("out_trade_no") or "").strip()
         response_refund_id = str(response_payload.get("out_request_no") or "").strip()
-        if response_order_id != request.order_id or response_refund_id not in {
-            "",
-            request.refund_id,
-        }:
+        if response_order_id != request.order_id or response_refund_id != request.refund_id:
             raise CommercialValidationError(
                 "service.alipay_refund_query_mismatch",
                 "Alipay refund query does not match the requested refund",
@@ -591,6 +588,11 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 "service.alipay_refund_query_mismatch",
                 "Alipay refund query amount does not match the requested amount",
             ) from error
+        if str(response_payload.get("refund_status") or "") != "REFUND_SUCCESS":
+            raise CommercialValidationError(
+                "service.alipay_refund_query_status_unknown",
+                "Alipay has not confirmed successful refund settlement",
+            )
         provider_refund_no = str(
             response_payload.get("trade_no") or response_payload.get("out_request_no") or ""
         ).strip()

@@ -328,8 +328,12 @@ def test_real_alipay_gateway_submits_and_verifies_refund(
     assert result.provider_payload["provider_refund_no"] == "202607270000000001"
 
 
+@pytest.mark.parametrize("invalid_case", [
+    "", "signature", "missing_status", "pending", "order", "refund", "missing_refund",
+    "amount", "nonfinite", "rejection", "malformed", "timeout",
+])
 def test_real_alipay_gateway_queries_refund_with_stable_request_number(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, invalid_case: str,
 ) -> None:
     private_key, private_pem, public_pem = _alipay_test_keys()
     config = {
@@ -355,7 +359,23 @@ def test_real_alipay_gateway_queries_refund_with_stable_request_number(
                 "out_trade_no": "pay_query_001",
                 "out_request_no": "ref_query_001",
                 "refund_amount": "29.00",
+                "refund_status": "REFUND_SUCCESS",
             }
+            changes = {
+                "pending": {"refund_status": "REFUND_PROCESSING"},
+                "order": {"out_trade_no": "other-order"},
+                "refund": {"out_request_no": "other-refund"},
+                "amount": {"refund_amount": "28.99"},
+                "nonfinite": {"refund_amount": "NaN"},
+                "rejection": {"code": "40004"},
+            }
+            query_payload.update(changes.get(invalid_case, {}))
+            if invalid_case == "missing_status":
+                del query_payload["refund_status"]
+            if invalid_case == "missing_refund":
+                del query_payload["out_request_no"]
+            if invalid_case == "malformed":
+                return "not json"
             signed_content = json.dumps(query_payload, ensure_ascii=False, indent=2)
             signature = private_key.sign(  # type: ignore[attr-defined]
                 signed_content.encode("utf-8"),
@@ -366,18 +386,23 @@ def test_real_alipay_gateway_queries_refund_with_stable_request_number(
                 '{"alipay_trade_fastpay_refund_query_response":'
                 + signed_content
                 + ',"sign":'
-                + json.dumps(base64.b64encode(signature).decode("ascii"))
+                + json.dumps(
+                    "invalid-signature" if invalid_case == "signature"
+                    else base64.b64encode(signature).decode("ascii")
+                )
                 + "}"
             )
 
     def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
         captured.update({"url": url, "data": data, "timeout": timeout})
+        if invalid_case == "timeout":
+            import httpx
+            raise httpx.ReadTimeout("query timeout")
         return _Response()
 
     monkeypatch.setattr("app.domain.commercial.payment_gateways.httpx.post", _post)
     gateway = get_payment_gateway_provider("alipay", config=config)
-    result = gateway.query_refund(
-        PaymentGatewayRefundQueryRequest(
+    request = PaymentGatewayRefundQueryRequest(
             provider="alipay",
             refund_id="ref_query_001",
             order_id="pay_query_001",
@@ -385,7 +410,11 @@ def test_real_alipay_gateway_queries_refund_with_stable_request_number(
             currency="CNY",
             metadata={},
         )
-    )
+    if invalid_case:
+        with pytest.raises(CommercialValidationError):
+            gateway.query_refund(request)
+        return
+    result = gateway.query_refund(request)
 
     assert captured["data"]["method"] == "alipay.trade.fastpay.refund.query"  # type: ignore[index]
     assert json.loads(captured["data"]["biz_content"]) == {  # type: ignore[index]

@@ -41,7 +41,8 @@ Every provider must implement:
 - `create_refund(request)`: returns `external_refund_no` and provider metadata.
 - `query_refund(request)`: queries the same stable external refund number and
   returns `succeeded` only after the provider response is signed, matched to the
-  original order and refund amount; unsupported, delayed, malformed or rejected
+  original order, stable refund number, exact amount, and `REFUND_SUCCESS`
+  status; unsupported, delayed, malformed or rejected
   queries return `unknown`.
 - `verify_refund_callback(payload)`: returns normalized refund number, provider
   refund number, event id, amount, status, and occurred time.
@@ -103,7 +104,13 @@ A late gateway error cannot downgrade an already confirmed success.
 `alipay.trade.fastpay.refund.query` with the persisted `out_request_no`, uses
 exponential backoff (5 minutes up to 6 hours), and stops after the configured
 attempt limit (default five). Exhaustion keeps the refund `unknown` and requires
-manual review. The task never calls `create_refund` and never downgrades a
+manual review. Due-time, lease and attempt limits are filtered before the SQL
+batch limit so exhausted rows cannot starve later refunds. The worker interval,
+batch size and maximum attempts are configured by
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_INTERVAL_SECONDS` (default 300, minimum 60),
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_BATCH_SIZE` (default 25, 1–100), and
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_MAX_ATTEMPTS` (default 5, 1–20).
+The task never calls `create_refund` and never downgrades a
 callback or query success; a concurrent success wins when the state row is
 locked.
 

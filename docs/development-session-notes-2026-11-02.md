@@ -12,8 +12,9 @@ Status: dated development closeout record. 本文记录本轮运行时、反馈�
    `provider.output_contract_invalid`，避免异常穿透成 500。
 2. `no_store`、PII 和 secret 运行的 Provider、预算、输出准备和最终化错误使用固定
    文案，避免把输入或上游响应内容写入持久化错误和响应。
-3. 运行请求幂等指纹纳入存储模式、超时、重试、保留期、callback、task backend 和
-   canonical run 等控制字段，并在执行契约和 managed policy 完成后计算。
+3. 运行请求沿用 master 的双层幂等设计：客户端身份 v2 包含存储、超时、重试、
+   保留期、callback、task backend 和 canonical run；旧 hash 保持原格式以迁移重放。
+   执行快照与客户端身份分离，不能把新增字段写入旧 hash 破坏历史重放。
 4. Agent feedback 幂等重放读取已存事件字段；工程 smoke 样本从质量分母、趋势和场景
    排除；无质量样本时 `accepted_rate` 为 `null`。
 5. HTTP callback 以 `stream=True` 发送，只检查状态码并在成功和失败路径关闭响应，
@@ -44,11 +45,15 @@ Status: dated development closeout record. 本文记录本轮运行时、反馈�
 
 ## 3. 当前验证结果
 
-- 退款网关/服务/cadence/部署契约回归：110 passed；受影响测试集与变更 Python
-  检查通过，mypy targeted 通过。
-- 最后一次全量 pytest（新增两条对账回归之前）：5511 passed、171 skipped、1 个
-  Starlette/httpx 兼容弃用警告；不再有 tracing 或 API impact-policy 失败。新增两条
-  对账回归随后单独通过，未重复消耗全量门禁。
+- 2026-11-02 完整 pytest 实际结果：**3 failed、5511 passed、171 skipped**，
+  另有 8 subtests passed 和 1 个 Starlette/httpx 兼容弃用警告。失败为两个新增 cadence
+  数量断言和一个 credit-pack PATCH/GET 操作证据不一致；后续相关 33 项定向重跑通过。
+  这不是一次全量绿灯。先前 tracing 和 API impact-policy 的 17 项已通过。
+- 2026-11-03 合并前复查修复旧幂等 hash 兼容性、查询成功状态校验、队列饥饿，
+  并修复 callback/query 重放导致部分 credit-pack grant 重复扣减；新增签名错误、
+  缺失/处理中状态、单号/金额不符、超时、队列过滤、租约与回调交错反例。
+- 当前退款网关/服务、runtime lifecycle/provider transactions 与 cadence 窄集：
+  **103 passed**。最终 PR revision 的 CI 结果另行记录，历史数字不代表当前全量绿灯。
 - Ruff 目标文件、`git diff --check`、release policy、部署脚本 shell 语法检查通过。
 - Agent feedback quality gate：26 passed，前端 Cloud admin type-check、lint 和边界
   contract 均通过。
@@ -57,9 +62,9 @@ Status: dated development closeout record. 本文记录本轮运行时、反馈�
 
 ## 4. 会话与仓库收口规则
 
-- 当前分支 `codex/runtime-audit-remediation-20261102` 已提交本地 commit
-  `501c1a94`，相对 `origin/master` ahead 1；尚未推送、创建或合并 PR。因此不能声称
-  已远端提交、已合并或可安全关闭。
+- 2026-11-03 操作者授权远端推送、PR 合并及本会话 worktree 清理。交付分支为
+  `codex/runtime-audit-remediation-20261102`；最终 PR、merge SHA 和清理回执以
+  本节后续收口记录为准。生产部署与真实交易不在此次授权范围。
 - 主工作树仍有既有未跟踪目录 `.trae-html-share-packages/` 和 `npcink-cloud-overview/`；
   本轮没有修改或删除它们。
 - 其他受锁定 worktree 归属其他会话。未经对应操作者明确授权，不删除、归档、重置或

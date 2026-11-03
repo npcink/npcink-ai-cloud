@@ -1267,8 +1267,9 @@ def test_admin_credit_pack_catalog_override_changes_future_orders(tmp_path: Path
     dispose_engine(database_url)
 
 
+@pytest.mark.parametrize("refund_amount", [49.5, 99.0])
 def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription(
-    tmp_path: Path,
+    tmp_path: Path, refund_amount: float,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -1300,7 +1301,7 @@ def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription
     )
     refund = service.request_payment_refund(
         order_id=str(order["order_id"]),
-        amount=99.0,
+        amount=refund_amount,
         reason="customer requested refund",
         audit_context=_audit("credit-pack-refund-request"),
     )
@@ -1312,19 +1313,29 @@ def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription
         audit_context=_audit("credit-pack-refund-success"),
     )
 
-    assert result["order"]["status"] == PAYMENT_ORDER_STATUS_REFUNDED
+    assert result["order"]["status"] == (
+        PAYMENT_ORDER_STATUS_REFUNDED if refund_amount == 99 else PAYMENT_ORDER_STATUS_PAID
+    )
+    service.mark_payment_refund_succeeded(
+        refund_id=str(refund["refund_id"]),
+        provider_event_id="query-after-callback",
+    )
     assert result["revoked_subscription"] == {}
     assert result["credit_ledger_entry"]["event_type"] == "adjustment"
     assert result["credit_ledger_entry"]["source_type"] == "credit_pack_refund"
     assert result["credit_ledger_entry"]["category"] == "refund_adjustment"
     assert result["credit_ledger_entry"]["direction"] == "credit_out"
-    assert result["credit_ledger_entry"]["ai_credit_delta"] == -10000.0
+    refunded_credits = 10000 * refund_amount / 99
+    assert result["credit_ledger_entry"]["ai_credit_delta"] == -refunded_credits
     with get_session(database_url) as session:
         subscription = session.scalar(select(AccountSubscription))
         assert subscription is not None
         assert subscription.status == SUBSCRIPTION_STATUS_ACTIVE
         entries = list(session.scalars(select(CreditLedgerEntry)))
-        assert sorted(entry.ai_credit_delta for entry in entries) == [-10000.0, 10000.0]
+        assert sorted(entry.ai_credit_delta for entry in entries) == [-refunded_credits, 10000.0]
+        grant = session.scalar(select(PaidCreditGrant))
+        assert grant.refunded_ai_credits == refunded_credits
+        assert grant.remaining_ai_credits == 10000 - refunded_credits
 
     dispose_engine(database_url)
 
@@ -1602,4 +1613,95 @@ def test_consumed_credit_pack_rejects_refund_request(tmp_path: Path) -> None:
     with get_session(database_url) as session:
         assert session.scalar(select(PaymentRefund)) is None
 
+    dispose_engine(database_url)
+
+
+def test_reconciliation_filters_exhausted_delayed_and_leased_rows_before_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay", plan_id="plan_pro", plan_version_id="plan_pro_v1",
+        amount=199.0, audit_context=_audit("queue-order"),
+    )
+    service.mark_payment_order_paid(order_id=str(order["order_id"]), amount=199.0)
+    now = datetime.now(UTC)
+    states = [
+        {"attempts": 5},
+        {"next_attempt_at": (now + timedelta(hours=1)).isoformat()},
+        {"lease_expires_at": (now + timedelta(hours=1)).isoformat()},
+        {},
+    ]
+    ids = []
+    for i, state in enumerate(states):
+        refund = service.request_payment_refund(
+            order_id=str(order["order_id"]), amount=1,
+            audit_context=_audit(f"queue-refund-{i}"),
+        )
+        ids.append(str(refund["refund_id"]))
+        with get_session(database_url) as session:
+            row = session.get(PaymentRefund, ids[-1])
+            row.requested_at = now - timedelta(minutes=10 - i)
+            row.metadata_json = {"refund_reconciliation": state}
+            session.commit()
+    calls = []
+
+    class Gateway:
+        def query_refund(self, request):
+            calls.append(request.refund_id)
+            # A second worker during HTTP IO observes the durable lease.
+            nested = service.reconcile_payment_refund(refund_id=request.refund_id)
+            assert nested["reconciliation"]["next_action"] == "wait_for_existing_query"
+            return PaymentGatewayRefundQueryResult(
+                "alipay", request.refund_id, "", "unknown", None, {},
+            )
+
+    monkeypatch.setattr(
+        payment_mixin_module, "get_payment_gateway_provider", lambda *a, **k: Gateway(),
+    )
+    result = service.reconcile_payment_refunds(limit=1)
+    assert result["scanned"] == result["unknown"] == 1
+    assert calls == [ids[-1]]
+    assert service.reconcile_payment_refunds(limit=1)["scanned"] == 0
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("late_outcome", ["unknown", "succeeded", "exception"])
+def test_refund_callback_wins_during_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, late_outcome: str,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay", plan_id="plan_pro", plan_version_id="plan_pro_v1",
+        amount=199.0, audit_context=_audit("callback-race-order"),
+    )
+    service.mark_payment_order_paid(order_id=str(order["order_id"]), amount=199.0)
+    refund = service.request_payment_refund(order_id=str(order["order_id"]), amount=199.0)
+
+    class Gateway:
+        def query_refund(self, request):
+            # Interleave a committed callback while the query has no DB transaction.
+            service.mark_payment_refund_succeeded(
+                refund_id=str(refund["refund_id"]), provider_event_id="callback-during-query",
+            )
+            if late_outcome == "exception":
+                raise CommercialValidationError("provider.timeout", "unavailable")
+            return PaymentGatewayRefundQueryResult(
+                "alipay", request.refund_id, "provider-refund", late_outcome, 199.0, {},
+            )
+
+    monkeypatch.setattr(
+        payment_mixin_module, "get_payment_gateway_provider", lambda *a, **k: Gateway(),
+    )
+    result = service.reconcile_payment_refund(refund_id=str(refund["refund_id"]))
+    assert result["refund"]["status"] == PAYMENT_REFUND_STATUS_SUCCEEDED
+    assert result["reconciliation"]["required"] is False
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
     dispose_engine(database_url)
