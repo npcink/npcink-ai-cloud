@@ -179,7 +179,7 @@
 
 ## 6. 本轮分支整理与保留工作树
 
-本轮只将本审计 13 个无占用本地分支转存为 `refs/archive/admin-audit-closeout/20261103/local-branches/`。其中 12 个 head 与已合并 PR head 精确相同；`codex/admin-services-vector-fixes=038f2d5a` 是第二批中间提交，保全但不假称等于最终 PR head。各候选远端分支已不存在，未删除任何远端分支；四个依赖更新 PR 和其他会话分支保留。
+首次整理只将本审计 13 个无占用本地分支转存为 `refs/archive/admin-audit-closeout/20261103/local-branches/`。其中 12 个 head 与已合并 PR head 精确相同；`codex/admin-services-vector-fixes=038f2d5a` 是第二批中间提交，保全但不假称等于最终 PR head。各候选远端分支已不存在，未删除任何远端分支；四个依赖更新 PR 和其他会话分支保留。
 
 先核对无工作树占用和无 open PR，再创建归档 refs、验证 bundle，最后以含旧 SHA 的 ref transaction 移出 `refs/heads`。bundle 是以当前主线为 prerequisite 的增量恢复包，不承诺脱离共同 Git 历史独立恢复。
 
@@ -190,6 +190,31 @@
 - 其他会话所有登记继续保留，包括本轮盘点时目录不可读的登记；不可读不证明可删除，不由本会话 prune 或解除其锁。没有由此启动无界历史清理。
 
 具体分支 SHA、无占用证据、bundle 验证、保留工作树和后续 PR 回执留在本地 `admin-audit-closeout/` 交接目录及共同 Git 目录的 `task-closeouts/admin-functional-audit-batches1-7-20261103/`；它们不是另一个 clone 的必备文件。首次整理分类为 **KEEP_ACTIVE**，当时人工验收与交接仍需工作区。人工接受后的释放须重新核对占用、完整保全 ignored 与原始证据、验证恢复包，并留下最终回执；不能由验收通过直接推定“全部 worktree 已清空”。
+
+### 2026-11-03 最终清理回执（北京时间 12:54）
+
+独立收尾会话重新核对 GitHub：相关 17 个 PR（上表 13 个修复 PR，加 #1358、#1359、#1360、#1361）全部合并，`origin/master=4c522910dc53eecc729c41d912f3de03ff68c3a9`。审核 head `26b92780`、执行 head `ac8a5d27` 分别精确匹配已合并 #1361、#1357，且 tree 与各自 merge commit 相同；squash 前 head 的祖先关系未被当成唯一判断依据。
+
+| 对象 | 重新核对与实际结果 |
+| --- | --- |
+| 审核会话 `01a190f3-ab78-7763-bad1-79cc8fd7a72d` / `admin-supplier-functional-fixes/npcink-ai-cloud` | 经应用 `set_thread_archived` 归档；应用随后异步移除目录。归档前 tracked/untracked 非 ignored 内容干净，完整目录与既有备份逐文件一致。 |
+| 执行会话 `01a1929f-2271-7550-b73e-07abd2a0a629` / `admin-services-vector-fixes/npcink-ai-cloud` | 本次入口前已归档且目录已不存在；未声称本次再次删除。完整目录备份与源码 bundle 重新校验通过。 |
+| 两个旧 Git 登记与锁 | 两会话均在归档列表、两路径不存在且无进程引用后，备份旧登记，仅解锁这两个已释放登记。prune dry-run 与实际候选精确相同，均仅这两条；其他登记和锁未改。 |
+| 两个本地分支 | `codex/admin-audit-human-acceptance-20261103`、`codex/admin-diagnostic-evidence-validation` 在无工作树占用、无 open PR 和源码恢复包验证后，通过含旧 SHA 的 ref transaction 转存至 `refs/archive/admin-audit-cleanup/20261103/local-branches/`，并清除各自 upstream 配置。 |
+| 两个失效跟踪引用 | 精确删除 `origin/codex/admin-audit-closeout-20261103`、`origin/codex/admin-audit-human-acceptance-20261103`；远端对应分支已不存在，head 已保全。未做无范围 remote prune，远端删除数为 0。 |
+
+此前应用返回的 `The task's primary checkout cannot be removed.` 属于历史拒绝；本次使用[应用支持的聊天归档流程](https://learn.chatgpt.com/docs/environments/git-worktrees#worktree-cleanup)，没有重复调用被拒绝的归档操作、绕过应用保护、手改应用数据库或直接删除工作树目录。应用释放目录后，残留登记按[缺失工作树恢复流程](../../../repository-stage-transition-cleanup-standard-v1.md#damaged-or-missing-registration-path)处理。
+
+最终统计：先前 14 个分支归档加本次 2 个，累计 16 个本轮本地分支已移出活动分支集合；本次清除 2 个失效跟踪引用、2 个 Git 登记，两个目标会话均已归档。12:54 回执时，本审计实现与清理范围内未提交、未合并、未释放对象和应用保护阻塞均为 0；本节后续文档发布属于单独的提交交付，不重开 Admin 审计。
+
+恢复资料保留在私有目录 `/Users/muze/.codex/archives/npcink-ai-cloud/2026-11-03/admin-human-acceptance/`，入口为 `RECOVERY.md`。审核/执行完整 tar 的成员清单与所有普通文件 hash、符号链接及源码 bundles 均已重新验证；另补存两个会话的 7 个外置原始证据目录，49,588 个普通文件逐一核对源文件，原始证据仍在原位置。私有恢复资料与内容均未提交 Git。
+
+- 新增源码恢复包 `released-local-branches.bundle`：mode `600`，7,449 bytes，SHA-256 `0009488897a71efb6055a976318f842f84fe5d6449a193960b4b910dffcb96b7`；依赖共同仓库既有 `origin/master` 可达历史。
+- 完整文件与证据恢复先解压到新的空目录；tar 中旧 `.git` 指针不是独立仓库，不覆盖新工作树 Git 元数据。源码优先从仍保留的日期归档 refs 恢复。
+- 归档 refs 至少保留至 2026-12-03，且相关任务与归属问题全部结束；到期不自动删除。对应 bundle 至少保留至相关 refs 删除后 90 天并经操作者复核；完整备份和原始证据不设自动删除。
+- 本地共同 Git 目录最终入口：`task-closeouts/admin-functional-audit-batches1-7-20261103/human-acceptance-final.json`；副本为私有恢复目录的 `cleanup-final-receipt.json`，旧验收回执另存 `human-acceptance-final.before-followup.json`。
+
+结论为**本轮清理完成**。主仓库、稳定 M4 ops、其他任务的分支/登记/锁、全部归档 refs 与证据保留；主仓库两项无关未跟踪内容未改。仓库拓扑仍按 **KEEP_ACTIVE** 保留，不能写成全仓所有任务已清空。本轮未杀共享进程、清空数据库/共享缓存、部署 M4、操作生产、进行真实支付或付费 Provider 调用；未重跑全后台审计或重启自动跟进。
 
 ## 7. 经验归纳与停止条件
 
