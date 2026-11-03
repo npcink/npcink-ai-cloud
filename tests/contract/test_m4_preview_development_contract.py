@@ -2887,6 +2887,17 @@ def test_m4_remote_development_standard_is_linked_and_operational() -> None:
 
 def test_m4_base_image_prefetch_is_cache_first_and_digest_locked() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
+    lock = json.loads((ROOT / "deploy/image-lock/production-images.json").read_text())
+    for key in ("python_runtime", "node_frontend"):
+        image = next(record for record in lock["production_inputs"] if record["key"] == key)
+        mirror_reference = f"library/{image['reference']}"
+        assert f"m.daocloud.io/docker.io/{mirror_reference}" in source
+        assert f'${{M4_DOCKER_HUB_FALLBACK_REGISTRY}}/{mirror_reference}' in source
+    python_image = next(
+        record for record in lock["production_inputs"] if record["key"] == "python_runtime"
+    )
+    for stage in ("builder", "runtime"):
+        assert f"grep -Fq 'FROM {python_image['reference']} AS {stage}' Dockerfile" in source
 
     prefetch = source.split("prefetch_base_image() {", 1)[1].split(
         "\n}\n\n# BEGIN M4 runtime image build recipe",

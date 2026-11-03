@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path, PurePosixPath
 
 SCHEMA = "npcink.production_reviewed_tree_integration.v1"
@@ -53,6 +55,71 @@ def reviewed_paths(path: Path) -> tuple[list[str], str]:
     return sorted(paths), hashlib.sha256(raw).hexdigest()
 
 
+def restored_baseline(root: Path, production: str, baseline: str, path: Path) -> dict[str, object]:
+    """Prove that named, previously omitted master patches explain every difference."""
+    raw = path.read_bytes()
+    if len(raw) > 16_384:
+        raise IntegrationError("baseline restoration receipt is oversized")
+    try:
+        receipt = json.loads(raw)
+    except (UnicodeError, ValueError) as exc:
+        raise IntegrationError("baseline restoration receipt is not valid JSON") from exc
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema") != "npcink.production_baseline_restoration.v1"
+        or receipt.get("production_sha") != production
+        or receipt.get("master_baseline_sha") != baseline
+    ):
+        raise IntegrationError("baseline restoration receipt identity is invalid")
+    commits = receipt.get("omitted_commits")
+    if (
+        not isinstance(commits, list)
+        or not 1 <= len(commits) <= 20
+        or any(not isinstance(commit, str) for commit in commits)
+        or len(set(commits)) != len(commits)
+    ):
+        raise IntegrationError("baseline restoration commits must be bounded and unique")
+    with tempfile.TemporaryDirectory(prefix="npcink-baseline-restoration-") as temporary:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(temporary) / "index")}
+
+        def index_git(*args: str, input_bytes: bytes | None = None) -> bytes:
+            result = subprocess.run(
+                ["git", *args], cwd=root, env=env, input=input_bytes, capture_output=True
+            )
+            if result.returncode:
+                raise IntegrationError("baseline restoration patch does not apply exactly")
+            return result.stdout
+
+        index_git("read-tree", production)
+        previous = None
+        for commit in commits:
+            full_commit(root, commit)
+            git(root, "merge-base", "--is-ancestor", commit, baseline)
+            if previous:
+                git(root, "merge-base", "--is-ancestor", previous, commit)
+            if len(git(root, "rev-list", "--parents", "-n", "1", commit).split()) != 2:
+                raise IntegrationError("baseline restoration requires single-parent master commits")
+            patch = index_git(
+                "diff",
+                "--binary",
+                "--full-index",
+                "--no-ext-diff",
+                "--no-renames",
+                f"{commit}^",
+                commit,
+            )
+            index_git("apply", "--cached", "--binary", input_bytes=patch)
+            previous = commit
+        tree = index_git("write-tree").decode().strip()
+    if tree != git(root, "rev-parse", f"{baseline}^{{tree}}"):
+        raise IntegrationError("restored production tree differs from the reviewed master baseline")
+    return {
+        "commits": commits,
+        "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+        "restored_tree": tree,
+    }
+
+
 def prepare(
     root: Path,
     *,
@@ -62,6 +129,7 @@ def prepare(
     paths_file: Path,
     branch: str,
     apply: bool = False,
+    restoration_file: Path | None = None,
 ) -> dict[str, object]:
     production = full_commit(root, production)
     source = full_commit(root, source)
@@ -74,8 +142,13 @@ def prepare(
     git(root, "merge-base", "--is-ancestor", source, master)
     git(root, "merge-base", "--is-ancestor", equivalent_master, source)
     production_tree = git(root, "rev-parse", f"{production}^{{tree}}")
+    restoration = None
     if production_tree != git(root, "rev-parse", f"{equivalent_master}^{{tree}}"):
-        raise IntegrationError("production tree is not equivalent to the master baseline")
+        if restoration_file is None:
+            raise IntegrationError("production tree is not equivalent to the master baseline")
+        restoration = restored_baseline(root, production, equivalent_master, restoration_file)
+    elif restoration_file is not None:
+        raise IntegrationError("equivalent production tree does not require restoration")
     source_tree = git(root, "rev-parse", f"{source}^{{tree}}")
     if source_tree == production_tree:
         raise IntegrationError("production already has the reviewed source tree")
@@ -98,6 +171,8 @@ def prepare(
         "reviewed_master_tree": source_tree,
         "fetched_master_sha": master,
         "equivalent_master_baseline": equivalent_master,
+        "baseline_restoration": restoration,
+        "baseline_mode": "restored_omitted_commits" if restoration else "exact_tree_equivalence",
         "reviewed_paths_sha256": paths_sha256,
         "changed_paths": paths,
         "branch": branch,
@@ -112,7 +187,12 @@ def prepare(
             f"Production-base: {production}\n"
             f"Equivalent-master-baseline: {equivalent_master}\n"
             f"Reviewed-paths-sha256: {paths_sha256}\n\n"
-            "Resolve historical conflicts to the exact reviewed tree.\n"
+            + (
+                f"Baseline-restoration-sha256: {restoration['receipt_sha256']}\n\n"
+                if restoration
+                else ""
+            )
+            + "Resolve historical conflicts to the exact reviewed tree.\n"
             "Local preparation only; production approval and checks remain required.\n"
         )
         candidate = git(
@@ -147,6 +227,7 @@ def main() -> int:
     parser.add_argument("--equivalent-master-sha", required=True)
     parser.add_argument("--reviewed-paths-file", required=True, type=Path)
     parser.add_argument("--branch", required=True)
+    parser.add_argument("--restoration-file", type=Path)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     try:
@@ -159,6 +240,7 @@ def main() -> int:
             paths_file=args.reviewed_paths_file,
             branch=args.branch,
             apply=args.apply,
+            restoration_file=args.restoration_file,
         )
     except (OSError, UnicodeError, IntegrationError) as exc:
         print(f"[fail] {exc}", file=sys.stderr)

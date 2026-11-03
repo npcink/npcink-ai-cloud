@@ -79,7 +79,15 @@ stops plan generation. Artifact retention is an evidence window, not a
 permanent deployment registry. After expiration or an out-of-band rollback,
 re-establish the installed baseline read-only and repair the evidence in a
 separately reviewed change; do not substitute the previous push or hand-edit a
-verified bundle. Before preserving either application image, the deployment
+verified bundle. For expired timing artifacts, the resolver may use the reviewed
+`.github/production-baseline-recovery.json` observation for at most seven days.
+It binds the actual installed source/tree and manifest/observation hashes to the
+exact successful deployment run, attempt and update time. It is consulted only
+when retained runtime evidence is missing, never when it is malformed. A newer
+unproven attempt, rerun, mismatch, future observation or expired window still
+blocks planning. This planning recovery neither modifies the host nor authorizes
+deployment; the current installed manifest must be checked again at release time.
+Before preserving either application image, the deployment
 script requires the current managed manifest source revision to equal the plan
 base. A mismatch stops before service mutation or migration. A full plan retains
 the existing complete replacement and rollback protections.
@@ -165,7 +173,12 @@ may prepare a separately reviewable local `release-fix/*` candidate. It must
 prove whole-tree baseline equivalence, exact reviewed source-tree equality,
 and exact changed-path scope. It cannot publish, weaken the mergeability or
 approval gates, or authorize deployment. Non-equivalent production-only
-changes still require separate classification and review.
+changes still require separate classification and review. A previously isolated
+release may restore a reviewed list of omitted single-parent master commits:
+their exact patches must apply without conflict to a temporary production index
+and reconstruct the complete historical master baseline. Any unexplained
+production-only difference fails closed. The restoration receipt, original PRs
+and scope are reviewed separately before the resulting local candidate is used.
 
 The command waits up to 15 minutes for the exact production push Cloud CI and
 CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
