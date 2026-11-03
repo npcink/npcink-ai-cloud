@@ -1,7 +1,8 @@
 # 开发会话操作经验记录（2026-11-02）
 
 Status: dated development closeout record. 本文记录本轮运行时、反馈、回调、检索与
-退款文档核对的事实、验证边界和可复用方法；不是生产验收、M4 验收或新的功能授权。
+退款文档核对的事实、验证边界和可复用方法。2026-11-03 的 M4 后续验收见第 6 节；
+不是生产验收或新的功能授权。
 现行约束仍以 `AGENTS.md`、验证分层、Phase 1 范围和相关活动契约为准。
 
 ## 1. 本轮处理的问题与证据
@@ -57,8 +58,9 @@ Status: dated development closeout record. 本文记录本轮运行时、反馈�
 - Ruff 目标文件、`git diff --check`、release policy、部署脚本 shell 语法检查通过。
 - Agent feedback quality gate：26 passed，前端 Cloud admin type-check、lint 和边界
   contract 均通过。
-- 未执行：生产部署、M4 验收、真实 Provider、Alipay 沙箱/生产交易和真实 Portal
-  用户验收。本地 SQLite、MockTransport、monkeypatch 和测试客户端证据不替代这些状态。
+- 上述合并前阶段未执行 M4 和真实 Provider；2026-11-03 已补 M4 验收及真实本地
+  Ollama adapter 调用，见第 6 节。生产部署、Alipay 沙箱/生产交易、收费远端模型 API
+  和真实 Portal 用户验收仍未执行；模拟回归不能替代这些状态。
 
 ## 4. 会话与仓库收口规则
 
@@ -70,8 +72,31 @@ Status: dated development closeout record. 本文记录本轮运行时、反馈�
 - 其他受锁定 worktree 归属其他会话。未经对应操作者明确授权，不删除、归档、重置或
   强行清理；关闭当前会话前应先决定本分支是提交并开 PR、保留待审，还是明确放弃。
 
-## 5. 后续明确未完成项
+## 5. 后续范围与收口状态
 
 1. Portal 自助退款入口仍冻结，未实现，也未获产品授权。
-2. 真实 Provider、Alipay 沙箱/生产、M4 与生产验证；这些证据不能由本地回归替代。
-3. 远端推送、PR 创建/合并和本会话 worktree 的生命周期收口。
+2. 收费远端模型 API、Alipay 沙箱/生产交易及生产验证仍无本次验收证据。
+   操作者于 2026-11-03 明确“支付相关的功能我生产环境再做”；本轮停止支付验证，
+   不再要求沙箱材料，不代替操作者安排生产操作。
+3. 原修复已由 PR #1358 合并为 `b15ffe6d`；原任务本地/远端分支已删除，主目录与
+   其他会话受保护 worktree 保留。M4 后续验收不再列为未完成项。
+
+## 6. M4 后续验收（2026-11-03）
+
+[完整验收记录](history/engineering/2026/runtime-audit-m4-acceptance-2026-11-03.md)
+记录了基线、命令、结果及支付探测失败；该记录仅适用于所列修订。
+
+- PR #1358 的合并提交 `b15ffe6dc1af5f7767efc9e0376a9a1f81e08900` 已从干净
+  `master` 执行 `m4:preview:promote -- --pr 1358`，耗时 26.92 秒。
+- M4 `acceptance_state=accepted`、`promotion_pr=1358`、`source_dirty=false`；
+  实际 API `/health/live` 的 `source_revision=b15ffe6dc1af` 与合并提交一致。
+- M4 九个文件的定向回归 **232 passed**，pytest 耗时 12.30 秒，完整命令 15.42 秒；
+  一个 Starlette/httpx 弃用警告保留。测试中的网关 fixture 仍属于模拟证据。
+- 真实本地 Ollama `qwen3.5:9b` 经应用 adapter 完成一次标题生成，12.86 秒，
+  输入/输出 token 为 51/11；没有收费 Provider 调用或应用数据库写入。
+- 正式支付宝网关仅进行一次只读退款查询探测，响应缺少验签所需签名，报告
+  `service.alipay_response_signature_missing`；未产生支付、退款或本地账务写入。
+  该失败不能证明退款成功链路可用，也不能据此断言密钥错误或生产服务故障。
+- 可复用规则：M4 与生产操作分开；真实本地模型与收费远端 API 分开；只读查询、
+  响应验签、退款结算与权益回冲分开。操作者决定暂缓某项后，保留实际失败证据，
+  不以 mock 或健康检查替换缺失的验收结果。
