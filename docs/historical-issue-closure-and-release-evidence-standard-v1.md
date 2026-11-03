@@ -243,3 +243,35 @@ deliverable, record the exact worktree, branch, lock, owner and release conditio
 under the [worktree lifecycle standard](single-session-worktree-lifecycle-v1.md).
 A merge-status question must receive fresh Git/PR evidence. It must not be
 reported as a merge, cleanup or production operation that has not occurred.
+
+## 14. Service Notices and Actionable Diagnostic Guidance
+
+The [2026-11-03 notice and diagnostics closeout](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)
+adds these review requirements when changing these existing seams. They do not
+activate new alert infrastructure or expand the current product scope.
+
+- Show one clear impact statement, the known cause or explicit uncertainty,
+  one next action and how to verify the result. Preserve site, issue and time
+  scope in diagnostic links. Distinguish historical evidence, stale reads and
+  current service state; no fresh sample is not proof of recovery.
+- Keep manual customer notices distinct from automatic operator alerts.
+  Inbox insertion is not reading or urgent reachability. Hosted-service alert
+  thresholds require real business samples and a sustained baseline; local
+  cold-start latency is not a production SLO.
+- Follow the [notice contract](customer-service-notifications-v1.md) for fresh
+  single-use transport keys versus a stable persisted dispatch ID. Query the
+  original batch after uncertainty, preserve atomic delivery/audit state and
+  recheck the original recipient before sending. Prove concurrency with the
+  actual PostgreSQL transaction boundary, not a mock-only response.
+- A new Admin route must reconcile the manifest, IA inventory, acceptance
+  matrix and existing workspace navigation assertions, including click and
+  active state. Keep explicit counts; do not skip a failing old test.
+- Pair source-level display restrictions with rendered-output checks. Reading
+  a technical input to choose approved plain-language guidance is different
+  from exposing its raw model/database identity or jargon in customer UI.
+  Preserve non-exposure tests in ordinary and development environments.
+- Separate merged code, remote refs, local refs and registered worktrees.
+  Squash ancestry is not patch loss when exact PR-head and tree evidence match.
+  Respect primary-checkout protection and preserve evidence before cleanup;
+  a tool rejection is not permission to bypass it. Scope-wide cleanup requires
+  the [stage-transition standard](repository-stage-transition-cleanup-standard-v1.md).
