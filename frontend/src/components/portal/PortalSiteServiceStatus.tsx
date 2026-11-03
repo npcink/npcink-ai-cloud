@@ -6,11 +6,12 @@ import {
   PortalCard,
   PortalSection,
 } from '@/components/portal/PortalScaffold';
-import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
+import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type { PortalMonitoringOverviewSummary } from '@/lib/portal-client';
 import {
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
+  hasPortalRuntimeSuccessWithoutPluginReports,
 } from '@/lib/portal-monitoring-display';
 import { formatDate, formatNumber } from '@/lib/utils';
 import { PortalLoadingState } from '@/components/portal/PortalPageState';
@@ -69,20 +70,17 @@ export function PortalSiteServiceStatus({
   const showRefresh = Boolean(
     error || serviceStatus === 'inactive' || serviceStatus === 'error' || refreshNotice === 'error'
   );
-  const showQuotaRow = hasQuotaPressure && !(attention && attention.action.href?.includes('package-options'));
+  const showQuotaRow = hasQuotaPressure && !(attention && attention.action.href?.includes('/portal/billing'));
   const showDetails = Boolean(
     error
     || serviceStatus !== 'active'
     || showQuotaRow
     || errorCount > 0
   );
-  // When the top attention already explains the non-knowledge warning, do not
-  // paint a second yellow 「需要关注」 on the service-operation row.
-  const serviceWarningCoveredByAttention = Boolean(
-    attention
-    && serviceOperationStatus === 'warning'
-    && errorCount === 0
-  );
+  // One status surface: the attention already owns this conclusion and its next step.
+  const showServiceOperationRow = !attention && serviceOperationStatus !== 'active';
+  const monitoringOnlyGap = Boolean(overview && hasPortalRuntimeSuccessWithoutPluginReports(overview));
+  const showEvidenceRows = showServiceOperationRow || errorCount > 0 || showQuotaRow;
 
   const recheckLabel = isRefreshing
     ? t('portal.retry.rechecking', {}, 'Checking…')
@@ -103,6 +101,7 @@ export function PortalSiteServiceStatus({
   // nothing actionable (no attention, no evidence, no load/error/recheck notice).
   const hasContent = Boolean(
     attention
+    || monitoringOnlyGap
     || error
     || refreshNotice
     || (isLoading && !overview)
@@ -160,6 +159,12 @@ export function PortalSiteServiceStatus({
         ) : null}
       </div>
 
+      {monitoringOnlyGap && overview ? (
+        <p className="text-sm leading-6 text-slate-600 dark:text-slate-300" data-portal-site="monitoring-gap-note">
+          {t('portal.monitoring.reporting_gap_runtime_ok', { count: formatNumber(overview.activity.runtime_runs_total) }, 'All {{count}} AI requests in the last 24 hours succeeded. Site connection reports are missing; this is not evidence of a disconnected site. Continue using the service; no reconnect is needed solely for this notice. If an operation actually fails, contact support with the operation and time.')}
+        </p>
+      ) : null}
+
       {attention ? (
         <div
           className="w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
@@ -184,7 +189,7 @@ export function PortalSiteServiceStatus({
               {attention.secondaryAction
                 ? renderAttentionAction(attention.secondaryAction)
                 : null}
-              {supportHref && errorCount > 0 ? (
+              {supportHref ? (
                 <Link
                   href={supportHref}
                   className="btn btn-secondary btn-sm shrink-0"
@@ -197,7 +202,7 @@ export function PortalSiteServiceStatus({
           </div>
           {refreshNotice === 'success' ? (
             <p className="border-t border-amber-200/70 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900/50 dark:text-amber-200" data-portal-site="recheck-notice">
-              {t('portal.retry.recheck_still_attention', {}, 'Rechecked — this site still needs attention.')}
+              {t('portal.retry.recheck_still_attention', {}, 'Records refreshed. The warning still applies to the monitoring period; follow the guidance above. This refresh does not repair the connection or clear historical records.')}
             </p>
           ) : null}
           {refreshNotice === 'error' ? (
@@ -235,39 +240,29 @@ export function PortalSiteServiceStatus({
         <PortalLoadingState message={t('common.loading')} compact />
       ) : null}
 
-      {!isLoading && !error && overview && showDetails ? (
+      {!isLoading && !error && overview && showEvidenceRows ? (
         <dl
           className="w-full divide-y divide-slate-200/80 rounded-xl border border-slate-200/80 dark:divide-slate-800 dark:border-slate-800"
           data-portal-site="service-status-evidence"
         >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-            <dt className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
-              {t('portal.monitoring.service_operation', {}, 'Service operation')}
-            </dt>
-            <dd className="min-w-0 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              {serviceWarningCoveredByAttention ? (
-                <PortalStatusInline
-                  label={t(
-                    'portal.monitoring.service_explained_above',
-                    {},
-                    'See note above'
-                  )}
-                />
-              ) : (
+          {showServiceOperationRow ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+              <dt className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.monitoring.service_operation', {}, 'Service operation')}
+              </dt>
+              <dd className="min-w-0 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <PortalStatusBadge
                   status={serviceOperationStatus}
                   label={serviceOperationStatus === 'inactive'
                     ? t('status.inactive', {}, 'Inactive')
-                    : serviceOperationStatus === 'active'
-                      ? t('portal.home.risk_level_normal', {}, 'Normal')
-                      : t('portal.home.filter_attention_only', {}, 'Needs attention')}
+                    : t('portal.home.filter_attention_only', {}, 'Needs attention')}
                 />
-              )}
-              <span>
-                {latestActivityAt ? formatDate(latestActivityAt) : t('portal.home.package_pending_label', {}, 'To confirm')}
-              </span>
-            </dd>
-          </div>
+                <span>
+                  {latestActivityAt ? formatDate(latestActivityAt) : t('portal.home.package_pending_label', {}, 'To confirm')}
+                </span>
+              </dd>
+            </div>
+          ) : null}
           {errorCount > 0 ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
               <dt className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">

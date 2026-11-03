@@ -25,6 +25,7 @@ export const diagnosticNavigation: readonly AdminNavigationItem[] = [
 
 export const customerWorkspaceTabs: readonly AdminNavigationItem[] = [
   { href: '/admin/accounts', labelKey: 'admin.workspace_tab_customers', fallback: 'Customers' },
+  { href: '/admin/customer-notifications', labelKey: 'admin.notices.title', fallback: 'Customer notices' },
   { href: '/admin/support-requests', labelKey: 'admin.workspace_tab_tickets', fallback: 'Tickets' },
 ];
 

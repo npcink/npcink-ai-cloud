@@ -581,3 +581,5 @@ merge gates.
 - [Read-only Admin economics contract](engineering/admin-economics-readonly-contract.md)
 
 - [Article review context extension](article-review-context-runtime-v1.md) — compatible logic/risk runtime contract.
+
+- [客户服务通知：范围、入口和发送契约](customer-service-notifications-v1.md) — 2026-11-03 有界手动站内通知。

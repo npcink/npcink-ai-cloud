@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { PortalActionIcon } from '@/components/portal/PortalRowActions';
 import {
   PortalCard,
@@ -29,6 +30,11 @@ export function PortalSiteKnowledgePanel({
   const { t } = useLocale();
   const totals = summary?.totals || null;
   const snapshot = summary?.index_snapshots?.[0] || null;
+  // Describe the observed index, not a production performance guarantee or
+  // a claim that an old index snapshot is the current runtime configuration.
+  const localPreviewIndex = process.env.NEXT_PUBLIC_ENV === 'development'
+    && snapshot?.vector_backend === 'postgres_json'
+    && snapshot?.embedding_provider === 'ollama-m4-embedding';
   const indexedPages = Number(snapshot?.document_count ?? totals?.current_document_count ?? 0);
   const searchCount = Number(totals?.search_queries_total || 0);
   const noAnswerCount = Number(totals?.no_hit_total || 0);
@@ -54,6 +60,20 @@ export function PortalSiteKnowledgePanel({
     hasKnowledge && summary && healthStatus === 'warning'
   );
   const windowDays = Math.max(1, Math.round(Number(summary?.window?.hours || 168) / 24));
+  const failedSearches = Number(totals?.search_failed_total || 0);
+  const slowOnlyWarning = needsAttention
+    && indexFailed === 0 && failedSearches === 0
+    && Number(totals?.no_hit_rate || 0) < 0.25
+    && Number(totals?.p95_search_latency_ms || 0) >= 1200;
+  const warningReasons = [
+    indexFailed > 0 ? t('portal.vector_obs.warning_updates', { count: formatNumber(indexFailed) }, '{{count}} knowledge update(s) failed.') : '',
+    failedSearches > 0 ? t('portal.vector_obs.warning_searches', { count: formatNumber(failedSearches) }, '{{count}} search(es) failed.') : '',
+    searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25
+      ? t('portal.vector_obs.warning_no_hits', { count: formatNumber(noAnswerCount), total: formatNumber(searchCount) }, '{{count}} of {{total}} searches found no related content.') : '',
+    Number(totals?.p95_search_latency_ms || 0) >= 1200
+      ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, '95% of searches finished within {{seconds}} seconds.') : '',
+  ].filter(Boolean);
+
   const softFailedCount = Math.max(0, indexFailed);
   const softUpdateNote = softUpdateIssue
     ? (softFailedCount > 0
@@ -76,7 +96,11 @@ export function PortalSiteKnowledgePanel({
       : softUpdateIssue
         ? t('portal.vector_obs.status_usable', {}, 'Knowledge is usable')
         : needsAttention
-          ? t('portal.vector_obs.status_attention', {}, 'Needs attention')
+          ? slowOnlyWarning
+            ? localPreviewIndex
+              ? t('portal.vector_obs.status_local_slow', {}, 'Development searches were slow')
+              : t('portal.vector_obs.status_slow', {}, 'Searches were slow')
+            : t('portal.vector_obs.status_attention', {}, 'Needs attention')
           : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
   const displayedStatusLabel = error
     ? t('portal.home.package_pending_label', {}, 'To confirm')
@@ -172,6 +196,29 @@ export function PortalSiteKnowledgePanel({
             'Site knowledge status could not be loaded. Try again later.'
           )}
         </PortalCard>
+      ) : null}
+
+      {!isLoading && !error && summary && needsAttention ? (
+        <div className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300" data-portal-site="knowledge-guidance">
+          <p>
+            {t('portal.vector_obs.warning_period', { days: String(windowDays) }, 'In the last {{days}} days:')}{' '}
+            {warningReasons.join(' ') || t('portal.vector_obs.warning_unknown', {}, 'Knowledge health needs review; the exact cause is not identified here.')}
+          </p>
+          {slowOnlyWarning ? (
+            <p>{t('portal.vector_obs.warning_slow_successes', { queries: formatNumber(searchCount), updates: formatNumber(indexJobs) }, 'No failed searches or knowledge updates were recorded ({{queries}} searches, {{updates}} updates).')}</p>
+          ) : null}
+          {slowOnlyWarning && totals?.last_search_finished_at ? (
+            <p>{t('portal.vector_obs.warning_last_search', { time: formatDate(totals.last_search_finished_at) }, 'Last recorded search: {{time}}. These historical figures do not establish current response time.')}</p>
+          ) : null}
+          <p>{slowOnlyWarning
+            ? localPreviewIndex
+              ? t('portal.vector_obs.warning_next_local_slow', {}, 'Local development: the latest index uses the local search setup. Its response time does not represent the hosted vector services planned for launch. Continue checking search results; latency is a development task and does not require reconnecting or resyncing the site.')
+              : t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
+            : t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.')}</p>
+          <Link className="btn btn-secondary btn-sm" href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(summary.site_id)}`}>
+            {t('portal.site_attention_contact_support', {}, 'Contact support')}
+          </Link>
+        </div>
       ) : null}
 
       {!isLoading && !error && summary && !hasKnowledge ? (

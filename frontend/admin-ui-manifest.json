@@ -200,6 +200,22 @@
           "return_context"
         ],
         "browserSpec": "tests/e2e/admin-support-request-operator-closure.spec.ts"
+      },
+      "/admin/customer-notifications": {
+        "pageModel": "configuration",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"customer-notifications-workspace\"]",
+        "requiredStates": [
+          "ready",
+          "invalid",
+          "dirty",
+          "save_error",
+          "saved",
+          "preview",
+          "action_error",
+          "action_success"
+        ],
+        "browserSpec": "tests/e2e/admin-customer-notifications.spec.ts"
       }
     },
     "browserLanes": {
@@ -252,7 +268,8 @@
     "/admin/service-settings": "configuration",
     "/admin/site-compliance": "configuration",
     "/admin/usage-statistics": "diagnostic",
-    "/admin/economics": "diagnostic"
+    "/admin/economics": "diagnostic",
+    "/admin/customer-notifications": "configuration"
   },
   "legacyRouteLocalDialogs": [],
   "legacyRouteLocalCredentials": []

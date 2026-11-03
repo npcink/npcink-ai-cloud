@@ -86,6 +86,59 @@ export function isPortalRecheckHelpfulForAction(
   return true;
 }
 
+// Translate known evidence codes; never infer a live outage from a historical warning.
+const CUSTOMER_ISSUE_GUIDANCE: Record<string, { kind: string; title: string; detail: string; wordpress?: boolean }> = {
+  'site_monitoring.connection_credential_missing': {
+    kind: 'credential', title: 'No active site connection credential', wordpress: true,
+    detail: 'Cloud has no active connection credential for this site; Cloud requests may fail. Open WordPress admin, check the Cloud Addon connection and reconnect there. Then return here and recheck the status. If reconnecting fails, submit a ticket.',
+  },
+  'site_monitoring.api_key_expiring': {
+    kind: 'expiry', title: 'Site connection credential expires soon', wordpress: true,
+    detail: 'An active connection credential expires within 7 days. Open WordPress admin and check the Cloud Addon connection before expiry. If it offers no renewal or reconnect option, contact support; refreshing this page does not renew the credential.',
+  },
+  'site_monitoring.api_key_stale': {
+    kind: 'unused', title: 'Site connection has not been used recently', wordpress: true,
+    detail: 'The site credential has not been used for more than 7 days. This alone does not prove a disconnection. If this site is still in use, open WordPress admin and check the Cloud Addon connection, then recheck here. If it should be reporting but is not, submit a ticket.',
+  },
+  'plugin_observability.reporting_stale': {
+    kind: 'stale', title: 'Site connection reports are out of date', wordpress: true,
+    detail: 'Cloud has not received a recent connection report. This alone does not prove a disconnection. Open WordPress admin and check that Cloud Addon is active and connected, then return here and recheck. If reports remain out of date, submit a ticket.',
+  },
+  'plugin_observability.inactive': {
+    kind: 'no_reports', title: 'No recent site connection reports', wordpress: true,
+    detail: 'No connection reports were received in the monitoring period. Open WordPress admin and check that Cloud Addon is active and connected, then recheck here. If the site is in use but still has no reports, submit a ticket.',
+  },
+  'site_monitoring.no_activity': {
+    kind: 'no_activity', title: 'No Cloud activity recorded for this site', wordpress: true,
+    detail: 'The site has a connection credential, but Cloud has not recorded activity. Open WordPress admin and check the Cloud Addon connection. Return here to recheck; if a connected site still does not report activity, submit a ticket.',
+  },
+  'plugin_observability.latency_high': {
+    kind: 'slow', title: 'Recent connection responses were slow',
+    detail: 'Connection activity was slow during the monitoring period. Recheck to read the latest records. If WordPress operations are also slow or fail, submit a ticket with the operation and time. Historical slow records may remain after service improves.',
+  },
+  'site_monitoring.runtime_success_rate': {
+    kind: 'runtime', title: 'Service success rate needs attention',
+    detail: 'Some AI requests failed in the monitoring period. Historical failures do not confirm a current outage. If your WordPress task still fails, submit a ticket with the task and time. Recheck only reads the latest records; it does not retry AI requests.',
+  },
+  'site_monitoring.media_failures': {
+    kind: 'media', title: 'Media processing failures were recorded',
+    detail: 'Media processing failures were recorded in the monitoring period. New media processing is paused. If an existing result is affected, contact support with the item and time; rechecking does not restart processing.',
+  },
+  'plugin_observability.catalog_churn': {
+    kind: 'catalog', title: 'Site capability information changed repeatedly', wordpress: true,
+    detail: 'Repeated capability changes were recorded. In WordPress, check whether plugins were recently activated or deactivated, then recheck here. If changes continue without an intentional plugin change, submit a ticket.',
+  },
+};
+
+const CONNECTION_ERROR_CODES = new Set([
+  'plugin_observability.error_rate_high', 'plugin_observability.error_rate_elevated',
+  'plugin_observability.plugin_error', 'plugin_observability.top_error',
+]);
+
+export function isPortalWordPressConnectionAction(item: PortalMonitoringOverviewAction | null): boolean {
+  return Boolean(item && CUSTOMER_ISSUE_GUIDANCE[item.code]?.wordpress);
+}
+
 export function getPortalCustomerIssueTitle(
   item: PortalMonitoringOverviewAction,
   t: TranslateFn
@@ -96,6 +149,11 @@ export function getPortalCustomerIssueTitle(
       {},
       'Cloud Addon is not reporting'
     );
+  }
+  const guidance = CUSTOMER_ISSUE_GUIDANCE[item.code];
+  if (guidance) return t(`portal.monitoring.guidance_${guidance.kind}_title`, {}, guidance.title);
+  if (CONNECTION_ERROR_CODES.has(item.code)) {
+    return t('portal.monitoring.guidance_errors_title', {}, 'Recent connection errors were recorded');
   }
   const category = getPortalMonitoringIssueCategory(item);
   const raw = `${item.title || ''} ${item.code || ''}`.toLowerCase();
@@ -129,6 +187,11 @@ export function getPortalCustomerIssueDetail(
       'Cloud is not receiving reports from: {{plugins}}. Recheck will not install them — confirm Cloud Addon is installed and active in WordPress, or contact support.'
     );
   }
+  const guidance = CUSTOMER_ISSUE_GUIDANCE[item.code];
+  if (guidance) return t(`portal.monitoring.guidance_${guidance.kind}_detail`, {}, guidance.detail);
+  if (CONNECTION_ERROR_CODES.has(item.code)) {
+    return t('portal.monitoring.guidance_errors_detail', {}, 'Connection errors were recorded during the monitoring period; this does not confirm an ongoing failure. Recheck to read the latest records. If a WordPress operation still fails, submit a ticket with the operation and time. Refreshing does not clear historical errors.');
+  }
   const category = getPortalMonitoringIssueCategory(item);
   if (category === 'quota') {
     return t(
@@ -140,7 +203,7 @@ export function getPortalCustomerIssueDetail(
   return t(
     'portal.monitoring.customer_issue_detail',
     {},
-    'If this keeps showing, contact support and include the site name.'
+    'The exact cause is not identified here. Recheck to read the latest records. If the warning remains or an operation fails, submit a ticket with the site name, operation and time.'
   );
 }
 
@@ -153,6 +216,31 @@ export function hasPortalQuotaPressure(
   return metric.over_limit || metric.usage_ratio >= 0.9;
 }
 
+/** Missing plugin monitoring evidence is not a connection outage when runtime evidence succeeds. */
+export function hasPortalRuntimeSuccessWithoutPluginReports(overview: PortalMonitoringOverviewSummary): boolean {
+  return overview.window.hours === 24
+    && overview.activity.runtime_runs_total > 0
+    && overview.activity.runtime_success_rate === 1
+    && overview.activity.plugin_events_total === 0
+    && overview.activity.plugin_errors_total === 0
+    && overview.action_required.some((item) => item.code === 'plugin_observability.inactive')
+    && overview.action_required.every((item) =>
+      item.code === 'plugin_observability.inactive'
+      || ['quota', 'knowledge'].includes(getPortalMonitoringIssueCategory(item))
+      || (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item))
+    );
+}
+
+export function isPortalActionableServiceIssue(
+  item: PortalMonitoringOverviewAction,
+  overview: PortalMonitoringOverviewSummary
+): boolean {
+  if (getPortalMonitoringIssueCategory(item) === 'knowledge') return false;
+  if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) return false;
+  if (item.code === 'plugin_observability.inactive' && hasPortalRuntimeSuccessWithoutPluginReports(overview)) return false;
+  return true;
+}
+
 export function getPortalServiceOperationStatus(
   overview: PortalMonitoringOverviewSummary
 ): PortalServiceOperationStatus {
@@ -161,14 +249,7 @@ export function getPortalServiceOperationStatus(
   // Quiet default: only actionable service/connection items drive customer status.
   // Soft component scores (e.g. runtime latency) without action_required stay silent.
   const serviceActions = overview.action_required.filter(
-    (item) => {
-      if (['quota', 'knowledge'].includes(getPortalMonitoringIssueCategory(item))) return false;
-      // Optional-plugin gaps must not paint service operation warning.
-      if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) {
-        return false;
-      }
-      return true;
-    }
+    (item) => getPortalMonitoringIssueCategory(item) !== 'quota' && isPortalActionableServiceIssue(item, overview)
   );
   if (serviceActions.some((item) => item.severity === 'error')) return 'error';
   if (serviceActions.length > 0) return 'warning';

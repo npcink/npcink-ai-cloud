@@ -34,6 +34,9 @@ import {
   issueCount,
   issueEvidenceGuidance,
   issueOwner,
+  issueImpact,
+  issueVerification,
+  providerFailureAction,
   issueTitle,
   runtimeEvidenceItems,
   runStatusLabel,
@@ -369,6 +372,7 @@ export default function AdminTroubleshootingPage() {
                 <h2 className="flex min-w-0 items-center text-sm font-semibold">{issueTitle(selectedIssue, t)}<AdminHelpTip label={t('admin.troubleshooting.issue_meaning')}>{issueEvidenceGuidance(selectedIssue, t)}</AdminHelpTip></h2>
                 {selectedIssue.code === 'hosted_model.provider_errors' ? <span data-ui="provider-recovery-status" className="flex shrink-0 items-center text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.recovery_pending')}<AdminHelpTip label={t('admin.troubleshooting.recovery_pending')}>{t('admin.troubleshooting.failure_recovery_unverified')}</AdminHelpTip></span> : <span className="text-xs text-slate-500">{t(selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.unmetered_runs' ? 'admin.troubleshooting.evidence_gap' : 'admin.troubleshooting.recorded_error')}</span>}
               </div>
+              <p data-ui="runtime-issue-impact" className="px-3 pb-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{error ? t('admin.troubleshooting.stale_handling') : issueImpact(selectedIssue, t)}</p>
               <div role="tablist" aria-label={t('admin.troubleshooting.issue_views')} className="mx-3 flex gap-4 border-b border-slate-200 dark:border-slate-800">
                 {panelTabs.map((tab, index) => <button key={tab.id} id={`diagnostic-tab-${tab.id}`} type="button" role="tab"
                   aria-selected={activePanel === tab.id} aria-controls={`diagnostic-panel-${tab.id}`} tabIndex={activePanel === tab.id ? 0 : -1}
@@ -404,7 +408,9 @@ export default function AdminTroubleshootingPage() {
                 </section>
               <section data-ui="runtime-investigation-actions" className="min-w-0 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                 <div className="flex flex-wrap items-baseline gap-3"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.next_action')}</h3><span className="text-xs text-slate-500">{t('admin.troubleshooting.owner_label')}: {issueOwner(selectedIssue, t)}</span></div>
-                <p className="text-sm leading-6">{firstFailure ? t(`admin.troubleshooting.failure_step_${failureReasonKey === 'output_schema_invalid' ? 'schema' : failureReasonKey === 'timeout' ? 'timeout' : 'unknown'}`) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}</p>
+                {firstFailure ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.sample_action_scope')}</p> : null}
+                <p className="text-sm leading-6">{firstFailure ? providerFailureAction(firstFailure.reason, t) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}</p>
+                {!error && !refreshing ? <p data-ui="runtime-verification-guidance" className="text-xs leading-5 text-slate-600 dark:text-slate-300"><span className="font-semibold">{t('admin.troubleshooting.verify_title')}: </span>{issueVerification(selectedIssue, t)}</p> : null}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
                     : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
@@ -494,7 +500,7 @@ export default function AdminTroubleshootingPage() {
               <p className="col-span-full text-slate-500">{t('admin.troubleshooting.call_evidence_note')}</p>
             </> : null}
           </dl>
-          {detailRecord.failures.length ? <section className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.issue_provider_errors')}</h3><p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>{detailRecord.failures.map((failure, index) => <div key={index} className="space-y-1 break-all text-xs"><p>{formatDate(failure.occurredAt)} · {failure.providerId} / {failure.modelId}</p><p><code>{failure.errorCode}</code></p><p>{t(`admin.troubleshooting.failure_reason_${['output_schema_invalid', 'invalid_request', 'timeout'].includes(failure.reason) ? failure.reason : 'unknown'}`)}</p></div>)}</section> : null}
+          {detailRecord.failures.length ? <section className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.issue_provider_errors')}</h3><p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>{detailRecord.failures.map((failure, index) => <div key={index} className="space-y-1 break-all text-xs"><p>{formatDate(failure.occurredAt)} · {failure.providerId} / {failure.modelId}</p><p><code>{failure.errorCode}</code></p><p>{t(`admin.troubleshooting.failure_reason_${['output_schema_invalid', 'invalid_request', 'timeout'].includes(failure.reason) ? failure.reason : 'unknown'}`)}</p><p data-ui="runtime-record-handling">{providerFailureAction(failure.reason, t)}</p></div>)}</section> : null}
         </div> : null}
       </AdminInspectorDrawer>
     </BackofficePageStack>

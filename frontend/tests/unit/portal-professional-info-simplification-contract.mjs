@@ -90,8 +90,16 @@ assert.match(
 );
 assert.doesNotMatch(
   siteKnowledgeSource,
-  /AnalyticsLineChart|AnalyticsBarChart|p95|top1|embedding_provider|embedding_model|embedding_dimensions|vector_backend|current_chunk_count|indexed_chunks_total|\.timeline|\.intents/,
+  /AnalyticsLineChart|AnalyticsBarChart|top1|current_chunk_count|indexed_chunks_total|\.timeline|\.intents/,
   'Portal site knowledge must not expose vector internals or operator performance diagnostics'
+);
+// Backend latency/configuration fields may select bounded customer guidance;
+// they must not become raw labels/values on the customer surface. The rendered
+// local-knowledge guidance tests also verify that backend identifiers stay hidden.
+assert.doesNotMatch(
+  siteKnowledgeSource,
+  /(?:>\s*|portal\.vector_obs\.)(?:P95|p95_latency|embedding_provider|embedding_model|embedding_dimensions|vector_backend)\b|\{\s*(?:totals|snapshot)\??\.(?:p95_search_latency_ms|embedding_provider|embedding_model|embedding_dimensions|vector_backend)\s*\}/,
+  'Portal knowledge guidance must not render raw vector configuration or latency fields'
 );
 assert.match(
   pluginMonitoringSource,

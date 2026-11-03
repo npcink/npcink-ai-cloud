@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { buildRuntimeTelemetryFixture } from './helpers/runtime-telemetry-fixture';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -191,4 +192,51 @@ test('commercial watch action names the general service-status destination', asy
   }) }));
   await page.goto('/admin');
   await expect(page.locator('[data-ui="admin-overview-action"]').getByRole('link', { name: /Open service status|打开服务状态/ })).toHaveAttribute('href', '/admin/coverage');
+});
+
+
+test('overview diagnostic links retain the selected problem and source start for fresh review', async ({ page }) => {
+  await installAdminMocks(page);
+  // The shared historical fixture predates this source scope. Return a valid,
+  // fresh destination response with a different issue to test preserved focus.
+  await page.route(/\/api\/admin\/runtime-telemetry\?/, route => route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
+    generated_at: '2026-11-03T08:01:00Z',
+    totals: { runs: 2, provider_call_run_coverage_rate: 0.5 },
+    alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_call_gap', count: 1, severity: 'warning', capabilities: ['text'] }] },
+  }, new URL(route.request().url()).searchParams)) }));
+  const code = 'hosted_model.failed_runs';
+  await page.route('**/api/admin/overview', route => route.fulfill({ json: buildAdminApiEnvelope({
+    runtime_telemetry: { generated_at: '2026-11-03T08:00:00Z', filters: { site_id: 'site-alpha', recent_minutes: 1440 }, alert_summary: { status: 'warning', alerts: [{ code, count: 1, severity: 'warning', capabilities: ['text'] }] } },
+    operator_projection: {
+      revision: 'admin-overview-operator-projection-v1', status: 'warning', readiness: { status: 'ready', checks_failed: 0, failure_scopes: [] }, primary_action: { kind: 'runtime_telemetry', href: '/admin/troubleshooting' },
+      watch_items: [{ code: 'runtime_telemetry', scope: 'runtime.telemetry_coverage', severity: 'warn', value: 1, detail_args: { alert_code: code } }],
+    },
+  }) }));
+  await page.goto('/admin');
+  const expected = '/admin/troubleshooting?window=336&site=site-alpha&since=2026-11-02T08%3A00%3A00.000Z&focus=hosted_model.failed_runs';
+  await expect(page.locator('[data-ui="admin-overview-action"] a')).toHaveAttribute('href', expected);
+  await expect(page.locator('[data-ui="backoffice-page-header"] a.btn-primary')).toHaveAttribute('href', expected);
+  const link = page.locator('[data-ui="overview-runtime-issue-link"]');
+  await expect(link).toHaveAttribute('href', expected);
+  await page.locator('details').filter({ has: page.locator('summary', { hasText: /Platform usage and extended evidence|平台用量与扩展证据/ }) }).locator('summary').click();
+  await link.click();
+  await expect(page).toHaveURL(/focus=hosted_model.failed_runs/);
+  // A changed live scope may not contain the snapshot's issue; never silently select another.
+  await expect(page.locator('[data-ui="runtime-focus-absent"]')).toBeVisible();
+  await expect(page.locator('[data-ui="runtime-diagnostic-issue"][aria-pressed="true"]')).toHaveCount(0);
+});
+
+test('overview keeps an unmatched projected issue distinct and does not invent source time', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/overview', route => route.fulfill({ json: buildAdminApiEnvelope({
+    runtime_telemetry: { generated_at: 'not-a-time', filters: { recent_minutes: 1440 }, alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_call_gap', count: 1, severity: 'warning', capabilities: [] }] } },
+    operator_projection: {
+      revision: 'admin-overview-operator-projection-v1', status: 'warning', readiness: { status: 'ready', checks_failed: 0, failure_scopes: [] }, primary_action: { kind: 'runtime_telemetry', href: '/admin/troubleshooting' },
+      watch_items: [{ code: 'runtime_telemetry', scope: 'runtime.telemetry_coverage', severity: 'warn', value: 1, detail_args: { alert_code: 'hosted_model.failed_runs' } }],
+    },
+  }) }));
+  await page.goto('/admin');
+  const action = page.locator('[data-ui="admin-overview-action"]');
+  await expect(action).not.toContainText(/Call records missing|调用记录缺失/);
+  await expect(action.locator('a')).toHaveAttribute('href', '/admin/troubleshooting?window=336&focus=hosted_model.failed_runs');
 });

@@ -239,12 +239,18 @@ export async function installAdminMocks(
       principal_id: 'platform:operator-e2e',
       identity_type: 'platform_admin',
       role: 'platform_admin',
+      capabilities: { can_manage_accounts: true },
     });
   });
 
   await page.route('**/api/admin/**', async (route) => {
     const url = new URL(route.request().url());
     const { pathname, searchParams } = url;
+
+    if (pathname === '/api/admin/customer-notifications' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], total_count: 0, limit: 20, offset: Number(searchParams.get('offset') || 0) });
+      return;
+    }
 
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/subscription` && route.request().method() === 'POST') {
       const payload = route.request().postDataJSON() as Record<string, unknown>;

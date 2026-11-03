@@ -32,6 +32,9 @@ from app.adapters.providers.compatibility import (
     normalize_provider_error_code,
 )
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
+)
 
 DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
     "deepseek-v4-flash": {
@@ -805,7 +808,11 @@ class OpenAIProviderAdapter:
                 "model": runtime_model_id,
                 "input": {"image": image} if image else self._resolve_embedding_input(options),
                 "truncate": False,
-                "keep_alive": "2m",
+                # Keep the local development model warm between editor checks.
+                # Other Ollama connections retain their existing residency.
+                "keep_alive": (
+                    "10m" if self.provider_id == SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID else "2m"
+                ),
                 "options": {"num_ctx": 8192},
             }
         if request.endpoint_variant == "embeddings":

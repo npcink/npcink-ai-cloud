@@ -26,6 +26,8 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'portal.monitoring.guidance_':
+    'src/lib/portal-monitoring-display.ts; bounded CUSTOMER_ISSUE_GUIDANCE kind tokens with title/detail suffixes and explicit unknown fallback',
   'admin.payments.status.':
     'src/features/admin/accounts/AccountPaymentOrders.tsx; existing payment/refund status values with literal unknown fallback',
   'admin.payments.block.':
@@ -33,6 +35,8 @@ export const FAMILY_SOURCES = {
   'admin.agent_feedback.recommendation_':
     'src/features/admin/agent-feedback/RecommendationQuality.tsx; bounded metric array and internal_links/related_articles family identifiers',
   'admin.economics.': 'src/app/admin/economics/page.tsx; table labels and backend family labels with literal unknown fallback',
+  'admin.notices.reason_':
+    'src/app/admin/customer-notifications/page.tsx; bounded recipient eligibility and change reasons',
   'portal.notifications.event_':
     'src/app/portal/notifications/page.tsx; bounded support_request_replied or unknown notification event label',
   'admin.ai_advisor.metric_':
@@ -73,8 +77,12 @@ export const FAMILY_SOURCES = {
     'src/app/admin/plans/page.tsx; plan state values from backend plans directory',
   'admin.troubleshooting.failure_reason_':
     'src/app/admin/troubleshooting/page.tsx; bounded set output_schema_invalid/invalid_request/timeout/unknown from provider failure reasons',
+  'admin.troubleshooting.impact_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded issue code mapping provider/failed/call_gap/meter_gap/unknown',
+  'admin.troubleshooting.verify_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded evidence/outcome verification paths',
   'admin.troubleshooting.failure_step_':
-    'src/app/admin/troubleshooting/page.tsx; bounded set schema/timeout/unknown from provider failure reasons',
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded set schema/invalid_request/timeout/unknown from provider failure reasons',
   'admin.plugin_obs_attention_':
     'src/app/admin/plugin-observability/page.tsx attentionCopy; field title/detail with suffixes from attentionCodeSuffix over backend plugin_observability.* attention codes, plus *_default',
   'admin.plugin_obs_window_':

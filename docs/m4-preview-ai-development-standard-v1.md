@@ -373,6 +373,17 @@ LaunchAgent KeepAlive, but the postflight MUST NOT bootstrap, enable, kickstart,
 stop, install, or take over Ollama. Explicit restart and recovery commands keep
 their existing lifecycle authority.
 
+Local Site Knowledge's `ollama-m4-embedding` native embedding requests keep
+the model resident for 10 minutes of inactivity to reduce repeated editor-check
+cold starts. This is finite residency, not guaranteed warm performance: the first
+request and requests after expiry or memory eviction can still load the model.
+Other Ollama connections retain their existing residency. The 8B/4096-dimensional
+local model occupies about 7 GB on the current 16 GB M4; do not make it permanently
+resident or extend residency further without checking competing model/build load.
+Local `postgres_json` scans are a development fallback, not evidence of hosted
+embedding API/vector-database latency. Model/vector-space changes require matching
+indexes and a separate hosted-path validation before production use.
+
 M4 source application MUST validate the fully extracted incoming Compose and
 Nginx inputs before changing the live source mirror. A configuration failure
 MUST retain the previous complete bind-mounted configuration and running

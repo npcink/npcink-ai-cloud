@@ -1516,9 +1516,12 @@ function AccountDetailContent() {
         description={t('admin.account_detail.page_help', {}, 'Review this customer’s package, access, usage and sites.')}
         summaryItems={headerMetrics}
         secondaryAction={(
+          <div className="flex flex-wrap gap-2">
+          <Link href={`/admin/customer-notifications?account=${encodeURIComponent(account.account_id)}`} className="btn btn-secondary">{t('admin.notices.send')}</Link>
           <Link href={returnTo} className="btn btn-secondary">
             {t('admin.back_to_accounts')}
           </Link>
+          </div>
         )}
       />
 

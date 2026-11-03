@@ -86,8 +86,8 @@ assert.match(siteRecord, /attention=\{[\s\S]*attentionAction/, 'Page passes atte
 assert.match(siteRecord, /isPortalPluginMissingAction|getPortalCustomerIssueDetail/, 'Site detail maps plugin_missing to customer detail copy');
 assert.match(siteRecord, /secondaryAction:\s*attentionSecondaryAction/, 'plugin_missing keeps Recheck as secondary action');
 assert.match(siteServiceStatus, /data-portal-site="attention-detail"/, 'Attention detail is visible, not tooltip-only');
-assert.match(siteServiceStatus, /serviceWarningCoveredByAttention|PortalStatusInline/, 'Service row must not duplicate yellow Needs attention when attention already explains it');
-assert.match(siteServiceStatus, /portal\.monitoring\.service_explained_above/);
+assert.match(siteServiceStatus, /showServiceOperationRow = !attention/, 'Attention owns its status; do not render a duplicate service row');
+assert.doesNotMatch(siteServiceStatus, /portal\.monitoring\.service_explained_above/, 'Do not replace the duplicate row with See note above');
 assert.match(siteKnowledge, /hardUpdateFailure|softUpdateIssue/, 'Knowledge uses graded severity, not always Update failed');
 assert.match(siteKnowledge, /portal\.vector_obs\.status_usable|portal\.vector_obs\.soft_update_note/);
 assert.match(siteKnowledge, /data-portal-site="knowledge-help"/, 'Knowledge intro goes in ⓘ near title');

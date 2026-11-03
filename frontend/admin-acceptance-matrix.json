@@ -290,6 +290,15 @@
       "focusedSpecs": [
         "tests/e2e/admin-vector-settings.spec.ts"
       ]
+    },
+    {
+      "routePattern": "/admin/customer-notifications",
+      "smokePath": "/admin/customer-notifications",
+      "pageModel": "configuration",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": [
+        "tests/e2e/admin-customer-notifications.spec.ts"
+      ]
     }
   ]
 }

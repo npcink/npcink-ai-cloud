@@ -42,6 +42,16 @@ environment, transaction and authorization. No price change, real WeChat API,
 new marketing system, broad commercial expansion or paused-feature restoration
 is included in this rollout.
 
+## Bounded manual service notices (2026-11-03)
+
+The operator authorized immediate manual service notices to the existing Portal
+inbox: selected customers or a fixed current active-account snapshot, preview,
+explicit send confirmation, durable operation history and readback after an
+unknown response. This also covers existing notification copy, event labels and
+bounded Portal destinations. Follow [the service-notice contract](../customer-service-notifications-v1.md).
+Email, marketing, scheduling and broader notification expansion stay deferred.
+This development authorization does not authorize real customer sends or production deployment.
+
 ## Deferred follow-on order (not implementation authorization)
 
 The [2026-10-27 value-first decision](phase-1-scope.md#value-first-development-decision-2026-10-27)

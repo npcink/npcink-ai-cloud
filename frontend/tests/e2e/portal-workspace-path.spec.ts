@@ -121,6 +121,11 @@ function buildPortalSession(
 async function installPortalMocks(
   page: Page,
   options: {
+    successfulRuntimeWithoutReports?: boolean;
+    knowledgeSlow?: boolean;
+    localKnowledgePreview?: boolean;
+    connectionGuidanceCode?: string;
+    knowledgeWarning?: boolean;
     commercialEmergencyStop?: boolean;
     paymentReturnFlow?: boolean;
     paymentReturnProcessingStep?: boolean;
@@ -1128,8 +1133,8 @@ async function installPortalMocks(
           end_at: '2026-04-07T10:00:00Z',
         },
         totals: {
-          index_jobs_total: isClearSite ? 3 : 0,
-          index_succeeded_total: isClearSite ? 3 : 0,
+          index_jobs_total: isClearSite ? (options.knowledgeSlow ? 99 : 3) : 0,
+          index_succeeded_total: isClearSite ? (options.knowledgeSlow ? 99 : 3) : 0,
           index_failed_total: 0,
           index_success_rate: isClearSite ? 1 : 0,
           accepted_documents_total: isClearSite ? 86 : 0,
@@ -1140,14 +1145,14 @@ async function installPortalMocks(
           avg_index_duration_ms: 0,
           p95_index_duration_ms: 0,
           last_index_job_finished_at: isClearSite ? '2026-04-07T09:30:00Z' : '',
-          search_queries_total: isClearSite ? 32 : 0,
-          search_succeeded_total: isClearSite ? 32 : 0,
+          search_queries_total: isClearSite ? (options.knowledgeSlow ? 106 : 32) : 0,
+          search_succeeded_total: isClearSite ? (options.knowledgeSlow ? 106 : 32) : 0,
           search_failed_total: 0,
           search_success_rate: isClearSite ? 1 : 0,
-          no_hit_total: isClearSite ? 3 : 0,
-          no_hit_rate: isClearSite ? 0.09375 : 0,
+          no_hit_total: isClearSite ? (options.knowledgeSlow ? 13 : options.knowledgeWarning ? 16 : 3) : 0,
+          no_hit_rate: isClearSite ? (options.knowledgeSlow ? 0.1226 : options.knowledgeWarning ? 0.5 : 0.09375) : 0,
           avg_search_latency_ms: 0,
-          p95_search_latency_ms: 0,
+          p95_search_latency_ms: options.knowledgeSlow ? 5391 : 0,
           avg_top1_score: 0,
           avg_result_score: 0,
           last_search_finished_at: isClearSite ? '2026-04-07T09:45:00Z' : '',
@@ -1157,7 +1162,7 @@ async function installPortalMocks(
           current_chunk_count: isClearSite ? 214 : 0,
         },
         health: {
-          status: isClearSite ? 'ok' : 'inactive',
+          status: isClearSite ? (options.knowledgeWarning || options.knowledgeSlow ? 'warning' : 'ok') : 'inactive',
           score: isClearSite ? 100 : 0,
           summary: '',
         },
@@ -1171,10 +1176,10 @@ async function installPortalMocks(
               post_type_counts: { post: 80, page: 6 },
               source_type_counts: { wordpress: 86 },
               last_indexed_at: '2026-04-07T09:30:00Z',
-              embedding_provider: 'hidden-from-portal',
+              embedding_provider: options.localKnowledgePreview ? 'ollama-m4-embedding' : 'hidden-from-portal',
               embedding_model: 'hidden-from-portal',
               embedding_dimensions: 1024,
-              vector_backend: 'hidden-from-portal',
+              vector_backend: options.localKnowledgePreview ? 'postgres_json' : 'hidden-from-portal',
               captured_at: '2026-04-07T09:30:00Z',
             }]
           : [],
@@ -1205,7 +1210,7 @@ async function installPortalMocks(
         site: {
           site_id: 'site_attention',
           name: 'Attention Site',
-          site_url: '',
+          site_url: options.connectionGuidanceCode ? 'https://attention.example.test' : '',
           platform_kind: 'wordpress',
           status: 'active',
         },
@@ -1247,8 +1252,8 @@ async function installPortalMocks(
         },
         action_required: [
           {
-            code: 'plugin_observability.plugin_error',
-            severity: 'warning',
+            code: options.connectionGuidanceCode || 'plugin_observability.plugin_error',
+            severity: options.connectionGuidanceCode === 'site_monitoring.connection_credential_missing' ? 'error' : 'warning',
             source: 'plugins',
             title: 'Plugin error detected',
             detail: 'Adapter reported wordpress.fatal_error.',
@@ -1267,14 +1272,14 @@ async function installPortalMocks(
         },
         activity: {
           last_seen_at: '2026-04-07T09:00:00Z',
-          plugin_events_total: 24,
-          plugin_errors_total: 2,
+          plugin_events_total: options.successfulRuntimeWithoutReports ? 0 : 24,
+          plugin_errors_total: options.connectionGuidanceCode ? 0 : 2,
           media_jobs_total: 4,
           media_failed_total: 0,
           vector_searches_total: 8,
           vector_no_hit_total: 1,
-          runtime_runs_total: 21,
-          runtime_success_rate: 0.98,
+          runtime_runs_total: options.successfulRuntimeWithoutReports ? 15 : 21,
+          runtime_success_rate: options.successfulRuntimeWithoutReports ? 1 : 0.98,
           runtime_p95_latency_ms: 520,
         },
         components: [
@@ -3305,4 +3310,107 @@ test.describe('site usage bounded day records', () => {
     await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
     await expect(dialog.locator('[data-portal-usage="records-day-row"]')).toHaveCount(1);
   });
+});
+
+for (const scenario of [
+  { code: 'plugin_observability.reporting_stale', title: '站点连接上报已过时', next: '确认 Cloud Addon 已启用且已连接', wordpress: true, locale: 'zh-CN' },
+  { code: 'plugin_observability.latency_high', title: 'Recent connection responses were slow', next: 'Historical slow records may remain', wordpress: false, locale: 'en-US' },
+  { code: 'site_monitoring.connection_credential_missing', title: 'No active site connection credential', next: 'reconnect there', wordpress: true, locale: 'en-US' },
+  { code: 'future.unknown_connection_issue', title: 'Site connection needs attention', next: 'exact cause is not identified', wordpress: false, locale: 'en-US' },
+]) {
+  test(`site warning gives a concrete next step: ${scenario.code}`, async ({ page }, testInfo) => {
+    await page.addInitScript((locale) => window.localStorage.setItem('locale', locale), scenario.locale);
+    await installPortalMocks(page, { connectionGuidanceCode: scenario.code });
+    const writes: string[] = [];
+    await page.goto('/portal/sites/site_attention');
+    const attention = page.locator('[data-portal-site="attention-focus"]');
+    await expect(attention).toContainText(scenario.title);
+    await expect(page.locator('[data-portal-site="service-status-evidence"]')).toHaveCount(0);
+    await expect(attention.locator('[data-portal-site="attention-detail"]')).toContainText(scenario.next);
+    await expect(attention.getByRole('link', { name: /Contact support|联系支持/ })).toHaveAttribute('href', '/portal/support?new=1&topic=site&site=site_attention');
+    if (scenario.wordpress) {
+      await expect(attention.locator('[data-portal-site="attention-cta"]')).toHaveAttribute('href', 'https://attention.example.test/wp-admin/');
+    }
+    page.on('request', (request) => {
+      if (request.url().includes('/api/portal/') && request.method() !== 'GET') writes.push(request.method());
+    });
+    await attention.getByRole('button', { name: /Recheck service|重新检查服务/ }).click();
+    await expect(attention.locator('[data-portal-site="recheck-notice"]')).toContainText(/does not repair|不会修复连接/);
+    expect(writes).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('site-guidance-1440.png'), fullPage: true });
+    await page.setViewportSize({ width: 1056, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('site-guidance-1056.png'), fullPage: true });
+    await attention.getByRole('link', { name: /Contact support|联系支持/ }).click();
+    await expect(page).toHaveURL(/portal\/support\?new=1&topic=site&site=site_attention/);
+  });
+}
+
+test('knowledge warning shows the reason, scope and next step', async ({ page }, testInfo) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installPortalMocks(page, { knowledgeWarning: true });
+  await page.goto('/portal/sites/site_clear');
+  const guidance = page.locator('[data-portal-site="knowledge-guidance"]');
+  await expect(guidance).toContainText('最近 7 天');
+  await expect(guidance).toContainText('32 次检索中有 16 次未找到相关内容');
+  await expect(guidance).toContainText('核对下方');
+  await expect(guidance).toContainText('不会重新同步内容');
+  await expect(guidance.getByRole('link')).toHaveAttribute('href', '/portal/support?new=1&topic=site&site=site_clear');
+  await page.screenshot({ path: testInfo.outputPath('knowledge-guidance.png'), fullPage: true });
+});
+
+
+test('successful AI requests keep a reporting gap neutral without a duplicate status row', async ({ page }, testInfo) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installPortalMocks(page, { connectionGuidanceCode: 'plugin_observability.inactive', successfulRuntimeWithoutReports: true });
+  await page.goto('/portal/sites/site_attention');
+  const service = page.locator('[data-portal-site="service-status"]');
+  await expect(service.locator('[data-portal-site="attention-focus"]')).toHaveCount(0);
+  await expect(service.locator('[data-portal-site="service-status-evidence"]')).toHaveCount(0);
+  await expect(service.locator('[data-portal-site="monitoring-gap-note"]')).toContainText('15 次 AI 请求均成功');
+  await expect(service).toContainText('无需仅为此重连');
+  await expect(service).toContainText('暂未收到站点连接报告');
+  await expect(service).not.toContainText('见上方说明');
+  await page.screenshot({ path: testInfo.outputPath('reporting-gap.png'), fullPage: true });
+});
+
+test('slow knowledge searches explain latency without telling customers to reconnect or resync', async ({ page }, testInfo) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installPortalMocks(page, { knowledgeSlow: true });
+  await page.goto('/portal/sites/site_clear');
+  const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+  await expect(knowledge).toContainText('检索较慢');
+  const guidance = knowledge.locator('[data-portal-site="knowledge-guidance"]');
+  await expect(guidance).toContainText('5.4 秒');
+  await expect(guidance).toContainText('106 次检索、99 次更新');
+  await expect(guidance).toContainText('均未记录到失败');
+  await expect(guidance).toContainText('可以继续使用');
+  await expect(guidance).toContainText('最近一次检索');
+  await expect(guidance).toContainText('不能据此判断当前响应速度');
+  await expect(guidance).toContainText('无需仅为这条慢响应提醒重连站点或重新同步内容');
+  await page.screenshot({ path: testInfo.outputPath('slow-knowledge.png'), fullPage: true });
+});
+
+test('local knowledge latency guidance follows the explicit development environment', async ({ page }, testInfo) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installPortalMocks(page, { knowledgeSlow: true, localKnowledgePreview: true });
+  await page.goto('/portal/sites/site_clear');
+  const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+  const guidance = knowledge.locator('[data-portal-site="knowledge-guidance"]');
+  await expect(guidance).toContainText('5.4 秒');
+  await expect(guidance).toContainText('最近一次检索');
+  if (process.env.NEXT_PUBLIC_ENV === 'development') {
+    await expect(knowledge).toContainText('开发检索较慢');
+    await expect(guidance).toContainText('耗时不代表上线后的正式向量服务性能');
+    await expect(guidance).toContainText('慢响应由开发侧处理');
+    await expect(guidance).not.toContainText('请联系支持');
+  } else {
+    await expect(guidance).not.toContainText('本地开发');
+    await expect(guidance).toContainText('请联系支持');
+  }
+  for (const width of [1440, 1056]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(guidance).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`local-search-${width}.png`), fullPage: true });
+  }
 });

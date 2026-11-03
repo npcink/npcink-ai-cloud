@@ -2516,7 +2516,7 @@ class MediaDerivativeJobMetric(Base):
 class PortalNotification(Base):
     """Portal 站内通知（收件箱 MVP）。
 
-    仅支持工单公开回复，与回复及审计同事务写入。SMTP 在提交后尽力发送。
+    复用工单回复、有限生命周期提醒和手动服务通知；个人已读状态按收件人隔离。
     """
 
     __tablename__ = "portal_notifications"
@@ -2551,3 +2551,26 @@ class PortalNotification(Base):
         server_default=func.now(),
     )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CustomerNotificationDispatch(Base):
+    """Immutable service notice preview and its bounded recipient snapshot."""
+
+    __tablename__ = "customer_notification_dispatches"
+    __table_args__ = (
+        CheckConstraint("status IN ('preview', 'sent')", name="ck_notification_dispatch_status"),
+        Index("ix_notification_dispatch_created", "created_at", "dispatch_id"),
+    )
+
+    dispatch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    link_href: Mapped[str] = mapped_column(String(1024))
+    audience: Mapped[str] = mapped_column(String(32))
+    actor_kind: Mapped[str] = mapped_column(String(32))
+    actor_ref: Mapped[str] = mapped_column(String(191))
+    status: Mapped[str] = mapped_column(String(32))
+    recipients_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

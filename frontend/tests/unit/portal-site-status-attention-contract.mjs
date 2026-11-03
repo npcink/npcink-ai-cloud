@@ -24,8 +24,8 @@ assert.match(page, /secondaryAction:\s*attentionSecondaryAction/);
 
 assert.match(service, /attention-detail/);
 assert.match(page, /testId: 'attention-secondary'/);
-assert.match(service, /serviceWarningCoveredByAttention/);
-assert.match(service, /PortalStatusInline/);
+assert.match(service, /showServiceOperationRow = !attention/);
+assert.doesNotMatch(service, /portal\.monitoring\.service_explained_above/);
 
 assert.match(knowledge, /hardUpdateFailure/);
 assert.match(knowledge, /softUpdateIssue/);

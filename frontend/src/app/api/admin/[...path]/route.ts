@@ -35,6 +35,24 @@ type AdminRouteResolution = {
 };
 
 const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
+  {
+    methods: ['GET', 'POST'],
+    pattern: /^customer-notifications$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^customer-notifications\/notice_[a-f0-9]{32}$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^customer-notifications\/notice_[a-f0-9]{32}\/send$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
   // Operator and diagnostic reads.
   {
     methods: ['GET'],

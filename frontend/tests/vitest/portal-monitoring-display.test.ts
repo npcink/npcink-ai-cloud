@@ -6,6 +6,10 @@ import type {
 } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
+  getPortalCustomerIssueDetail,
+  hasPortalRuntimeSuccessWithoutPluginReports,
+  isPortalActionableServiceIssue,
+  isPortalWordPressConnectionAction,
   getPortalMonitoringIssueCategory,
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
@@ -104,7 +108,7 @@ describe('Portal monitoring display categories', () => {
     expect(getPortalMonitoringIssueCategory(pluginAction)).toBe('connection');
     expect(getPortalMonitoringIssueCategory(credentialAction)).toBe('connection');
     expect(getPortalCustomerIssueTitle(pluginAction, translate)).toBe(
-      'Site connection needs attention'
+      'Recent connection errors were recorded'
     );
   });
 
@@ -195,6 +199,52 @@ describe('Portal monitoring display categories', () => {
       action_required: [optionalOnly],
       components: [{ component: 'runtime', status: 'warning', score: 85, summary: '' }],
     }))).toBe('active');
+  });
+
+  it('distinguishes stale evidence, credential problems and slow responses with actionable guidance', () => {
+    for (const [code, title, next, wordpress] of [
+      ['plugin_observability.reporting_stale', 'Site connection reports are out of date', 'check that Cloud Addon is active and connected', true],
+      ['site_monitoring.connection_credential_missing', 'No active site connection credential', 'reconnect there', true],
+      ['site_monitoring.api_key_expiring', 'Site connection credential expires soon', 'does not renew the credential', true],
+      ['plugin_observability.latency_high', 'Recent connection responses were slow', 'Historical slow records may remain', false],
+    ] as const) {
+      const item = action('connection', code, 'Untranslated technical evidence');
+      expect(getPortalCustomerIssueTitle(item, translate)).toBe(title);
+      expect(getPortalCustomerIssueDetail(item, translate)).toContain(next);
+      expect(isPortalWordPressConnectionAction(item)).toBe(wordpress);
+    }
+  });
+
+  it('keeps an unknown cause explicit and gives a support path without inventing a repair', () => {
+    const item = action('connection', 'future.unknown', 'Private technical detail');
+    expect(getPortalCustomerIssueDetail(item, translate)).toContain('exact cause is not identified');
+    expect(getPortalCustomerIssueDetail(item, translate)).toContain('submit a ticket');
+    expect(getPortalCustomerIssueDetail(item, translate)).not.toContain('Private technical detail');
+    expect(isPortalWordPressConnectionAction(item)).toBe(false);
+  });
+  it('keeps missing reports visible as evidence without treating successful runtime as disconnected', () => {
+    const noReports = action('plugins', 'plugin_observability.inactive', 'No plugin events');
+    const working = overview({
+      health: { status: 'warning', score: 85, summary: '', components_count: 6 },
+      action_required: [noReports],
+      activity: { ...overview().activity, runtime_runs_total: 15, runtime_success_rate: 1 },
+    });
+    expect(hasPortalRuntimeSuccessWithoutPluginReports(working)).toBe(true);
+    expect(isPortalActionableServiceIssue(noReports, working)).toBe(false);
+    expect(getPortalServiceOperationStatus(working)).toBe('active');
+    for (const change of [
+      { runtime_runs_total: 0 },
+      { runtime_success_rate: 0.9 },
+      { plugin_errors_total: 1 },
+    ]) {
+      const unconfirmed = { ...working, activity: { ...working.activity, ...change } };
+      expect(isPortalActionableServiceIssue(noReports, unconfirmed)).toBe(true);
+      expect(getPortalServiceOperationStatus(unconfirmed)).toBe('warning');
+    }
+    const credential = action('connection', 'site_monitoring.connection_credential_missing', 'No active key');
+    expect(isPortalActionableServiceIssue(credential, working)).toBe(true);
+    expect(hasPortalRuntimeSuccessWithoutPluginReports({ ...working, action_required: [noReports, credential] })).toBe(false);
+    expect(isPortalActionableServiceIssue(noReports, { ...working, window: { ...working.window, hours: 168 } })).toBe(true);
   });
 
 });

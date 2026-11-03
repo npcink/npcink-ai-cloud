@@ -92,8 +92,8 @@ export default function PortalNotificationsPage() {
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800" aria-label={t('portal.notifications.title')}>
             {inbox.items.map((item) => {
-              const eventType = item.event_type === 'support_request_replied' ? 'support_request_replied' : 'unknown';
-              const href = item.link_href && /^\/portal\/support\/[A-Za-z0-9_-]+$/.test(item.link_href) ? item.link_href : null;
+              const eventType = ({ support_request_replied: 'support_request_replied', 'service.manual_notice': 'service_manual_notice', 'subscription.trial_expired': 'subscription_trial_expired', 'runtime.ai_credits_denied': 'runtime_ai_credits_denied' } as Record<string, string>)[item.event_type] || 'unknown';
+              const href = item.link_href && (/^\/portal\/support\/[A-Za-z0-9_-]+$/.test(item.link_href) || ['/portal', '/portal/account', '/portal/billing', '/portal/usage', '/portal/support'].includes(item.link_href)) ? item.link_href : null;
               return (
                 <li key={item.notification_id} data-notification-id={item.notification_id} className="py-4 first:pt-0 last:pb-0">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -101,7 +101,7 @@ export default function PortalNotificationsPage() {
                       <p className="mb-1 text-xs text-slate-500">{t(`portal.notifications.event_${eventType}`)} · {formatDate(item.created_at)}</p>
                       <h2 className="break-words text-sm font-semibold text-slate-950 dark:text-white">{item.title}</h2>
                       {item.body ? <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600 dark:text-slate-300">{item.body}</p> : null}
-                      {href ? <Link className="mt-2 inline-block text-sm text-blue-700 hover:underline dark:text-blue-300" href={href}>{t('portal.notifications.view_ticket')}</Link> : null}
+                      {href ? <Link className="mt-2 inline-block text-sm text-blue-700 hover:underline dark:text-blue-300" href={href}>{t(item.event_type === 'support_request_replied' ? 'portal.notifications.view_ticket' : 'portal.notifications.view_destination')}</Link> : null}
                     </div>
                     {item.is_read ? <span className="text-xs text-slate-500">{t('portal.notifications.read')}</span> : <button className="btn btn-secondary btn-sm shrink-0" type="button" disabled={busy} onClick={() => void markRead(item.notification_id)}>{t('portal.notifications.mark_read')}</button>}
                   </div>
