@@ -9,8 +9,8 @@
 
 ## 本地证据
 
-- 后端新功能domain/API/SQLite迁移：21 passed；3个真实PostgreSQL测试本地明确skip。
-- 新增功能及既有生命周期/收件箱/工单事务相关定向回归：44 passed。
+- 后端新功能domain/API/SQLite迁移：22 passed；3个真实PostgreSQL测试本地明确skip。
+- 新增功能及既有生命周期/收件箱/工单事务相关定向回归：44 passed；新增跨API收件/跨账户拒绝/已读反馈场景另2项通过。
 - `pnpm run verify:local`：通过；包含release-policy、Ruff correctness/import、targeted mypy、上述后端测试、TypeScript、ESLint、Admin28路由结构契约和定向Vitest。
 - 完整Ruff新Python文件通过；i18n completeness通过；新contracts/proxy与既有navigation Vitest共27 passed。
 - Admin视觉完整门禁：228项中227 passed、1张客户详情Mac golden失败。
@@ -29,16 +29,27 @@
 
 ## 候选与交付状态
 
-本地开发候选已验证；M4 candidate与真实PostgreSQL验证待本次后续记录。
-Linux对应golden需要真实Linux浏览器生成并审查；不会复制Mac图冒充Linux证据。
-CI、PR、merged、M4 accepted、production、human acceptance均未完成。
+本地开发候选已验证。首次M4 candidate为`3a46d9f9`，前后端均匹配该revision，
+source_dirty=false；Alembic0092 head，服务healthy，首页与health/live均200。
+真实API列表未鉴权401、internal鉴权200，批次数为0；没有真实客户投递。
+M4定向24项全部通过，包括3项真实PostgreSQL并发/迁移隔离证明；M4编译页面
+Admin4项＋Portal6项共10 passed（业务API为合成mocks，非真实用户发送）。
+
+补充跨API测试发现internal请求重放键单次消费，preview/send不能重用该键。
+已修复为每次请求新transport key、同一业务dispatch ID去重；新增真实鉴权API
+证明重复请求键409、换键发送成功、仅目标收件人可读及已读回写；浏览器5项通过，
+包含失败回滚后GET仍preview、保留批次并换键重试成功。最终补证版本的sync精确revision/健康响应与定向结果保存在外置`final-m4-*`记录。
+Linux对应golden已用M4现有官方Playwright1.59.1镜像生成并审查。
+Darwin/Linux差异bbox均为(736,19,1279,133)，除新增导航与发送入口两个区域外，
+像素差异为零。更新单张Linux基线后客户详情8项全部通过，未放宽阈值。
+CI、PR、merged、M4 accepted、production、human acceptance均未执行或待验收；不把candidate提升为accepted。
 本记录不授权生产部署或真实客户发送。
 
 ## 外置证据
 
 当前任务独立目录：`/Users/muze/.codex/visualizations/2026/11/03/customer-service-notifications/`。
 `local-broad/`保留新增页面截图/回执以及旧golden的actual/diff/trace；
-后续定向最终图保留在`local-final/`。截图均为合成客户与合成消息。
+后续定向最终图保留在`local-final/`；Linux红绿与M4浏览器证据分别保留在`linux-first/`、`linux-final/`和`m4-browser/`。截图均为合成客户与合成消息。
 
 ## Review / Risk
 

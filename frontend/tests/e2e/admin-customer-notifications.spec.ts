@@ -288,3 +288,63 @@ test('storage failure retains the latest text and blocks writes', async ({ page 
   await expect(page.getByRole('button', { name: 'Preview recipients', exact: true })).toBeDisabled();
   expect(writes).toBe(0);
 });
+
+test('retry after rolled-back send keeps the batch and renews the consumed request key', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en'));
+  await installAdminMocks(page);
+  let detail: Record<string, unknown> | null = null;
+  const keys = new Set<string>(), sentIds: string[] = [];
+  let sends = 0;
+  await page.route('**/api/admin/customer-notifications**', async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'GET') return route.fulfill({ json: buildAdminApiEnvelope(
+      url.pathname === '/api/admin/customer-notifications'
+        ? { items: detail ? [{ ...detail, recipients: undefined }] : [], total_count: detail ? 1 : 0, limit: 20, offset: 0 }
+        : detail,
+    ) });
+    const key = route.request().headers()['idempotency-key'];
+    expect(key).toBeTruthy();
+    if (keys.has(key)) return route.fulfill({ status: 409, json: {
+      status: 'error', error_code: 'auth.replay_blocked', message: 'request replay marker consumed', data: {}, meta: {},
+    } });
+    keys.add(key);
+    if (!url.pathname.endsWith('/send')) {
+      detail = {
+        ...route.request().postDataJSON(), status: 'preview', actor_kind: 'platform_admin', actor_ref: 'platform:operator-e2e',
+        created_at: '2026-11-03T05:00:00Z', sent_at: null, target_count: 1, ready_count: 1,
+        sent_count: 0, skipped_count: 0, read_count: 0, failed_count: 0,
+        recipients: [{ account_id: 'acct_one', account_name: 'Customer', principal_id: 'owner_one',
+          email: 'one@example.test', status: 'ready', reason: '', is_read: false }],
+      };
+    } else {
+      sends += 1;
+      sentIds.push(url.pathname.split('/').at(-2)!);
+      if (sends === 1) return route.fulfill({ status: 500, json: {
+        status: 'error', error_code: 'service.storage_failed', message: 'transaction rolled back', data: {}, meta: {},
+      } });
+      detail = { ...detail, status: 'sent', sent_at: '2026-11-03T05:10:00Z', ready_count: 0, sent_count: 1,
+        recipients: [{ ...(detail!.recipients as Record<string, unknown>[])[0], status: 'sent', notification_id: 'pnotif_retry' }],
+      };
+    }
+    return route.fulfill({ json: buildAdminApiEnvelope(detail) });
+  });
+  await page.goto(path);
+  await page.getByLabel('Recipients', { exact: true }).selectOption('all');
+  await page.getByLabel('Title', { exact: true }).fill('Retried notice');
+  await page.getByLabel('Message (plain text)', { exact: true }).fill('No duplicate inbox deliveries.');
+  await page.getByRole('button', { name: 'Preview recipients', exact: true }).click();
+  const send = async () => {
+    await page.getByRole('button', { name: 'Send notice', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Send notice', exact: true }).click();
+  };
+  await send();
+  await expect(page.getByRole('status')).toContainText('The result is unconfirmed');
+  await page.getByRole('button', { name: 'Read batch result', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Send notice', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'New notice', exact: true })).toBeDisabled();
+  await send();
+  await expect(page.getByRole('heading', { name: 'Delivery result', exact: true })).toBeVisible();
+  expect(sends).toBe(2);
+  expect(new Set(sentIds).size).toBe(1);
+  expect(keys.size).toBe(3);
+});

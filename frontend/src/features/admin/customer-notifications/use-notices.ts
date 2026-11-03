@@ -136,7 +136,7 @@ export function useNotices(accountId: string) {
       if (failure instanceof ApiError && failure.statusCode === 404 && current.pending !== 'send') {
         persist({ ...current, pending: '' });
       }
-      setError(resolveUiErrorMessage(failure, 'Unable to confirm notice'));
+      setError(t('admin.notices.read_failed'));
     } finally {
       if (version === generation.current) {
         busyRef.current = false;
@@ -175,7 +175,9 @@ export function useNotices(accountId: string) {
         {
           method: 'POST',
           body: action === 'preview' ? next.values : undefined,
-          idempotencyKey: `${next.values.dispatch_id}:${action}`,
+          // Internal replay markers are single-use, including failed attempts.
+          // The durable dispatch ID, rather than this transport key, deduplicates delivery.
+          idempotencyKey: `${next.values.dispatch_id}:${action}:${crypto.randomUUID()}`,
         },
       );
       const result = readDetail(response.data, next.values, actor);
@@ -188,18 +190,18 @@ export function useNotices(accountId: string) {
       if (version === generation.current) {
         // These server responses prove this operation did not commit. Unknown
         // network/server outcomes must keep the original dispatch identity.
-        if (failure instanceof ApiError && (
-          (action === 'send' && failure.errorCode === 'service.notification_preview_expired') ||
-          (action === 'preview' && ['service.notification_invalid', 'service.notification_audience_limit'].includes(failure.errorCode))
-        )) {
-          persist({ values: { ...next.values, dispatch_id: freshNotice(accountId).dispatch_id }, pending: '' });
+        const expired = failure instanceof ApiError && action === 'send' &&
+          failure.errorCode === 'service.notification_preview_expired';
+        const rejected = failure instanceof ApiError && action === 'preview' &&
+          ['service.notification_invalid', 'service.notification_audience_limit'].includes(failure.errorCode);
+        if (expired || rejected) {
+          persist({
+            values: { ...next.values, dispatch_id: freshNotice(accountId).dispatch_id },
+            pending: '',
+          });
           setDetail(null);
         }
-        setError(
-          failure instanceof ApiError && failure.errorCode === 'service.notification_preview_expired'
-            ? t('admin.notices.expired')
-            : resolveUiErrorMessage(failure, t('admin.notices.unknown')),
-        );
+        setError(expired ? t('admin.notices.expired') : rejected ? t('admin.notices.preview_rejected') : '');
       }
     } finally {
       if (version === generation.current) {
@@ -219,9 +221,9 @@ export function useNotices(accountId: string) {
       if (result.dispatch_id !== id) throw new Error('Notice does not match the requested batch');
       if (version !== generation.current) return;
       setDetail(result);
-    } catch (failure) {
+    } catch {
       if (version === generation.current)
-        setError(resolveUiErrorMessage(failure, 'Unable to read notice'));
+        setError(t('admin.notices.read_failed'));
     } finally {
       if (version === generation.current) {
         busyRef.current = false;

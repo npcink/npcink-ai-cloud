@@ -37,7 +37,8 @@ Cloud 自有客户服务消息不改变 WordPress 能力、审批、提示词或
 ## API 与数据
 
 均使用现有 internal 鉴权；浏览器代理额外要求 `can_manage_accounts`。
-写请求要求 Idempotency-Key。浏览器不能把任意 internal 路由透传为通知动作。
+写请求要求 Idempotency-Key；现有鉴权的请求键单次使用，每次重试生成新请求键，
+业务批次ID保持不变，由持久化批次保证不重复投递。浏览器不能把任意 internal 路由透传为通知动作。
 
 | Method | `/internal/service/admin` 下路径 | 行为 |
 | --- | --- | --- |
