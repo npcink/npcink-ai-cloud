@@ -32,6 +32,9 @@ Python, so the probe was repeated with the existing `/usr/bin/python3.11`.
   failed because the renewal-readiness receipt is stale (`age_seconds=1756056`).
   This does not establish an expired serving certificate. Refreshing the
   production receipt is a separate host mutation requiring operator authority.
+- An independent public TLS handshake at 11:00:49 UTC verified the hostname
+  and certificate chain; the served certificate expires on 2027-01-05
+  01:17:36 UTC. This does not replace the renewal-readiness gate.
 
 The production source branch is `16747c401d2d1fc9d07bfbf5c530d3aca4a9cfa4`;
 it is not the actual installed revision. The last successful deployment is
@@ -79,10 +82,62 @@ range adjudications; the ordinary CVE allowlist stays empty. A changed digest
 or a passing CNA precheck does not prove the images are vulnerability-free.
 Fresh Linux/AMD64 build, scan and exact-bundle replay remain distinct evidence.
 
-The restored source includes migrations 0088–0092. Application rollback must
-retain additive tables, notifications, dispatch history and accepted data.
+For committed source `eb973f5b7229a23e19d06bfcf930645cb215e81c`, the isolated
+M4 Linux/AMD64 API and frontend builds passed. The API verified 65 locked
+distributions, `pip check` and actual app import; the frontend production build
+and TypeScript check passed. The combined build/scan command then failed before
+Grype could start because the SSH session could not access Docker Desktop's
+credential helper. Preserve that failure as failed, not scan evidence. Recovery
+uses a task-private anonymous public-registry client configuration against the
+same verified Unix Docker daemon; it does not unlock the login keychain, change
+the user's Docker configuration, change image pins or rebuild passed images.
+Scanning and exact-bundle replay are still pending.
+
+The frozen preparation tree differs from the installed source in 984 paths,
+including 140 application paths, 435 frontend paths, 172 test paths and five
+migrations. The exact path inventory and 205 post-baseline master commit
+identities are retained in the external receipt directory. This is an
+accumulated release; the preparation PR itself changes only release tooling,
+the Python image candidate and their evidence/contracts.
+
+The restored source includes migrations 0088–0092: a concurrent health index,
+Portal notifications, session registry, TOTP storage and manual-notice dispatch
+history. Keep a verified pre-deploy database backup and exact installed bundle
+identities before mutation. Application rollback must retain additive tables,
+notifications, dispatch history and accepted data; do not run downgrade as an
+ordinary recovery step.
+
+The [session cutover contract](../../../portal-session-registry-v1.md#migration-cutover-and-rollback)
+invalidates SID-less tokens and requires users to log in again. Coordinate all
+API instances. After session revocation or factor setup, the installed old
+JWT-only verifier is **not** an unrestricted rollback target: retain registry
+and factor enforcement. Any return to older authentication needs the separate
+coordinated plan required by the
+[TOTP rollback contract](../../../portal-totp-v1.md#evidence-gates-and-rollback),
+with affected issuance/traffic stopped and session invalidation where required.
+Hiding setup UI does not disable factor requirements.
+
 Migration downgrade, real refunds, payment callbacks, mail delivery and
 independent human quality are not established by local/CI/M4 tests.
+
+## Local verification and proposed production operation
+
+Local release-policy, lint, scope/diff and documentation checks passed, with
+152 focused release/baseline/integration/image-contract tests passing. The final
+`verify:local` routed 67 focused tests and passed. The five-axis source review
+covered exact Git identities, temporary-index isolation, atomic ref updates,
+bounded restoration input and recovery expiry; no outstanding source finding
+was identified. These are local evidence, not CI or production acceptance.
+
+The concrete next host operation is Production Maintenance on `production`,
+action `certificate-readiness-refresh`, with the workflow's exact human input
+`Refresh production certificate readiness evidence.`. Its current-release
+generator invalidates the stale receipt, checks the renewal timer/service/hook,
+runs a real Certbot renewal dry run, executes the persistent deploy hook,
+reloads NGINX and proves the served certificate matches before writing a new
+protected receipt. It does not deploy application code. This operation has
+**not** been authorized or dispatched. Separate production promotion and final
+exact-SHA deployment authority are still required.
 
 ## Receipt retention and remaining gates
 
