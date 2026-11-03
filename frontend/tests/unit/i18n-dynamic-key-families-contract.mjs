@@ -26,6 +26,8 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'portal.monitoring.guidance_':
+    'src/lib/portal-monitoring-display.ts; bounded CUSTOMER_ISSUE_GUIDANCE kind tokens with title/detail suffixes and explicit unknown fallback',
   'admin.payments.status.':
     'src/features/admin/accounts/AccountPaymentOrders.tsx; existing payment/refund status values with literal unknown fallback',
   'admin.payments.block.':

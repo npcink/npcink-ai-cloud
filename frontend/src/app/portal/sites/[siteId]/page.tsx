@@ -30,8 +30,9 @@ import {
   getPortalMonitoringIssueCategory,
   hasPortalQuotaPressure,
   isPortalCustomerPluginMissingAction,
-  isPortalPluginMissingAction,
+  isPortalActionableServiceIssue,
   isPortalRecheckHelpfulForAction,
+  isPortalWordPressConnectionAction,
 } from '@/lib/portal-monitoring-display';
 import { formatDate } from '@/lib/utils';
 import {
@@ -214,13 +215,7 @@ function PortalSiteRecordContent() {
     siteMonitoring.overview
     && (
       hasPortalQuotaPressure(siteMonitoring.overview)
-      || siteMonitoring.overview.action_required.some((item) => {
-        if (getPortalMonitoringIssueCategory(item) === 'knowledge') return false;
-        if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) {
-          return false;
-        }
-        return true;
-      })
+      || siteMonitoring.overview.action_required.some((item) => isPortalActionableServiceIssue(item, siteMonitoring.overview!))
     )
   );
   const siteNeedsAttention = site.status !== 'active'
@@ -234,14 +229,7 @@ function PortalSiteRecordContent() {
         ? t('portal.site_status_provisioning', {}, 'Provisioning')
         : t('portal.site_status_suspended', {}, 'Suspended');
   const primaryMonitoringAction = siteMonitoring.overview?.action_required.find(
-    (item) => {
-      if (getPortalMonitoringIssueCategory(item) === 'knowledge') return false;
-      // Optional Magick plugins must not become the page attention.
-      if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) {
-        return false;
-      }
-      return true;
-    }
+    (item) => isPortalActionableServiceIssue(item, siteMonitoring.overview!)
   ) || null;
   const primaryIssueCategory = primaryMonitoringAction
     ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
@@ -385,8 +373,9 @@ function PortalSiteRecordContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  const wpAdminUrl = getPortalWordPressAdminUrl(site);
+  const openWordPressForAttention = Boolean(wpAdminUrl && isPortalWordPressConnectionAction(primaryMonitoringAction));
   const supportHref = `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`;
-  const errorCount = Number(siteMonitoring.overview?.activity.plugin_errors_total || 0);
   const recheckActionLabel = siteMonitoring.isRefreshing
     ? t('portal.retry.rechecking', {}, 'Checking…')
     : t('portal.retry.recheck_service', {}, 'Recheck service');
@@ -394,6 +383,8 @@ function PortalSiteRecordContent() {
     ? t('portal.activate_site_action', {}, 'Activate')
     : !siteUrl
       ? t('portal.support_request_new_action', {}, 'Submit ticket')
+      : openWordPressForAttention
+        ? t('portal.sites.open_wordpress_admin', {}, 'Open WordPress admin')
       : primaryIssueCategory === 'quota'
         ? t('portal.nav_billing', {}, 'View package')
         : pluginMissingPrimary || !recheckHelpful
@@ -412,6 +403,8 @@ function PortalSiteRecordContent() {
           href: supportHref,
           testId: 'attention-cta',
         }
+      : openWordPressForAttention
+        ? { label: attentionActionLabel, href: wpAdminUrl, testId: 'attention-cta' }
       : primaryIssueCategory === 'quota'
         ? {
             label: attentionActionLabel,
@@ -437,7 +430,7 @@ function PortalSiteRecordContent() {
     && site.status !== 'inactive'
     && siteUrl
     && primaryIssueCategory !== 'quota'
-    && (pluginMissingPrimary || !recheckHelpful)
+    && (openWordPressForAttention || pluginMissingPrimary || !recheckHelpful)
   )
     ? {
         label: recheckActionLabel,
@@ -447,11 +440,10 @@ function PortalSiteRecordContent() {
       }
     : null;
 
-  const showSupportBesideAttention = errorCount > 0
-    && !String(attentionAction.href || '').includes('/portal/support')
-    && !pluginMissingPrimary;
+  const showSupportBesideAttention = siteNeedsAttention
+    && primaryIssueCategory !== 'quota'
+    && !String(attentionAction.href || '').includes('/portal/support');
 
-  const wpAdminUrl = getPortalWordPressAdminUrl(site);
   const displayName = getPortalSiteDisplayName(site);
 
   return (

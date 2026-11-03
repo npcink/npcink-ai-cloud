@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { PortalActionIcon } from '@/components/portal/PortalRowActions';
 import {
   PortalCard,
@@ -54,6 +55,20 @@ export function PortalSiteKnowledgePanel({
     hasKnowledge && summary && healthStatus === 'warning'
   );
   const windowDays = Math.max(1, Math.round(Number(summary?.window?.hours || 168) / 24));
+  const failedSearches = Number(totals?.search_failed_total || 0);
+  const slowOnlyWarning = needsAttention
+    && indexFailed === 0 && failedSearches === 0
+    && Number(totals?.no_hit_rate || 0) < 0.25
+    && Number(totals?.p95_search_latency_ms || 0) >= 1200;
+  const warningReasons = [
+    indexFailed > 0 ? t('portal.vector_obs.warning_updates', { count: formatNumber(indexFailed) }, '{{count}} knowledge update(s) failed.') : '',
+    failedSearches > 0 ? t('portal.vector_obs.warning_searches', { count: formatNumber(failedSearches) }, '{{count}} search(es) failed.') : '',
+    searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25
+      ? t('portal.vector_obs.warning_no_hits', { count: formatNumber(noAnswerCount), total: formatNumber(searchCount) }, '{{count}} of {{total}} searches found no related content.') : '',
+    Number(totals?.p95_search_latency_ms || 0) >= 1200
+      ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, 'Search response time at the 95th percentile was {{seconds}} seconds.') : '',
+  ].filter(Boolean);
+
   const softFailedCount = Math.max(0, indexFailed);
   const softUpdateNote = softUpdateIssue
     ? (softFailedCount > 0
@@ -76,7 +91,9 @@ export function PortalSiteKnowledgePanel({
       : softUpdateIssue
         ? t('portal.vector_obs.status_usable', {}, 'Knowledge is usable')
         : needsAttention
-          ? t('portal.vector_obs.status_attention', {}, 'Needs attention')
+          ? slowOnlyWarning
+            ? t('portal.vector_obs.status_slow', {}, 'Searches were slow')
+            : t('portal.vector_obs.status_attention', {}, 'Needs attention')
           : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
   const displayedStatusLabel = error
     ? t('portal.home.package_pending_label', {}, 'To confirm')
@@ -172,6 +189,24 @@ export function PortalSiteKnowledgePanel({
             'Site knowledge status could not be loaded. Try again later.'
           )}
         </PortalCard>
+      ) : null}
+
+      {!isLoading && !error && summary && needsAttention ? (
+        <div className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300" data-portal-site="knowledge-guidance">
+          <p>
+            {t('portal.vector_obs.warning_period', { days: String(windowDays) }, 'In the last {{days}} days:')}{' '}
+            {warningReasons.join(' ') || t('portal.vector_obs.warning_unknown', {}, 'Knowledge health needs review; the exact cause is not identified here.')}
+          </p>
+          {slowOnlyWarning ? (
+            <p>{t('portal.vector_obs.warning_slow_successes', { queries: formatNumber(searchCount), updates: formatNumber(indexJobs) }, 'No failed searches or knowledge updates were recorded ({{queries}} searches, {{updates}} updates).')}</p>
+          ) : null}
+          <p>{slowOnlyWarning
+            ? t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
+            : t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.')}</p>
+          <Link className="btn btn-secondary btn-sm" href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(summary.site_id)}`}>
+            {t('portal.site_attention_contact_support', {}, 'Contact support')}
+          </Link>
+        </div>
       ) : null}
 
       {!isLoading && !error && summary && !hasKnowledge ? (
