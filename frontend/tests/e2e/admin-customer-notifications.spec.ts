@@ -348,3 +348,36 @@ test('retry after rolled-back send keeps the batch and renews the consumed reque
   expect(new Set(sentIds).size).toBe(1);
   expect(keys.size).toBe(3);
 });
+
+test('an unreadable draft permits history inspection without clearing unknown intent', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('locale', 'en');
+    sessionStorage.setItem('admin.customer-notice.v1:platform:operator-e2e:', '{unreadable');
+  });
+  await installAdminMocks(page);
+  let writes = 0;
+  const detail = {
+    dispatch_id: `notice_${'a'.repeat(32)}`, title: 'Previously sent notice', body: 'Inspect before recreating.',
+    link_href: '', audience: 'all', status: 'sent', actor_kind: 'platform_admin', actor_ref: 'platform:operator-e2e',
+    created_at: '2026-11-03T05:00:00Z', sent_at: '2026-11-03T05:10:00Z', target_count: 1, ready_count: 0,
+    sent_count: 1, skipped_count: 0, read_count: 0, failed_count: 0,
+    recipients: [{ account_id: 'acct_one', account_name: 'Customer', principal_id: 'owner_one',
+      email: 'one@example.test', status: 'sent', reason: '', is_read: false, notification_id: 'pnotif_existing' }],
+  };
+  await page.route('**/api/admin/customer-notifications**', async (route) => {
+    if (route.request().method() === 'POST') writes += 1;
+    return route.fulfill({ json: buildAdminApiEnvelope(
+      new URL(route.request().url()).pathname === '/api/admin/customer-notifications'
+        ? { items: [{ ...detail, recipients: undefined }], total_count: 1, limit: 20, offset: 0 }
+        : detail,
+    ) });
+  });
+  await page.goto(path);
+  await expect(page.getByText(/The local draft could not be read or retained/)).toBeVisible();
+  await page.getByRole('button', { name: 'View details', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Delivery result', exact: true })).toBeVisible();
+  await expect(page.locator('[data-ui="notice-preview"]')).toContainText('Inspect before recreating.');
+  await expect(page.getByRole('button', { name: 'Send notice', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem('admin.customer-notice.v1:platform:operator-e2e:'))).toBe('{unreadable');
+  expect(writes).toBe(0);
+});

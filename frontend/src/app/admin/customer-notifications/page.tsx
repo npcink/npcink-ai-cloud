@@ -434,7 +434,7 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
                         <td>
                           <button
                             className="btn btn-secondary btn-sm"
-                            disabled={locked}
+                            disabled={c.busy || Boolean(c.draft?.pending)}
                             onClick={() => void c.inspect(item.dispatch_id)}
                           >
                             {t('admin.notices.details')}
