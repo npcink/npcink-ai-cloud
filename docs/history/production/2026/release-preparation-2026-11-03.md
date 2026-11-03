@@ -91,7 +91,19 @@ credential helper. Preserve that failure as failed, not scan evidence. Recovery
 uses a task-private anonymous public-registry client configuration against the
 same verified Unix Docker daemon; it does not unlock the login keychain, change
 the user's Docker configuration, change image pins or rebuild passed images.
-Scanning and exact-bundle replay are still pending.
+The recovered scan completed with API, Redis and NGINX passing. Frontend failed
+on Node `22.23.3` (`CVE-2026-105482`, `CVE-2026-106069`,
+`CVE-2026-111497`) and Alpine `musl-utils 1.2.6-r2`
+(`CVE-2026-107891`). These are candidate-image scanner findings, not proof of
+public production exploitability. The scan database was built on 2026-11-03,
+SHA-256 `ab581eb337614de4e5f2f1f944ae78992d98242387632c235b406a51dd4d9cd1`.
+
+The official `node:22-alpine` candidate inspected at 11:06:13 UTC is Node
+`22.23.4` on both required platforms, index
+`sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914`.
+The frontend Dockerfile, lock and policy marker use this replacement. Only
+the frontend image requires rebuilding; retain the exact API archive and its
+input fingerprint. New scan evaluation and exact-bundle replay remain pending.
 
 The frozen preparation tree differs from the installed source in 984 paths,
 including 140 application paths, 435 frontend paths, 172 test paths and five
