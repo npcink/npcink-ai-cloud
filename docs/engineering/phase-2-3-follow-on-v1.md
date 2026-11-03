@@ -136,6 +136,38 @@ Working rules (unchanged):
 
 ## Phase 3 — Production readiness (later; user-gated)
 
+### Bounded administrator vector-service alerts — 2026-11-03 decision
+
+The operator approved improving explanations and handling links on the existing
+Admin vector-observability page now, and recording minimal proactive alerts as
+a prelaunch item. This does not activate broad observability/platform expansion
+or expand [manual customer service notices](../customer-service-notifications-v1.md).
+
+- **Activation gate:** validate the hosted embedding API and vector database
+  with real business use first. Agree a service baseline, sufficient sample
+  count and sustained observation duration before enabling alerts. The local
+  development P95 and existing health-score thresholds are not production SLOs.
+- **Initial signals:** sustained slow retrieval with enough samples, consecutive
+  failures, or confirmed service unavailability. Missing or stale evidence stays
+  unknown; it must not become healthy or recovered when a window expires.
+- **Recipients and deduplication:** administrator recipients, separate from
+  customer service notices; combine the same environment/service/problem,
+  apply a cooldown, and notify only on a meaningful change. A recovery notice
+  requires fresh successful business samples meeting the agreed baseline.
+- **Required content:** affected scope and environment, user impact, observed
+  evidence and event time, known cause or explicit uncertainty, one next action,
+  and a direct diagnostic link preserving site/time scope.
+- **Current boundary:** this change implements page guidance only. Alert
+  evaluation, persistence, scheduling, email/SMS or other delivery channels are
+  not implemented. No paid synthetic traffic for observation. Production
+  configuration and deployment remain separately human-authorized operations.
+
+The existing entry is `/admin/vector-observability` (Admin observation area →
+Vector Observability), with site filtering and 14/30-day historical windows.
+It provides on-page evidence when opened/refreshed, not background delivery.
+
+### Release authorization
+
 - Only after Phase 2 debt is acceptably reduced and the operator asks.
 - Production source branch remains `production`; never Deploy Production,
   host-mutate production, or promote without an **explicit human authorization

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   BackofficeEmptyState,
@@ -10,6 +11,7 @@ import {
   BackofficePageStack,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
+import { getVectorFailureGuidance, getVectorGuidance } from '@/features/admin/observability/vector-guidance';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -27,6 +29,8 @@ import { ObservationTrend } from '@/features/admin/observability/ObservationTren
 const vectorObservabilityClient = createApiClient({ idempotencyPrefix: 'vector_observability' });
 
 type VectorObservabilityData = {
+  guidance: ReturnType<typeof getVectorGuidance>;
+  failureCountsKnown: boolean;
   generatedAt: string;
   window: { hours: number; startAt: string; endAt: string };
   totals: {
@@ -106,11 +110,13 @@ type VectorObservabilityData = {
 };
 
 
-function normalizeVectorObservability(raw: any): VectorObservabilityData {
+function normalizeVectorObservability(raw: any, siteId: string): VectorObservabilityData {
   const totals = raw?.totals ?? {};
   const window = raw?.window ?? {};
   const health = raw?.health ?? {};
   return {
+    guidance: getVectorGuidance(raw, process.env.NEXT_PUBLIC_ENV, siteId),
+    failureCountsKnown: [totals.index_failed_total, totals.search_failed_total].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0),
     generatedAt: String(raw?.generated_at ?? ''),
     window: {
       hours: Number(window.hours ?? 24),
@@ -276,8 +282,8 @@ function AdminVectorObservabilityContent() {
         signal: controller.signal,
       });
       if (sequence === requestSequenceRef.current) {
-        setData(normalizeVectorObservability(response.data));
-        }
+        setData(normalizeVectorObservability(response.data, siteIdFilter.trim()));
+      }
     } catch (err) {
       if (sequence === requestSequenceRef.current) {
         setError(resolveUiErrorMessage(err, t('admin.vector_obs.load_error', {}, 'Failed to load vector diagnostics.')));
@@ -316,10 +322,16 @@ function AdminVectorObservabilityContent() {
   const selectedError = focusedErrorCode
     ? data?.errors.find(item => failureKey(item) === focusedErrorCode || (item.kind === 'search' && item.errorCode === focusedErrorCode)) || null
     : data?.errors[0] || null;
+  const selectedFailureGuidance = selectedError ? getVectorFailureGuidance(selectedError.errorCode) : null;
+  const diagnosticParams = new URLSearchParams({ window: String(windowHours) });
+  if (siteIdFilter.trim()) diagnosticParams.set('site', siteIdFilter.trim());
+  const diagnosticHref = `/admin/troubleshooting?${diagnosticParams.toString()}`;
+  const guidance = data?.guidance;
   const absentFocus = Boolean(data && focusedErrorCode && !selectedError);
   const failureTotal = (data?.totals.indexFailedTotal || 0) + (data?.totals.searchFailedTotal || 0);
   const isEmpty =
     data !== null &&
+    data.failureCountsKnown &&
     data.totals.indexJobsTotal === 0 &&
     data.totals.searchQueriesTotal === 0 &&
     data.totals.currentChunkCount === 0 &&
@@ -388,7 +400,7 @@ function AdminVectorObservabilityContent() {
             { label: t('admin.vector_obs.searches', {}, 'Searches'), value: formatNumber(data.totals.searchQueriesTotal), detail: t('admin.vector_obs.detail_no_hit', { count: formatNumber(data.totals.noHitTotal) }, '{{count}} no-hit') },
             { label: t('admin.vector_obs.no_hit_rate', {}, 'No-hit rate'), value: data.totals.searchQueriesTotal ? formatPercent(data.totals.noHitRate) : '—', warn: data.totals.noHitRate >= 0.25 },
             { label: t('admin.vector_obs.p95', {}, 'P95 search'), value: data.totals.searchQueriesTotal ? `${formatNumber(data.totals.p95SearchLatencyMs)}ms` : '—', detail: t('admin.vector_obs.detail_top1', { score: formatScore(data.totals.avgTop1Score) }, 'top1 {{score}}') },
-            { label: t('admin.vector_obs.errors', {}, 'Errors'), value: formatNumber(failureTotal), detail: `${failureKind('index')} ${data.totals.indexFailedTotal} · ${failureKind('search')} ${data.totals.searchFailedTotal}`, warn: failureTotal > 0 },
+            { label: t('admin.vector_obs.errors', {}, 'Errors'), value: data.failureCountsKnown ? formatNumber(failureTotal) : '—', detail: data.failureCountsKnown ? `${failureKind('index')} ${data.totals.indexFailedTotal} · ${failureKind('search')} ${data.totals.searchFailedTotal}` : c('计数未核实', 'Counts unverified'), warn: failureTotal > 0 },
           ].map((tile) => (
             <div key={tile.label} className="admin-tier-card px-3 py-2">
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">{tile.label}</p>
@@ -400,6 +412,16 @@ function AdminVectorObservabilityContent() {
       )}
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.vector_obs.stale_notice', {}, 'The last successfully loaded vector snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
+
+      {guidance && !error && !loading ? <section data-ui="vector-handling-guidance" className="border-l-2 border-amber-500 pl-3 text-sm">
+        <h2 className="font-semibold text-slate-950 dark:text-white">{c(...guidance.title)}</h2>
+        <p className="mt-1 text-slate-600 dark:text-slate-300">{c(...guidance.meaning)}</p>
+        <p className="mt-1 text-slate-800 dark:text-slate-100">{c('下一步：', 'Next: ')}{c(...guidance.next)}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="text-slate-500 dark:text-slate-400">{c('最近检索：', 'Last search: ')}{guidance.lastSearchAt ? formatDate(guidance.lastSearchAt) : c('时间未提供', 'Time not provided')}</span>
+          <Link className="text-blue-700 underline dark:text-blue-300" href={diagnosticHref}>{c('查看运行诊断', 'View runtime diagnostics')}</Link>
+        </div>
+      </section> : null}
 
       {!data ? null : isEmpty ? (
         <>
@@ -449,11 +471,17 @@ function AdminVectorObservabilityContent() {
                       <dt className="text-slate-500 dark:text-slate-400">{t('admin.vector_obs.scope', {}, 'Current scope')}</dt>
                       <dd className="break-words text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.vector_obs.all_sites', {}, 'All sites')} · {windowHours}h</dd>
                     </dl>
+                    {selectedFailureGuidance ? <div data-ui="vector-failure-guidance" className="space-y-2 border-t border-slate-200 pt-3 text-sm dark:border-slate-800">
+                      {error ? <p className="text-amber-700 dark:text-amber-300">{c('以下仅解释保留的旧失败记录。', 'The following explains retained older failure records only.')}</p> : null}
+                      <p className="text-slate-600 dark:text-slate-300">{c(...selectedFailureGuidance.meaning)}</p>
+                      <p className="text-slate-800 dark:text-slate-100">{c('下一步：', 'Next: ')}{c(...selectedFailureGuidance.next)}</p>
+                      {selectedFailureGuidance.settings ? <Link className="text-blue-700 underline dark:text-blue-300" href="/admin/vector-settings">{c('核对向量配置', 'Check vector configuration')}</Link> : null}
+                    </div> : null}
                   </div>
                 ) : null}
               </div>
             </div>
-          </section> : <p className="text-xs text-slate-500 dark:text-slate-400">{failureTotal ? c('存在失败，但当前没有返回可展示的分组；请刷新或查看运行诊断。', 'Failures exist, but no groups were returned. Refresh or inspect runtime diagnostics.') : c('所选时段没有索引或搜索失败。', 'No index or search failures in this period.')}</p>}
+          </section> : (failureTotal || !guidance) ? <p className="text-xs text-slate-500 dark:text-slate-400">{failureTotal ? c('存在失败，但当前没有返回可展示的分组；请刷新或查看运行诊断。', 'Failures exist, but no groups were returned. Refresh or inspect runtime diagnostics.') : !data.failureCountsKnown ? c('失败记录尚未核实，请先核对上方证据。', 'Failure records are unverified; check the evidence above first.') : c('所选时段没有索引或搜索失败。', 'No index or search failures in this period.')}</p> : null}
 
           <div className="grid gap-3 xl:grid-cols-2">
             <section className="admin-tier-card overflow-hidden p-3">
@@ -471,7 +499,7 @@ function AdminVectorObservabilityContent() {
                 {t('admin.vector_obs.index_trend', {}, 'Indexed chunks and failures')}
               </h3>
               <div className="mt-2">
-              <p className="mb-2 text-xs text-slate-500">{c('失败次数单独列在区间表，避免被分块量遮蔽。', 'Failure counts are listed separately in the interval table to preserve visibility.')} {c('时段失败', 'Period failures')}: {failureTotal}</p>
+              <p className="mb-2 text-xs text-slate-500">{c('失败次数单独列在区间表，避免被分块量遮蔽。', 'Failure counts are listed separately in the interval table to preserve visibility.')} {c('时段失败', 'Period failures')}: {data.failureCountsKnown ? failureTotal : '—'}</p>
               <ObservationTrend points={(data.timeline || []).map(point => ({ startAt: point.bucketStartAt, endAt: point.bucketEndAt, values: [point.indexedChunksTotal, point.failedTotal] }))} series={[
                 { name: t('admin.vector_obs.chunks'), color: '#10b981' }, { name: t('admin.vector_obs.failures'), color: '#ef4444', chart: false },
               ]} />

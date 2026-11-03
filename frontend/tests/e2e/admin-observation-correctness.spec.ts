@@ -35,6 +35,7 @@ test('vector totals include every failure and absent focus never selects another
   await expect(page.locator('#vector-error-inspector')).not.toContainText('search.timeout');
   await expect(page.locator('[data-ui="vector-observability-metrics"]').getByText('2', { exact: true })).toBeVisible();
   await expect(page.getByText(/当前恢复状态|current recovery is unverified/)).toBeVisible();
+  await page.locator('[data-ui="vector-distributions"] > summary').click();
   const site = page.getByRole('row').filter({ hasText: 'index-only' });
   await expect(site).toContainText('10');
   await expect(site).toContainText('—');
