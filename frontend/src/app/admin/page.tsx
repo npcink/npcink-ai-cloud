@@ -1,5 +1,6 @@
 'use client';
 
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
@@ -91,6 +92,9 @@ interface AdminOverview {
     generatedAt: string;
   };
   runtimeTelemetry: {
+    generatedAt: string;
+    siteId: string;
+    recentMinutes: number | null;
     status: string;
     summary: string;
     alertCount: number;
@@ -253,6 +257,9 @@ function normalizeOverview(raw: any): AdminOverview {
       generatedAt: String(operationalReadiness.generated_at ?? ''),
     },
     runtimeTelemetry: {
+      generatedAt: typeof runtimeTelemetry.generated_at === 'string' ? runtimeTelemetry.generated_at : '',
+      siteId: typeof runtimeTelemetry.filters?.site_id === 'string' ? runtimeTelemetry.filters.site_id.trim() : '',
+      recentMinutes: overviewNumber(runtimeTelemetry.filters?.recent_minutes),
       status: String(runtimeTelemetryAlertSummary.status ?? 'inactive'),
       summary: String(runtimeTelemetryAlertSummary.summary ?? ''),
       alertCount: Number(runtimeTelemetryAlertSummary.alert_count ?? 0),
@@ -360,14 +367,14 @@ function buildAdminLookupHref(path: string, query: string): string {
   return `${path}?${params.toString()}`;
 }
 
-function overviewActionHref(scope: string): string {
+function overviewActionHref(scope: string, diagnosticHref?: string): string {
   if (scope === 'runtime.provider_budget') {
     return '/admin/service-settings?tab=provider-budget';
   }
   if (scope.startsWith('commercial.')) {
     return '/admin/coverage';
   }
-  return '/admin/troubleshooting';
+  return diagnosticHref || '/admin/troubleshooting';
 }
 
 function overviewRuntimeAlertTitle(
@@ -526,8 +533,9 @@ function AdminOverviewContent() {
           };
         case 'runtime_telemetry': {
           const alertCode = String(item.detailArgs.alert_code ?? '');
-          const alert = overview.runtimeTelemetry.alerts.find((candidate) => candidate.code === alertCode)
-            ?? overview.runtimeTelemetry.alerts[0];
+          const alert = alertCode
+            ? overview.runtimeTelemetry.alerts.find((candidate) => candidate.code === alertCode)
+            : overview.runtimeTelemetry.alerts[0];
           return {
             title:
               overviewRuntimeAlertTitle(alert, t) ||
@@ -673,14 +681,33 @@ function AdminOverviewContent() {
         ? `/admin/sites/${item.siteId}`
         : '/admin/subscriptions',
   }));
-  const actionItems = operatorWatchItems;
+  const runtimeDiagnosticHref = (code: unknown) => {
+    const telemetry = overview.runtimeTelemetry;
+    const hours = telemetry.recentMinutes == null ? '' : String(telemetry.recentMinutes / 60);
+    const params = new URLSearchParams({ window: String(normalizeObservationWindow(hours, 336)) });
+    if (telemetry.siteId) params.set('site', telemetry.siteId);
+    const generated = Date.parse(telemetry.generatedAt);
+    const start = generated - (telemetry.recentMinutes ?? 0) * 60_000;
+    // Preserve the source start when overview uses a shorter period than diagnostics.
+    // The destination reads fresh evidence; it does not replay the overview snapshot.
+    if (telemetry.recentMinutes && Number.isFinite(generated) && Number.isFinite(start) && Math.abs(start) <= 8.64e15) params.set('since', new Date(start).toISOString());
+    if (typeof code === 'string' && code.trim()) params.set('focus', code.trim());
+    return `/admin/troubleshooting?${params}`;
+  };
+  const actionItems = operatorWatchItems.map((item, index) => {
+    const source = overview.operatorProjection.watchItems[index];
+    return { ...item, href: overviewActionHref(item.scope, source?.code === 'runtime_telemetry' ? runtimeDiagnosticHref(source.detailArgs.alert_code) : undefined) };
+  });
   const severityLabel = (severity: 'watch' | 'warn' | 'action-needed') =>
     severity === 'action-needed'
       ? t('admin.severity_action_needed', {}, 'Action needed')
       : severity === 'warn'
         ? t('admin.severity_warn', {}, 'Warn')
         : t('admin.severity_watch', {}, 'Watch');
-  const primaryActionHref = overview.operatorProjection.primaryAction.href;
+  const primaryRuntimeItem = overview.operatorProjection.watchItems.find(item => item.code === 'runtime_telemetry');
+  const primaryActionHref = overview.operatorProjection.primaryAction.kind === 'runtime_telemetry' && primaryRuntimeItem
+    ? runtimeDiagnosticHref(primaryRuntimeItem.detailArgs.alert_code)
+    : overview.operatorProjection.primaryAction.href;
   const primaryActionLabel =
     overview.operatorProjection.primaryAction.kind === 'readiness'
       ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
@@ -868,7 +895,7 @@ function AdminOverviewContent() {
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-3 md:justify-end">
                   <span className="text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{item.value}</span>
-                  <Link href={overviewActionHref(item.scope)} className="btn btn-secondary btn-sm whitespace-nowrap">
+                  <Link href={item.href} className="btn btn-secondary btn-sm whitespace-nowrap">
                     {item.scope.startsWith('commercial.') ? t('admin.home_open_service_status', {}, 'Open service status') : t('admin.home_action_open', {}, 'Handle')} →
                   </Link>
                 </div>
@@ -1117,6 +1144,7 @@ function AdminOverviewContent() {
           </Link>
         </div>
         <BackofficeMetricStrip items={runtimeTelemetryMetrics} columnsClassName="md:grid-cols-3" />
+        {overview.runtimeTelemetry.alerts.length > 0 ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.home_diagnostic_scope_note')}</p> : null}
         {overview.runtimeTelemetry.alerts.length > 0 ? (
           <div className="grid gap-3 xl:grid-cols-2">
             {overview.runtimeTelemetry.alerts.slice(0, 2).map((alert) => (
@@ -1129,6 +1157,7 @@ function AdminOverviewContent() {
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                       {overviewRuntimeAlertSummary(alert, t)}
                     </p>
+                    <Link data-ui="overview-runtime-issue-link" href={runtimeDiagnosticHref(alert.code)} className="mt-2 inline-block text-sm font-medium text-blue-700 underline dark:text-blue-300">{t('admin.home_open_diagnostic_issue')}</Link>
                     {alert.capabilities.length > 0 ? (
                       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                         {alert.capabilities.slice(0, 3).join(', ')}

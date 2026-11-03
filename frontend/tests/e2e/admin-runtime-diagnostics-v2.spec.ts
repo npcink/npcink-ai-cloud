@@ -456,6 +456,8 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
   await expect(page.locator('[data-ui="runtime-inspector-summary"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
+  await expect(page.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
+  await expect(page.locator('[data-ui="runtime-verification-guidance"]')).toContainText(/next natural business run|下一次同类自然业务运行/);
   await selectPanel(page, 'records');
   await expect(page.locator('[data-ui="runtime-run-evidence"]')).toContainText('site-alpha');
   await expect(page.locator('[data-ui="provider-recovery-status"]')).toContainText(/恢复待验证|Recovery unverified/i);
@@ -465,6 +467,7 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await expect(drawer.getByText('run-schema-rejected', { exact: true })).toBeVisible();
   await expect(drawer.getByText('historical-provider', { exact: true })).toBeVisible();
   await expect(drawer.getByText('historical-model', { exact: true })).toBeVisible();
+  await expect(drawer.locator('[data-ui="runtime-record-handling"]')).toContainText(/后台设置无法修复|Fix the structured output/);
   await expect(drawer.locator('details')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
@@ -826,3 +829,49 @@ for (const width of [1280, 480]) {
     await expect(page.getByRole('tooltip')).toHaveCount(0);
   });
 }
+
+
+test('mixed call failures keep successful outcomes and per-record handling distinct', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installAdminMocks(page);
+  let failRefresh = false;
+  const failures = [
+    { run_id: 'run-timeout-then-success', reason: 'timeout', error_code: 'provider.timeout' },
+    { run_id: 'run-parameters', reason: 'invalid_request', error_code: 'provider.invalid_request' },
+  ].map(item => ({ ...item, site_id: 'site-alpha', profile_id: 'text.managed', provider_id: 'fixture-provider', model_id: 'fixture-model', occurred_at: '2026-11-03T08:00:00Z' }));
+  await page.route(/\/api\/admin\/runtime-telemetry\?/, route => route.fulfill({ json: failRefresh ? buildAdminApiErrorEnvelope('unavailable') : buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
+    generated_at: '2026-11-03T08:01:00Z', totals: { runs: 2 }, provider_failures: failures,
+    alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 2, capabilities: ['text'] }] },
+  }, new URL(route.request().url()).searchParams)), status: failRefresh ? 503 : 200 }));
+  await page.route('**/api/admin/runtime-telemetry/runs*', route => route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ items: failures.map((failure, index) => ({
+    run_id: failure.run_id, site_id: 'site-alpha', ability_family: 'text', ability_name: `text-task-${index}`, profile_id: 'text.managed', status: index === 0 ? 'succeeded' : 'failed', provider_call_count: 1, has_meter_event: true,
+  })) })) }));
+  await page.goto('/admin/troubleshooting?window=336&site=site-alpha&focus=hosted_model.provider_errors');
+  const inspector = page.locator('#runtime-diagnostic-inspector');
+  await expect(inspector.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
+  await expect(inspector.locator('[data-ui="runtime-investigation-actions"]')).toContainText(/latest returned failure sample|最近返回的失败样本/);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`handling-${width}.png`), animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: /Language|语言/ }).click();
+  await page.getByRole('option', { name: 'English' }).click();
+  await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toContainText('next natural business run');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('handling-english-dark-900.png'), animations: 'disabled', fullPage: true });
+  await selectPanel(page, 'records');
+  const buttons = inspector.getByRole('button', { name: /View detail|查看详情/ });
+  await expect(inspector.getByText(/^Succeeded$|^成功$/)).toBeVisible();
+  await buttons.nth(1).click();
+  await expect(page.getByRole('dialog').locator('[data-ui="runtime-record-handling"]')).toContainText(/rejected call parameters|请求参数/);
+  await expect(page.getByRole('dialog').locator('[data-ui="runtime-record-handling"]')).not.toContainText(/continues to time out|持续超时/);
+  await page.keyboard.press('Escape');
+  await selectPanel(page, 'overview');
+  failRefresh = true;
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(inspector.locator('[data-ui="runtime-issue-impact"]')).toContainText(/retained older evidence|保留的旧证据/);
+  await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toHaveCount(0);
+});

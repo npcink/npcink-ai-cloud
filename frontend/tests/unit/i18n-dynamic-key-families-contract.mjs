@@ -77,8 +77,12 @@ export const FAMILY_SOURCES = {
     'src/app/admin/plans/page.tsx; plan state values from backend plans directory',
   'admin.troubleshooting.failure_reason_':
     'src/app/admin/troubleshooting/page.tsx; bounded set output_schema_invalid/invalid_request/timeout/unknown from provider failure reasons',
+  'admin.troubleshooting.impact_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded issue code mapping provider/failed/call_gap/meter_gap/unknown',
+  'admin.troubleshooting.verify_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded evidence/outcome verification paths',
   'admin.troubleshooting.failure_step_':
-    'src/app/admin/troubleshooting/page.tsx; bounded set schema/timeout/unknown from provider failure reasons',
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded set schema/invalid_request/timeout/unknown from provider failure reasons',
   'admin.plugin_obs_attention_':
     'src/app/admin/plugin-observability/page.tsx attentionCopy; field title/detail with suffixes from attentionCodeSuffix over backend plugin_observability.* attention codes, plus *_default',
   'admin.plugin_obs_window_':
