@@ -123,6 +123,7 @@ async function installPortalMocks(
   options: {
     successfulRuntimeWithoutReports?: boolean;
     knowledgeSlow?: boolean;
+    localKnowledgePreview?: boolean;
     connectionGuidanceCode?: string;
     knowledgeWarning?: boolean;
     commercialEmergencyStop?: boolean;
@@ -1175,10 +1176,10 @@ async function installPortalMocks(
               post_type_counts: { post: 80, page: 6 },
               source_type_counts: { wordpress: 86 },
               last_indexed_at: '2026-04-07T09:30:00Z',
-              embedding_provider: 'hidden-from-portal',
+              embedding_provider: options.localKnowledgePreview ? 'ollama-m4-embedding' : 'hidden-from-portal',
               embedding_model: 'hidden-from-portal',
               embedding_dimensions: 1024,
-              vector_backend: 'hidden-from-portal',
+              vector_backend: options.localKnowledgePreview ? 'postgres_json' : 'hidden-from-portal',
               captured_at: '2026-04-07T09:30:00Z',
             }]
           : [],
@@ -3384,6 +3385,32 @@ test('slow knowledge searches explain latency without telling customers to recon
   await expect(guidance).toContainText('106 次检索、99 次更新');
   await expect(guidance).toContainText('均未记录到失败');
   await expect(guidance).toContainText('可以继续使用');
+  await expect(guidance).toContainText('最近一次检索');
+  await expect(guidance).toContainText('不能据此判断当前响应速度');
   await expect(guidance).toContainText('无需仅为这条慢响应提醒重连站点或重新同步内容');
   await page.screenshot({ path: testInfo.outputPath('slow-knowledge.png'), fullPage: true });
+});
+
+test('local knowledge latency guidance follows the explicit development environment', async ({ page }, testInfo) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installPortalMocks(page, { knowledgeSlow: true, localKnowledgePreview: true });
+  await page.goto('/portal/sites/site_clear');
+  const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+  const guidance = knowledge.locator('[data-portal-site="knowledge-guidance"]');
+  await expect(guidance).toContainText('5.4 秒');
+  await expect(guidance).toContainText('最近一次检索');
+  if (process.env.NEXT_PUBLIC_ENV === 'development') {
+    await expect(knowledge).toContainText('开发检索较慢');
+    await expect(guidance).toContainText('耗时不代表上线后的正式向量服务性能');
+    await expect(guidance).toContainText('慢响应由开发侧处理');
+    await expect(guidance).not.toContainText('请联系支持');
+  } else {
+    await expect(guidance).not.toContainText('本地开发');
+    await expect(guidance).toContainText('请联系支持');
+  }
+  for (const width of [1440, 1056]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(guidance).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`local-search-${width}.png`), fullPage: true });
+  }
 });

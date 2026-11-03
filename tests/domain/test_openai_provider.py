@@ -1449,12 +1449,16 @@ def test_openai_adapter_executes_embeddings_over_http() -> None:
 
 
 @pytest.mark.parametrize("image", [False, True])
-def test_ollama_embeddings_use_native_multimodal_transport_and_usage(image: bool) -> None:
+@pytest.mark.parametrize("local_preview", [False, True])
+def test_ollama_embeddings_use_native_multimodal_transport_and_usage(
+    image: bool, local_preview: bool,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/embed"
         payload = json.loads(request.content)
         assert payload["input"] == ({"image": "encoded-image"} if image else "hello")
         assert payload["truncate"] is False
+        assert payload["keep_alive"] == ("10m" if local_preview else "2m")
         assert payload["options"]["num_ctx"] == 8192
         return httpx.Response(200, json={
             "model": "local-vl", "embeddings": [[0.1, 0.2]], "prompt_eval_count": 7,
@@ -1464,6 +1468,8 @@ def test_ollama_embeddings_use_native_multimodal_transport_and_usage(image: bool
         base_url="http://ollama.example/v1", api_key="test",
         transport=httpx.MockTransport(handler),
     )
+    if local_preview:
+        adapter.provider_id = "ollama-m4-embedding"
     result = adapter.execute(_build_request(
         execution_kind="embedding", endpoint_variant="ollama_embeddings", model_id="local-vl",
         input_payload={"image_base64": "encoded-image"} if image else {"text": "hello"},

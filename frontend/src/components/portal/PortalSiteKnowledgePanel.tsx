@@ -30,6 +30,11 @@ export function PortalSiteKnowledgePanel({
   const { t } = useLocale();
   const totals = summary?.totals || null;
   const snapshot = summary?.index_snapshots?.[0] || null;
+  // Describe the observed index, not a production performance guarantee or
+  // a claim that an old index snapshot is the current runtime configuration.
+  const localPreviewIndex = process.env.NEXT_PUBLIC_ENV === 'development'
+    && snapshot?.vector_backend === 'postgres_json'
+    && snapshot?.embedding_provider === 'ollama-m4-embedding';
   const indexedPages = Number(snapshot?.document_count ?? totals?.current_document_count ?? 0);
   const searchCount = Number(totals?.search_queries_total || 0);
   const noAnswerCount = Number(totals?.no_hit_total || 0);
@@ -92,7 +97,9 @@ export function PortalSiteKnowledgePanel({
         ? t('portal.vector_obs.status_usable', {}, 'Knowledge is usable')
         : needsAttention
           ? slowOnlyWarning
-            ? t('portal.vector_obs.status_slow', {}, 'Searches were slow')
+            ? localPreviewIndex
+              ? t('portal.vector_obs.status_local_slow', {}, 'Development searches were slow')
+              : t('portal.vector_obs.status_slow', {}, 'Searches were slow')
             : t('portal.vector_obs.status_attention', {}, 'Needs attention')
           : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
   const displayedStatusLabel = error
@@ -200,8 +207,13 @@ export function PortalSiteKnowledgePanel({
           {slowOnlyWarning ? (
             <p>{t('portal.vector_obs.warning_slow_successes', { queries: formatNumber(searchCount), updates: formatNumber(indexJobs) }, 'No failed searches or knowledge updates were recorded ({{queries}} searches, {{updates}} updates).')}</p>
           ) : null}
+          {slowOnlyWarning && totals?.last_search_finished_at ? (
+            <p>{t('portal.vector_obs.warning_last_search', { time: formatDate(totals.last_search_finished_at) }, 'Last recorded search: {{time}}. These historical figures do not establish current response time.')}</p>
+          ) : null}
           <p>{slowOnlyWarning
-            ? t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
+            ? localPreviewIndex
+              ? t('portal.vector_obs.warning_next_local_slow', {}, 'Local development: the latest index uses the local search setup. Its response time does not represent the hosted vector services planned for launch. Continue checking search results; latency is a development task and does not require reconnecting or resyncing the site.')
+              : t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
             : t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.')}</p>
           <Link className="btn btn-secondary btn-sm" href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(summary.site_id)}`}>
             {t('portal.site_attention_contact_support', {}, 'Contact support')}
