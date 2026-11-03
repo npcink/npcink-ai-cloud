@@ -71,7 +71,7 @@ export function PortalSiteKnowledgePanel({
     searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25
       ? t('portal.vector_obs.warning_no_hits', { count: formatNumber(noAnswerCount), total: formatNumber(searchCount) }, '{{count}} of {{total}} searches found no related content.') : '',
     Number(totals?.p95_search_latency_ms || 0) >= 1200
-      ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, 'Search response time at the 95th percentile was {{seconds}} seconds.') : '',
+      ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, '95% of searches finished within {{seconds}} seconds.') : '',
   ].filter(Boolean);
 
   const softFailedCount = Math.max(0, indexFailed);

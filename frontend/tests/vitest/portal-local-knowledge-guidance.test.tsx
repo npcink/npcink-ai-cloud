@@ -30,6 +30,7 @@ describe('local knowledge latency guidance', () => {
     expect(html).toContain('5.4 秒');
     expect(html).toContain('最近一次检索');
     expect(html).toContain('慢响应由开发侧处理');
+    expect(html).not.toMatch(/postgres_json|ollama-m4-embedding|embedding_provider|embedding_model|embedding_dimensions|vector_backend|P95|top1/);
   });
 
   it.each(['production', 'staging', '', 'test'])('keeps ordinary guidance in %s', environment => {
@@ -37,6 +38,7 @@ describe('local knowledge latency guidance', () => {
     expect(html).not.toContain('开发检索较慢');
     expect(html).not.toContain('慢响应由开发侧处理');
     expect(html).toContain('请联系支持');
+    expect(html).not.toMatch(/postgres_json|ollama-m4-embedding|embedding_provider|embedding_model|embedding_dimensions|vector_backend|P95|top1/);
   });
 
   it('does not label hosted vector storage as the local search setup', () => {

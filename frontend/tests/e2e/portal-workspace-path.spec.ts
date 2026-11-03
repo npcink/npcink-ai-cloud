@@ -3369,7 +3369,7 @@ test('successful AI requests keep a reporting gap neutral without a duplicate st
   await expect(service.locator('[data-portal-site="service-status-evidence"]')).toHaveCount(0);
   await expect(service.locator('[data-portal-site="monitoring-gap-note"]')).toContainText('15 次 AI 请求均成功');
   await expect(service).toContainText('无需仅为此重连');
-  await expect(service).toContainText('插件观测上报缺失');
+  await expect(service).toContainText('暂未收到站点连接报告');
   await expect(service).not.toContainText('见上方说明');
   await page.screenshot({ path: testInfo.outputPath('reporting-gap.png'), fullPage: true });
 });

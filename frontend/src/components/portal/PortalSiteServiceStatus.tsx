@@ -161,7 +161,7 @@ export function PortalSiteServiceStatus({
 
       {monitoringOnlyGap && overview ? (
         <p className="text-sm leading-6 text-slate-600 dark:text-slate-300" data-portal-site="monitoring-gap-note">
-          {t('portal.monitoring.reporting_gap_runtime_ok', { count: formatNumber(overview.activity.runtime_runs_total) }, 'All {{count}} AI requests in the last 24 hours succeeded. Plugin monitoring reports are missing; this is not evidence of a disconnected site. Continue using the service; no reconnect is needed solely for this notice. If an operation actually fails, contact support with the operation and time.')}
+          {t('portal.monitoring.reporting_gap_runtime_ok', { count: formatNumber(overview.activity.runtime_runs_total) }, 'All {{count}} AI requests in the last 24 hours succeeded. Site connection reports are missing; this is not evidence of a disconnected site. Continue using the service; no reconnect is needed solely for this notice. If an operation actually fails, contact support with the operation and time.')}
         </p>
       ) : null}
 

@@ -285,7 +285,7 @@ consolidation.
 | `/admin/subscriptions` | Customer Operations | `queue` | Commercial records (Subscriptions tab) | Independent full-width subscription lifecycle and billing-risk queue; defaults to server-filtered needs-action records, keeps normal records behind explicit All, has no default selection, and opens read-only context in the shared drawer |
 | `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Commercial records (Subscriptions tab) | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
 | `/admin/support-requests` | Customer Operations | `queue` | Customers (Tickets tab) | Keep; split customer conversation from internal handling |
-| `/admin/customer-notifications` | 即时服务通知与发送记录 | `configuration` | 选择客户、预览固定收件人、确认发送、查询原批次 |
+| `/admin/customer-notifications` | Customer Operations | `configuration` | Customers (Customer notices tab) | Select customers, preview immutable recipients, confirm immediate service notices, and inspect the original batch and delivery history |
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Customers (Tickets tab) | Keep; timeline-first ticket detail |
 | `/admin/plans` | Customer Operations | `queue` | Commercial records (Packages tab) | Canonical catalog plus shared package-management workbench |
 | `/admin/credit-packs` | Customer Operations | `configuration` | Commercial records (Credit packs tab) | Independent purchasable credit-pack directory; edit one pack at a time |
