@@ -582,4 +582,4 @@ merge gates.
 
 - [Article review context extension](article-review-context-runtime-v1.md) — compatible logic/risk runtime contract.
 
-- [客户服务通知：范围、入口和发送契约](customer-service-notifications-v1.md) — 2026-11-03 有界手动站内通知。
+- [客户服务通知：范围、入口和发送契约](customer-service-notifications-v1.md) — 2026-11-03 有界手动站内通知；[需求闭环与经验总结](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)，区分已交付、延后和生产状态。

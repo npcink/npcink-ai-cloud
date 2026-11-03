@@ -3,6 +3,9 @@
 Status: bounded implementation contract, authorized by the operator on 2026-11-03.
 Source implementation, validation, merge and production remain separate evidence states.
 
+实现与最终交付见[2026-11-03收尾记录](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)：
+#1363已合并并完成M4验收；未部署生产。历史结论须按当前分支/运行证据复核。
+
 ## 范围与入口
 
 操作者明确要求落实临时客户通知。此批为通知扩张冻结的具名例外：手动立即

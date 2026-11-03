@@ -1264,3 +1264,12 @@ CI、合并、M4 accepted、生产及人工验收分别记录，不由截图代�
 命令、失败修正、截图复查和候选状态见目录内`report.md`与`receipt.json`。
 本地、M4 candidate、CI、merged、M4 accepted、production及human分别记录，
 代理浏览器验证不替代人工验收。
+
+## 上述2026-11-03四项的最终交付补记
+
+客户通知、Portal开发检索说明、向量异常处理、运行诊断与首页定位均随
+[#1363](https://github.com/npcink/npcink-ai-cloud/pull/1363)合并至master `a08738b1`，
+全部必需CI通过，M4 accepted。各节的原始候选检查、失败与定向复验保留；
+最终视觉CI231项通过不抹掉早期227/228记录。生产与人工业务验收仍独立，
+自动管理员提醒尚未实现。需求矩阵、证据和经验见
+[最终收尾](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)。
