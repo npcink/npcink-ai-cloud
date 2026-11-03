@@ -101,9 +101,21 @@ SHA-256 `ab581eb337614de4e5f2f1f944ae78992d98242387632c235b406a51dd4d9cd1`.
 The official `node:22-alpine` candidate inspected at 11:06:13 UTC is Node
 `22.23.4` on both required platforms, index
 `sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914`.
-The frontend Dockerfile, lock and policy marker use this replacement. Only
-the frontend image requires rebuilding; retain the exact API archive and its
-input fingerprint. New scan evaluation and exact-bundle replay remain pending.
+The frontend Dockerfile, lock and policy marker use this replacement. M4's
+digest-locked Python/Node prefetch and Python build guards now match the same
+canonical inputs; a cross-file regression checks these bindings.
+
+For source `a556b689b98997552353399191ee54a2f7648d7d`, the resumed builder
+verified/restored the unchanged API archive and rebuilt only frontend
+(`image_work=1`). All four image scans passed with zero unallowlisted blockers.
+The complete candidate bundle SHA-256 is
+`bb534cbafbd4658b65a2bb34675b2517fab9073431e8c00dde073f38abc83922`.
+Archive/pre-load verification and both replays of that same bundle passed,
+followed by seed and remote deploy smoke; both commands exited zero. No build
+occurred during replay. This ran Linux/AMD64 images under M4 emulation with a
+disposable PostgreSQL 18 no-TLS fixture, not production RDS or native AMD64
+performance evidence. The bundle is a preparation v1 candidate, not the later
+production-push SHA-bound v2 release artifact.
 
 The frozen preparation tree differs from the installed source in 984 paths,
 including 140 application paths, 435 frontend paths, 172 test paths and five
@@ -135,8 +147,11 @@ independent human quality are not established by local/CI/M4 tests.
 ## Local verification and proposed production operation
 
 Local release-policy, lint, scope/diff and documentation checks passed, with
-152 focused release/baseline/integration/image-contract tests passing. The final
-`verify:local` routed 67 focused tests and passed. The five-axis source review
+152 focused release/baseline/integration/image-contract tests passing, followed
+by all 70 M4 development contract tests after aligning the prefetch inputs.
+The final `verify:local` passed release policy, changed-file lint, all 137 routed
+tests and the frontend TypeScript check after the M4 recipe alignment.
+The five-axis source review
 covered exact Git identities, temporary-index isolation, atomic ref updates,
 bounded restoration input and recovery expiry; no outstanding source finding
 was identified. These are local evidence, not CI or production acceptance.
@@ -159,9 +174,9 @@ are retained outside Git in the task receipt directory
 No production address, private-key value, runtime credential or customer content
 is recorded in this document or the two reviewed JSON receipts.
 
-Required later gates remain: exact frozen source review/CI, production certificate
-readiness, candidate database preflight, exact bundle build/scan/replay, compatible
-connector floors, production PR and exact production-push checks, final exact-SHA
+Required later gates remain: final frozen source CI/M4 acceptance, production
+certificate readiness, candidate database preflight, compatible connector
+floors, production PR and exact production-push checks/v2 bundle, final exact-SHA
 operator authorization and post-deploy acceptance. The full formal smoke keeps
 its historical not-passed status; real refund and email acceptance remain with
 the operator after a separately authorized deployment.
