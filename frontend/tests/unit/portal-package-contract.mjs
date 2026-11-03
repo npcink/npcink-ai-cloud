@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 const root = process.cwd();
 const packageDisplayPath = resolve(root, 'src/lib/customer-package-display.ts');
 const billingPagePath = resolve(root, 'src/app/portal/billing/page.tsx');
+const accountCommercePath = resolve(root, 'src/components/portal/PortalAccountCommercePanels.tsx');
+const accountPagePath = resolve(root, 'src/app/portal/account/page.tsx');
 const creditPackDialogPath = resolve(root, 'src/components/portal/PortalCreditPackDialog.tsx');
 const packagePanelPath = resolve(root, 'src/components/portal/PortalPackageChangePanel.tsx');
 const paymentOrderHistoryPath = resolve(root, 'src/components/portal/PortalPaymentOrderHistory.tsx');
@@ -38,6 +40,8 @@ assert.match(
 );
 
 const billingPageSource = readFileSync(billingPagePath, 'utf8');
+const accountCommerceSource = readFileSync(accountCommercePath, 'utf8');
+const accountPageSource = readFileSync(accountPagePath, 'utf8');
 const creditPackDialogSource = readFileSync(creditPackDialogPath, 'utf8');
 const packagePanelSource = readFileSync(packagePanelPath, 'utf8');
 const paymentOrderHistorySource = readFileSync(paymentOrderHistoryPath, 'utf8');
@@ -46,12 +50,23 @@ const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
-const usagePageSource = readFileSync(usagePagePath, 'utf8');
+const billingStatusPath = resolve(root, 'src/lib/portal-billing-status.ts');
+const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
-  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
-  'Portal package changes must expose terms, privacy, and billing support before payment'
+  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"/,
+  'Portal package changes must expose terms and privacy before payment'
+);
+assert.doesNotMatch(
+  packagePanelSource,
+  /purchase_readiness_notice[\s\S]{0,400}portal\.nav_support_requests|purchase_readiness_notice[\s\S]{0,400}\/portal\/support\?new=1&topic=billing/,
+  'Portal package purchase footer must not put Tickets on the primary purchase path'
+);
+assert.match(
+  packagePanelSource,
+  /data-portal-package="agency-quote"[\s\S]*\/portal\/support\?new=1&topic=billing|agency_separate_title[\s\S]*\/portal\/support\?new=1&topic=billing/,
+  'Portal package billing support remains reachable from the demoted Agency quote path'
 );
 assert.match(
   creditPackDialogSource,
@@ -84,24 +99,44 @@ assert.doesNotMatch(
   'Portal package page must not send users to a site record to understand the account package'
 );
 assert.match(
-  billingPageSource,
+  billingStatusSource,
   /portal\.billing\.upgrade_action/,
-  'Portal package page must own package upgrade entry points'
+  'Portal package pressure CTA must own package upgrade entry points'
 );
 assert.match(
   billingPageSource,
-  /resolvePackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
+  /resolveBillingPressureCta|resolveBillingPackageStatusLabel/,
+  'Portal package page must use the shared billing quiet-status helpers'
+);
+assert.match(
+  billingStatusSource,
+  /resolveBillingPackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
   'Portal package status must name the customer-visible limit instead of showing a generic attention label'
 );
 assert.match(
   billingPageSource,
-  /active_sites[\s\S]*package_status_active_site_limited[\s\S]*package_status_site_label/,
-  'Portal package status must classify active-site capacity as a site limit and explain its usage'
+  /active_sites[\s\S]*package_status_active_site_limited/,
+  'Portal package status must explain active-site capacity usage on the package page'
 );
 assert.match(
-  billingPageSource,
-  /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
-  'Portal package actions must prioritize credit purchase only when AI credits are the active issue'
+  billingStatusSource,
+  /active_sites[\s\S]*package_status_site_label/,
+  'Portal package status must classify active-site capacity as a site limit'
+);
+assert.doesNotMatch(
+  accountCommerceSource,
+  /data-portal-account="package-summary"|data-portal-account="upgrade-package"/,
+  'Portal account commerce must not keep a plan summary row; upgrade lives on the package page dialog'
+);
+assert.match(
+  accountCommerceSource,
+  /surface === 'billing'[\s\S]*id="package-options"[\s\S]*activeCommercialDialog === 'package'/,
+  'Portal package dialog is hosted on the billing surface of commerce panels'
+);
+assert.doesNotMatch(
+  accountCommerceSource,
+  /creditNeedsAttention|trial_entry_action/,
+  'Portal account commerce must not restack trial CTAs beside payment orders'
 );
 assert.match(
   creditPackDialogSource,
@@ -115,31 +150,46 @@ assert.match(
 );
 assert.match(
   paymentOrderHistorySource,
-  /<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*role="tablist"[\s\S]*<\/details>/,
-  'Portal package page must keep the payment summary visible and fold lower-priority order actions behind disclosure'
+  /const renderStatusFilter = \(\) =>[\s\S]*role="tablist"[\s\S]*<details[\s\S]*<summary[\s\S]*portal\.usage\.payment_orders_title[\s\S]*\{renderStatusFilter\(\)\}[\s\S]*<\/details>/,
+  'Account payment history must keep its summary and status pills inside the order disclosure'
 );
 assert.equal(
-  (billingPageSource.match(/const paymentOrdersCard =/g) || []).length,
+  (accountCommerceSource.match(/const paymentOrdersCard =/g) || []).length,
   1,
-  'Portal package page must define one reusable payment order card'
+  'Portal account commerce must define one reusable payment order card'
 );
 assert.equal(
-  (billingPageSource.match(/\{paymentOrdersCard\}/g) || []).length,
+  (accountCommerceSource.match(/\{paymentOrdersCard\}/g) || []).length,
   1,
-  'Portal package page must render the folded payment order card once in the account package view'
+  'Portal account commerce must render the folded payment order card once'
+);
+assert.match(
+  accountPageSource,
+  /PortalAccountCommercePanels[\s\S]*surface="account"/,
+  'Portal account page must host payment-orders commerce panels'
+);
+assert.match(
+  billingPageSource,
+  /PortalAccountCommercePanels[\s\S]*surface="billing"/,
+  'Portal billing/plan page hosts the package change dialog via commerce panels'
+);
+assert.doesNotMatch(
+  billingPageSource,
+  /const paymentOrdersCard =/,
+  'Portal billing/plan page must not keep payment-orders blocks inline'
 );
 assert.match(
   paymentReturnNoticeSource,
   /provider === 'alipay'[\s\S]*alipay_return_title[\s\S]*handleRefresh/,
-  'Portal package page must show a read-only Alipay return notice with refresh'
+  'Portal account page must show a read-only Alipay return notice with refresh'
 );
 assert.match(
   paymentReturnNoticeSource,
   /getAccountPaymentOrder[\s\S]*setTimeout[\s\S]*alipay_return_paid_title/,
-  'Portal package page must poll the canonical order and render confirmed payment state'
+  'Portal account page must poll the canonical order and render confirmed payment state'
 );
 assert.match(
-  billingPageSource,
+  accountCommerceSource,
   /<PortalPaymentReturnNotice[\s\S]*locale=\{locale\}/,
   'the payment return notice must receive the current application locale explicitly'
 );
@@ -159,9 +209,9 @@ assert.doesNotMatch(
   'the entitlement summary must not fall back to the browser default locale'
 );
 assert.match(
-  usagePageSource,
-  /formatDateTime\(nextPaidCreditExpiry, locale\)/,
-  'the usage overview must preserve the paid-credit cutoff time with the current application locale'
+  entitlementComponentSource,
+  /paidExpiryDate \?[\s\S]*'portal\.usage\.paid_credit_expiry_hint',\s*\{ date: paidExpiryDate \}/,
+  'the package AI credit card must surface the paid-credit cutoff (usage lives on the package page, not a usage overview)'
 );
 assert.match(
   utilsSource,
@@ -258,22 +308,37 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   paymentReturnNoticeSource,
   /payment_return[\s\S]*(markPaid|mark_payment|paid_at|subscription_id\s*=)/,
-  'Portal package page must not treat browser payment return as payment truth'
+  'Portal account page must not treat browser payment return as payment truth'
 );
 assert.doesNotMatch(
   billingHeader,
   /package_credit_allowance_label|site_allowance_label/,
   'Portal package header must not repeat package rights that are already shown in the rights card'
 );
+assert.doesNotMatch(
+  billingHeader,
+  /PortalBreadcrumb/,
+  'Portal package top-level header must not show a Service breadcrumb (navbar + title locate the page)'
+);
 assert.match(
   billingHeader,
-  /metadata=[\s\S]*currentPeriodLabel[\s\S]*contextPanel=\{packageStatus === 'warning'/,
-  'Portal package header must keep passive package metadata inline and place only actionable warnings in the right panel'
+  /metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
+  'Portal package header must use a quiet title-end metrics rail for package and period'
+);
+assert.match(
+  billingPageSource,
+  /data-portal-billing="attention"[\s\S]*resolvePackageStatusDetail/,
+  'Portal package warnings must sit on the entitlements card with a visible detail line and CTA'
 );
 assert.doesNotMatch(
   billingHeader,
-  /eyebrow=|metrics=/,
-  'Portal package header must not repeat its title or render a second summary rail'
+  /contextPanel=|metadata=/,
+  'Portal package header must not use contextPanel or a second metadata band for package status'
+);
+assert.doesNotMatch(
+  billingHeader,
+  /eyebrow=/,
+  'Portal package header must not repeat its title as an eyebrow'
 );
 assert.match(
   billingPageSource,
@@ -297,13 +362,13 @@ assert.doesNotMatch(
 );
 assert.match(
   entitlementComponentSource,
-  /package_remaining_label[\s\S]*paid_remaining_label[\s\S]*total_remaining_label/,
-  'Shared entitlement summary must distinguish package, paid, and total available credits'
+  /remaining_ai_credits[\s\S]*package_remaining_label[\s\S]*paid_remaining_label/,
+  'Shared entitlement summary must show total remaining and split package vs paid credits'
 );
 assert.match(
   entitlementComponentSource,
-  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?className="grid gap-3 md:grid-cols-2"/,
-  'Shared entitlement summary must keep knowledge capacities in paired desktop columns'
+  /grid grid-cols-1 gap-3 md:grid-cols-2" data-portal-entitlement-group="quota"/,
+  'Shared entitlement summary must keep entitlement tiles (incl. knowledge capacity) in paired desktop columns'
 );
 assert.match(
   paymentOrderHistorySource,
@@ -326,7 +391,7 @@ assert.match(
   'Portal payment order history must use a semantic PC table while preserving server-owned actions'
 );
 assert.match(
-  billingPageSource,
+  accountCommerceSource,
   /preparePaymentWindow[\s\S]*window\.open\('about:blank', '_blank'\)[\s\S]*paymentWindow\.location\.replace/,
   'Portal package purchases must pre-open a separate payment tab before the async order request completes'
 );
@@ -382,3 +447,5 @@ assert.doesNotMatch(
   /This is the clearest place to confirm the current package, service status, and connected site address\./,
   'Site record body must not repeat package and service status cards after the header summary'
 );
+
+console.log('portal_package_contract: ok');

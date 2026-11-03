@@ -38,17 +38,17 @@ def test_pillow_security_floor_and_lock_are_exact() -> None:
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     project = _locked_project()
 
-    assert "Pillow>=12.3,<13.0" in pyproject["project"]["dependencies"]
+    assert "Pillow>=13.0,<14.0" in pyproject["project"]["dependencies"]
     assert [
         package["version"]
         for package in lock["package"]
         if package["name"] == "pillow"
-    ] == ["12.3.0"]
+    ] == ["13.0.0"]
     assert {
         requirement["specifier"]
         for requirement in project["metadata"]["requires-dist"]
         if requirement["name"] == "pillow"
-    } == {">=12.3,<13.0"}
+    } == {">=13.0,<14.0"}
 
 
 def test_zilliz_dependency_remains_optional_in_lock() -> None:
@@ -143,6 +143,8 @@ def test_gitleaks_fixture_ignores_are_exact_reviewed_fingerprints() -> None:
         "tests/domain/test_payment_gateways.py:private-key:173",
         "45dc5ef1e91b00c819ba74f32aec98dc5bcdad1f:"
         "tests/core/test_logging_redaction.py:jwt:56",
+        "3fd4913a90948fba4e6d518172c036adeed59a40:"
+        "tests/core/test_portal_totp_codec.py:generic-api-key:33",
     ]
 
 

@@ -1,349 +1,215 @@
-# AGENTS.md - Npcink AI Cloud
+# AGENTS.md — Npcink AI Cloud
 
-## Session Startup Protocol
+> 中文：本文件约束**所有** AI 编码代理（工具无关）。人类只做验收与生产授权。先读本文件，再按需打开链接细则。
 
-Every AI development session should start with:
+**Read this file first** before editing. Tool-agnostic. Humans accept; agents implement.
 
-1. Run `git status --short --branch`.
-2. Read `README.md`.
-3. Assume one active AI development session unless the operator explicitly
-   declares a multi-session queue. Only in that declared mode, read
-   `docs/parallel-ai-collaboration-standard-v1.md` and report its coordination
-   declaration before editing.
-4. For feature, bug-fix, M4, or CI work, read
-   `docs/development-validation-operating-model-v1.md` and
-   `docs/ai-development-validation-tiers-v1.md`. Classify the change as L0,
-   L1, or L2 before selecting preview and closeout gates.
-5. Read only the boundary docs selected by the changed seam. Use
-   `pnpm run check:changed -- --plan <expected-files...>` as the default router;
-   when the expected files are not known yet, inspect the owning module first.
-   The candidate boundary set is:
-   - `docs/cloud-content-generation-boundary-v1.md` for content generation;
-   - `docs/cloud-task-pack-boundary-v1.md` for the retired task-pack guard;
-   - `docs/cloud-agent-workflow-metadata-projection-v1.md` for metadata projection;
-   - `docs/cloud-agent-feedback-quality-gate-v1.md` for feedback quality.
-   Do not load all four for an unrelated documentation, CI, or product seam.
-6. Briefly report the focused module, relevant Cloud boundary, and intended
-   verification gate before editing.
+## Current goal (Phase 1)
 
-For any change under `frontend/src/app/admin/**` or
-`frontend/src/components/admin/**`, also read
-`docs/cloud-admin-ui-standard-v1.md`,
-`docs/cloud-admin-frontend-engineering-standard-v1.md`, and inspect
-`frontend/admin-ui-manifest.json`. Before editing, report the route's declared
-page model, operator job, primary/secondary/destructive action hierarchy,
-shared primitives, current and target state ownership, low-frequency
-disclosure plan, and PC browser gate. A complete visual component-library
-migration is not the default remedy for page complexity; follow the bounded
-pilot and stop conditions in the frontend engineering standard.
+Prove the WordPress editor loop with real evidence:
 
-## Product Boundary
+`WordPress Ability → Cloud Addon → Cloud runtime → hosted model → reviewed editor adoption → bounded feedback`
 
-Npcink AI Cloud is the hosted runtime enhancement layer. It may own runtime
-execution, provider adapters, usage and entitlement evidence, health
-diagnostics, Site Knowledge runtime/detail, artifacts, and read-only runtime
-metadata projections.
+Keep only usage, error, provider, and quality evidence needed for that loop.
+The operator-approved 2026-10-27
+[value-first development decision](docs/engineering/phase-1-scope.md#value-first-development-decision-2026-10-27)
+freezes further ecosystem, workflow, adaptive-routing, analytics and platform expansion.
+Prioritize title/summary/selected-text rewrite value; retain existing services,
+security/correctness maintenance and the approved sales/trial exception.
+Details: [phase-1-scope.md](docs/engineering/phase-1-scope.md),
+[README Current Focus](README.md#current-focus),
+[early-product-validation-and-minimal-telemetry-standard-v1.md](docs/early-product-validation-and-minimal-telemetry-standard-v1.md),
+[wordpress-ai-loop-verification-checklist-2026-09-22.md](docs/wordpress-ai-loop-verification-checklist-2026-09-22.md).
 
-Cloud must not become a second WordPress control plane, second local ability
-registry, second workflow registry, final approval/preflight/audit truth,
-prompt/router/preset local truth, or WordPress write owner.
+Paused product entrypoints (retain code; do not re-enable via settings):
+[reversible-feature-pauses-v1.md](docs/reversible-feature-pauses-v1.md),
+[seo-specialist-pause-v1.md](docs/seo-specialist-pause-v1.md).
 
-## AI Development Rules
+Commercial freeze (Phase 1) remains in effect outside the bounded existing-sales
+exception below. Do not start new commercial features, customer notification
+expansion, or broad Admin operations outside the operator-approved
+[2026-11-03 bounded manual service-notice scope](docs/customer-service-notifications-v1.md).
+Keep existing commercial reads and
+credit/entitlement paths operational; do not delete or disable existing code.
+Follow [commercial-development-next-stage-v1.md](docs/engineering/commercial-development-next-stage-v1.md).
 
-- Write a compact change envelope before editing: focused module, intended
-  outcome, explicit non-goals, public contracts touched, expected files, and
-  verification plus rollback. Add external-system, cross-repository, or
-  forbidden-file detail only when the task actually touches those seams.
-- Default every task to the `development` workflow lane. Move to `merge` only
-  when the operator requests publication or merge, and move to `release` only
-  when the operator explicitly requests a production outcome. Changed paths
-  classify risk and runtime needs; they never authorize PR or production work.
-- Use 45 minutes for a development candidate, 90 minutes for merge closeout,
-  and 120 minutes for release closeout as split-and-report targets, not as
-  permission to skip a required gate. When a task reaches a second independent
-  blocker, stop expanding its scope and move unrelated findings to follow-up.
-- Treat elapsed time, paid Provider calls, full-gate executions, image builds,
-  and shared-runtime operations as bounded task resources. Declare the relevant
-  budget before using them, reuse valid evidence for the same revision, and do
-  not repeat a broad gate unless the rerun answers a distinct risk question.
-  After two consecutive failures with the same external-transfer signature,
-  stop automatic retries, preserve the evidence, and either use a documented
-  recovery lane or report the blocker to the operator.
-- A green GitHub Actions run is not evidence for lanes it skipped. The change
-  classifier deliberately skips irrelevant lanes, so a push-run `success` with
-  skipped backend lanes says nothing about backend health. Before diagnosing a
-  required-check failure as flaky or pre-existing, confirm that the runs being
-  compared actually executed the relevant lane; never infer master health from
-  a run that skipped it.
-- When the operator explicitly declares sessions to be running in parallel,
-  follow the Three Uniques in
-  `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
-  conflict domain, one human-authored PR in the protected merge lane, and one
-  shared-runtime operation owner. Parallel investigation and disjoint local
-  work remain allowed.
-- Whenever an AI session creates an auxiliary linked worktree, it must
-  immediately run
-  `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
-  verify the `locked codex:<task-id>` entry with
-  `git worktree list --porcelain`. Keep the worktree locked while the task,
-  review, or merge is still open. Unlock it only after the task has ended, its
-  PR is confirmed merged, and the worktree is clean, subject to the
-  no-deliverable and recovery rules in
-  `docs/single-session-worktree-lifecycle-v1.md`.
-- In the default single-session mode, prefer one clean development worktree,
-  the stable M4 operations worktree, and at most one auxiliary AI task
-  worktree. Use `pnpm run worktree:audit` for read-only inventory and follow
-  `docs/single-session-worktree-lifecycle-v1.md`; never treat an audit candidate
-  as deletion authorization.
-- Keep changes scoped to one module per session.
-- Before staging, inspect `git status --short --branch` and `git diff --stat`.
-  Stage only files changed for the current task. Do not use `git add -A` in a
-  mixed worktree.
-- Do not run `git reset --hard`, `git checkout -- .`, or equivalent destructive
-  cleanup unless the user explicitly asks for that exact operation.
-- Before committing, verify `git diff --cached --stat` and
-  `git diff --cached --name-only`; after committing, verify
-  `git show --name-status --stat HEAD`.
-- For multi-repo milestones, run the central matrix from
-  `/Users/muze/gitee/npcink-workflow-toolbox` instead of copying the script
-  into Cloud:
-  `composer quality:matrix` for status and `composer quality:matrix:run` before
-  cross-repo closeout.
-- Publish a completed clean topic branch with
-  `pnpm run pr:publish -- --title "<title>" --body-file <path>`. Start the body
-  from `.github/pull_request_template.md`; do not replace it with ad hoc
-  `gh pr create --body` text that omits `Scope`, `Boundary`, `Verification`, or
-  `Risk`.
-- Dependabot-authored PRs use the trusted bot contract documented in
-  `docs/pr-and-dependency-update-policy.md`. Do not manually weaken or bypass
-  that contract: bot identity, same-repository origin, `dependabot/*` branch,
-  `master` target, dependency-only changed files, and the from/to version
-  statement must all validate.
-- The publisher checks the current base-branch revision, creates the PR, and
-  requests protected squash auto-merge. It never bypasses required checks and
-  never deletes local or remote branches, because this repository commonly
-  uses multiple worktrees.
-- A PR targeting `production` must also contain
-  `Approved for production validation by operator.`; the publisher rejects a
-  production body without it.
-- Treat a normal `master` to `production` promotion as a frozen release
-  envelope. Do not add workflow, documentation, product, or unrelated repair
-  changes after the promotion starts. Record non-blocking discoveries for a
-  separate follow-up. If a discovery blocks this release's safety or
-  correctness, stop the promotion and use a separately reviewed `release-fix`
-  that is backported to `master`.
-- Translate the exact production release plan for the operator. For
-  `no_deploy`, explicitly report that the revision reached `production` and no
-  server update is required. For a runtime action, report the affected runtime
-  scope, expected deployment duration, rollback revision, and the exact human
-  authorization currently required; never leave the task silently waiting on
-  a production decision.
-- Close every production promotion with one compact end-to-end timing receipt.
-  Record fix, local verification, master PR CI, master merge, production PR
-  preparation, production PR CI, operator wait, bundle build, transfer, host
-  cutover, health verification, repeated broad-CI count, deployment attempt
-  count, and final state. Use `not applicable` or `not measured` rather than
-  inventing durations. Natural observation is the default; do not manufacture
-  a deployment only to collect timing data.
-- The cross-repository contract is
-  `/Users/muze/gitee/npcink-workflow-toolbox/docs/platform/pr-publishing-standard-v1.md`.
+Operator decision on 2026-10-23 permits all eligible normal accounts to buy
+existing Plus/Pro monthly packages and credit packs, and to start the existing
+shared 14-day Plus/Pro trial. No invitation, account-age gate, or three-user
+allowlist is required. Preserve current prices and one-trial-per-customer rules.
+The three-user Free validation runs separately and does not gate this rollout.
+See the bounded rollout contract in the commercial next-stage document;
+production deployment/configuration and real transaction tests remain separate
+operations requiring explicit authorization.
 
-## Optional Local Code Navigation
+## Follow-on (Phase 2–3)
 
-- CodeGraph is an optional local navigation aid, not repository, test, runtime,
-  or acceptance truth.
-- When an indexed clean reference worktree is available, use it only for
-  architecture discovery, call-path exploration, and initial impact analysis.
-- Before editing, testing, staging, or reviewing, verify every relevant file
-  and relationship against the active worktree.
-- Do not initialize CodeGraph in every worktree or install it in CI, M4,
-  production, release, or shared runtime environments.
-- CodeGraph output never replaces native search, tests, Git diff, required
-  checks, runtime smoke, cross-repository contract verification, or M4
-  acceptance. A missing or unavailable index must not block development.
+Select follow-on work under the value-first decision above; technical loop
+evidence alone does not activate the entire backlog. Maintain applicable gates
+and fix core-path, safety and correctness failures. Phase 2 includes portal e2e
+triage (assertion
+batches through #1196 merged; screenshot baseline + residual failures need a
+fresh master re-scan — see follow-on §2.1), watch the bounded auto-fail for
+orphan `running` inline runs (the lease prevents lockout; the worker fails a
+row after a per-run grace of at least 30 minutes), and polish Portal 502/busy
+UX. Production Deploy stays human-gated.
+Details: [phase-2-3-follow-on-v1.md](docs/engineering/phase-2-3-follow-on-v1.md).
+Deferred orphan root-cause remains trigger-gated in
+[deferred-engineering-triggers-v1.md](docs/deferred-engineering-triggers-v1.md)
+Reviewed Item 8.
+
+## Product boundary
+
+Cloud owns hosted runtime execution, providers, usage/entitlement evidence,
+health, Site Knowledge runtime/detail, artifacts, and read-only projections.
+
+Cloud must **not** become a second WordPress control plane, ability/workflow
+registry, approval/preflight/audit truth, prompt/router/preset owner, or
+WordPress write owner. See [cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md).
+
+## Cross-repo floors (最低配)
+
+跨仓发版/联调以 [docs/compatibility-matrix.md](docs/compatibility-matrix.md) 为单一真相源；Cloud 发版须更新该表一行；不做运行时硬拒。
+决策摘要见同文档「决策摘要」节（一人开发不做运行时硬拒；契约变更默认旧契约保留约 3 个 Cloud 小版本后硬切、不做长期双契约；边界 Toolbox/编排门户/Addon；联调：Cloud 走 M4/`m4:preview:sync`+Air 隧道 `127.0.0.1:18010`，Addon/Toolbox 本机 symlink 不进 M4，纯 PHP 默认不同步 M4；有痛再完善）。
+
+跨仓联调排障从 Cloud/门户往下时，优先用 `run_id` 关联；勿用 Toolbox/Addon 本地可读 trace（如 `web_search_*`）直接搜 Cloud（会与 Cloud 侧 `traceparent` hex/hash 对不上）。后续有痛再完善；不改 runtime/trace 代码。
+
+## Hard stops (ask a human)
+
+- No production Deploy, host mutation, or `production` promotion unless a human
+  explicitly authorizes that exact action.
+- No secrets in Git, PR bodies, logs, or chat.
+- No paid Provider spend solely to manufacture observation data.
+- No second CMS (Typecho/Hexo/Astro) in Phase 1.
+- Do not treat M4 / CI / local green as production proof.
+- Do not `git reset --hard` / wipe mixed worktrees unless the human names that
+  exact operation.
+
+## Session start (minimum)
+
+1. `git status --short --branch`
+2. Read this file and [README.md](README.md)
+3. Open only the seam docs for the change; route with
+   `pnpm run check:changed -- --plan <expected-files...>` when useful
+4. State focused module, non-goals, and verification gate before editing
+
+Default: one session, one module. Multi-session only when the operator declares
+it: [parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md).
+Worktrees: [single-session-worktree-lifecycle-v1.md](docs/single-session-worktree-lifecycle-v1.md).
+Lanes (development / merge / release):
+[development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md).
+
+## Definition of Done
+
+[docs/engineering/definition-of-done.md](docs/engineering/definition-of-done.md)
+
+## PR contract
+
+Required human headings (CI-enforced): **Scope**, **Boundary**, **Verification**,
+**Risk**. See [docs/engineering/pr-contract.md](docs/engineering/pr-contract.md),
+[docs/pr-and-dependency-update-policy.md](docs/pr-and-dependency-update-policy.md),
+[`.github/pull_request_template.md`](.github/pull_request_template.md).
+Prefer `pnpm run pr:publish` over ad-hoc bodies that drop headings.
+
+## Verification commands
+
+Admin 内容、版式或交互改动前，必读
+[信息层级评审规范](docs/cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract)。
+先列出「常显 / 按需 / 技术证据 / 删除重复」清单；核心结论、阻塞原因、
+当前范围、样本限制和高频动作不得只放 hover 或折叠内。页面说明可收起，
+但不得把动态状态当说明传入标题帮助。PR 必须记录被移走内容的入口和相关
+PC 浏览器证据；文档或静态契约通过不等于视觉验收。
+逐页整改同时维护[落实台账](docs/admin-information-hierarchy-implementation-ledger.md)，
+每条建议记录处置、入口和证据；后续改动先核对既有取舍，不能把已审查写成已整改。
+新增字段、TAB、弹窗或 drawer 也须核对规范第 8–11 节的页面场景、历史功能修复约束、
+来源和布局选型；既有未知/陈旧/待确认、草稿保护及暂停边界不得在视觉整理时回退。
+不得恢复已去重的内容、隐藏判断事实，或以更新截图基线代替视觉审查。
+
+当前项目仅做 **PC 端开发与界面验收**（公共站点、Portal、登录及 Admin）；
+移动端和平板端不在当前适配/优化/验收范围。PC 窄窗口仍属 PC 范围。
+前端检查按改动影响选择：纯文案/间距/列宽通常只查当前页面与相关 PC 宽度；
+涉及颜色/主题才补明暗检查，交互变化查对应行为，共享变更再扩大页面矩阵。
+不为局部外观调整反复跑全后台；保留已有代码、测试及强制 CI 门禁。
+执行细则与旧文档范围优先级见
+[PC 范围与选择检查规范](docs/frontend-pc-scope-and-selective-verification-v1.md)。
+
+[docs/engineering/verification-commands.md](docs/engineering/verification-commands.md) —
+only repository-real entry points. Prefer the narrowest gate for the seam.
+Inventory governance: [engineering-command-inventory-standard-v1.md](docs/engineering-command-inventory-standard-v1.md).
+
+## Evidence / receipts
+
+Report local, CI, M4 candidate, merged, M4 accepted, production, and human
+evidence as **separate** states. Do not collapse them.
+Closeout and runbooks live under `docs/` and `docs/history/`; dated closeouts
+are not automatic present truth unless an active standard names them.
 
 ## AI Production Operation Rules
 
+Normative detail: [cloud-production-release-policy-v1.md](docs/cloud-production-release-policy-v1.md)
+and [agents-session-protocol-detail.md](docs/engineering/agents-session-protocol-detail.md).
+
 - Production source branch is `production`; development integration branch is
   `master`.
-- Follow `docs/cloud-production-release-policy-v1.md` for production release
-  and emergency rules.
+- New work branches must start from the latest `master`; never branch off an
+  unmerged branch. Keep at most 1 unmerged branch per repo (exception: changes
+  with zero file overlap may each branch from `master`).
 - Do not directly edit production application code on the server.
-- Server-side changes are limited to `.env.deploy` secrets/config and emergency
-  break-glass fixes.
 - Any emergency server fix must be backported to Git before the next deploy.
 - Do not commit SMTP passwords, provider keys, database credentials, internal
   tokens, SSH keys, or `.env.deploy`.
-- Before promoting to `production`, confirm:
-  - `master` CI is green;
-  - release scope is intentional;
-  - rollback path is known;
-  - `docs/cloud-production-release-policy-v1.md` is satisfied;
-  - PR body includes `Approved for production validation by operator.`
-- When the worktree is dirty, use a clean temporary worktree for
-  release/process changes.
-- Do not use `git add -A` in a mixed worktree.
 - Do not push or deploy to Gitee. Current project source control is GitHub-only.
 - After changing release policy, run `pnpm run check:release-policy`.
+- Never Deploy Production unless a human explicitly authorizes that exact action.
 
-## Verification Gates
+## Security review anti-false-positive checklist
 
-Repository integration gate:
+When reporting security / system findings, follow this to avoid overstating risk:
 
-```bash
-pnpm run check:fast
-```
+1. **Label scope before severity** — each finding must say production / local-dev /
+   smoke-only / default-value-only. Call **严重** only when the public surface is
+   exploitable without misconfiguration theater.
+2. **Compare same-repo counterexamples** — if another compose/path already binds
+   loopback or uses strong secrets, treat the weak copy as debt, not “全线裸奔”.
+3. **Secrets need two-step evidence** — (a) tracked in the current tree, and
+   (b) present in full Git history (or `gitleaks --all`). Without (b), do not claim
+   “可能泄密”. Host/IP/`root` in a public repo is **target exposure**, not key leak.
+4. **Defaults ≠ live prod** — weak `config` defaults or empty `${VAR:-}` passthrough
+   are misconfig footguns unless prod `env_file` / ops is shown to use them.
+5. **Severity table** — **严重**: public exploit or confirmed real secret/private key
+   in history; **中等**: needs LAN / misconfig / rolling window; **改进**: defense-in-depth,
+   doc drift, missing non-secret keys.
+6. **Tone** — if tests/prod login were not run, write “未核实”. Do not say “沦陷” /
+   “裸奔” unless production entry is internet-facing and unauthenticated.
+7. **Remediation scope** — by default land only **public-surface exposure** and
+   **local-dev / smoke footgun** fixes (e.g. real SSH targets out of Git, bind
+   loopback). Do **not** treat hardening (prod healthchecks, per-secret hash salts,
+   CSP enforce, rejecting `*_API_KEY` env, Next security headers, weak-default
+   startup guards, etc.) as the same default action; propose them separately and
+   implement only after explicit user approval.
 
-Advisory AI review follows `docs/ocr-review-usage-policy-v1.md` (Cloud's
-operator-requested cost-control override of the shared standard's cadence).
-Default to one delivered CI review after a coherent checkpoint; do not also
-run a local model-backed review of the same range. After substantive fixes,
-request one incremental `/open-code-review` when ready, not after every push.
-If a local-only review is explicitly needed, preview the exact scope without
-model calls, then use a bounded range once:
+## Local deploy target and loopback conventions
 
-```bash
-ocr review --from origin/master --to HEAD --preview
-ocr review --from origin/master --to HEAD --concurrency 1 --effort low --max-tokens-budget 80000 --timeout 8
-```
+Keep workstation UX easy without putting real SSH targets in Git:
 
-For a single commit, replace `--from origin/master --to HEAD` with
-`--commit <sha>` in both commands. Range mode uses merge-base and can select
-historical changes across development/production branches; inspect the
-preview before spending Provider quota.
+- Real `NPCINK_CLOUD_DEPLOY_SSH_*` / domain values live in
+  `.deploy-secrets/workspace-target.env.sh` (gitignored). One-time:
+  copy `deploy/workspace-target.env.example` there, then keep using
+  `source deploy/workspace-target.env.sh`.
+- Tracked `deploy/workspace-target.env.sh` is a loader + placeholders only.
+  Details: [deploy/WORKSPACE_TARGET.md](deploy/WORKSPACE_TARGET.md).
+- Local `docker-compose.dev.yml` publishes Postgres/Redis/proxy on `127.0.0.1`
+  only; URLs stay `http://127.0.0.1:8010`. Optional
+  `NPCINK_CLOUD_DEV_POSTGRES_PASSWORD` in `.env`.
+- Deploy-bundle smoke Postgres must bind loopback
+  (`NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_BIND`, default `127.0.0.1`).
+- Do not commit real host IPs into docs or tracked env files; public product
+  origin `https://cloud.npc.ink` in ops docs is fine. Dated `docs/history/**`
+  may mention retired hosts — do not copy them into `.deploy-secrets/`.
 
-Do not run `ocr scan` or repeated connectivity probes as routine closeout.
-On 429/quota exhaustion, stop agent-initiated retries and preserve evidence.
-A budget-stopped or partially delivered review is incomplete evidence, even
-if the CLI exits 0. Fix real findings or record why they are acceptable;
-record unavailable or incomplete AI evidence rather than repeatedly spending
-quota. Deterministic checks remain mandatory, and OCR is never a required
-check, merge authority, or production authorization.
+## Detailed procedures (do not duplicate here)
 
-`check:fast` is not the default inner-loop command for every small edit. Start
-with the narrowest test, lint, type, or contract gate that covers the changed
-seam. Use `check:fast` when risk or integration closeout requires the combined
-contract/domain suite, and do not duplicate the same full gate for one revision
-without a distinct reason.
+Long session, M4, and gate procedures:
+[docs/engineering/agents-session-protocol-detail.md](docs/engineering/agents-session-protocol-detail.md)
 
-Declare the workflow stage explicitly when planning beyond the default:
-
-```bash
-pnpm run check:changed -- --plan --workflow-lane development
-pnpm run check:changed -- --plan --workflow-lane merge
-pnpm run check:changed -- --plan --workflow-lane release
-```
-
-The stage changes closeout expectations only. It must not change the selected
-risk tier, focused commands, or M4 runtime classification.
-
-When a broad command proves an earlier sub-gate and later fails on an unrelated
-assertion, preserve the successful sub-gate evidence but do not call the whole
-command green. Diagnose and rerun only the failed seam when the governing tool
-supports it; do not rebuild, rescan, consume Provider budget, or expand product
-scope merely to replay already-proved work.
-
-Additional gates by scope:
-
-```bash
-pnpm run check:seam
-pnpm run check:perimeter
-pnpm run check:anti-drift
-pnpm run lint
-```
-
-Before finishing a code session, run the narrowest useful gate and report
-exactly what passed or failed.
-
-Admin UI work must run:
-
-```bash
-pnpm run check:admin-ui
-```
-
-Material admin layout, table, dialog, or shared-primitive changes must also run:
-
-```bash
-pnpm run check:admin-ui:visual
-```
-
-Do not add an unclassified admin route, a route-local modal overlay, duplicated
-credential reveal behavior, or repeated admin geometry literals. Use the
-shared admin primitives and `--admin-*` tokens. Existing route-local dialogs
-are migration debt recorded in `frontend/admin-ui-manifest.json`; reduce that
-list over time and never grow it without an explicit reviewed exception.
-Admin routes must not add `border-dashed` directly. Dashed boundaries are
-reserved for the approved shared empty-state or drop-target primitive; normal
-tables, dialogs, controls, disclosures, loading states, and status surfaces use
-whitespace or quiet solid dividers as defined by
-`docs/cloud-admin-ui-standard-v1.md`.
-
-## M4 Preview Completion Protocol
-
-- Before M4-related development or operations, read
-  `docs/m4-preview-ai-development-standard-v1.md`. Classify the change as
-  local-only, Cloud source, or build/runtime, then use the smallest valid
-  verification lane defined there.
-- In the approved M4 workflow, the authoring Mac owns source edits, Git, and
-  operator commands only. Routine Cloud Docker build, execution, migration,
-  and runtime testing belong on M4; do not silently replace a failed or
-  unavailable M4 lane with local Docker.
-- A user-authorized Cloud source or build/runtime task also authorizes the
-  corresponding candidate preview action. After a coherent task checkpoint
-  and the narrowest useful local source/static gate, run `m4:preview:sync` or
-  `m4:preview:deploy` without waiting for the user to ask again. A declared
-  multi-session queue follows the separate parallel standard instead.
-- Automatic checkpoint dispatch means an explicit agent action in the active
-  task. Do not add per-save watchers, background daemons, Git hooks, or
-  GitHub-hosted M4 deployment credentials. Batch related edits into a coherent
-  checkpoint; if source changes after validation, dispatch the candidate again
-  before claiming M4 evidence.
-- The default source path is the Tailscale-only source relay documented in
-  ADR-026. Keep the relay transient and private; it does not become source or
-  Git truth. Do not substitute its public SSH maintenance address or silently
-  fall back to direct transfer. Use the explicit direct fallback only when the
-  operator selects it for a bounded recovery.
-- The package proxy cache documented in ADR-027 is disposable M4 build state.
-  Preserve frozen-lockfile and package-manager integrity authority; do not
-  repurpose the cache as source, dependency, accepted-revision, relay, or
-  private-package truth. Recover by removing only its exact cache directory.
-- During the edit loop, prefer
-  `pnpm run m4:preview:test -- --focused <tests/path-or-node-id>`. Use
-  `--contract`, `--domain`, or `--full` only when that broader scope answers a
-  real risk question.
-- GitHub required checks are the merge authority. Do not routinely rerun the
-  same full contract/domain gate on M4 before and after a green CI result for
-  the same revision.
-- Direct `m4:preview:sync` and `m4:preview:deploy` operations are candidate
-  previews. They prove behavior but do not prove that the source reached
-  `master`.
-- Do not report an M4-validated change as accepted until its pull request is
-  merged into `master` and a clean, current `origin/master` worktree runs
-  `pnpm run m4:preview:promote -- --pr <number>`.
-- Promotion uses source sync by default. Add `--deploy` only when the command
-  reports that dependency, Dockerfile, lock-file, Compose, proxy, or deployment
-  script inputs require an M4 image rebuild.
-- Post-merge acceptance normally requires promotion, status, and the relevant
-  smoke; another full M4 suite requires a recorded M4-specific or high-risk
-  reason.
-- Final evidence must show `acceptance_state=accepted`, the merged PR number,
-  `source_branch=master`, `source_dirty=false`, and the current
-  `origin/master` revision in `m4:preview:status`.
-- Every task that uses M4 MUST end its final report with one compact observation
-  receipt beginning with `M4_OBSERVATION_RECEIPT`. Include the observation
-  date, connection path, ordinary sync duration, focused-feedback duration,
-  promotion duration, sync/deploy count, accepted-stable-window non-health
-  `502` count, M4-only defects, and coordination loss. Use `not measured` or
-  `not occurred` for unknown or absent values; never infer exact human time
-  from logs. Use one semicolon-delimited line:
-  `M4_OBSERVATION_RECEIPT date=...; route=...; sync=...; focused=...; promotion=...; operations=...; stable_502=...; m4_only=...; coordination=...`.
-- Ordinary task sessions MUST NOT edit the shared five-day observation table.
-  The scheduled daily collector is its single writer and aggregates the
-  receipts into `ai-doc/mac mini M4/2026-07-29-npcink-ai-cloud-five-day-observation.md`.
-  This avoids concurrent Git edits while preserving per-task evidence.
-- GitHub rebase merge may replace feature commit SHAs. Use the merged PR,
-  current `origin/master`, and deployed source revision as the acceptance
-  chain; do not require the pre-merge feature SHA to remain an ancestor.
-- Keep M4 access operator-initiated. Do not add M4 SSH credentials to
-  GitHub-hosted CI or turn preview promotion into a second deployment control
-  plane.
+Docs index: [docs/README.md](docs/README.md)

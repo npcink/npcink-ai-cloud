@@ -76,8 +76,8 @@ export function PortalCreditPackDialog({
         {},
         'Add AI credits without changing your package. Each pack shows its validity after payment.'
       )}
-      size="xl"
-      className="portal-commercial-dialog max-w-4xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      size="2xl"
+      className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
     >
       <div className="space-y-4">
         <div

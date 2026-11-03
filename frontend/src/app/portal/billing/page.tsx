@@ -1,24 +1,18 @@
 'use client';
 
-import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
-import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
-import { PortalCreditPackDialog } from '@/components/portal/PortalCreditPackDialog';
-import {
-  PortalPackageChangePanel,
-  type PortalPackageTier,
-} from '@/components/portal/PortalPackageChangePanel';
-import {
-  isPortalPaymentOrderPending,
-  PortalPaymentOrderHistory,
-} from '@/components/portal/PortalPaymentOrderHistory';
-import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
-import { PortalTrialEligibilityPanel } from '@/components/portal/PortalTrialEligibilityPanel';
+import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSiteUsageList';
+import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
+import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
+import type { Site } from '@/lib/portal-client';
+import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import {
   PortalErrorState,
   PortalLoadingState,
@@ -26,47 +20,22 @@ import {
 } from '@/components/portal/PortalPageState';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { Modal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalCommercialCatalog } from '@/hooks/usePortalCommercialCatalog';
-import { usePortalPaymentOrders } from '@/hooks/usePortalPaymentOrders';
 import { useSession } from '@/hooks/useSession';
+import { type Entitlements } from '@/lib/portal-client';
+import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import {
-  portalClient,
-  type Entitlements,
-  type PortalPlanOffer,
-} from '@/lib/portal-client';
-import {
-  resolveCustomerPackageDisplay,
-} from '@/lib/customer-package-display';
-import {
-  formatPortalErrorMessage,
-  formatPortalWriteErrorMessage,
-} from '@/lib/portal-error';
+  billingPackageNeedsAttention,
+  findLimitedBillingResources,
+  resolveBillingPackageStatusLabel,
+  resolveBillingPressureCta,
+} from '@/lib/portal-billing-status';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
 type QuotaResource = NonNullable<QuotaSummary['resource_limits']>[number];
-
-type PaymentLaunchState = {
-  checkoutUrl: string;
-  opened: boolean;
-};
-
-function preparePaymentWindow(): Window | null {
-  const paymentWindow = window.open('about:blank', '_blank');
-  if (paymentWindow) paymentWindow.opener = null;
-  return paymentWindow;
-}
-
-function closePreparedPaymentWindow(paymentWindow: Window | null): void {
-  if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
-}
-
-function normalizePaymentText(value: unknown): string {
-  return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
-}
 
 function formatBillingPeriodRange(startValue: string, endValue: string, locale: string): string {
   const start = new Date(startValue);
@@ -84,13 +53,6 @@ function formatBillingPeriodRange(startValue: string, endValue: string, locale: 
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
-function findLimitedResources(quotaSummary: QuotaSummary | null): QuotaResource[] {
-  return (quotaSummary?.resource_limits || []).filter((resource) => (
-    !resource.unlimited
-    && Number(resource.limit || 0) > 0
-    && (resource.status === 'limited' || Number(resource.used || 0) > Number(resource.limit || 0))
-  ));
-}
 
 function formatLimitedResourceDetail(resource: QuotaResource, packageLabel: string, t: TranslateFn): string {
   const used = formatNumber(Number(resource.used || 0));
@@ -130,7 +92,7 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
       'The package has no AI credits remaining. Buy AI credits or change the package to continue.'
     );
   }
-  const limitedResources = findLimitedResources(quotaSummary);
+  const limitedResources = findLimitedBillingResources(quotaSummary);
   if (limitedResources.length > 1) {
     return limitedResources.map((resource) => formatLimitedResourceDetail(resource, packageLabel, t)).join(' ');
   }
@@ -140,38 +102,14 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
     : t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
-function resolvePackageStatusLabel(quotaSummary: QuotaSummary | null, t: TranslateFn): string {
-  if (quotaSummary?.ai_credits?.status === 'limited') {
-    return t('portal.billing.package_status_credit_label', {}, 'AI credits unavailable');
-  }
-  const limitedResources = findLimitedResources(quotaSummary);
-  if (limitedResources.length > 1) {
-    return t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention');
-  }
-  const limitedResource = limitedResources[0];
-  if (limitedResource?.key === 'vector_documents') {
-    return t('portal.billing.package_status_knowledge_label', {}, 'Text capacity needs attention');
-  }
-  if (limitedResource?.key === 'media_images') {
-    return t('portal.billing.package_status_media_label', {}, 'Image capacity needs attention');
-  }
-  if (limitedResource?.key === 'active_sites' || limitedResource?.key === 'bound_sites') {
-    return t('portal.billing.package_status_site_label', {}, 'Site limit exceeded');
-  }
-  if (limitedResource) {
-    return t('portal.billing.package_status_capacity_label', {}, 'Package limit exceeded');
-  }
-  return t('common.ok', {}, 'OK');
-}
 
 function PortalBillingContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { locale, t } = useLocale();
-  const { session, isLoading: sessionLoading, isAuthenticated, refresh } = useSession();
+  const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const {
     entitlements,
-    creditPacks,
-    planOffers,
     isLoading,
     error,
     load: loadBilling,
@@ -179,154 +117,76 @@ function PortalBillingContent() {
     isAuthenticated,
     t,
   });
-  const {
-    payload: paymentOrders,
-    statusGroup: paymentOrderStatusGroup,
-    offset: paymentOrderOffset,
-    isLoading: paymentOrdersLoading,
-    error: paymentOrderError,
-    cancelPendingOrderId,
-    cancelConfirmOrderId,
-    load: loadPaymentOrders,
-    cancel: handleCancelPaymentOrder,
-    setStatusGroup: setPaymentOrderStatusGroup,
-    setOffset: setPaymentOrderOffset,
-    setCancelConfirmOrderId,
-  } = usePortalPaymentOrders({
-    isAuthenticated,
-    t,
-  });
-  const [creditPackPending, setCreditPackPending] = useState<string | null>(null);
-  const [creditPackError, setCreditPackError] = useState<string | null>(null);
-  const [packagePending, setPackagePending] = useState<string | null>(null);
-  const [packageError, setPackageError] = useState<string | null>(null);
-  const [trialTierSelection, setTrialTierSelection] = useState<'plus' | 'pro'>('pro');
-  const [activeCommercialDialog, setActiveCommercialDialog] = useState<
-    'package' | 'credits' | 'trial' | null
-  >(null);
-  const [selectedPackageTier, setSelectedPackageTier] = useState<
-    PortalPackageTier | null
-  >(null);
-  const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(true);
-  const [selectedCreditPackId, setSelectedCreditPackId] = useState<string | null>(null);
-  const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
-  const handledUpgradeIntentRef = useRef('');
+  const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
+  const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
+  const [siteUsageListHighlight, setSiteUsageListHighlight] = useState(false);
+  const siteUsageHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const focusSiteUsageList = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.delete('view');
+    nextParams.delete('site');
+    const qs = nextParams.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/portal/billing${qs ? `?${qs}` : ''}#site-usage`,
+    );
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
+    // Brief ring/bg flash so the click always feels acknowledged, even when already in view.
+    setSiteUsageListHighlight(false);
+    requestAnimationFrame(() => {
+      setSiteUsageListHighlight(true);
+      document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      siteUsageHighlightTimerRef.current = setTimeout(() => {
+        setSiteUsageListHighlight(false);
+        siteUsageHighlightTimerRef.current = null;
+      }, 1800);
+    });
+  }, []);
+
+  const openCreditSources = useCallback(() => {
+    setCreditSourcesOpen(true);
+  }, []);
+
+  const openSiteUsage = useCallback((site: Site) => {
+    setSiteUsageSite(site);
+  }, []);
+
+  const closeSiteUsage = useCallback(() => {
+    setSiteUsageSite(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (siteUsageHighlightTimerRef.current) {
+      clearTimeout(siteUsageHighlightTimerRef.current);
+      siteUsageHighlightTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    const requestedTier = searchParams.get('plan');
-    const requestedAction = searchParams.get('action');
-    const intentKey = `${requestedAction}:${requestedTier}`;
-    if (
-      requestedAction !== 'upgrade'
-      || (requestedTier !== 'plus' && requestedTier !== 'pro')
-      || handledUpgradeIntentRef.current === intentKey
-      || !(planOffers?.items || []).some((offer) => offer.tier_id === requestedTier)
-    ) {
-      return;
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === '#usage' || window.location.hash === '#site-usage') {
+      requestAnimationFrame(() => {
+        document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     }
-    handledUpgradeIntentRef.current = intentKey;
-    setPackageError(null);
-    setSelectedPackageTier(requestedTier);
-    setShowOnlyPackageDifferences(true);
-    setActiveCommercialDialog('package');
-  }, [planOffers?.items, searchParams]);
+  }, [entitlements, isLoading, searchParams]);
 
+  // Payment-order anchors stay on Account; package upgrade intents stay on this page.
   useEffect(() => {
-    const allowedTiers = planOffers?.trial?.allowed_tiers || [];
-    if (!allowedTiers.length || allowedTiers.includes(trialTierSelection)) return;
-    setTrialTierSelection(allowedTiers.includes('pro') ? 'pro' : allowedTiers[0]);
-  }, [planOffers?.trial?.allowed_tiers, trialTierSelection]);
-
-  const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
-  const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
-
-  const handleStartPlanTrial = async (tierId: 'plus' | 'pro') => {
-    setPackagePending(`trial:${tierId}`);
-    setPackageError(null);
-    try {
-      await portalClient.startPlanTrial(tierId);
-      await refresh();
-      await loadBilling();
-      setActiveCommercialDialog(null);
-    } catch (err) {
-      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
-    } finally {
-      setPackagePending(null);
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash === '#payment-orders' || searchParams.has('payment_return')) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('action');
+      const qs = params.toString();
+      router.replace(`/portal/account${qs ? `?${qs}` : ''}#payment-orders`);
     }
-  };
-
-  const handleCreateSubscriptionOrder = async (offer: PortalPlanOffer) => {
-    const paymentWindow = preparePaymentWindow();
-    setPackagePending(`order:${offer.tier_id}`);
-    setPackageError(null);
-    setPaymentLaunch(null);
-    try {
-      const response = await portalClient.createSubscriptionOrder(offer.offer_id, 'alipay');
-      if (response.data.order.checkout_url) {
-        if (paymentWindow && !paymentWindow.closed) {
-          paymentWindow.location.replace(response.data.order.checkout_url);
-          setPaymentLaunch({ checkoutUrl: response.data.order.checkout_url, opened: true });
-        } else {
-          setPaymentLaunch({ checkoutUrl: response.data.order.checkout_url, opened: false });
-        }
-        setPaymentOrderStatusGroup('pending');
-        setPaymentOrderOffset(0);
-        await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
-      } else {
-        closePreparedPaymentWindow(paymentWindow);
-      }
-    } catch (err) {
-      closePreparedPaymentWindow(paymentWindow);
-      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
-    } finally {
-      setPackagePending(null);
-    }
-  };
-
-  const handleScheduleFreeDowngrade = async () => {
-    setPackagePending('downgrade:free');
-    setPackageError(null);
-    try {
-      await portalClient.scheduleFreeDowngrade();
-      await refresh();
-      await loadBilling();
-      setActiveCommercialDialog(null);
-    } catch (err) {
-      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
-    } finally {
-      setPackagePending(null);
-    }
-  };
-
-  const handleCreateCreditPackOrder = async (packId: string) => {
-    const paymentWindow = preparePaymentWindow();
-    setCreditPackPending(packId);
-    setCreditPackError(null);
-    setPaymentLaunch(null);
-    try {
-      const response = await portalClient.createAccountCreditPackOrder(packId);
-      if (response.data.order.checkout_url) {
-        if (paymentWindow && !paymentWindow.closed) {
-          paymentWindow.location.replace(response.data.order.checkout_url);
-          setPaymentLaunch({ checkoutUrl: response.data.order.checkout_url, opened: true });
-        } else {
-          setPaymentLaunch({ checkoutUrl: response.data.order.checkout_url, opened: false });
-        }
-        setPaymentOrderStatusGroup('pending');
-        setPaymentOrderOffset(0);
-        await loadPaymentOrders('pending', 0);
-        setActiveCommercialDialog(null);
-      } else {
-        closePreparedPaymentWindow(paymentWindow);
-      }
-    } catch (err) {
-      closePreparedPaymentWindow(paymentWindow);
-      setCreditPackError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
-    } finally {
-      setCreditPackPending(null);
-    }
-  };
+  }, [router, searchParams]);
 
   if (sessionLoading && !session) {
     return <PortalLoadingState message={t('portal.loading_session', {}, 'Loading session...')} />;
@@ -342,184 +202,12 @@ function PortalBillingContent() {
     );
   }
 
-  const currentSubscription = entitlements?.current_subscription || null;
-  const currentPlanId = String(currentSubscription?.plan_id || '').toLowerCase();
-  const currentStatus = String(currentSubscription?.status || '').toLowerCase();
-  const offersByTier = new Map(
-    (planOffers?.items || []).map((offer) => [offer.tier_id, offer] as const)
-  );
-  const plusOffer = offersByTier.get('plus');
-  const proOffer = offersByTier.get('pro');
-  const agencyOffer = offersByTier.get('agency');
-  const trial = planOffers?.trial;
-  const trialState = trial?.state
-    || (trial?.status === 'active'
-      ? 'active'
-      : trial?.available === true
-        ? 'eligible'
-        : trial?.available === false
-          ? 'used'
-          : 'unavailable');
-  const allowedTrialTiers = (trial?.allowed_tiers || []).filter(
-    (tier): tier is 'plus' | 'pro' => tier === 'plus' || tier === 'pro'
-  );
-  const selectedTrialTier = allowedTrialTiers.includes(trialTierSelection)
-    ? trialTierSelection
-    : allowedTrialTiers.includes('pro')
-      ? 'pro'
-      : allowedTrialTiers[0];
-  const selectedTrialOffer = selectedTrialTier ? offersByTier.get(selectedTrialTier) : null;
-  const trialDays = Number(trial?.trial_days || selectedTrialOffer?.trial_days || 14);
-  const activeTrialTier = String(trial?.highest_tier_id || trial?.tier_id || currentPlanId || '').toLowerCase();
-  const activeTrialTierLabel = activeTrialTier === 'plus' ? 'Plus' : activeTrialTier === 'pro' ? 'Pro' : '';
-  const availableCreditPacks = creditPacks?.items || [];
-  const selectedPackageOffer = selectedPackageTier && selectedPackageTier !== 'free'
-    ? offersByTier.get(selectedPackageTier)
-    : null;
-  const allPaymentOrders = paymentOrders?.items || [];
-  const paymentOrderCounts = paymentOrders?.counts || {
-    all: allPaymentOrders.length,
-    pending: allPaymentOrders.filter(isPortalPaymentOrderPending).length,
-    paid: allPaymentOrders.filter((order) => normalizePaymentText(order.status) === 'paid').length,
-    closed: allPaymentOrders.filter((order) => !['pending', 'paid'].includes(normalizePaymentText(order.status))).length,
-  };
-
-  const paymentLaunchNotice = paymentLaunch ? (
-    <div
-      role="status"
-      className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100"
-    >
-      {paymentLaunch.opened ? (
-        t(
-          'portal.usage.payment_page_opened',
-          {},
-          'Alipay opened in a new tab. Return here after payment and the order status will refresh automatically.'
-        )
-      ) : (
-        <span className="flex flex-wrap items-center gap-3">
-          <span>
-            {t(
-              'portal.usage.payment_page_blocked',
-              {},
-              'Your browser blocked the payment tab. Use the button to open Alipay.'
-            )}
-          </span>
-          <a
-            className="btn btn-primary"
-            href={paymentLaunch.checkoutUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {t('portal.usage.payment_page_open_action', {}, 'Open Alipay')}
-          </a>
-        </span>
-      )}
-    </div>
-  ) : null;
-
-  const comparisonTiers = planOffers?.comparison_tiers || [];
-
-  const handleConfirmPackageSelection = () => {
-    if (!selectedPackageTier || packagePending !== null) return;
-    if (selectedPackageTier === 'free') {
-      void handleScheduleFreeDowngrade();
-      return;
-    }
-    const selectedOffer = offersByTier.get(selectedPackageTier);
-    if (selectedOffer) void handleCreateSubscriptionOrder(selectedOffer);
-  };
-
-  const handleConfirmCreditPackSelection = () => {
-    if (!selectedCreditPackId || creditPackPending !== null) return;
-    void handleCreateCreditPackOrder(selectedCreditPackId);
-  };
-
-  const packageOptions = (
-    <PortalPackageChangePanel
-      t={t}
-      currentPlanId={currentPlanId}
-      currentStatus={currentStatus}
-      comparisonTiers={comparisonTiers}
-      plusOffer={plusOffer}
-      proOffer={proOffer}
-      agencyOffer={agencyOffer}
-      selectedTier={selectedPackageTier}
-      showOnlyDifferences={showOnlyPackageDifferences}
-      pendingAction={packagePending}
-      error={packageError}
-      onSelectTier={setSelectedPackageTier}
-      onShowOnlyDifferencesChange={setShowOnlyPackageDifferences}
-      onConfirm={handleConfirmPackageSelection}
-      onAgencyPurchase={(offer) => void handleCreateSubscriptionOrder(offer)}
-    />
-  );
-
-  const trialStatusTitle = trialState === 'eligible'
-    ? t('portal.package.trial_eligible_title', { days: String(trialDays) }, `${trialDays}-day paid-package trial available`)
-    : trialState === 'active'
-      ? t('portal.package.trial_active_title', { tier: activeTrialTierLabel }, `${activeTrialTierLabel} trial is active`)
-      : trialState === 'used'
-        ? t('portal.package.trial_used_title', {}, 'Trial already used')
-        : trialState === 'blocked'
-          ? t('portal.package.trial_blocked_title', {}, 'Trial unavailable with an active paid package')
-          : t('portal.package.trial_unavailable_title', {}, 'Trial is not currently offered');
-  const trialStatusDescription = trialState === 'eligible'
-    ? t('portal.package.trial_shared_desc', {}, 'Each account has one shared paid-package trial. You may move to a higher tier during the trial, but the end date will not be extended.')
-    : trialState === 'active'
-      ? t(
-          'portal.package.trial_active_desc',
-          {
-            tier: activeTrialTierLabel,
-            date: trial?.trial_ends_at ? formatDate(trial.trial_ends_at) : t('common.unknown', {}, 'To confirm'),
-          },
-          `${activeTrialTierLabel} trial ends ${trial?.trial_ends_at ? formatDate(trial.trial_ends_at) : 'to be confirmed'}. Moving to a higher tier does not extend the end date.`
-        )
-      : trialState === 'used'
-        ? t('portal.package.trial_used_desc', {}, 'This account has already used its paid-package trial. You can still purchase a package.')
-        : trialState === 'blocked'
-          ? t('portal.package.trial_blocked_desc', {}, 'This account already has an active paid package, so a trial cannot be started. Renew or change the package instead.')
-          : t('portal.package.trial_unavailable_desc', {}, 'No self-service trial is available for this account. Package purchase remains available.');
-
-  const trialOptions = (
-    <PortalTrialEligibilityPanel
-      t={t}
-      state={trialState}
-      title={trialStatusTitle}
-      description={trialStatusDescription}
-      allowedTiers={allowedTrialTiers}
-      selectedTier={selectedTrialTier}
-      trialDays={trialDays}
-      pendingAction={packagePending}
-      error={packageError}
-      onSelectTier={setTrialTierSelection}
-      onStartTrial={(tier) => void handleStartPlanTrial(tier)}
-    />
-  );
-
-  const paymentOrdersCard = (
-    <PortalPaymentOrderHistory
-      t={t}
-      payload={paymentOrders}
-      counts={paymentOrderCounts}
-      statusGroup={paymentOrderStatusGroup}
-      offset={paymentOrderOffset}
-      isLoading={paymentOrdersLoading}
-      error={paymentOrderError}
-      cancelPendingOrderId={cancelPendingOrderId}
-      cancelConfirmOrderId={cancelConfirmOrderId}
-      onStatusGroupChange={setPaymentOrderStatusGroup}
-      onOffsetChange={setPaymentOrderOffset}
-      onCancelConfirmChange={setCancelConfirmOrderId}
-      onCancel={(order) => void handleCancelPaymentOrder(order)}
-    />
-  );
-
-  if (isLoading && !entitlements && !planOffers && !creditPacks) {
+  if (isLoading && !entitlements) {
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} />;
   }
 
-  const snapshotPlanVersionId =
-    currentSubscription?.plan_version_id || '';
+  const currentSubscription = entitlements?.current_subscription || null;
+  const snapshotPlanVersionId = currentSubscription?.plan_version_id || '';
   const packageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: snapshotPlanVersionId,
@@ -548,87 +236,47 @@ function PortalBillingContent() {
         `Ends ${formatDate(currentPeriodEnd)}`
       )
     : '';
-  const packageStatus =
-    !quotaSummary || error
-      ? 'unknown'
-      : String(quotaSummary.status) === 'limited'
-      ? 'warning'
-      : 'ok';
+  const packageStatus = billingPackageNeedsAttention(quotaSummary, error)
+    ? 'warning'
+    : (!quotaSummary || error ? 'unknown' : 'ok');
   const packageStatusLabel =
     packageStatus === 'warning'
-      ? resolvePackageStatusLabel(quotaSummary, t)
+      ? resolveBillingPackageStatusLabel(quotaSummary, t)
       : t('common.ok', {}, 'OK');
-  const creditNeedsAttention = quotaSummary?.ai_credits?.status === 'limited';
+  const pressureCta = resolveBillingPressureCta({ quotaSummary, t });
+  const manageHref = pressureCta.href;
+  const packageSummaryMetrics = [
+    {
+      label: t('portal.current_subscription_label', {}, 'Current package'),
+      value: packageLabel,
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.usage.period_label', {}, 'Period'),
+      value: currentPeriodLabel,
+      detail: currentPeriodEndDetail || undefined,
+      size: 'compact' as const,
+    },
+  ];
 
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
-        description={t('portal.billing.subtitle', {}, 'Review the account package, AI credits, and available account actions.')}
         currentPage="billing"
-        titleAccessory={packageStatus === 'ok' ? (
-          <PortalStatusBadge status="active" label={packageStatusLabel} className="text-[0.68rem]" />
-        ) : null}
-        metadata={(
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.current_subscription_label', {}, 'Current package')}:
-              </span>{' '}
-              {packageLabel}
-            </span>
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.usage.period_label', {}, 'Period')}:
-              </span>{' '}
-              {currentPeriodLabel}
-            </span>
-            {currentPeriodEndDetail ? <span>{currentPeriodEndDetail}</span> : null}
-          </div>
-        )}
-        contextPanel={packageStatus === 'warning' ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
-            <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
-            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
-              {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
-            </p>
-            <button
-              type="button"
-              className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              onClick={() => {
-                if (creditNeedsAttention && availableCreditPacks.length > 0) {
-                  setCreditPackError(null);
-                  setSelectedCreditPackId(null);
-                  setActiveCommercialDialog('credits');
-                  return;
-                }
-                setPackageError(null);
-                setSelectedPackageTier(null);
-                setShowOnlyPackageDifferences(true);
-                setActiveCommercialDialog('package');
-              }}
-            >
-              {creditNeedsAttention && availableCreditPacks.length > 0
-                ? t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')
-                : t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-            </button>
-          </div>
-        ) : null}
+        primaryAction={
+          packageStatus !== 'warning' ? (
+            <Link href="/portal/billing?action=upgrade" className="btn btn-secondary btn-sm">
+              {t('portal.billing.manage_title', {}, 'Manage package')}
+            </Link>
+          ) : null
+        }
+        metrics={packageSummaryMetrics}
+        metricsLayout="rail"
+        metricsPlacement="title-end"
       />
 
-      <PortalPaymentReturnNotice
-        t={t}
-        locale={locale}
-        provider={paymentReturnProvider}
-        orderId={paymentReturnOrderId}
-        isAuthenticated={isAuthenticated}
-        entitlements={entitlements}
-        refreshSession={refresh}
-        refreshBilling={loadBilling}
-        refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
-      />
-
-      {paymentLaunchNotice}
+      <PortalAccountCommercePanels surface="billing" />
 
       {error ? (
         <PortalErrorState
@@ -639,112 +287,61 @@ function PortalBillingContent() {
         />
       ) : null}
 
-      {!error && quotaSummary ? <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
-        <PortalEntitlementUsage
-          quotaSummary={quotaSummary}
-          t={t}
-          locale={locale}
-        />
-      </PortalCard> : null}
-
-      {!error && entitlements ? <div id="package-options" className="scroll-mt-24">
-        <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
-              <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                {t('portal.billing.manage_title', {}, 'Manage package')}
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t('portal.billing.manage_desc', {}, 'Open an option only when you need to change the package, add AI credits, or review trial eligibility.')}
-              </p>
-              <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                {trialStatusTitle}
-              </p>
-            </div>
-            <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[25rem]">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-secondary' : 'btn-primary'}`}
-                  onClick={() => {
-                    setPackageError(null);
-                    setSelectedPackageTier(null);
-                    setShowOnlyPackageDifferences(true);
-                    setActiveCommercialDialog('package');
-                  }}
-                >
-                  {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-                </button>
-                {availableCreditPacks.length > 0 ? (
-                  <button
-                    type="button"
-                    className={`btn whitespace-nowrap ${creditNeedsAttention ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => {
-                      setCreditPackError(null);
-                      setSelectedCreditPackId(null);
-                      setActiveCommercialDialog('credits');
-                    }}
-                  >
-                    {t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')}
-                  </button>
-                ) : null}
+      {!error && quotaSummary ? (
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950" data-portal-billing="entitlements">
+          {packageStatus === 'warning' ? (
+            <div
+              className="mb-3 w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+              data-portal-billing="attention"
+            >
+              <div className="flex flex-wrap items-start gap-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
+                    {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
+                  </p>
+                </div>
+                <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
+                  {pressureCta.label}
+                </Link>
               </div>
-              <button
-                type="button"
-                className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-300 dark:hover:text-blue-200"
-                onClick={() => {
-                  setPackageError(null);
-                  setActiveCommercialDialog('trial');
-                }}
-              >
-                {trialState === 'eligible'
-                  ? t('portal.package.trial_entry_action', { days: String(trialDays) }, `Start ${trialDays}-day trial`)
-                  : trialState === 'active'
-                    ? t('portal.package.trial_active_entry_action', {}, 'View active trial')
-                    : t('portal.package.trial_eligibility_action', {}, 'Trial eligibility')}
-              </button>
             </div>
+          ) : null}
+          <div id="entitlements" className="scroll-mt-24">
+            <PortalEntitlementUsage
+              quotaSummary={quotaSummary}
+              t={t}
+              locale={locale}
+              attentionSurfaceActive={packageStatus === 'warning'}
+              onOpenUsage={focusSiteUsageList}
+              onOpenCreditSources={openCreditSources}
+            />
           </div>
         </PortalCard>
-      </div> : null}
+      ) : null}
 
-      {paymentOrdersCard}
+      {!error ? (
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950">
+          <PortalBillingSiteUsageList
+            sites={session.sites}
+            t={t}
+            onSelectSite={openSiteUsage}
+            highlight={siteUsageListHighlight}
+          />
+        </PortalCard>
+      ) : null}
 
-      <Modal
-        isOpen={activeCommercialDialog === 'package'}
-        onClose={() => setActiveCommercialDialog(null)}
-        closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
-        description={t('portal.billing.package_dialog_desc', {}, 'Compare available packages and choose the change you want to make.')}
-        size="xl"
-        className="portal-commercial-dialog max-w-5xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
-      >
-        {packageOptions}
-      </Modal>
-
-      <PortalCreditPackDialog
-        t={t}
-        isOpen={activeCommercialDialog === 'credits'}
-        packs={availableCreditPacks}
-        selectedPackId={selectedCreditPackId}
-        pendingPackId={creditPackPending}
-        error={creditPackError}
-        onClose={() => setActiveCommercialDialog(null)}
-        onSelect={setSelectedCreditPackId}
-        onConfirm={handleConfirmCreditPackSelection}
+      <PortalSiteUsageDialog
+        isOpen={Boolean(siteUsageSite)}
+        onClose={closeSiteUsage}
+        site={siteUsageSite}
       />
 
-      <Modal
-        isOpen={activeCommercialDialog === 'trial'}
-        onClose={() => setActiveCommercialDialog(null)}
-        closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.package.trial_dialog_title', {}, 'Trial eligibility')}
-        description={t('portal.package.trial_dialog_desc', {}, 'Review this account trial status before starting or changing a trial.')}
-        size="lg"
-        className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
-      >
-        {trialOptions}
-      </Modal>
+      <PortalCreditSourcesDialog
+        isOpen={creditSourcesOpen}
+        onClose={() => setCreditSourcesOpen(false)}
+        quotaSummary={quotaSummary}
+      />
     </PortalPageStack>
   );
 }

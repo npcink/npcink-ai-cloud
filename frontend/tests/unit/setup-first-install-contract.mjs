@@ -94,7 +94,7 @@ assert.doesNotMatch(wizard, /autoComplete="(?:username|new-password)"/);
 assert.match(wizard, /idempotencyKey: installIdempotencyKey\.current/);
 assert.match(wizard, /setSetupCode\(''\)/);
 assert.match(wizard, /setDatabase\(EMPTY_DATABASE\)/);
-assert.match(wizard, /window\.location\.assign\('\/admin\/login'\)/);
+assert.match(wizard, /router\.replace\('\/admin\/login'\);\s*router\.refresh\(\)/);
 assert.doesNotMatch(wizard, /setNextUrl|location\.assign\(nextUrl\)/);
 assert.match(wizard, /data-setup-installation-state=\{installationComplete \? 'complete' : 'pending'\}/);
 assert.match(wizard, /installationComplete[\s\S]*setup\.install_complete_status/);

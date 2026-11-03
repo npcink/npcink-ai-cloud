@@ -10,6 +10,7 @@ from app.adapters.providers.base import (
     CatalogInstanceSeed,
     CatalogModelSeed,
     ProviderCatalogSnapshot,
+    ProviderExecutionError,
     ProviderExecutionRequest,
     ProviderExecutionResult,
     ProviderMediaCandidate,
@@ -17,6 +18,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
+    build_provider_adapter_from_connection,
     build_provider_adapters,
     resolve_execution_provider_adapters,
 )
@@ -54,9 +56,11 @@ def _sqlite_url(tmp_path: Path) -> str:
 
 
 def _settings(database_url: str) -> Settings:
+    # Use test env so optional env openai credentials remain available for
+    # dual-channel adapter tests; production-like Settings reject those keys.
     return Settings(
         _env_file=None,
-        environment="production",
+        environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
         internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
@@ -329,8 +333,25 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
         }
     }
 
+    # Test env keeps optional env credentials for dual-channel adapter tests, so the
+    # env-only build still sees them; the Admin connection above is what wins.
     env_only_providers = build_provider_adapters(settings, include_enabled_connections=False)
-    assert "openai" not in env_only_providers
+    assert env_only_providers["openai"] is not openai
+    # Production can no longer fall back to env provider keys: config rejects them.
+    with pytest.raises(ValueError, match="openai_api_key must not be set outside development/test"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            database_url=settings.database_url,
+            redis_url="redis://localhost:6379/0",
+            internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+            admin_key_sha256="a" * 64,
+            admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+            portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+            browser_origin_allowlist="https://cloud.example.com",
+            trusted_host_allowlist="cloud.example.com",
+            openai_api_key="env-openai-key",
+        )
 
     execution_providers = resolve_execution_provider_adapters(
         settings,
@@ -623,6 +644,52 @@ def test_image_delivery_probe_validates_base64_image_bytes(
     assert result["content_type"] == "image/png"
     assert (result["width"], result["height"]) == (8, 6)
     assert result["connection"]["image_delivery_repair"] == {}
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("provider_failure", [True, False])
+def test_failed_image_probe_replaces_passed_evidence_and_survives_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider_failure: bool,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = _configure_image_probe_connection(
+        database_url, settings, image_response_format="b64_json"
+    )
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "siliconflow_primary")
+        assert row is not None
+        row.metadata_json = {"image_delivery_probe": {"status": "ready", "model_id": "old-model"}}
+        session.commit()
+
+    class FailedAdapter:
+        timeout_seconds = 30.0
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            if provider_failure:
+                raise ProviderExecutionError("provider.timeout", "private upstream details")
+            return ProviderExecutionResult(
+                output={"candidate_count": 1}, latency_ms=1, tokens_in=0, tokens_out=0, cost=0.0,
+                media_candidates=(ProviderMediaCandidate(index=1, content_bytes=b"not-an-image"),),
+            )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda settings, row: FailedAdapter(),
+    )
+    with pytest.raises(ProviderConnectionAdminError):
+        service.test_image_delivery("siliconflow_primary")
+    reloaded = ProviderConnectionAdminService(database_url, settings).list_connections()[
+        "connections"
+    ]
+    probe = next(x for x in reloaded if x["connection_id"] == "siliconflow_primary")[
+        "image_delivery_probe"
+    ]
+    assert probe["status"] == "failed"
+    assert probe["model_id"] == "siliconflow/Kwai-Kolors/Kolors"
+    assert probe["tested_at"]
+    assert "private upstream details" not in str(probe)
     dispose_engine(database_url)
 
 
@@ -1157,8 +1224,10 @@ def test_runtime_settings_accept_m4_ollama_embedding_only_in_development(
 
     assert projection.embedding_count == 1
     assert settings.site_knowledge_embedding_provider == "ollama-m4-embedding"
-    assert settings.site_knowledge_embedding_model == "qwen3-embedding:0.6b"
-    assert settings.site_knowledge_embedding_dimensions == 1024
+    assert settings.site_knowledge_embedding_model == (
+        "npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8"
+    )
+    assert settings.site_knowledge_embedding_dimensions == 4096
     providers = resolve_execution_provider_adapters(settings)
     assert "ollama-m4-embedding" in providers
     assert isinstance(providers["ollama-m4-embedding"], OpenAIProviderAdapter)
@@ -1675,3 +1744,97 @@ def test_runtime_projection_skips_unreadable_provider_connection_secret(
     assert connections["search_zhihu"]["secrets"]["credential"]["display"] == "unreadable"
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "kind_payload",
+    [{"kind": "foobar"}, {}],
+    ids=["unsupported-kind", "missing-kind-with-provider-specific-type"],
+)
+def test_save_connection_rejects_unsupported_kind(
+    tmp_path: Path, kind_payload: dict[str, str]
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    try:
+        with pytest.raises(ProviderConnectionAdminError) as exc_info:
+            service.save_connection(
+                {
+                    "connection_id": "invalid_kind",
+                    "provider_id": "tavily",
+                    "provider_type": "tavily",
+                    **kind_payload,
+                }
+            )
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_code == "provider_connection.kind_unsupported"
+        with get_session(database_url) as session:
+            assert session.get(ProviderConnection, "invalid_kind") is None
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "web_search_provider",
+        "image_source_provider",
+        "embedding_provider",
+        "rerank_provider",
+        "vector_store_provider",
+        "openai-compatible",
+        "openai_compatible",
+    ],
+)
+def test_save_connection_accepts_supported_runtime_and_compatible_kinds(
+    tmp_path: Path, kind: str
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    try:
+        service.save_connection(
+            {
+                "connection_id": "supported_kind",
+                "provider_id": "custom_provider",
+                "provider_type": kind,
+                "kind": kind,
+                "enabled": False,
+            }
+        )
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, "supported_kind")
+            assert row is not None
+            assert row.config_json["kind"] == kind
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("kind", ["OPENAI_COMPATIBLE", "OpenAI-Compatible"])
+def test_save_connection_preserves_case_insensitive_kind_on_resave(
+    tmp_path: Path, kind: str
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    payload = {
+        "connection_id": "mixed_case_kind",
+        "provider_id": "custom_provider",
+        "provider_type": "openai_compatible",
+        "kind": kind,
+        "secretless": True,
+    }
+    try:
+        service.save_connection(payload)
+        service.save_connection(payload, connection_id="mixed_case_kind")
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, "mixed_case_kind")
+            assert row is not None
+            assert row.config_json["kind"] == kind
+            assert isinstance(
+                build_provider_adapter_from_connection(settings, row), OpenAIProviderAdapter
+            )
+    finally:
+        dispose_engine(database_url)

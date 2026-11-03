@@ -64,7 +64,7 @@ type BackofficeSummaryStripProps = {
 
 type BackofficePageHeaderProps = Pick<
   BackofficeHeaderProps,
-  'eyebrow' | 'title' | 'description'
+  'title' | 'description'
 > & {
   summaryItems?: BackofficeMetricItem[];
   primaryAction?: React.ReactNode;
@@ -191,14 +191,17 @@ export function BackofficePrimaryPanel({
   summaryClassName,
   actionPlacement = 'below',
 }: BackofficePrimaryPanelProps) {
+  const normalizedEyebrow = eyebrow?.trim() ?? '';
+  const showEyebrow = normalizedEyebrow.length > 0
+    && normalizedEyebrow.toLowerCase() !== title.trim().toLowerCase();
   return (
     <section className={cn('glass-panel overflow-hidden rounded-[1.6rem] p-0', className)}>
       <div className={cn('px-5 py-6 md:px-7 md:py-7', contentClassName)}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
-            {eyebrow ? (
+            {showEyebrow ? (
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700 dark:text-blue-300">
-                {eyebrow}
+                {normalizedEyebrow}
               </p>
             ) : null}
             <div className="flex max-w-3xl items-center gap-2">
@@ -238,7 +241,6 @@ export function BackofficePrimaryPanel({
 }
 
 export function BackofficePageHeader({
-  eyebrow,
   title,
   description,
   density = 'default',
@@ -281,18 +283,23 @@ export function BackofficePageHeader({
   ) : undefined;
 
   return (
-    <div data-ui="backoffice-page-header">
-      <BackofficePrimaryPanel
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-        descriptionDisplay="hint"
-        actionPlacement="header"
-        contentClassName="px-4 py-3 md:px-4 md:py-3"
-        summaryClassName="px-4 py-2.5 md:px-4 md:py-2.5"
-        actions={actions}
-        summary={summaryItems.length || summaryAside ? (
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+    <section
+      data-ui="backoffice-page-header"
+      data-density="default"
+      className="glass-panel overflow-hidden rounded-[1.6rem]"
+    >
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-[2rem]">
+              {title}
+            </h1>
+            {description ? <BackofficeInfoHint detail={description} /> : null}
+          </div>
+          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        </div>
+        {summaryItems.length || summaryAside ? (
+          <div className="flex flex-col gap-2 border-t border-slate-200/70 pt-2.5 dark:border-slate-800/70 xl:flex-row xl:items-center xl:justify-between">
             {summaryItems.length ? (
               <BackofficeSummaryStrip
                 items={summaryItems}
@@ -306,9 +313,9 @@ export function BackofficePageHeader({
               </div>
             ) : null}
           </div>
-        ) : undefined}
-      />
-    </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

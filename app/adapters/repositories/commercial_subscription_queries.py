@@ -83,6 +83,9 @@ class CommercialSubscriptionQueries:
                 .where(
                     or_(
                         func.lower(Account.name).like(pattern),
+                        func.lower(Account.metadata_json["operator_display_name"].as_string()).like(
+                            pattern
+                        ),
                         func.lower(Account.account_id).like(pattern),
                         func.lower(Principal.email).like(pattern),
                     )
@@ -159,6 +162,9 @@ class CommercialSubscriptionQueries:
                 .where(
                     or_(
                         func.lower(Account.name).like(pattern),
+                        func.lower(Account.metadata_json["operator_display_name"].as_string()).like(
+                            pattern
+                        ),
                         func.lower(Account.account_id).like(pattern),
                         func.lower(Principal.email).like(pattern),
                     )

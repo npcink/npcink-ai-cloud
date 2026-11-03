@@ -53,8 +53,10 @@ def _record_processed_batch(
 def _empty_auto_repair_result() -> dict[str, object]:
     return {
         "requeued_stale_queued_total": 0,
+        "auto_failed_stale_running_total": 0,
         "running_stale_operator_queue_total": 0,
         "requeued_stale_queued": [],
+        "auto_failed_stale_running": [],
         "running_stale_operator_queue": [],
     }
 
@@ -149,6 +151,7 @@ def main() -> None:
                     max_stale_queued=settings.runtime_worker_batch_size,
                     max_callback_overdue=0,
                     max_running_stale_suggestions=settings.runtime_worker_batch_size,
+                    max_stale_running_auto_fail=settings.runtime_worker_batch_size,
                 )
                 auto_repair_schedule = _record_auto_repair(
                     auto_repair_schedule,
@@ -171,6 +174,7 @@ def main() -> None:
                 else "repairing"
                 if (
                     _coerce_int(auto_repair.get("requeued_stale_queued_total")) > 0
+                    or _coerce_int(auto_repair.get("auto_failed_stale_running_total")) > 0
                     or _coerce_int(auto_repair.get("running_stale_operator_queue_total")) > 0
                 )
                 else "idle"
@@ -183,11 +187,24 @@ def main() -> None:
                     "requeued_stale_queued_total": _coerce_int(
                         auto_repair.get("requeued_stale_queued_total")
                     ),
+                    "auto_failed_stale_running_total": _coerce_int(
+                        auto_repair.get("auto_failed_stale_running_total")
+                    ),
                     "running_stale_operator_queue_total": _coerce_int(
                         auto_repair.get("running_stale_operator_queue_total")
                     ),
                 },
             )
+            auto_failed_total = _coerce_int(auto_repair.get("auto_failed_stale_running_total"))
+            if auto_failed_total > 0:
+                logger.warning(
+                    "runtime queue auto-failed stale running runs: count=%s run_ids=%s",
+                    auto_failed_total,
+                    [
+                        item.get("run_id")
+                        for item in _dict_items(auto_repair.get("auto_failed_stale_running"))
+                    ],
+                )
             if not results:
                 requeued_total = _coerce_int(auto_repair.get("requeued_stale_queued_total"))
                 if requeued_total > 0:

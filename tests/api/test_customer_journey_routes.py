@@ -125,6 +125,7 @@ def _post_portal_events(
         f"/portal/v1/sites/{site_id}/customer-journey/events",
         json={"contract_version": "customer_journey_event.v1", "events": events},
         headers=build_portal_headers(
+            database_url=client.app.state.services.settings.database_url,
             principal_id=str(_PORTAL_GRANT["principal_id"]),
             session_version=int(_PORTAL_GRANT.get("session_version") or 1),
             idempotency_key=idempotency_key,

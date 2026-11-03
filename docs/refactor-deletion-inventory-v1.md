@@ -4,12 +4,16 @@
 
 Accepted target inventory with phase-tracked implementation status:
 
-- P1 is incomplete: the canonical site contract and runtime extraction are
-  implemented, while the superseded connector marker and operator-only
-  `P1-E05`/`P1-E06` evidence remain open.
+- P0–P5 engineering refactor is complete for the exact controlled-production
+  release recorded by the post-P5 closeout (`972fee82`, tree `98662e38`),
+  including the formerly operator-only `P1-E05`/`P1-E06` evidence.
 - P3 is complete through the bounded Media Runtime B5 closeout.
 - P4 is complete through the Portal/Admin inventory and executable evidence.
-- global P5 hardening and release closure is incomplete.
+- This status does not mean the latest `master` is deployed, does not authorize
+  production promotion or GA, and does not prove current natural-user value.
+  Current production, real-user observation, CVE, backup/RPO/RTO and release
+  gates remain governed by their active policies and must be rechecked for any
+  later release.
 
 ## Purpose
 
@@ -21,7 +25,37 @@ runtime branch, fixture, or oversized-service ownership active beside it.
 This is a target inventory and phase-status index, not standalone proof that a
 replacement or exit gate passed. Original “current evidence” locators remain
 baseline evidence and must be interpreted with the explicit phase status and
-linked closeout records. P1 remains WordPress-first: Cloud owns hosted execution
+linked closeout records.
+
+## Current Status Reconciliation — 2026-10-25
+
+The historical target rows below are retained as locators and gate definitions.
+Their phase status is superseded by
+[Post-P5 Final Integration And Production Validation Closeout](history/refactor/2026/post-p5-final-integration-and-production-validation-closeout-2026-07-22.md),
+which is authoritative for the exact controlled release. That closeout records
+source revision `972fee82dd4e599bb5705fe2e37f0596c016d6f9`, source tree
+`98662e3886a2d3b4d74fd51cdf40fb9c91cf8fd3`, completed P1-E05/P1-E06 and
+completed engineering P0–P5. It also states that the latest development
+`master` was not deployed, GA was not authorized, and real-user value remained
+unproved. The controlled release evidence is historical delivery evidence; it
+is not current-master production acceptance, natural-use evidence, or a new
+release authorization.
+
+The Jul17 P5 hardening audit is a historical snapshot of what was open at that
+audit point. The current coverage receipt's OPS-03/OPS-04 entries may still map
+to the older inventory wording; this reconciliation does not infer when those
+mappings were generated or treat them as a new production finding. Reconcile
+each mapping against the exact post-P5 closeout and preserve its applicable
+current/new-release gate boundary. Do not redo the completed cutover,
+backup/restore rehearsal, or exact-release smoke solely because an older
+inventory status is still referenced. For a new release, rebind the applicable
+current source, image, security, backup, runtime, human-approval and real-user
+gates independently. Private raw operator receipts were not available for this
+docs-only reconciliation; the status correction relies on the committed
+closeout's claims and exact identifiers and does not recreate or upgrade those
+receipts.
+
+P1 remains WordPress-first: Cloud owns hosted execution
 and runtime evidence; WordPress keeps permission, review, approval, audit, and
 final-write truth.
 

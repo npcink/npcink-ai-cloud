@@ -350,6 +350,17 @@ def test_fingerprints_and_idempotent_replay_are_canonical_and_conflict_exactly(
         request,
         {**policy, "retention_ttl": 120},
     )
+    identity = service.build_request_fingerprint(request, policy, client_identity=True)
+    assert identity != service.build_request_fingerprint(
+        replace(request, storage_mode="no_store"), policy, client_identity=True,
+    )
+    assert identity != service.build_request_fingerprint(
+        replace(request, timeout_seconds=1), policy, client_identity=True,
+    )
+    # The legacy hash must remain byte-compatible for saved pre-v2 requests.
+    assert fingerprint == service.build_request_fingerprint(
+        replace(request, storage_mode="no_store", timeout_seconds=1), policy,
+    )
     assert service.build_media_derivative_request_fingerprint(
         "site_alpha",
         {"target_format": "webp"},
@@ -558,8 +569,10 @@ def test_expired_result_cleanup_purges_payload_but_preserves_run(database_url: s
         assert run.result_purged_at is not None
 
 
+@pytest.mark.parametrize("saturated_prefix", [1, 50, 101])
 def test_media_derivative_site_running_limit_skips_only_saturated_site_work(
     database_url: str,
+    saturated_prefix: int,
 ) -> None:
     executor = RecordingExecutor()
     service = _service(
@@ -575,11 +588,12 @@ def test_media_derivative_site_running_limit_skips_only_saturated_site_work(
             status="running",
             execution_kind="media_derivative",
         )
-        _create_run(
-            repository,
-            run_id="run_media_queued",
-            execution_kind="media_derivative",
-        )
+        for index in range(saturated_prefix):
+            _create_run(
+                repository,
+                run_id="run_media_queued" if index == 0 else f"run_media_queued_{index:03}",
+                execution_kind="media_derivative",
+            )
         _create_run(repository, run_id="run_text_queued")
         session.commit()
 

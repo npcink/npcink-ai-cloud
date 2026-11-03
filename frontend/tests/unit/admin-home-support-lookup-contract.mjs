@@ -37,14 +37,14 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /href="\/admin\/coverage"[\s\S]*admin\.home_support_lookup_coverage/,
-  'support lookup must keep service status as an explicit follow-up surface'
+  /href: '\/admin\/coverage'[\s\S]*admin\.home_quick_service_status/,
+  'the overview quick destinations must keep service status directly reachable'
 );
 
 assert.match(
   pageSource,
-  /href="\/admin\/troubleshooting"[\s\S]*admin\.home_support_lookup_diagnostics/,
-  'support lookup must keep diagnostics as an explicit follow-up surface'
+  /href: '\/admin\/troubleshooting'[\s\S]*admin\.home_quick_runtime_diagnostics/,
+  'the overview quick destinations must keep diagnostics directly reachable'
 );
 
 assert.doesNotMatch(
@@ -54,14 +54,13 @@ assert.doesNotMatch(
 );
 
 const requiredKeys = [
-  'admin.home_support_lookup_eyebrow',
   'admin.home_support_lookup_title',
   'admin.home_support_lookup_desc',
   'admin.home_support_lookup_label',
   'admin.home_support_lookup_placeholder',
   'admin.home_support_lookup_accounts',
-  'admin.home_support_lookup_coverage',
-  'admin.home_support_lookup_diagnostics',
+  'admin.home_quick_service_status',
+  'admin.home_quick_runtime_diagnostics',
 ];
 
 for (const key of requiredKeys) {

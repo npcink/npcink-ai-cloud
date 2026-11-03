@@ -1,3 +1,4 @@
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
 import { normalizeObservationWindow, observationCapability, observationWindows } from '@/features/admin/observability/window';
 import { translate } from '@/lib/i18n';
 
@@ -20,13 +21,66 @@ export const diagnosticNavigation: readonly AdminNavigationItem[] = [
   { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit evidence' },
   { href: '/admin/agent-feedback', labelKey: 'admin.nav_agent_feedback', fallback: 'Agent feedback quality' },
   { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor' },
+].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor');
+
+export const customerWorkspaceTabs: readonly AdminNavigationItem[] = [
+  { href: '/admin/accounts', labelKey: 'admin.workspace_tab_customers', fallback: 'Customers' },
+  { href: '/admin/customer-notifications', labelKey: 'admin.notices.title', fallback: 'Customer notices' },
+  { href: '/admin/support-requests', labelKey: 'admin.workspace_tab_tickets', fallback: 'Tickets' },
+];
+
+export const commercialWorkspaceTabs: readonly AdminNavigationItem[] = [
+  { href: '/admin/coverage', labelKey: 'admin.workspace_tab_service_status', fallback: 'Service status' },
+  { href: '/admin/subscriptions', labelKey: 'admin.workspace_tab_subscriptions', fallback: 'Subscriptions' },
+  { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages' },
+  { href: '/admin/credit-packs', labelKey: 'admin.workspace_tab_credit_packs', fallback: 'Credit packs' },
+  { href: '/admin/economics', labelKey: 'admin.workspace_tab_economics', fallback: 'Unit economics' },
+];
+
+export const externalCapabilityTabs: readonly AdminNavigationItem[] = [
+  { href: '/admin/ai-resources', labelKey: 'admin.workspace_tab_providers', fallback: 'Model suppliers' },
+  { href: '/admin/external-services', labelKey: 'admin.workspace_tab_external_services', fallback: 'Search & images' },
+  { href: '/admin/vector-settings', labelKey: 'admin.workspace_tab_vector', fallback: 'Site vector service' },
+];
+
+export const systemSettingsTabs: readonly AdminNavigationItem[] = [
+  { href: '/admin/service-settings', labelKey: 'admin.workspace_tab_service_settings', fallback: 'Service settings' },
+  { href: '/admin/site-compliance', labelKey: 'admin.workspace_tab_compliance', fallback: 'Site compliance' },
+];
+
+export type AdminWorkspaceNavigationGroup = {
+  items: readonly AdminNavigationItem[];
+  noteKey?: string;
+  noteFallback?: string;
+};
+
+export const workspaceNavigation: readonly AdminWorkspaceNavigationGroup[] = [
+  { items: customerWorkspaceTabs },
+  { items: commercialWorkspaceTabs },
+  { items: externalCapabilityTabs },
+  { items: systemSettingsTabs },
 ];
 
 const pathOf = (href: string) => href.split('?')[0];
+const matchesRoute = (href: string, pathname: string) => pathname === pathOf(href) || pathname.startsWith(`${pathOf(href)}/`);
+const groupParent = (tabs: readonly AdminNavigationItem[], parent: string, pathname: string) =>
+  tabs.some(item => matchesRoute(item.href, pathname)) ? parent : null;
 
 export function adminSecondaryParentHref(pathname: string): string | null {
+  if (pathname === '/admin/ai-advisor') return '/admin/troubleshooting';
   if (observationNavigation.some(item => pathOf(item.href) === pathname)) return '/admin/usage-statistics';
   if (diagnosticNavigation.some(item => pathOf(item.href) === pathname)) return '/admin/troubleshooting';
+  return groupParent(customerWorkspaceTabs, '/admin/accounts', pathname)
+    ?? groupParent(commercialWorkspaceTabs, '/admin/subscriptions', pathname)
+    ?? groupParent(externalCapabilityTabs, '/admin/ai-resources', pathname)
+    ?? groupParent(systemSettingsTabs, '/admin/service-settings', pathname);
+}
+
+export function adminWorkspaceTabForPath(pathname: string): AdminNavigationItem | null {
+  for (const group of workspaceNavigation) {
+    const match = group.items.find(item => matchesRoute(item.href, pathname));
+    if (match) return match;
+  }
   return null;
 }
 

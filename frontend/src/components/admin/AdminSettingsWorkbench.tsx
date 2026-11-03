@@ -49,6 +49,8 @@ export function AdminSettingsWorkbench({
                 key={item.id}
                 type="button"
                 role="tab"
+                id={`service-settings-tab-${item.id}`}
+                tabIndex={active ? 0 : -1}
                 aria-selected={active}
                 aria-controls={`service-settings-${item.id}`}
                 className={`flex min-h-10 min-w-0 items-center justify-between gap-2 rounded px-2 py-2 text-left text-sm transition lg:w-full lg:gap-3 lg:px-3 ${
@@ -57,6 +59,18 @@ export function AdminSettingsWorkbench({
                     : 'text-slate-600 hover:bg-white/70 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800/60 dark:hover:text-white'
                 }`}
                 onClick={() => onSelect(item.id)}
+                onKeyDown={(event) => {
+                  const index = items.findIndex((entry) => entry.id === item.id);
+                  const next = event.key === 'Home' ? 0
+                    : event.key === 'End' ? items.length - 1
+                      : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (index + 1) % items.length
+                        : ['ArrowUp', 'ArrowLeft'].includes(event.key) ? (index - 1 + items.length) % items.length
+                          : -1;
+                  if (next < 0) return;
+                  event.preventDefault();
+                  document.getElementById(`service-settings-tab-${items[next].id}`)?.focus();
+                  onSelect(items[next].id);
+                }}
               >
                 <span className="truncate">{item.label}</span>
                 <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-normal text-slate-500 dark:text-slate-400">

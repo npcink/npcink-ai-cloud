@@ -15,6 +15,7 @@ from app.core.models import (
     RunRecord,
     Site,
 )
+from app.domain.observability.plugin_event_filters import plugin_event_category_conditions
 from app.domain.observability.plugin_event_projection import (
     _attention_key as _attention_key_value,
 )
@@ -116,8 +117,16 @@ EXPECTED_PLUGIN_SLUGS = (
     "npcink-ai-client-adapter",
     "npcink-cloud-addon",
 )
+# Portal customer attention: only the Cloud connection baseline.
+# Optional Magick plugins (toolkit / governance / adapter) must not yellow-warn Portal.
+PORTAL_BASELINE_PLUGIN_SLUGS = (
+    "npcink-cloud-addon",
+)
 ERROR_RATE_HIGH_THRESHOLD = 0.05
 LATENCY_WARNING_MS = 3000
+# editor_assist latency_ms is LLM wall-clock, not Cloud connection RTT.
+# Exclude from totals/site avg used for latency_high (Portal "站点连接").
+LATENCY_HEALTH_EXCLUDED_EVENT_KIND_PREFIX = "addon.editor_assist."
 CATALOG_CHURN_THRESHOLD = 4
 ATTENTION_WORKFLOW_STATUSES = {
     "active",
@@ -132,6 +141,22 @@ ATTENTION_STATE_ACTIONS = {
 }
 
 type SQLAFilter = ColumnElement[bool]
+
+
+def _connection_health_latency_ms() -> ColumnElement[Any]:
+    """Latency expression for connection health averages.
+
+    Drops addon.editor_assist.* so ordinary LLM generation time does not
+    raise plugin_observability.latency_high / Portal site-connection warnings.
+    """
+    return case(
+        (
+            ~PluginObservabilityEvent.event_kind.like(
+                f"{LATENCY_HEALTH_EXCLUDED_EVENT_KIND_PREFIX}%"
+            ),
+            PluginObservabilityEvent.latency_ms,
+        ),
+    )
 
 
 class PluginObservabilityService:
@@ -210,6 +235,7 @@ class PluginObservabilityService:
         window_hours: int = 24,
         plugin_slug: str = "",
         now: datetime | None = None,
+        expected_plugin_slugs: Sequence[str] | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
         bounded_hours = min(168, max(1, int(window_hours or 24)))
@@ -229,11 +255,11 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.max(PluginObservabilityEvent.received_at),
                 ).where(*base_conditions)
             ).one()
@@ -244,7 +270,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -263,7 +289,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -281,23 +307,24 @@ class PluginObservabilityService:
                 )
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
                 .where(
                     *base_conditions,
-                    PluginObservabilityEvent.error_code.is_not(None),
-                    PluginObservabilityEvent.error_code != "",
+                    PluginObservabilityEvent.status.in_(("error", "failed")),
                 )
                 .group_by(
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -308,7 +335,7 @@ class PluginObservabilityService:
                     select(PluginObservabilityEvent)
                     .where(
                         *base_conditions,
-                        PluginObservabilityEvent.status == "error",
+                        PluginObservabilityEvent.status.in_(("error", "failed")),
                     )
                     .order_by(PluginObservabilityEvent.received_at.desc())
                     .limit(10)
@@ -333,6 +360,11 @@ class PluginObservabilityService:
             window_hours=bounded_hours,
             include_missing_plugins="" == plugin_slug,
             site_id=site_id,
+            expected_plugin_slugs=(
+                tuple(expected_plugin_slugs)
+                if expected_plugin_slugs is not None
+                else EXPECTED_PLUGIN_SLUGS
+            ),
         )
         attention, attention_workflow = self._apply_attention_states(
             attention,
@@ -396,6 +428,7 @@ class PluginObservabilityService:
         site_id: str = "",
         plugin_slug: str = "",
         record_scope: str = "all",
+        activity_category: str = "all",
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
@@ -430,11 +463,11 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.max(PluginObservabilityEvent.received_at),
                 ).where(*base_conditions)
             ).one()
@@ -463,7 +496,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -482,7 +515,7 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
@@ -508,11 +541,11 @@ class PluginObservabilityService:
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
-                            (PluginObservabilityEvent.status == "error", 1),
+                            (PluginObservabilityEvent.status.in_(("error", "failed")), 1),
                             else_=0,
                         )
                     ),
-                    func.avg(PluginObservabilityEvent.latency_ms),
+                    func.avg(_connection_health_latency_ms()),
                     func.count(func.distinct(PluginObservabilityEvent.plugin_slug)),
                     func.max(PluginObservabilityEvent.received_at),
                 )
@@ -527,25 +560,26 @@ class PluginObservabilityService:
                 .order_by(PluginObservabilityEvent.site_id.asc())
             ).all()
 
+            # Reuse the bind: PostgreSQL requires the same GROUP BY expression.
+            error_code = func.coalesce(PluginObservabilityEvent.error_code, "")
             error_rows = session.execute(
                 select(
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                     func.count(PluginObservabilityEvent.id),
                     func.max(PluginObservabilityEvent.received_at),
                 )
                 .where(
                     *base_conditions,
-                    PluginObservabilityEvent.error_code.is_not(None),
-                    PluginObservabilityEvent.error_code != "",
+                    PluginObservabilityEvent.status.in_(("error", "failed")),
                 )
                 .group_by(
                     PluginObservabilityEvent.site_id,
                     PluginObservabilityEvent.plugin_slug,
                     PluginObservabilityEvent.event_kind,
-                    PluginObservabilityEvent.error_code,
+                    error_code,
                 )
                 .order_by(desc(func.count(PluginObservabilityEvent.id)))
                 .limit(25)
@@ -556,13 +590,14 @@ class PluginObservabilityService:
                     select(PluginObservabilityEvent)
                     .where(
                         *base_conditions,
-                        PluginObservabilityEvent.status == "error",
+                        PluginObservabilityEvent.status.in_(("error", "failed")),
                     )
                     .order_by(PluginObservabilityEvent.received_at.desc())
                     .limit(10)
                 )
             )
 
+            activity_conditions = plugin_event_category_conditions(activity_category)
             # Bounded, metadata-only join; a supplied correlation must not cross sites.
             activity_rows = session.execute(
                 select(PluginObservabilityEvent, RunRecord)
@@ -571,7 +606,7 @@ class PluginObservabilityService:
                     (RunRecord.run_id == PluginObservabilityEvent.correlation_id)
                     & (RunRecord.site_id == PluginObservabilityEvent.site_id),
                 )
-                .where(*base_conditions)
+                .where(*base_conditions, *activity_conditions)
                 .order_by(
                     PluginObservabilityEvent.received_at.desc(),
                     PluginObservabilityEvent.id.desc(),
@@ -699,6 +734,7 @@ class PluginObservabilityService:
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
             "recent_activity": recent_activity,
             "recent_activity_limit": 50,
+            "activity_category": activity_category,
         }
 
     def update_attention_state(
@@ -973,7 +1009,7 @@ class PluginObservabilityService:
             item = buckets[bucket]
             events_total = self._coerce_int(item.get("events_total")) + 1
             error_total = self._coerce_int(item.get("error_total")) + (
-                1 if str(status or "") == "error" else 0
+                1 if str(status or "") in {"error", "failed"} else 0
             )
             item["events_total"] = events_total
             item["error_total"] = error_total
@@ -1182,6 +1218,7 @@ class PluginObservabilityService:
         window_hours: int,
         include_missing_plugins: bool,
         site_id: str = "",
+        expected_plugin_slugs: Sequence[str] = EXPECTED_PLUGIN_SLUGS,
     ) -> tuple[dict[str, object], list[dict[str, object]]]:
         health = self._build_health(
             events_total=self._coerce_int(totals.get("events_total")),
@@ -1242,7 +1279,10 @@ class PluginObservabilityService:
                     severity="warning",
                     code="plugin_observability.latency_high",
                     title="High average latency",
-                    detail=f"Average plugin event latency is {avg_latency_ms}ms.",
+                    detail=(
+                        "Average connection-related plugin event "
+                        f"latency is {avg_latency_ms}ms."
+                    ),
                     site_id=site_id,
                     suggested_action="Inspect the slow plugin and recent event kinds.",
                 )
@@ -1311,7 +1351,8 @@ class PluginObservabilityService:
 
         if include_missing_plugins:
             observed = {str(plugin.get("plugin_slug") or "") for plugin in plugins}
-            missing = [slug for slug in EXPECTED_PLUGIN_SLUGS if slug not in observed]
+            expected = tuple(expected_plugin_slugs) or EXPECTED_PLUGIN_SLUGS
+            missing = [slug for slug in expected if slug not in observed]
             if missing:
                 attention.append(
                     self._attention_item(

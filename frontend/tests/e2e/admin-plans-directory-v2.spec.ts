@@ -29,8 +29,10 @@ test('package directory keeps modal focus while retaining the catalog on refresh
 
   await expect(page.getByRole('heading', { name: /Standard package catalog|标准套餐目录/i })).toBeVisible();
   const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
-  await expect(primaryNav.locator('a[href="/admin/plans"]')).toHaveAttribute('aria-current', 'page');
-  await expect(primaryNav.locator('a[href="/admin/credit-packs"]')).not.toHaveAttribute('aria-current', 'page');
+  const workspaceTabs = page.locator('[data-ui="admin-workspace-navigation"]');
+  await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/plans"]')).toHaveAttribute('aria-current', 'page');
+  await expect(workspaceTabs.locator('a[href="/admin/credit-packs"]')).not.toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('link', { name: /Open AI credit packs|打开AI 积分包/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="plan-catalog-table"] table')).toBeVisible();
   await expect(page.locator('[data-ui="plan-catalog-table"] thead')).toContainText(/Package AI credits|套餐 AI 积分/i);
@@ -82,8 +84,8 @@ test('package management combines readable limits, descriptions, and editing whi
   const freeRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
   await expect(freeRow.getByText('Free', { exact: true })).toBeVisible();
   await expect(freeRow.getByText('free', { exact: true })).toHaveCount(0);
-  const freeSubscriptions = freeRow.getByRole('link', { name: /Open subscriptions.*Free|打开订阅.*Free/i });
-  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free');
+  const freeSubscriptions = freeRow.getByRole('link', { name: /All subscriptions.*Free|全部订阅.*Free/i });
+  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
   await expect(freeSubscriptions).toContainText('›');
   await freeRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i }).click();
   const inspector = page.locator('[data-ui="admin-workbench-dialog"]');
@@ -108,6 +110,65 @@ test('package management combines readable limits, descriptions, and editing whi
   await page.getByText(/Package initialization|套餐初始化/i).click();
   await expect(page.getByRole('heading', { name: /Create package record|创建套餐记录/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Create missing packages|创建缺失套餐|补齐缺失套餐/i })).toBeVisible();
+});
+
+test('package subscription drilldown labels its total separately from the active count', async ({ page }) => {
+  await installPlanDirectoryHarness(page);
+  const initialCatalog = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/admin/plans');
+  await page.goto('/admin/plans');
+  const payload = await (await initialCatalog).json();
+  const free = payload.data.items.find((item: { plan: { plan_id: string } }) => item.plan.plan_id === 'free');
+  free.subscription_counts = { total: 5, active: 3 };
+  await page.route('**/api/admin/plans', (route) => route.fulfill({ json: payload }));
+  await page.reload();
+  await page.getByRole('button', { name: /语言|Language/ }).click();
+  await page.getByRole('option', { name: /English/ }).click();
+
+  const row = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
+  const countCell = row.locator('td').nth(2);
+  const activeSubscriptions = countCell.getByRole('link', { name: /Active subscriptions.*3.*Free|活跃集合订阅.*3.*Free/ });
+  await expect(activeSubscriptions).toContainText('3');
+  await expect(activeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all&status_group=active');
+  const allSubscriptions = countCell.getByRole('link', { name: /All subscriptions.*5.*Free|全部订阅.*5.*Free/ });
+  await expect(allSubscriptions).toBeVisible();
+  await expect(allSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free&risk=all');
+  await page.setViewportSize({ width: 900, height: 1050 });
+  await expect(allSubscriptions).toBeVisible();
+  await expect.poll(() => allSubscriptions.evaluate((element) => {
+    const link = element.getBoundingClientRect();
+    const cell = element.closest('td')!.getBoundingClientRect();
+    return link.left >= cell.left && link.right <= cell.right;
+  })).toBe(true);
+  for (const item of await page.locator('[data-ui="plan-catalog-item"]').all()) {
+    for (const cellIndex of [4, 5]) {
+      const cell = item.locator('td').nth(cellIndex);
+      await expect.poll(() => cell.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return [...element.querySelectorAll('p > span, button')].every((child) => {
+          const content = child.getBoundingClientRect();
+          return content.left >= bounds.left && content.right <= bounds.right;
+        });
+      })).toBe(true);
+    }
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  const queueRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');
+  await allSubscriptions.click();
+  const query = new URL((await queueRequest).url()).searchParams;
+  expect(query.get('plan_id')).toBe('free');
+  expect(query.get('risk')).toBe('all');
+  expect(query.has('status')).toBe(false);
+  await expect(page).toHaveURL('/admin/subscriptions?plan_id=free&risk=all');
+  await page.goBack();
+  const activeRequest = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/admin/subscriptions');
+  await page.getByRole('link', { name: /Active subscriptions.*3.*Free|活跃集合订阅.*3.*Free/ }).click();
+  const activeQuery = new URL((await activeRequest).url()).searchParams;
+  expect(activeQuery.get('status_group')).toBe('active');
+  expect(activeQuery.get('plan_id')).toBe('free');
+  expect(activeQuery.get('risk')).toBe('all');
+  expect(activeQuery.has('status')).toBe(false);
+  await expect(page.locator('[data-ui="subscription-status-group-scope"]')).toBeVisible();
 });
 
 test('package initialization reports mixed results and retries only failed tiers', async ({ page }) => {
@@ -151,4 +212,41 @@ test('package initialization reports mixed results and retries only failed tiers
   await expect(results).toContainText(/Plus.*succeeded/is);
   expect(planRequests).toEqual(['plus', 'agency', 'plus']);
   expect(versionRequests).toEqual(['plus', 'agency', 'plus']);
+});
+
+test('malformed parameter write keeps the submitted intent despite normal detail recovery', async ({ page }) => {
+  await installPlanDirectoryHarness(page);
+  let writes = 0, confirmationReads = 0;
+  let failConfirmation = true;
+  await page.route('**/api/admin/plans/free', async route => {
+    if (route.request().method() === 'PATCH') {
+      writes += 1; await route.fulfill({ json: buildAdminApiEnvelope({}) }); return;
+    }
+    await route.fallback();
+  });
+  await page.route('**/api/admin/plans/free/parameter-operations/**', async route => {
+    confirmationReads += 1;
+    if (failConfirmation) {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('read unavailable') }); return;
+    }
+    const url = new URL(route.request().url());
+    await route.fulfill({ json: buildAdminApiEnvelope({ plan_id: 'free', operation_id: url.pathname.split('/').at(-1),
+      action: 'parameters.update', source_revision: url.searchParams.get('source_revision'), state: 'unconfirmed', current: null, receipt: null }) });
+  });
+  await page.goto('/admin/plans');
+  await page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: /Free/ }).first().getByRole('button', { name: /Manage|管理/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('input').first()).toBeVisible();
+  await dialog.locator('input').first().fill('77');
+  await dialog.getByRole('button', { name: /^Save$|^保存$/ }).click();
+  const read = dialog.getByRole('button', { name: /Read operation result|读取操作结果/ });
+  await expect(read).toBeEnabled();
+  await expect(dialog).not.toContainText(/Write succeeded|写入已成功/);
+  await read.click(); await expect(read).toBeEnabled();
+  failConfirmation = false;
+  await read.click(); await expect(read).toBeEnabled();
+  await expect(dialog.locator('input').first()).toHaveValue('77');
+  await expect(dialog.locator('input').first()).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /^Save$|^保存$/ })).toBeDisabled();
+  expect(writes).toBe(1); expect(confirmationReads).toBe(2);
 });

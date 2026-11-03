@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const billingSource = readFileSync(resolve('src/app/portal/billing/page.tsx'), 'utf8');
+const commerceSource = readFileSync(resolve('src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const packagePanelSource = readFileSync(resolve('src/components/portal/PortalPackageChangePanel.tsx'), 'utf8');
 const clientSource = readFileSync(resolve('src/lib/portal-client.ts'), 'utf8');
 const i18nSource = readFileSync(resolve('src/lib/i18n.ts'), 'utf8');
@@ -18,9 +18,24 @@ assert.doesNotMatch(
   'Portal plan comparison must not retain legacy scalar rights'
 );
 
-assert.match(billingSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
-assert.match(billingSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
+assert.match(commerceSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
+assert.match(commerceSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
 assert.match(packagePanelSource, /package_comparison_title[\s\S]*package_only_differences[\s\S]*<table/);
+assert.match(
+  packagePanelSource,
+  /hasIdenticalComparisonRows[\s\S]*comparisonTiers\.length >= 2[\s\S]*size === 1/,
+  'only-differences control requires at least one identical row across tiers'
+);
+assert.match(
+  packagePanelSource,
+  /hasIdenticalComparisonRows \? \([\s\S]*data-portal-package="only-differences"[\s\S]*\) : null/,
+  'only-differences checkbox is hidden when every row already differs'
+);
+assert.match(
+  packagePanelSource,
+  /showOnlyDifferences && !hasIdenticalComparisonRows[\s\S]*onShowOnlyDifferencesChange\(false\)/,
+  'stale only-differences state clears when identical rows disappear'
+);
 assert.match(
   packagePanelSource,
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
@@ -40,6 +55,9 @@ assert.match(packagePanelSource, /compare_not_included/);
 assert.match(packagePanelSource, /compare_unconfigured[\s\S]*compare_unconfigured_desc/);
 assert.doesNotMatch(packagePanelSource, /value == null \? '—'/, 'unknown rights must be explained instead of rendered as an ambiguous dash');
 assert.match(packagePanelSource, /agency_separate_title[\s\S]*request_agency_quote/);
+assert.match(packagePanelSource, /data-portal-package="agency-quote"/);
+assert.match(packagePanelSource, /package_select_tier[\s\S]*package_confirm_continue|package_confirm_continue[\s\S]*package_select_tier/);
+assert.match(packagePanelSource, /data-portal-package-confirm=\{selectedChoice \? 'ready' : 'idle'\}|data-portal-package-confirm/);
 
 const packageChoicesStart = packagePanelSource.indexOf('const packageChoices');
 const packageChoicesEnd = packagePanelSource.indexOf('const selectedChoice', packageChoicesStart);
@@ -63,6 +81,8 @@ for (const key of [
   'portal.billing.compare_not_included',
   'portal.billing.compare_unconfigured',
   'portal.billing.compare_unconfigured_desc',
+  'portal.billing.package_select_tier',
+  'portal.billing.package_confirm_continue',
 ]) {
   assert.equal((i18nSource.match(new RegExp(`'${key.replaceAll('.', '\\.')}'`, 'g')) || []).length, 2);
 }

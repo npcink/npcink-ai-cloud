@@ -48,6 +48,8 @@ from app.domain.model_capabilities.probes import (
     image_generation_probe_fingerprint,
     vision_probe_fingerprint,
 )
+from app.domain.routing.errors import RoutingNoCandidatesError
+from app.domain.routing.service import RoutingService
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -912,8 +914,17 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         "operation_contract",
         "output",
         "generation_context",
+        "usage",
     }
     assert result["contract_version"] == "cloud_connector_result.v1"
+    assert result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
+    # Envelope usage is provider-call evidence; raw output.usage (if present)
+    # is not the Addon mapping source.
+    assert result["usage"]["tokens_in"] == 24
     assert result["site_id"] == "site_alpha"
     assert result["site_url"] == CONNECTOR_SITE_URL
     assert result["platform_kind"] == "wordpress"
@@ -1793,6 +1804,11 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
     assert transient_result["output"]["output_text"] == (
         "Npcink Cloud Addon: WordPress AI scene helper"
     )
+    assert transient_result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
 
     run_id = first.json()["data"]["run_id"]
     polled = _get_result(client, run_id)
@@ -1802,6 +1818,11 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
     assert durable_result["connector_version"] == "3.0.0-no-store"
     assert durable_result["operation_contract"]["task"] == "title_generation"
     assert durable_result["output"] == {"stored": False, "status": "omitted"}
+    assert durable_result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
 
     replay = _execute(
         client,
@@ -2484,6 +2505,12 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     assert data["status"] == "succeeded"
     assert data["result"]["output"]["output_text"] == "Blue ceramic mug on a white table"
     assert set(data["result"]["output"]) == {"output_text"}
+    assert data["result"]["usage"] == {
+        "tokens_in": 42,
+        "tokens_out": 7,
+        "total_tokens": 49,
+    }
+    assert "usage" not in data["result"]["output"]
     assert data["execution_context"]["ability_family"] == "vision"
     assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].execution_kind == "vision"
@@ -2591,6 +2618,11 @@ def test_alt_text_provider_nested_success_echo_is_projected_to_text_only(
     data = response.json()["data"]
     assert data["status"] == "succeeded"
     assert data["result"]["output"] == {"output_text": "Blue ceramic mug on a white table"}
+    assert data["result"]["usage"] == {
+        "tokens_in": 42,
+        "tokens_out": 7,
+        "total_tokens": 49,
+    }
     assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(data, ensure_ascii=False)
     assert len(provider.requests) == 1
     with get_session(database_url) as session:
@@ -4416,6 +4448,19 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     ]
     assert data["boundary"]["direct_wordpress_write"] is False
     assert len(data["profiles"]) == 6
+    assert {profile["availability_state"] for profile in data["profiles"]} <= {"active", "paused"}
+    audio_profile = next(
+        profile for profile in data["profiles"] if profile["execution_kind"] == "audio_generation"
+    )
+    assert audio_profile["availability_state"] == "paused"
+    with get_session(database_url) as session:
+        binding = session.get(RoutingBinding, "text.ai")
+        expected_candidates = list(binding.candidate_instance_ids) if binding else []
+    assert data["read_only_profiles"][0]["profile_id"] == "text.ai"
+    assert data["read_only_profiles"][0]["selection_mode"] == "automatic"
+    assert [
+        candidate["instance_id"] for candidate in data["read_only_profiles"][0]["candidates"]
+    ] == expected_candidates
 
     assert all(len(profile["candidate_instance_ids"]) <= 2 for profile in data["profiles"])
     assert set(data["available_instances"]) == {
@@ -4797,6 +4842,81 @@ def test_capability_probe_refreshes_expired_evidence(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["data"]["cache_hit"] is False
     assert len(provider.requests) == 1
+
+
+def test_aliased_connection_probe_and_runtime_share_route_identity(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "openai")
+        assert connection is not None
+        connection.connection_id = "openai_local"
+        session.commit()
+
+    routing = RoutingService(database_url)
+    with pytest.raises(RoutingNoCandidatesError):
+        routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision")
+
+    def probe(key: str) -> dict[str, Any]:
+        response = client.post(
+            "/internal/service/admin/runtime-profiles/capability-probe",
+            headers=merge_json_headers(build_internal_headers(idempotency_key=key)),
+            json={"capability": "vision", "instance_id": "openai-wp-ai-vision-test"},
+        )
+        assert response.status_code == 200
+        return response.json()["data"]
+
+    first = probe("aliased-vision-first")
+    assert first["cache_hit"] is False
+    assert len(provider.requests) == 1
+    assert routing.resolve(
+        profile_id=VISION_AI_PROFILE_ID, execution_kind="vision"
+    ).selected_candidate.instance_id == "openai-wp-ai-vision-test"
+    assert probe("aliased-vision-cached")["cache_hit"] is True
+    assert len(provider.requests) == 1
+
+    projection = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    instance = next(
+        item for item in projection["available_instances"]["vision"]
+        if item["instance_id"] == "openai-wp-ai-vision-test"
+    )
+    assert instance["vision_evidence"]["state"] == "verified"
+    profile = next(p for p in projection["profiles"] if p["profile_id"] == VISION_AI_PROFILE_ID)
+    payload = _runtime_profile_replacement_from_projection([profile])
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="aliased-save")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": payload,
+        },
+    )
+    assert response.status_code == 200
+
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "openai_local")
+        assert connection is not None
+        connection.base_url = "https://replacement.example.test/v1"
+        session.commit()
+    with pytest.raises(RoutingNoCandidatesError):
+        routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision")
+    changed = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    instance = next(
+        item for item in changed["available_instances"]["vision"]
+        if item["instance_id"] == "openai-wp-ai-vision-test"
+    )
+    assert instance["vision_evidence"] is None
+    refreshed = probe("aliased-vision-new-route")
+    assert refreshed["cache_hit"] is False
+    assert refreshed["route_fingerprint"] != first["route_fingerprint"]
+    assert len(provider.requests) == 2
+    assert routing.resolve(profile_id=VISION_AI_PROFILE_ID, execution_kind="vision").candidates
 
 
 def test_capability_probe_summary_aggregates_metadata_only_events(tmp_path: Path) -> None:
@@ -5448,6 +5568,7 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
         item for item in profiles if item["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
     )
     selected["note"] = "text change only"
+    selected["max_retries"] = 0
     response = client.patch(
         "/internal/service/admin/runtime-profiles",
         headers=merge_json_headers(build_internal_headers(idempotency_key="isolated-text-patch")),
@@ -5461,6 +5582,15 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
     )
     assert response.status_code == 200, response.text
     after = response.json()["data"]["profiles"]
+    reloaded = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]["profiles"]
+    assert (
+        next(item for item in reloaded if item["profile_id"] == selected["profile_id"])[
+            "max_retries"
+        ]
+        == 0
+    )
     for profile in before["profiles"]:
         current = next(item for item in after if item["profile_id"] == profile["profile_id"])
         if profile["profile_id"] != WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID:
@@ -5471,3 +5601,336 @@ def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: 
         ]
         == "text change only"
     )
+
+
+@pytest.mark.parametrize(
+    ("property_constraints", "title", "accepted"),
+    [
+        ({"enum": ["Hosted runtime guide"]}, "Hosted runtime guide", True),
+        ({"enum": ["Another valid title"]}, "Hosted runtime guide", False),
+        ({"minLength": 20, "maxLength": 20}, "Hosted runtime guide", True),
+        ({"minLength": 21}, "Hosted runtime guide", False),
+        ({"minLength": 22}, " Hosted runtime guide ", False),
+        ({"minLength": 23}, "**Hosted runtime guide**", False),
+        ({"maxLength": 19}, "Hosted runtime guide", False),
+        ({"enum": ["**Hosted runtime guide**"]}, "**Hosted runtime guide**", False),
+        ({"minLength": 0}, "**", False),
+    ],
+)
+def test_title_ability_property_constraints_gate_final_connector_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    property_constraints: dict[str, Any],
+    title: str,
+    accepted: bool,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    original_execute = provider.execute
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        result = original_execute(request)
+        result.output["output_text"] = json.dumps({"title": title})
+        return result
+
+    monkeypatch.setattr(provider, "execute", execute)
+    schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string", **property_constraints}},
+    }
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "This article explains hosted runtime validation.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded"],
+                    "output_schema": schema,
+                    "write_posture": "suggestion_only",
+                },
+            }
+        }
+    )
+    response = _execute(client, payload, idempotency_key="title-property-contract")
+    assert response.status_code == 200
+    data = response.json()
+    if accepted:
+        assert data["data"]["result"]["output"]["output_text"] == title
+        assert len(provider.requests) == 1
+    else:
+        assert data["status"] == "error"
+        assert data["error_code"] == "provider.output_quality_rejected"
+        assert len(provider.requests) == 4
+    assert provider.requests[0].input_payload["metadata"]["ability_output_schema"] == schema
+
+
+@pytest.mark.parametrize(
+    ("score_json", "accepted"),
+    [
+        ("-1", False),
+        ("0", True),
+        ("1", True),
+        ("2", False),
+        ("NaN", False),
+        ("Infinity", False),
+        ("-Infinity", False),
+        ("1e999", False),
+    ],
+)
+def test_comment_analysis_numeric_bounds_gate_final_connector_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    score_json: str,
+    accepted: bool,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    original_execute = provider.execute
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        result = original_execute(request)
+        result.output["output_text"] = (
+            '{"toxicity_score":' + score_json + ',"sentiment":"positive"}'
+        )
+        return result
+
+    monkeypatch.setattr(provider, "execute", execute)
+    payload = _payload(
+        {
+            "task": "comment_moderation",
+            "request": {
+                "prompt": "Please analyze this friendly comment.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/comment-analysis",
+                    "task": "comment_moderation",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                            "sentiment": {
+                                "type": "string",
+                                "enum": ["positive", "neutral", "negative"],
+                            },
+                        },
+                        "required": ["toxicity_score", "sentiment"],
+                        "additionalProperties": False,
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+    response = _execute(client, payload, idempotency_key="comment-numeric-contract")
+    assert response.status_code == 200
+    data = response.json()
+    if accepted:
+        output = json.loads(data["data"]["result"]["output"]["output_text"])
+        assert output["toxicity_score"] == int(score_json)
+        assert len(provider.requests) == 1
+    else:
+        assert data["status"] == "error"
+        assert data["error_code"] == "provider.output_quality_rejected"
+
+
+def test_admin_text_usage_accepts_image_input_text_model_without_vision_probe(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    before = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    profiles = _runtime_profile_replacement_from_projection(before["profiles"])
+    short_text = next(
+        item for item in profiles if item["profile_id"] == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
+    )
+    short_text["candidate_instance_ids"] = ["openai-wp-ai-vision-test"]
+    # Text usage must not require, manufacture, or consume image-input evidence.
+    with get_session(database_url) as session:
+        for evidence in session.scalars(select(CatalogCapabilityEvidence)):
+            session.delete(evidence)
+        session.commit()
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="vision-model-text-use")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": [short_text],
+        },
+    )
+    assert response.status_code == 200, response.text
+    saved = response.json()["data"]["profiles"]
+    assert next(item for item in saved if item["profile_id"] == short_text["profile_id"])[
+        "candidate_instance_ids"
+    ] == ["openai-wp-ai-vision-test"]
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalars(select(CatalogCapabilityEvidence)).all() == []
+
+
+def _grounded_payload():
+    return _payload({"task": "site_answer", "request": {
+        "prompt": "蓝鲸计划何时启动？", "system_instruction": "根据站点资料回答并提供引用。",
+        "site_knowledge_reference": {"enabled": True, "mode": "site_factual_evidence"},
+        "task_contract": {
+            "contract_version": "ai_task_contract.v1", "ability_name": "example/site-answer",
+            "task": "site_answer", "task_family": "analysis",
+            "context_requirements": ["site_knowledge_evidence"],
+            "constraints": ["json_object", "source_grounded"],
+            "output_schema": {"type": "object", "required": ["answer", "citations"],
+                "additionalProperties": False, "properties": {
+                    "answer": {"type": "string"}, "citations": {"type": "array", "items": {
+                        "type": "object", "required": ["id", "quote"],
+                        "additionalProperties": False,
+                        "properties": {"id": {"type": "string"}, "quote": {"type": "string"}},
+                    }},
+                }},
+            "write_posture": "suggestion_only",
+        },
+    }})
+
+
+@pytest.mark.parametrize("failure,code", [
+    ("no_hit", "grounded_answer.no_evidence"),
+    ("not_ready", "grounded_answer.retrieval_unavailable"),
+    ("exception", "grounded_answer.retrieval_failed"),
+])
+def test_grounded_answer_fails_before_text_provider_and_retains_run(
+    tmp_path, monkeypatch, failure, code,
+):
+    database_url, client, provider = _build_client(tmp_path)
+
+    def search(self, **kwargs):
+        assert kwargs["site_id"] == "site_alpha"
+        assert kwargs["input_payload"]["evidence_policy"]["no_hit_policy"] == "abstain"
+        if failure == "exception":
+            raise RuntimeError("private provider diagnostic must not reach customer")
+        return {"status": "not_ready" if failure == "not_ready" else "ready",
+                "evidence_gate": {"status": "insufficient_evidence"}, "results": []}
+
+    monkeypatch.setattr(SiteKnowledgeService, "search", search)
+    response = _execute(client, _grounded_payload(), idempotency_key="grounded-" + failure)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, data["run_id"])
+        assert run.error_code == code
+        assert "private provider" not in str(run.error_message)
+
+
+@pytest.mark.parametrize("complete,forged", [(True, False), (False, False), (True, True)])
+@pytest.mark.parametrize("storage_mode", ["result_only", "no_store"])
+def test_grounded_answer_uses_current_public_chunks_and_validates_quotes(
+    tmp_path, monkeypatch, complete, forged, storage_mode,
+):
+    database_url, client, provider = _build_client(tmp_path)
+    passage = "蓝鲸计划将在明年启动，首批覆盖三个城市。"
+    with get_session(database_url) as session:
+        settings = Settings(_env_file=None, environment="test", database_url=database_url,
+                            site_knowledge_embedding_provider="deterministic",
+                            site_knowledge_embedding_dimensions=32)
+        evidence = {"contract_version": "site_knowledge_delivery_evidence.v1",
+            "projection_version": "wordpress_public_text_bytes.v2",
+            "length_basis": "sanitized_public_text_before_byte_limit",
+            "source_bytes": len(passage.encode()), "source_chars": len(passage),
+            "delivered_bytes": len(passage.encode()), "delivered_chars": len(passage),
+            "max_bytes": 48000, "truncated": False}
+        document = {"post_id": 42, "post_type": "post", "post_status": "publish",
+            "title": "蓝鲸计划", "url": "https://alpha.example.test/42", "content_excerpt": passage}
+        if complete:
+            document["delivery_evidence"] = evidence
+        SiteKnowledgeService(session, settings=settings).sync(site_id="site_alpha",
+            input_payload={"sync_mode": "refresh", "documents": [document]},
+            run_id="seed-grounding")
+        session.commit()
+        metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
+            site_id="site_alpha", post_ids=[42],
+        )
+        chunk = metadata[42]["chunks"][0]
+
+    def search(self, **kwargs):
+        return {"status": "ready", "evidence_gate": {"status": "passed"}, "results": [{
+            "post_id": 42, "source_type": "post", "chunk_index": 0, "chunk": chunk, "score": 0.9}]}
+
+    def execute(request):
+        provider.requests.append(request)
+        assert "_grounded_context" not in request.input_payload
+        assert passage in request.input_payload["input"]
+        source_id = re.search(r'sk:post:42:0:[0-9a-f]+', request.input_payload["input"]).group()
+        text = json.dumps({"answer": "蓝鲸计划明年启动。", "citations": [{
+            "id": "forged" if forged else source_id, "quote": passage}]}, ensure_ascii=False)
+        return ProviderExecutionResult(output={"output_text": text}, latency_ms=1,
+            tokens_in=10, tokens_out=10, cost=0)
+
+    monkeypatch.setattr(SiteKnowledgeService, "search", search)
+    monkeypatch.setattr(provider, "execute", execute)
+    payload = _grounded_payload()
+    payload["storage_mode"] = storage_mode
+    response = _execute(client, payload, idempotency_key="grounded-answer")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == ("failed" if forged else "succeeded")
+    if not forged:
+        output = data["result"]["output"]
+        assert output["grounded_evidence"]["status"] == ("available" if complete else "partial")
+        source = output["grounded_evidence"]["sources"][0]
+        assert source["url"] == "https://alpha.example.test/42"
+        assert source["content_hash"]
+        assert "text" not in source
+        if storage_mode == "no_store":
+            with get_session(database_url) as session:
+                stored_run = session.get(RunRecord, data["run_id"])
+                assert stored_run.result_json["output"] == {"stored": False, "status": "omitted"}
+                assert "grounded_evidence" not in json.dumps(stored_run.result_json)
+
+
+@pytest.mark.parametrize("mutation", ["disabled", "missing", "bad_schema"])
+def test_grounded_contract_cannot_downgrade_to_optional_style(tmp_path, mutation):
+    _, client, provider = _build_client(tmp_path)
+    payload = _grounded_payload()
+    request = payload["input"]["operation_contract"]["request"]
+    if mutation == "disabled":
+        request["site_knowledge_reference"]["enabled"] = False
+    elif mutation == "missing":
+        request.pop("site_knowledge_reference")
+    else:
+        request["task_contract"]["output_schema"]["properties"]["answer"] = []
+    response = _execute(client, payload, idempotency_key="grounded-contract-" + mutation)
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "wordpress_operation.grounded_context_required"
+    assert not provider.requests
+
+
+
+def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypatch):
+    database_url, client, provider = _build_client(tmp_path)
+    payload = _grounded_payload()
+    payload["execution_pattern"] = "whole_run_offload"
+    payload["task_backend"] = {
+        "enabled": True, "mode": "queue", "callback_mode": "polling_preferred",
+        "polling_interval_sec": 1,
+    }
+    monkeypatch.setattr(SiteKnowledgeService, "execute", lambda self, **kwargs: {
+        "status": "ready", "evidence_gate": {"status": "insufficient_evidence"}, "results": []})
+    response = _execute(client, payload, idempotency_key="grounded-queued")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "queued"
+    settings = Settings(_env_file=None, environment="test", database_url=database_url,
+        admin_session_secret=TEST_ADMIN_SESSION_SECRET, portal_jwt_secret=TEST_PORTAL_JWT_SECRET)
+    worker = RuntimeService(database_url, settings=settings, providers={"openai": provider})
+    processed = worker.process_queued_runs(max_runs=1, timeout_seconds=0)
+    assert processed[0]["status"] == "failed"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        assert session.get(RunRecord, data["run_id"]).error_code == "grounded_answer.no_evidence"

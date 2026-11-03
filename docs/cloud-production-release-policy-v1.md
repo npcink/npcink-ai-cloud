@@ -79,7 +79,15 @@ stops plan generation. Artifact retention is an evidence window, not a
 permanent deployment registry. After expiration or an out-of-band rollback,
 re-establish the installed baseline read-only and repair the evidence in a
 separately reviewed change; do not substitute the previous push or hand-edit a
-verified bundle. Before preserving either application image, the deployment
+verified bundle. For expired timing artifacts, the resolver may use the reviewed
+`.github/production-baseline-recovery.json` observation for at most seven days.
+It binds the actual installed source/tree and manifest/observation hashes to the
+exact successful deployment run, attempt and update time. It is consulted only
+when retained runtime evidence is missing, never when it is malformed. A newer
+unproven attempt, rerun, mismatch, future observation or expired window still
+blocks planning. This planning recovery neither modifies the host nor authorizes
+deployment; the current installed manifest must be checked again at release time.
+Before preserving either application image, the deployment
 script requires the current managed manifest source revision to equal the plan
 base. A mismatch stops before service mutation or migration. A full plan retains
 the existing complete replacement and rollback protections.
@@ -121,13 +129,13 @@ must use the digest-locked candidates recorded in
 `deploy/image-lock/production-images.json`. The six OpenSSL
 `CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
-`frontend`, and `nginx`. Seventeen time-boxed CVE exceptions for the retag-only
-`redis` and `nginx` images are active from 2026-10-11 until 2026-10-25
-(owner `release-security`) because no upstream rebuild carrying the fixed
-Alpine libraries existed at promotion time; `api` and `frontend` findings are
-repaired by minimum-version in-image package upgrades. Each exception is valid
-through its `expires_on` date in UTC; the gate fails closed after 2026-10-25.
-This withdraws authorization; it does not establish that any image is fixed.
+`frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
+2026-10-25 and were retired on 2026-10-27. The canonical CVE allowlist is empty.
+The updated digest-locked candidates carry OpenSSL 3.5.9-r0, pcre2 10.49-r0
+and zlib 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
+`api` and `frontend` retain their minimum-version in-image package upgrades.
+Retiring exceptions does not establish that any image is fixed or deployed;
+fresh platform-specific scans must verify the exact candidates.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
 must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
 guards remain in force. A changed base-image digest still requires rebuilding,
@@ -158,6 +166,20 @@ historical production-only commits as release fixes. Resolve only the bounded
 deployment-path difference in a separately reviewed change, then generate a
 fresh promotion PR.
 
+When the complete production tree already equals an ancestor of the frozen
+reviewed master source, the bounded
+[reviewed-tree integration lane](production-reviewed-tree-integration-v1.md)
+may prepare a separately reviewable local `release-fix/*` candidate. It must
+prove whole-tree baseline equivalence, exact reviewed source-tree equality,
+and exact changed-path scope. It cannot publish, weaken the mergeability or
+approval gates, or authorize deployment. Non-equivalent production-only
+changes still require separate classification and review. A previously isolated
+release may restore a reviewed list of omitted single-parent master commits:
+their exact patches must apply without conflict to a temporary production index
+and reconstruct the complete historical master baseline. Any unexplained
+production-only difference fails closed. The restoration receipt, original PRs
+and scope are reviewed separately before the resulting local candidate is used.
+
 The command waits up to 15 minutes for the exact production push Cloud CI and
 CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
 active deploy for the same revision, and checks only the names of repository
@@ -184,14 +206,34 @@ smoke fail closed when any protected credential is absent or stale; it never
 silently converts missing credentials into green evidence. For a deployment
 that may exceed the code TTL, leave it off, complete the deploy, issue and store
 a fresh code through the protected operator path, and immediately dispatch the
-separate fail-closed `Release Smoke` workflow from the exact `production`
-revision. Paste that successfully deployed full SHA into its required
-`expected_deployed_sha` input. The smoke workflow rejects a different selected
-revision and requires a successful `Deploy Production` run for the exact SHA
-before checkout. A deferred smoke is explicitly recorded as not-passed
-evidence.
+separate fail-closed `Release Smoke` workflow from `production`. Paste the
+successfully deployed application SHA into `expected_deployed_sha`. The workflow
+requires a successful `Deploy Production` run for that exact application SHA
+before checkout, and its SSH transport checks the installed release manifest
+against the same SHA before and after execution. The tool SHA is reported
+separately, so a reviewed tooling update does not require replacing a healthy
+application just to obtain smoke evidence. Public checks remain on the public
+origin; internal checks use a temporary loopback-only SSH forward with the
+existing pinned production identity. No internal endpoint is opened publicly.
+The default `preflight_only=true` performs no runtime execution or login and is
+explicitly not full acceptance; select false only for an authorized real smoke.
+A deferred smoke is explicitly recorded as not-passed evidence. See the
+[formal smoke entry runbook](formal-release-smoke-entry-v1.md).
 
 ### Bounded release verification
+
+#### First three-user free-trial acceptance (operator decision, 2026-10-19)
+
+The first three-person, four-week free trial uses the business acceptance scope in
+[the trial plan](trial-stage-commercial-validation-plan-2026-10-06.md#0-2026-10-19首批3人免费试用验收口径).
+External Trace is deferred; a complete formal Release Smoke pass is not a start
+prerequisite for that bounded trial. Reuse existing runtime, feedback, credit and
+supplier-cost evidence, recording missing observations as unknown. Keep the actual
+formal smoke result as not passed; do not remove its Trace assertions or change
+release gates, authentication, network isolation, budget protection or final-write
+ownership. This decision does not authorize deployment, paid or public launch,
+expansion, or a claim that formal smoke passed. Reassess the applicable gates before
+those later stages.
 
 #### Production PR base and readiness prechecks
 

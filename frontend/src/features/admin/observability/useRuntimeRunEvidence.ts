@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createApiClient } from '@/lib/api-client';
+import { readRuntimeRuns } from './run-evidence';
 import type { RuntimeRunEvidence } from './runtimeTelemetry';
 
 const client = createApiClient({ idempotencyPrefix: 'runtime_run_evidence' });
@@ -12,48 +13,52 @@ type EvidenceSnapshot = {
   items: RuntimeRunEvidence[];
   truncated: boolean;
   failedScopes: number;
+  issues: string[];
 };
 
-export function useRuntimeRunEvidence({ issueCode, capabilities, site, capability, windowHours, refreshSignal }: {
+export function useRuntimeRunEvidence({ issueCode, site, capability, windowHours, refreshSignal, since = '', evidenceScope = 'affected', runId = '' }: {
+  runId?: string;
   issueCode: string;
   capabilities: string[];
   site: string;
   capability: string;
   windowHours: number;
   refreshSignal: number;
+  since?: string;
+  evidenceScope?: 'affected' | 'context';
 }) {
   const [attempt, setAttempt] = useState(0);
   const [snapshot, setSnapshot] = useState<EvidenceSnapshot | null>(null);
   // A key also prevents a prior scope's rows from appearing during the render
   // before effect cleanup, or after a delayed response from a cancelled request.
-  const key = JSON.stringify({ issueCode, scopes: capability ? [capability] : [...new Set(capabilities)].sort(), site, windowHours, refreshSignal, attempt });
+  // The issue predicate belongs to the API, not the alert's truncated display groups.
+  const key = JSON.stringify({ runId, issueCode, scopes: capability ? [capability] : [], site, windowHours, refreshSignal, attempt, since, evidenceScope });
 
   useEffect(() => {
-    const query = JSON.parse(key) as { issueCode: string; scopes: string[]; site: string; windowHours: number };
-    if (!query.issueCode) return;
+    const query = JSON.parse(key) as { runId: string; issueCode: string; scopes: string[]; site: string; windowHours: number; since: string; evidenceScope: string };
+    if (!query.issueCode && !(query.runId && query.site)) return;
     const controller = new AbortController();
     const scopes = query.scopes.length ? query.scopes : [''];
     void Promise.allSettled(scopes.map(async (scope) => {
       const params = new URLSearchParams({ issue_code: query.issueCode, recent_minutes: String(query.windowHours * 60), limit: String(sampleLimit) });
+      if (query.runId) { params.set('run_id', query.runId); params.set('limit', '1'); }
+      if (query.since) params.set('since', query.since);
+      params.set('evidence_scope', query.evidenceScope);
       if (query.site) params.set('site_id', query.site);
       if (scope) params.set('capability', scope);
-      const response = await client.request<{ items: RuntimeRunEvidence[]; sampled?: boolean; truncated?: boolean }>(
+      const response = await client.request<unknown>(
         `/api/admin/runtime-telemetry/runs?${params}`, { signal: controller.signal },
       );
-      if (!Array.isArray(response.data.items) || response.data.items.some(run =>
-        !run || typeof run.run_id !== 'string' || !run.run_id.trim() ||
-        (run.started_at != null && typeof run.started_at !== 'string')
-      )) throw new Error('Invalid runtime evidence response');
-      return response.data;
+      return readRuntimeRuns(response.data, { site: query.site, capability: scope, runId: query.runId });
     })).then((results) => {
       if (controller.signal.aborted) return;
       const fulfilled = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
       const rows = [...new Map(fulfilled.flatMap((result) => result.items).map((run) => [run.run_id, run])).values()]
         .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '') || b.run_id.localeCompare(a.run_id));
-      setSnapshot({ key, items: rows.slice(0, sampleLimit), failedScopes: results.length - fulfilled.length,
+      setSnapshot({ key, items: rows.slice(0, sampleLimit), failedScopes: results.length - fulfilled.length, issues: fulfilled.flatMap(result => result.issues),
         truncated: rows.length > sampleLimit || fulfilled.some((result) => result.sampled || result.truncated) });
     }).catch(() => {
-      if (!controller.signal.aborted) setSnapshot({ key, items: [], truncated: false, failedScopes: scopes.length });
+      if (!controller.signal.aborted) setSnapshot({ key, items: [], truncated: false, failedScopes: scopes.length, issues: [] });
     });
     return () => controller.abort();
   }, [key]);
@@ -61,9 +66,10 @@ export function useRuntimeRunEvidence({ issueCode, capabilities, site, capabilit
   const current = snapshot?.key === key ? snapshot : null;
   return {
     items: current?.items ?? [],
-    loading: Boolean(issueCode) && !current,
+    loading: Boolean(issueCode || (runId && site)) && !current,
     failedScopes: current?.failedScopes ?? 0,
     truncated: current?.truncated ?? false,
+    issues: current?.issues ?? [],
     retry: () => setAttempt((value) => value + 1),
   };
 }

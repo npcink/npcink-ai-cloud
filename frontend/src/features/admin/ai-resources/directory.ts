@@ -62,7 +62,7 @@ function normalizeProviderModelHealthRow(
     p95_latency_ms: toOptionalLatencyMs(record.p95_latency_ms),
     tokens_in: toBoundedCount(record.tokens_in),
     tokens_out: toBoundedCount(record.tokens_out),
-    cost: Math.max(0, toFiniteNumber(record.cost)),
+    cost: record.cost_known === false || typeof record.cost !== 'number' || !Number.isFinite(record.cost) || record.cost < 0 ? null : record.cost,
     retry_count: toBoundedCount(record.retry_count),
     fallback_count: toBoundedCount(record.fallback_count),
     last_error_code: String(record.last_error_code || ''),
@@ -116,10 +116,11 @@ export function normalizeAiResourcesDirectory(
     raw && typeof raw === 'object' && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
+  if (!Array.isArray(value.connections)) {
+    throw new Error('Failed to load provider directory: invalid connections collection.');
+  }
   return {
-    connections: Array.isArray(value.connections)
-      ? (value.connections as SupplierConnection[])
-      : [],
+    connections: value.connections as SupplierConnection[],
     providerModelHealth: normalizeProviderModelHealth(
       value.provider_model_health
     ),

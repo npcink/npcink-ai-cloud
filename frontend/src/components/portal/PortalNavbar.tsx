@@ -1,26 +1,49 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { cn } from '@/lib/utils';
+import { portalClient, PORTAL_NOTIFICATIONS_UPDATED } from '@/lib/portal-client';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 export function PortalNavbar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isAddonBindPage =
+    pathname.startsWith('/portal') && searchParams?.get('connect') === 'wordpress-addon';
   const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, logout } = useSession();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const update = (event: Event) => {
+      const count = (event as CustomEvent<number>).detail;
+      if (Number.isFinite(count)) setUnreadCount(Math.max(0, count));
+    };
+    window.addEventListener(PORTAL_NOTIFICATIONS_UPDATED, update);
+    if (!isAuthenticated) setUnreadCount(0);
+    else if (pathname !== '/portal/notifications') {
+      void portalClient.getNotifications(1).then((response) => {
+        if (active) setUnreadCount(response.data.unread_count);
+      }).catch(() => { if (active) setUnreadCount(0); });
+    }
+    return () => {
+      active = false;
+      window.removeEventListener(PORTAL_NOTIFICATIONS_UPDATED, update);
+    };
+  }, [isAuthenticated, pathname]);
 
   const primaryNavItems = useMemo(
     () => [
       { href: '/portal', label: t('portal.nav_service', {}, 'Service') },
       { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
-      { href: '/portal/usage', label: t('portal.nav_usage', {}, 'Usage') },
       { href: '/portal/support', label: t('portal.nav_support_requests', {}, 'Tickets') },
       { href: '/portal/account', label: t('portal.nav_account', {}, 'Account') },
     ],
@@ -34,7 +57,7 @@ export function PortalNavbar() {
       }
 
       // Recent activity is reached from Account and belongs to that section.
-      if (baseHref === '/portal/account' && pathname === '/portal/audit') return true;
+      if (baseHref === '/portal/account' && (pathname === '/portal/audit' || pathname === '/portal/notifications')) return true;
       return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
     },
     [pathname]
@@ -46,14 +69,36 @@ export function PortalNavbar() {
   };
 
   const handleLogout = useCallback(async () => {
+    setUnreadCount(0);
     await logout();
     router.push('/portal/login');
   }, [logout, router]);
 
   const isLoginPage = pathname === '/portal/login';
+
+  const logoutLabel = t('portal.nav_logout', {}, 'Logout');
+  const logoutControl = isAuthenticated ? (
+    <button
+      type="button"
+      data-portal-nav="logout"
+      className={cn(
+        'hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition md:inline-flex',
+        'hover:bg-slate-100 hover:text-slate-900',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+        'dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+      )}
+      onClick={() => void handleLogout()}
+    >
+      {logoutLabel}
+    </button>
+  ) : null;
+
+  // The WordPress addon bind page stays free of dashboard chrome.
+  if (isAddonBindPage) return null;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
-      <div className="container mx-auto px-4">
+      <div className="mx-auto w-full max-w-[var(--portal-content-max-width)] px-4 sm:px-6 lg:px-8">
         <div className="grid min-h-[3.9rem] grid-cols-[auto_1fr] items-center gap-4 py-2.5 lg:grid-cols-[auto_1fr_auto]">
           <Link href="/portal" className="flex min-h-11 items-center gap-3">
             <span className="brand-mark" aria-hidden="true">
@@ -97,14 +142,20 @@ export function PortalNavbar() {
               <ThemeToggle />
             </div>
             {isAuthenticated ? (
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
+              <Link
+                href="/portal/notifications"
+                data-portal-nav="notifications"
+                aria-label={t('portal.notifications.bell', { count: String(unreadCount) })}
+                className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-300 dark:hover:bg-slate-800"
               >
-                {t('portal.logout')}
-              </button>
-            ) : !isLoginPage ? (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+                </svg>
+                {unreadCount > 0 ? <span data-portal-notification-badge="" aria-hidden="true" className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[10px] leading-4 text-white">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+              </Link>
+            ) : null}
+            {logoutControl}
+            {!isAuthenticated && !isLoginPage ? (
               <Link
                 href="/portal/login"
                 className="hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
@@ -169,7 +220,7 @@ export function PortalNavbar() {
           mobileNavOpen ? 'block' : 'hidden'
         )}
       >
-        <div className="container mx-auto space-y-4 px-4 py-4">
+        <div className="mx-auto w-full max-w-[var(--portal-content-max-width)] space-y-4 px-4 py-4 sm:px-6 lg:px-8">
           {isAuthenticated ? (
             primaryNavItems.map((item) => (
               <Link
@@ -196,13 +247,14 @@ export function PortalNavbar() {
             {isAuthenticated ? (
               <button
                 type="button"
+                data-portal-nav="logout-mobile"
                 onClick={() => {
                   setMobileNavOpen(false);
                   void handleLogout();
                 }}
                 className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
               >
-                {t('portal.logout')}
+                {t('portal.nav_logout', {}, 'Logout')}
               </button>
             ) : !isLoginPage ? (
               <Link

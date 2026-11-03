@@ -30,6 +30,7 @@ export type AdminAuditPagination = {
 };
 
 export type AdminAuditListPayload = {
+  issues?: string[];
   items?: AdminAuditEvent[];
   total?: number;
   pagination?: AdminAuditPagination;

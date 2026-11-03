@@ -13,6 +13,24 @@ _ENCRYPTION_KEY_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _CANONICAL_32_BYTE_ROOT_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}=")
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
+# Provider credentials belong in Admin/runtime storage, not production env.
+# Reject non-empty values outside development/test so compose/env dual-channel
+# cannot silently override Admin-managed keys.
+_PRODUCTION_FORBIDDEN_PROVIDER_CREDENTIAL_FIELDS = (
+    "openai_api_key",
+    "anthropic_api_key",
+    "minimax_api_key",
+    "litellm_api_key",
+    "vllm_api_key",
+    "tei_api_key",
+    "openrouter_api_key",
+    "siliconflow_api_key",
+    "ollama_api_key",
+    "huggingface_api_token",
+    "site_knowledge_jina_api_key",
+    "site_knowledge_zilliz_token",
+)
+
 
 def _validate_encryption_root(field_name: str, raw_value: str | None) -> None:
     value = str(raw_value or "")
@@ -45,6 +63,7 @@ class Settings(BaseSettings):
 
     project_name: str = Field(default="Npcink AI Cloud")
     environment: str = Field(default="production")
+    commercial_emergency_stop: bool = Field(default=False)
     deployment_release: str = Field(default="development")
     deployment_source_revision: str = Field(default="unknown")
     deployment_source_dirty: bool = Field(default=False)
@@ -71,6 +90,9 @@ class Settings(BaseSettings):
     runtime_callback_max_attempts: int = Field(default=3)
     runtime_callback_retry_backoff_seconds: int = Field(default=30)
     ops_cadence_poll_seconds: int = Field(default=30)
+    payment_refund_reconciliation_interval_seconds: int = Field(default=300)
+    payment_refund_reconciliation_batch_size: int = Field(default=25, ge=1, le=100)
+    payment_refund_reconciliation_max_attempts: int = Field(default=5, ge=1, le=20)
     retention_cleanup_interval_seconds: int = Field(default=3600)
     retention_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     plugin_observability_retention_days: int = Field(default=180)
@@ -528,6 +550,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "trusted_host_allowlist is required outside development/test environments"
             )
+        if production_like:
+            for field_name in _PRODUCTION_FORBIDDEN_PROVIDER_CREDENTIAL_FIELDS:
+                if str(getattr(self, field_name, None) or "").strip():
+                    raise ValueError(
+                        f"{field_name} must not be set outside development/test; "
+                        "configure provider credentials in Admin /admin/ai-resources"
+                    )
         if self.portal_oauth_state_ttl_seconds < 60:
             raise ValueError("portal_oauth_state_ttl_seconds must be at least 60")
         if self.portal_idempotency_ttl_seconds <= self.portal_idempotency_processing_lease_seconds:
@@ -537,6 +566,8 @@ class Settings(BaseSettings):
             )
         if self.ops_cadence_poll_seconds < 5:
             raise ValueError("ops_cadence_poll_seconds must be at least 5")
+        if self.payment_refund_reconciliation_interval_seconds < 60:
+            raise ValueError("payment_refund_reconciliation_interval_seconds must be at least 60")
         if self.runtime_callback_worker_poll_seconds < 1:
             raise ValueError("runtime_callback_worker_poll_seconds must be at least 1")
         if self.worker_heartbeat_interval_seconds < 30:

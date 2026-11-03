@@ -29,6 +29,21 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 USER_AGENT = "Npcink-M4-Package-Proxy/1"
 DIRECT_OPENER = build_opener(ProxyHandler({}))
+# Upstream fetches use this opener. Ambient proxy env is ignored on purpose; an
+# explicit --upstream-proxy (e.g. the M4 VPN HTTP proxy) opts in.
+UPSTREAM_OPENER = None  # None = DIRECT_OPENER (looked up at call time)
+
+
+def _upstream_opener():
+    return UPSTREAM_OPENER if UPSTREAM_OPENER is not None else DIRECT_OPENER
+
+
+def upstream_opener_for(proxy_url: str):
+    if not proxy_url:
+        return DIRECT_OPENER
+    return build_opener(ProxyHandler({"http": proxy_url, "https": proxy_url}))
+
+
 STREAM_CHUNK_BYTES = 256 * 1024
 CACHE_SCHEMA_VERSION = 1
 DEFAULT_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024
@@ -484,9 +499,7 @@ class PackageProxyHandler(BaseHTTPRequestHandler):
                 content_length_header = response.headers.get("Content-Length")
                 try:
                     expected_length = (
-                        int(content_length_header)
-                        if content_length_header is not None
-                        else None
+                        int(content_length_header) if content_length_header is not None else None
                     )
                 except ValueError:
                     expected_length = None
@@ -504,9 +517,7 @@ class PackageProxyHandler(BaseHTTPRequestHandler):
                     return
 
                 if cache is not None and status == HTTPStatus.OK:
-                    _key, partial_path, partial_file = cache.new_partial(
-                        route.upstream_url
-                    )
+                    _key, partial_path, partial_file = cache.new_partial(route.upstream_url)
 
                 downloaded = 0
                 downstream_open = True
@@ -556,14 +567,13 @@ class PackageProxyHandler(BaseHTTPRequestHandler):
         for attempt in range(1, 4):
             try:
                 try:
-                    return DIRECT_OPENER.open(request, timeout=120)
+                    return _upstream_opener().open(request, timeout=120)
                 except HTTPError as exc:
                     return exc
             except (HTTPException, OSError, URLError) as exc:
                 if attempt == 3:
                     print(
-                        "[m4-package-proxy] upstream open failure: "
-                        f"{type(exc).__name__}",
+                        f"[m4-package-proxy] upstream open failure: {type(exc).__name__}",
                         file=sys.stderr,
                     )
                     return None
@@ -587,7 +597,7 @@ class PackageProxyHandler(BaseHTTPRequestHandler):
             buffered = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
             try:
                 try:
-                    response = DIRECT_OPENER.open(request, timeout=120)
+                    response = _upstream_opener().open(request, timeout=120)
                 except HTTPError as exc:
                     response = exc
                 with response:
@@ -631,7 +641,16 @@ def main() -> int:
         type=int,
         default=DEFAULT_CACHE_MAX_AGE_SECONDS,
     )
+    parser.add_argument(
+        "--upstream-proxy",
+        default="",
+        help="HTTP proxy for upstream registry fetches (empty = direct).",
+    )
     args = parser.parse_args()
+    global UPSTREAM_OPENER
+    UPSTREAM_OPENER = upstream_opener_for(args.upstream_proxy) if args.upstream_proxy else None
+    if args.upstream_proxy:
+        print(f"[m4-package-proxy] upstream via {args.upstream_proxy}", file=sys.stderr)
 
     if args.bind != "127.0.0.1":
         parser.error("--bind must be 127.0.0.1")

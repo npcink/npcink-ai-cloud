@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
@@ -40,6 +41,7 @@ from app.core.secrets import (
     decrypt_runtime_execution_input,
     encrypt_runtime_execution_input,
 )
+from app.domain.article_review import contract as article_review
 from app.domain.audio_generation.artifacts import (
     AudioArtifactMaterializationError,
     materialize_audio_generation_candidates,
@@ -62,6 +64,7 @@ from app.domain.commercial.credits import (
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
+    sum_provider_call_usage_tokens,
 )
 from app.domain.content_formatting.runtime import ABILITY as CONTENT_FORMAT_ABILITY
 from app.domain.content_formatting.runtime import execute_formatting
@@ -123,6 +126,7 @@ from app.domain.runtime.artifact_coordination import (
     RuntimeArtifactCoordinationDependencies,
     RuntimeArtifactCoordinationService,
 )
+from app.domain.runtime.availability import paused_runtime_feature, require_runtime_available
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.diagnostics_query import RuntimeDiagnosticsQueryService
@@ -144,6 +148,8 @@ from app.domain.runtime.models import (
     RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
+    RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS,
+    RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
     RUNTIME_STORAGE_MODE_RESULT_ONLY,
@@ -170,6 +176,13 @@ from app.domain.runtime.run_lifecycle import (
     RuntimeRunLifecycleService,
 )
 from app.domain.runtime.run_projection import RuntimeRunProjector
+from app.domain.runtime.telemetry_evidence import (
+    PENDING_PROVIDER_EVIDENCE_STATUSES,
+    ai_evidence_condition,
+    observation_since,
+    provider_evidence_state,
+    requires_ai_evidence,
+)
 from app.domain.runtime.usage_statistics import build_usage_statistics
 from app.domain.service_settings import (
     SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
@@ -226,7 +239,6 @@ logger = get_logger(__name__)
 
 OPERATOR_REPAIR_REASON_MIN_LENGTH = 12
 OPERATOR_REPAIR_EVIDENCE_MIN_LENGTH = 24
-NON_AI_ZERO_CREDIT_EXECUTION_KINDS = frozenset({"media_upload"})
 
 
 class RuntimeService:
@@ -331,6 +343,15 @@ class RuntimeService:
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
+        require_runtime_available(
+            ability_name=request.ability_name, execution_kind=request.execution_kind,
+            contract_version=request.contract_version, profile_id=request.profile_id,
+        )
+        if (
+            request.ability_name == article_review.ABILITY
+            or request.contract_version == article_review.REQUEST_CONTRACT
+        ):
+            article_review.validate_request(request)
         self.contract_validator.validate_runtime_data_handling_contract(request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
@@ -428,6 +449,17 @@ class RuntimeService:
         }
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
+        require_runtime_available(
+            ability_name=request.ability_name,
+            execution_kind=request.execution_kind,
+            contract_version=request.contract_version,
+            profile_id=request.profile_id,
+        )
+        if (
+            request.ability_name == article_review.ABILITY
+            or request.contract_version == article_review.REQUEST_CONTRACT
+        ):
+            article_review.validate_request(request)
         self.contract_validator.validate_runtime_data_handling_contract(request)
         if request.ability_name == CONTENT_FORMAT_ABILITY:
             return execute_formatting(self, request)
@@ -459,22 +491,13 @@ class RuntimeService:
             )
             request.input_payload = connector_envelope
 
-        resolution = self.routing_service.resolve(
-            profile_id=request.profile_id,
-            execution_kind=request.execution_kind,
-        )
-        merged_policy = self._merge_policy(resolution.default_policy, request.policy)
-        resolution = self._prefer_routing_candidate(resolution, merged_policy)
-        merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
             request,
-            merged_policy,
+            {},
+            client_identity=True,
         )
-        should_enqueue = self._should_enqueue(request, merged_policy)
-        selected_candidate = resolution.selected_candidate
-
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             site = self._require_active_site(repository, request.site_id)
@@ -483,6 +506,28 @@ class RuntimeService:
                     connector_envelope,
                     site=site,
                 )
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+                client_request=request,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
+                )
+            # Routing evidence belongs to the execution snapshot, not client identity.
+            resolution = self.routing_service.resolve(
+                profile_id=request.profile_id,
+                execution_kind=request.execution_kind,
+            )
+            merged_policy = self._merge_policy(resolution.default_policy, request.policy)
+            resolution = self._prefer_routing_candidate(resolution, merged_policy)
+            merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
             execution_contract = self.contract_validator.build_execution_contract(
                 request=request,
                 resolution=resolution,
@@ -498,20 +543,8 @@ class RuntimeService:
                     default_policy=resolution.default_policy,
                     profile_id=resolution.profile_id,
                 )
-
-            existing = self.run_lifecycle_service.get_idempotent_replay(
-                repository=repository,
-                site_id=request.site_id,
-                idempotency_key=request.idempotency_key,
-                request_fingerprint=request_fingerprint,
-            )
-            if existing is not None:
-                session.commit()
-                return self._build_execution_response(
-                    existing,
-                    repository=repository,
-                    idempotent_replay=True,
-                )
+            merged_policy["request_identity_version"] = 2
+            selected_candidate = resolution.selected_candidate
 
             if connector_envelope is not None:
                 self._admit_wordpress_operation_artifact_input(
@@ -602,11 +635,22 @@ class RuntimeService:
 
             provider_input_payload = request.input_payload
             if self._is_wordpress_ai_connector_request(request):
-                provider_input_payload = self._prepare_wordpress_operation_execution_input(
-                    run,
-                    repository=repository,
-                    connector_envelope=connector_envelope or {},
-                )
+                try:
+                    provider_input_payload = self._prepare_wordpress_operation_execution_input(
+                        run,
+                        repository=repository,
+                        connector_envelope=connector_envelope or {},
+                    )
+                except RuntimeErrorBase as error:
+                    if not error.error_code.startswith("grounded_answer."):
+                        raise
+                    self.run_lifecycle_service.fail_run(
+                        repository, run, error_code=error.error_code, error_message=error.message,
+                    )
+                    session.commit()
+                    return self._build_execution_response(
+                        run, repository=repository, idempotent_replay=False,
+                    )
 
             self._execute_candidate_chain(
                 run,
@@ -899,6 +943,7 @@ class RuntimeService:
         idempotency_key: str | None = None,
         trace_id: str | None = None,
     ) -> RuntimeExecutionResponse:
+        require_runtime_available(ability_name="", execution_kind="media_derivative")
         return self.artifact_coordination_service.enqueue_media_job_run(
             site_id=site_id,
             input_payload=input_payload,
@@ -1323,10 +1368,11 @@ class RuntimeService:
         site_id: str | None = None,
         capability: str | None = None,
         recent_minutes: int = 60,
+        since: datetime | None = None,
         limit: int = 20,
     ) -> dict[str, object]:
         current_time = datetime.now(UTC)
-        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
+        recent_since = observation_since(current_time, recent_minutes, since)
         max_items = max(1, min(100, limit))
         capability_condition = or_(
             RunRecord.ability_family == capability,
@@ -1334,7 +1380,9 @@ class RuntimeService:
             RunRecord.profile_id == capability,
         )
         with get_session(self.database_url) as session:
-            run_statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            run_statement = select(RunRecord).where(
+                RunRecord.started_at >= recent_since, RunRecord.started_at <= current_time
+            )
             if site_id:
                 run_statement = run_statement.where(RunRecord.site_id == site_id)
             if capability:
@@ -1351,7 +1399,12 @@ class RuntimeService:
             call_statement = (
                 select(ProviderCallRecord, RunRecord)
                 .join(RunRecord, ProviderCallRecord.run_id == RunRecord.run_id)
-                .where(ProviderCallRecord.created_at >= recent_since)
+                .where(
+                    ProviderCallRecord.created_at >= recent_since,
+                    ProviderCallRecord.created_at <= current_time,
+                    RunRecord.started_at >= recent_since,
+                    RunRecord.started_at <= current_time,
+                )
             )
             if site_id:
                 call_statement = call_statement.where(RunRecord.site_id == site_id)
@@ -1387,6 +1440,13 @@ class RuntimeService:
                     ).limit(10000)
                 )
             )
+            provider_cohort_run_ids = set(
+                session.scalars(
+                    select(ProviderCallRecord.run_id)
+                    .where(ProviderCallRecord.run_id.in_([run.run_id for run in runs]))
+                    .distinct()
+                )
+            )
             # Coverage belongs to the bounded run cohort, not the latest 10,000
             # event rows. Multiple meters per run must not hide older associations.
             metered_cohort_run_ids = set(
@@ -1397,14 +1457,16 @@ class RuntimeService:
                 )
             )
 
-        run_ids = {run.run_id for run in runs}
         ai_evidence_required_run_ids = {
             run.run_id
             for run in runs
-            if str(run.execution_kind or "").strip() not in NON_AI_ZERO_CREDIT_EXECUTION_KINDS
+            if requires_ai_evidence(run)
         }
-        provider_call_run_ids = {
-            call.run_id for call, _run in provider_call_rows if call.run_id in run_ids
+        provider_call_run_ids = {str(run_id) for run_id in provider_cohort_run_ids}
+        provider_evidence_required_run_ids = {
+            run.run_id for run in runs
+            if run.run_id in ai_evidence_required_run_ids
+            and run.status not in PENDING_PROVIDER_EVIDENCE_STATUSES
         }
         meter_run_ids = {str(run_id) for run_id in metered_cohort_run_ids if run_id}
         run_groups: dict[str, dict[str, object]] = {}
@@ -1484,9 +1546,13 @@ class RuntimeService:
             ):
                 self._update_hosted_governance_provider_call_group(group, call)
 
+        cohort_runs = {run.run_id: run for run in runs}
         for event in meter_events:
-            family = str(event.ability_family or "unknown").strip() or "unknown"
-            execution_kind = str(event.execution_kind or "unknown").strip() or "unknown"
+            owner = cohort_runs.get(str(event.run_id or ""))
+            family = str(owner.ability_family if owner else event.ability_family or "unknown")
+            execution_kind = str(
+                owner.execution_kind if owner else event.execution_kind or "unknown"
+            )
             for group in (
                 run_groups.setdefault(
                     family,
@@ -1507,10 +1573,11 @@ class RuntimeService:
 
         capability_items = self._finalize_hosted_governance_groups(
             run_groups.values(),
-            limit=max_items,
+            limit=max(1, len(run_groups)),
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
         )
         profile_items = self._finalize_hosted_governance_groups(
             profile_groups.values(),
@@ -1518,6 +1585,7 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
         )
         execution_kind_items = self._finalize_hosted_governance_groups(
             execution_kind_groups.values(),
@@ -1525,6 +1593,7 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
         )
         provider_model_items = self._finalize_hosted_governance_groups(
             provider_model_groups.values(),
@@ -1532,10 +1601,12 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
         )
         governance_gaps = self._build_hosted_governance_gap_summary(
             capability_items=capability_items,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
         )
@@ -1543,6 +1614,7 @@ class RuntimeService:
             runs=runs,
             provider_call_rows=provider_call_pairs,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_evidence_required_run_ids=provider_evidence_required_run_ids,
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
             since=recent_since,
@@ -1553,6 +1625,7 @@ class RuntimeService:
                 "site_id": site_id or "",
                 "capability": capability or "",
                 "recent_minutes": recent_minutes,
+                "since": recent_since.isoformat(),
                 "limit": max_items,
             },
             "generated_at": self.run_projector.serialize_timestamp(current_time),
@@ -1563,12 +1636,16 @@ class RuntimeService:
             "totals": {
                 "runs": len(runs),
                 "ai_evidence_required_runs": len(ai_evidence_required_run_ids),
+                "provider_evidence_required_runs": len(provider_evidence_required_run_ids),
+                "provider_evidence_pending_runs": len(
+                    ai_evidence_required_run_ids - provider_evidence_required_run_ids
+                ),
                 "non_ai_zero_credit_runs": len(runs) - len(ai_evidence_required_run_ids),
                 "provider_calls": len(provider_call_rows),
                 "usage_meter_events": len(meter_events),
                 "provider_call_run_coverage_rate": self._safe_coverage_ratio(
-                    len(provider_call_run_ids & ai_evidence_required_run_ids),
-                    len(ai_evidence_required_run_ids),
+                    len(provider_call_run_ids & provider_evidence_required_run_ids),
+                    len(provider_evidence_required_run_ids),
                 ),
                 "metered_run_coverage_rate": self._safe_coverage_ratio(
                     len(meter_run_ids & ai_evidence_required_run_ids),
@@ -1576,10 +1653,16 @@ class RuntimeService:
                 ),
             },
             "provider_failures": provider_failure_evidence(provider_call_rows, limit=max_items),
+            "evidence_limits": {
+                "runs_truncated": len(runs) >= 5000,
+                "provider_calls_truncated": len(provider_call_rows) >= 10000,
+                "meter_events_truncated": len(meter_events) >= 10000,
+                "capability_groups_truncated": len(capability_items) > max_items,
+            },
             "usage_statistics": build_usage_statistics(
                 runs, since=recent_since, until=current_time
             ),
-            "capability_groups": capability_items,
+            "capability_groups": capability_items[:max_items],
             "profile_groups": profile_items,
             "execution_kind_groups": execution_kind_items,
             "provider_model_groups": provider_model_items,
@@ -1593,26 +1676,37 @@ class RuntimeService:
                 "contains_prompt_or_result_payloads": False,
             },
         }
-        result["alert_summary"] = self._build_hosted_governance_alert_summary(result)
+        result["alert_summary"] = self._build_hosted_governance_alert_summary(
+            {**result, "capability_groups": capability_items}
+        )
         return result
 
     def get_runtime_run_evidence(
         self,
         *,
         site_id: str | None = None,
+        run_id: str | None = None,
         capability: str | None = None,
         issue_code: str | None = None,
+        evidence_scope: str = "affected",
         recent_minutes: int = 60,
+        since: datetime | None = None,
         limit: int = 25,
     ) -> dict[str, object]:
         """Return bounded, payload-free run evidence for operator diagnostics."""
+        if run_id and not site_id:
+            raise ValueError("site_id is required for exact run evidence")
         current_time = datetime.now(UTC)
-        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
+        recent_since = observation_since(current_time, recent_minutes, since)
         max_items = max(1, min(100, limit))
         with get_session(self.database_url) as session:
-            statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            statement = select(RunRecord).where(
+                RunRecord.started_at >= recent_since, RunRecord.started_at <= current_time
+            )
             if site_id:
                 statement = statement.where(RunRecord.site_id == site_id)
+            if run_id:
+                statement = statement.where(RunRecord.run_id == run_id)
             if capability:
                 statement = statement.where(
                     or_(
@@ -1634,13 +1728,25 @@ class RuntimeService:
                 )
             elif issue_code == "hosted_model.unmetered_runs":
                 statement = statement.where(
-                    RunRecord.execution_kind.not_in(NON_AI_ZERO_CREDIT_EXECUTION_KINDS),
+                    ai_evidence_condition(),
                     ~exists(
                         select(UsageMeterEvent.id).where(
                             UsageMeterEvent.run_id == RunRecord.run_id,
                         )
                     )
                 )
+            elif issue_code == "hosted_model.provider_call_gap":
+                has_call = exists(select(ProviderCallRecord.id).where(
+                    ProviderCallRecord.run_id == RunRecord.run_id,
+                ))
+                statement = statement.where(
+                    ai_evidence_condition(),
+                    has_call if evidence_scope == "context" else ~has_call,
+                )
+                if evidence_scope != "context":
+                    statement = statement.where(
+                        RunRecord.status.not_in(PENDING_PROVIDER_EVIDENCE_STATUSES),
+                    )
             runs = list(
                 session.scalars(
                     statement.order_by(
@@ -1701,15 +1807,23 @@ class RuntimeService:
                     "finished_at": timestamp(run.finished_at),
                     "duration_ms": duration_ms,
                     "provider_call_count": calls_by_run.get(run.run_id, 0),
+                    "provider_evidence_state": provider_evidence_state(
+                        run, calls_by_run.get(run.run_id, 0)
+                    ),
                     "has_meter_event": run.run_id in metered_run_ids,
+                    "selected_provider_id": run.selected_provider_id or None,
+                    "selected_model_id": run.selected_model_id or None,
                 }
             )
         return {
             "filters": {
                 "site_id": site_id or "",
+                "run_id": run_id or "",
                 "capability": capability or "",
                 "issue_code": issue_code or "",
+                "evidence_scope": evidence_scope,
                 "recent_minutes": recent_minutes,
+                "since": recent_since.isoformat(),
                 "limit": max_items,
             },
             "generated_at": current_time.isoformat(),
@@ -1828,7 +1942,6 @@ class RuntimeService:
     ) -> None:
         run_id = str(event.run_id or "").strip()
         if run_id:
-            cast(set[str], group["run_ids"]).add(run_id)
             cast(set[str], group["meter_run_ids"]).add(run_id)
         group["meter_events"] = self._coerce_int(group.get("meter_events"), default=0) + 1
         meter_key = str(event.meter_key or "unknown").strip() or "unknown"
@@ -1846,6 +1959,7 @@ class RuntimeService:
         provider_call_run_ids: set[str],
         meter_run_ids: set[str],
         ai_evidence_required_run_ids: set[str],
+        provider_evidence_required_run_ids: set[str],
     ) -> list[dict[str, object]]:
         items: list[dict[str, object]] = []
         for raw_group in groups:
@@ -1865,14 +1979,19 @@ class RuntimeService:
             group["runs_total"] = runs_total
             group_ai_evidence_required_run_ids = run_ids & ai_evidence_required_run_ids
             group["ai_evidence_required_runs"] = len(group_ai_evidence_required_run_ids)
+            group_provider_evidence_ids = run_ids & provider_evidence_required_run_ids
+            group["provider_evidence_required_runs"] = len(group_provider_evidence_ids)
+            group["provider_call_gap_runs"] = len(
+                group_provider_evidence_ids - provider_call_run_ids
+            )
             group["tokens_total"] = tokens_in + tokens_out
             group["avg_latency_ms"] = (
                 round(latency_total / provider_calls, 2) if provider_calls else 0.0
             )
             group["provider_error_rate"] = self._safe_ratio(provider_errors, provider_calls)
             group["provider_call_run_coverage_rate"] = self._safe_coverage_ratio(
-                len(group_ai_evidence_required_run_ids & provider_call_run_ids),
-                len(group_ai_evidence_required_run_ids),
+                len(group_provider_evidence_ids & provider_call_run_ids),
+                len(group_provider_evidence_ids),
             )
             group["metered_run_coverage_rate"] = self._safe_coverage_ratio(
                 len(group_ai_evidence_required_run_ids & meter_run_ids),
@@ -1903,6 +2022,7 @@ class RuntimeService:
         *,
         capability_items: list[dict[str, object]],
         ai_evidence_required_run_ids: set[str],
+        provider_evidence_required_run_ids: set[str],
         provider_call_run_ids: set[str],
         meter_run_ids: set[str],
     ) -> dict[str, object]:
@@ -1915,9 +2035,7 @@ class RuntimeService:
         missing_provider_call_capabilities = [
             str(item.get("group_id") or "")
             for item in capability_items
-            if self._coerce_int(item.get("ai_evidence_required_runs"), default=0) > 0
-            and self._coerce_int(item.get("provider_calls"), default=0) <= 0
-            and str(item.get("group_id") or "") not in {"vision"}
+            if self._coerce_int(item.get("provider_call_gap_runs"), default=0) > 0
         ]
         ai_runs_total = len(ai_evidence_required_run_ids)
         return {
@@ -1929,7 +2047,7 @@ class RuntimeService:
             ),
             "runs_without_provider_call_count": max(
                 0,
-                ai_runs_total - len(provider_call_run_ids & ai_evidence_required_run_ids),
+                len(provider_evidence_required_run_ids - provider_call_run_ids),
             ),
             "review_guidance": (
                 "Inspect capabilities below full metering coverage before enabling "
@@ -1945,6 +2063,7 @@ class RuntimeService:
         runs: list[RunRecord],
         provider_call_rows: list[tuple[ProviderCallRecord, RunRecord]],
         ai_evidence_required_run_ids: set[str],
+        provider_evidence_required_run_ids: set[str],
         provider_call_run_ids: set[str],
         meter_run_ids: set[str],
         since: datetime,
@@ -1978,9 +2097,7 @@ class RuntimeService:
         unmetered_ids = ai_evidence_required_run_ids - (
             meter_run_ids & ai_evidence_required_run_ids
         )
-        provider_gap_ids = ai_evidence_required_run_ids - (
-            provider_call_run_ids & ai_evidence_required_run_ids
-        )
+        provider_gap_ids = provider_evidence_required_run_ids - provider_call_run_ids
         for run in runs:
             index = day_key(run.started_at)
             if index is None:
@@ -2093,8 +2210,7 @@ class RuntimeService:
             str(item.get("group_id") or "")
             for item in capability_items
             if isinstance(item, dict)
-            and self._coerce_int(item.get("ai_evidence_required_runs"), default=0) > 0
-            and (self._coerce_float(item.get("provider_call_run_coverage_rate")) or 0.0) < 1.0
+            and self._coerce_int(item.get("provider_call_gap_runs"), default=0) > 0
         ]
         if runs_without_provider_call_count > 0 or provider_gap_capabilities:
             add_alert(
@@ -2397,12 +2513,15 @@ class RuntimeService:
         max_stale_queued: int = 0,
         max_callback_overdue: int = 0,
         max_running_stale_suggestions: int = 20,
+        max_stale_running_auto_fail: int = 0,
         site_id: str | None = None,
     ) -> dict[str, object]:
         normalized_worker_id = str(worker_id or "").strip() or "runtime_worker"
         queued_limit = max(0, int(max_stale_queued))
         callback_limit = max(0, int(max_callback_overdue))
         suggestion_limit = max(0, int(max_running_stale_suggestions))
+        auto_fail_limit = max(0, int(max_stale_running_auto_fail))
+        current_time = datetime.now(UTC)
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
@@ -2433,6 +2552,18 @@ class RuntimeService:
                 if suggestion_limit > 0
                 else []
             )
+            stale_inline_auto_fail_runs = (
+                repository.list_stale_inline_running_runs(
+                    processing_started_before=(
+                        current_time
+                        - timedelta(seconds=RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS)
+                    ),
+                    site_id=site_id,
+                    limit=auto_fail_limit,
+                )
+                if auto_fail_limit > 0
+                else []
+            )
             session.commit()
 
         audit_context = ServiceAuditContext(
@@ -2445,6 +2576,8 @@ class RuntimeService:
         )
         requeued_stale_queued: list[dict[str, object]] = []
         redelivered_callback_overdue: list[dict[str, object]] = []
+        auto_failed_stale_running: list[dict[str, object]] = []
+        auto_failed_run_ids: set[str] = set()
         running_stale_suggestions: list[dict[str, object]] = []
 
         for run in stale_queued_runs:
@@ -2483,8 +2616,24 @@ class RuntimeService:
                 }
             )
 
-        current_time = datetime.now(UTC)
+        for run in stale_inline_auto_fail_runs:
+            try:
+                auto_fail = self._auto_fail_stale_running_run(
+                    run_id=run.run_id,
+                    site_id=site_id,
+                    audit_context=audit_context,
+                    current_time=current_time,
+                )
+            except RuntimeErrorBase:
+                continue
+            if auto_fail is None:
+                continue
+            auto_failed_stale_running.append(auto_fail)
+            auto_failed_run_ids.add(str(auto_fail.get("run_id") or ""))
+
         for run in running_stale_runs:
+            if run.run_id in auto_failed_run_ids:
+                continue
             if not self._is_running_run_stale(run, current_time):
                 continue
             running_stale_suggestions.append(
@@ -2504,11 +2653,108 @@ class RuntimeService:
             "site_id": site_id or "",
             "requeued_stale_queued_total": len(requeued_stale_queued),
             "redelivered_callback_overdue_total": len(redelivered_callback_overdue),
+            "auto_failed_stale_running_total": len(auto_failed_stale_running),
             "running_stale_operator_queue_total": len(running_stale_suggestions),
             "requeued_stale_queued": requeued_stale_queued,
             "redelivered_callback_overdue": redelivered_callback_overdue,
+            "auto_failed_stale_running": auto_failed_stale_running,
             "running_stale_operator_queue": running_stale_suggestions,
         }
+
+    def _auto_fail_stale_running_run(
+        self,
+        *,
+        run_id: str,
+        site_id: str | None,
+        audit_context: ServiceAuditContext,
+        current_time: datetime,
+    ) -> dict[str, object] | None:
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            run = repository.get_run_for_update(run_id)
+            if run is None or (site_id and run.site_id != site_id):
+                return None
+            if run.status != "running" or run.execution_pattern != "inline":
+                return None
+            if run.processing_started_at is None:
+                return None
+            processing_started_at = self.run_projector.normalize_timestamp(
+                run.processing_started_at
+            )
+            auto_fail_after_seconds = self._stale_running_auto_fail_after_seconds(run)
+            if processing_started_at > (current_time - timedelta(seconds=auto_fail_after_seconds)):
+                return None
+            age_seconds = max(
+                0,
+                int((current_time - processing_started_at).total_seconds()),
+            )
+            before = self._serialize_runtime_diagnostic_run(run)
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+                error_message=(
+                    f"stale inline run auto-failed after {age_seconds}s without terminal evidence"
+                ),
+            )
+            after = self._serialize_runtime_diagnostic_run(run)
+            canonical_run_id = str(run.canonical_run_id or "")
+            account_id = run.account_id
+            run_site_id = run.site_id
+            subscription_id = run.subscription_id
+            plan_version_id = run.plan_version_id
+            session.commit()
+
+        self.commercial_service.record_service_audit_event(
+            audit_context=audit_context,
+            event_kind="runtime.repair.auto_fail_stale_running",
+            outcome="succeeded",
+            account_id=account_id,
+            site_id=run_site_id,
+            subscription_id=subscription_id,
+            plan_version_id=plan_version_id,
+            scope_kind="runtime_run",
+            scope_id=run_id,
+            payload_json={
+                "run_id": run_id,
+                "canonical_run_id": canonical_run_id,
+                "before": before,
+                "after": after,
+                "repair_action": "auto_fail_stale_running",
+                "mode": "bounded_auto_fail",
+                "auto_fail_after_seconds": auto_fail_after_seconds,
+                "age_seconds": age_seconds,
+                "error_code": RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+            },
+        )
+        return {
+            "run_id": run_id,
+            "canonical_run_id": canonical_run_id,
+            "status": "failed",
+            "error_code": RUNTIME_STALE_RUNNING_AUTO_FAIL_ERROR_CODE,
+            "auto_fail_after_seconds": auto_fail_after_seconds,
+            "age_seconds": age_seconds,
+        }
+
+    def _stale_running_auto_fail_after_seconds(self, run: RunRecord) -> int:
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        timeout_seconds = max(0, self._coerce_int(policy.get("timeout_ms"), default=0)) // 1000
+        retry_max = max(
+            self._coerce_int(policy.get("retry_max"), default=0),
+            self._coerce_int(policy.get("max_retries"), default=0),
+        )
+        attempts_per_candidate = max(1, retry_max + 1)
+        # A run may legitimately consume its timeout across two candidate chains.
+        # One extra attempt of headroom keeps the fallback from racing a live
+        # Provider call.
+        configured_budget_seconds = (
+            timeout_seconds * (attempts_per_candidate * 2 + 1)
+            + RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS
+        )
+        return max(
+            RUNTIME_STALE_RUNNING_AUTO_FAIL_AFTER_SECONDS,
+            configured_budget_seconds,
+        )
 
     def list_runtime_guard_events(
         self,
@@ -2576,6 +2822,20 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
     ) -> None:
+        feature = paused_runtime_feature(
+            ability_name=run.ability_name,
+            execution_kind=run.execution_kind,
+            contract_version=run.contract_version or "",
+            profile_id=run.profile_id,
+        )
+        if feature:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="runtime.feature_paused",
+                error_message=f"{feature} is temporarily paused",
+            )
+            return
         if self._is_cloud_batch_runtime_run(run):
             self._execute_cloud_batch_runtime_run(run, repository=repository)
             return
@@ -2685,6 +2945,9 @@ class RuntimeService:
         input_payload: dict[str, Any],
         policy: dict[str, object],
     ) -> dict[str, Any]:
+        if run.ability_name == article_review.ABILITY:
+            setattr(run, article_review.TRANSIENT_SNAPSHOT_ATTR, input_payload)
+            return article_review.build_provider_input(input_payload)
         input_payload = self._translate_reviewed_image_prompt(
             run,
             repository=repository,
@@ -2871,55 +3134,34 @@ class RuntimeService:
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
     ) -> ProviderOutputDecision:
+        if run.ability_name == article_review.ABILITY:
+            try:
+                return ProviderOutputDecision(
+                    accepted=True,
+                    output=article_review.build_result(
+                        provider_output, getattr(run, article_review.TRANSIENT_SNAPSHOT_ATTR, {})
+                    ),
+                )
+            except ProviderOutputFinalizationError as error:
+                return ProviderOutputDecision(
+                    accepted=False, output={},
+                    error_code=error.error_code, error_message=error.message,
+                )
         if not self._is_wordpress_ai_connector_run(run):
             return ProviderOutputDecision(accepted=True, output=provider_output)
-        normalized_output = self.wordpress_operation_runtime.normalize_provider_output(
-            provider_output,
-            input_payload=input_payload,
-        )
-        title_quality_reasons = self.wordpress_operation_runtime.title_quality_reasons(
+        grounded_context = getattr(run, "_wordpress_grounded_context", None)
+        decision = self.wordpress_operation_runtime.prepare_provider_output(
             input_payload=input_payload,
             provider_output=provider_output,
+            grounded_context=grounded_context if isinstance(grounded_context, dict) else None,
         )
-        blocking_title_quality_reasons = (
-            self.wordpress_operation_runtime.blocking_title_quality_reasons(
-                title_quality_reasons
+        if decision.accepted:
+            self._clear_wordpress_output_quality_diagnostic(run)
+        else:
+            self._record_wordpress_output_quality_diagnostic(
+                run, str(decision.usage_context.get("output_quality_reason") or "")
             )
-        )
-        if blocking_title_quality_reasons or self.wordpress_operation_runtime.is_empty_text_output(
-            input_payload=input_payload,
-            provider_output=normalized_output,
-        ):
-            quality_reason = self.wordpress_operation_runtime.output_quality_reason(
-                input_payload=input_payload,
-                provider_output=provider_output,
-            )
-            self._record_wordpress_output_quality_diagnostic(run, quality_reason)
-            error_message = (
-                "provider returned the existing title instead of a new suggestion"
-                if "title_unchanged" in blocking_title_quality_reasons
-                else "provider returned no usable WordPress AI connector text"
-            )
-            return ProviderOutputDecision(
-                accepted=False,
-                output=normalized_output,
-                error_code="provider.output_quality_rejected",
-                error_message=error_message,
-                usage_context={
-                    "output_quality_reason": quality_reason,
-                },
-            )
-        usage_context: dict[str, object] = (
-            {"title_quality_reasons": list(title_quality_reasons)}
-            if title_quality_reasons
-            else {}
-        )
-        self._clear_wordpress_output_quality_diagnostic(run)
-        return ProviderOutputDecision(
-            accepted=True,
-            output=normalized_output,
-            usage_context=usage_context,
-        )
+        return decision
 
     @staticmethod
     def _record_wordpress_output_quality_diagnostic(run: RunRecord, reason: str) -> None:
@@ -2990,6 +3232,13 @@ class RuntimeService:
         connector_envelope = (
             finalization_context if isinstance(finalization_context, dict) else None
         )
+        connector_usage = None
+        if connector_envelope is not None:
+            # Sum ALL provider-call evidence rows (primary + side calls). Do not
+            # read raw output.usage; keep cost off the WP suggestion envelope.
+            connector_usage = sum_provider_call_usage_tokens(
+                repository.list_provider_calls(run.run_id)
+            )
         normalized_result = self.result_normalization_service.normalize(
             RuntimeResultNormalizationCommand(
                 site_id=run.site_id,
@@ -3002,6 +3251,7 @@ class RuntimeService:
                 automatic_web_search=(
                     automatic_web_search if isinstance(automatic_web_search, dict) else None
                 ),
+                usage=connector_usage,
             )
         )
         evidence = getattr(run, "_wordpress_generation_context_evidence", None)
@@ -4941,6 +5191,7 @@ class RuntimeService:
                     "media_fingerprint": str(
                         request_item.get("media_fingerprint") or ""
                     )[:128],
+                    "source_artifact_id": str(request_item.get("source_artifact_id") or "")[:36],
                     "alt": str(request_item.get("alt") or "")[:1000],
                     "caption": str(request_item.get("caption") or "")[:2000],
                     "description": str(request_item.get("description") or "")[:4000],
@@ -5975,6 +6226,11 @@ class RuntimeService:
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
         )
+        # Grounding content is transient; providers cannot supply citation identities.
+        setattr(  # noqa: B010 - per-execution evidence, never an ORM column.
+            run, "_wordpress_grounded_context",
+            deepcopy(prepared_input.pop("_grounded_context", None)),
+        )
         # Snapshot Cloud-owned evidence before the provider receives mutable input.
         setattr(  # noqa: B010 - transient evidence is not an ORM column.
             run,
@@ -6398,6 +6654,12 @@ class RuntimeService:
                 continue
             policy[key] = value
         policy = self.contract_validator.enforce_policy_within_execution_contract(policy)
+        execution_contract = policy.get("execution_contract")
+        if (
+            isinstance(execution_contract, dict)
+            and execution_contract.get("ability_name") == article_review.ABILITY
+        ):
+            article_review.validate_policy(policy)
         policy["commercial_policy"] = {
             "decision_code": str(commercial_decision.get("decision_code") or ""),
             "policy_actions": commercial_decision.get("policy_actions")

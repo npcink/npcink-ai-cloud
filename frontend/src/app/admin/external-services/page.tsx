@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AdminConfigurationRow,
   AdminConfigurationTable,
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
@@ -19,6 +21,7 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 
@@ -35,6 +38,9 @@ type ProviderConnection = {
   enabled: boolean;
   configured: boolean;
   status: string;
+  verification_status?: string;
+  attention_required?: boolean;
+  last_error_code?: string;
   base_url: string;
   source_role: string;
   capability_ids: string[];
@@ -63,7 +69,7 @@ type ServiceOption = {
 };
 
 type RowFeedback = {
-  tone: 'success' | 'error';
+  tone: 'success' | 'error' | 'warning';
   message: string;
 };
 
@@ -84,11 +90,30 @@ function connectionFor(option: ServiceOption, connections: ProviderConnection[])
   return connections.find((connection) => connection.kind === option.kind && connection.provider_id === option.id);
 }
 
+function isProviderConnection(value: unknown): value is ProviderConnection {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return ['connection_id', 'provider_id', 'provider_type', 'kind', 'display_name', 'status', 'base_url', 'source_role']
+    .every(key => typeof item[key] === 'string')
+    && Boolean(item.connection_id && item.provider_id && item.kind)
+    && typeof item.enabled === 'boolean' && typeof item.configured === 'boolean'
+    && [item.capability_ids, item.runtime_profile_ids].every(ids => Array.isArray(ids) && ids.every(id => typeof id === 'string'))
+    && [item.config, item.metadata].every(record => record === undefined || (record !== null && typeof record === 'object' && !Array.isArray(record)));
+}
+
 export default function ExternalServicesPage() {
   const { locale, t } = useLocale();
   const zh = locale.startsWith('zh');
   const copy = useCallback((key: string, zhText: string, enText: string) => t(key, {}, zh ? zhText : enText), [t, zh]);
-  const [category, setCategory] = useState<ServiceCategory>('search');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const category: ServiceCategory = searchParams.get('category') === 'image' ? 'image' : 'search';
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [snapshotCurrent, setSnapshotCurrent] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const readRevision = useRef(0);
+  const mutationRunning = useRef(false);
   const [connections, setConnections] = useState<ProviderConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -101,22 +126,47 @@ export default function ExternalServicesPage() {
   const [dialogError, setDialogError] = useState('');
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
 
   const loadConnections = useCallback(async () => {
+    const revision = ++readRevision.current;
+    setRefreshing(true);
+    setSnapshotCurrent(false);
     setError('');
     try {
       const response = await externalServicesClient.request<{ connections?: ProviderConnection[] }>(
         '/api/admin/provider-connections'
       );
-      setConnections(Array.isArray(response.data.connections) ? response.data.connections : []);
+      if (!Array.isArray(response.data?.connections) || !response.data.connections.every(isProviderConnection)) throw new Error('Invalid connection directory');
+      if (revision !== readRevision.current) return false;
+      setConnections(response.data.connections);
+      setHasLoaded(true);
+      setSnapshotCurrent(true);
+      setFeedback(current => Object.fromEntries(Object.entries(current).filter(([, item]) => item.tone !== 'warning')));
+      return true;
     } catch (loadError) {
-      setError(resolveUiErrorMessage(loadError, copy('admin.external_services.load_error', '加载外部服务失败。', 'Failed to load external services.')));
+      if (revision === readRevision.current) setError(resolveUiErrorMessage(loadError, copy('admin.external_services.load_error', '加载外部服务失败。', 'Failed to load external services.')));
+      return false;
     } finally {
-      setLoading(false);
+      if (revision === readRevision.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [copy]);
 
-  useEffect(() => { void loadConnections(); }, [loadConnections]);
+  useEffect(() => {
+    void loadConnections();
+    return () => { readRevision.current += 1; };
+  }, [loadConnections]);
+
+  function setCategory(value: ServiceCategory) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('category', value);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  const actionsBlocked = !snapshotCurrent || refreshing || busy !== '';
 
   const visibleOptions = useMemo(() => SERVICE_OPTIONS.filter((option) => option.category === category), [category]);
   const editingOption = SERVICE_OPTIONS.find((option) => option.id === editingId);
@@ -125,9 +175,13 @@ export default function ExternalServicesPage() {
     editingOption
     && (draftEnabled !== Boolean(editingConnection?.enabled) || draftCredential)
   );
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    editorDirty, setPendingNavigationHref, href => router.push(href),
+  );
   const readyCount = SERVICE_OPTIONS.filter((option) => {
     const connection = connectionFor(option, connections);
-    return Boolean(connection?.enabled && (connection.configured || option.secretless));
+    return Boolean(connection?.enabled && (connection.configured || option.secretless)
+      && connection.verification_status === 'passed' && !connection.attention_required && connection.status === 'ready');
   }).length;
 
   function setRowFeedback(optionId: string, next: RowFeedback) {
@@ -135,6 +189,7 @@ export default function ExternalServicesPage() {
   }
 
   function openEditor(option: ServiceOption) {
+    if (actionsBlocked || mutationRunning.current) return;
     const connection = connectionFor(option, connections);
     setEditingId(option.id);
     setDraftEnabled(Boolean(connection?.enabled));
@@ -164,12 +219,19 @@ export default function ExternalServicesPage() {
   }
 
   async function saveOption(option: ServiceOption, enabled: boolean, clearCredential = false) {
+    if (actionsBlocked || mutationRunning.current) return;
     const existing = connectionFor(option, connections);
-    const credential = clearCredential ? '' : draftCredential || undefined;
+    const credential = clearCredential ? '' : draftCredential.trim() || undefined;
+    if (!clearCredential && draftCredential !== '' && !credential) {
+      setDialogError(copy('admin.external_services.credential_blank', '凭据不能只有空白字符。请填写新凭据，或取消替换以保留原值。', 'Credentials cannot contain only whitespace. Enter a new credential or cancel replacement to keep the saved value.'));
+      return;
+    }
     if (enabled && !option.secretless && !credential && !existing?.configured) {
       setDialogError(copy('admin.external_services.credential_required', '启用前请填写 API Key 或 Token。', 'Enter an API key or token before enabling this service.'));
       return;
     }
+    mutationRunning.current = true;
+    readRevision.current += 1;
     setBusy(`${clearCredential ? 'clear' : 'save'}:${option.id}`);
     setDialogError('');
     try {
@@ -185,7 +247,7 @@ export default function ExternalServicesPage() {
             display_name: option.label,
             enabled: clearCredential ? false : enabled,
             base_url: option.baseUrl,
-            source_role: option.role === 'enhancer' ? 'reader_enhancement' : 'execution_source',
+            source_role: 'execution_source',
             capability_ids: option.capabilityIds,
             runtime_profile_ids: option.runtimeProfileIds,
             config: { ...(existing?.config || {}), secretless: Boolean(option.secretless) },
@@ -195,13 +257,14 @@ export default function ExternalServicesPage() {
           },
         }
       );
+      const savedMessage = clearCredential
+        ? copy('admin.external_services.cleared', '凭据已清除，服务已停用。', 'Credential cleared and service disabled.')
+        : copy('admin.external_services.saved', '外部服务设置已保存。', 'External service settings saved.');
+      const refreshed = await loadConnections();
       setRowFeedback(option.id, {
-        tone: 'success',
-        message: clearCredential
-          ? copy('admin.external_services.cleared', '凭据已清除，服务已停用。', 'Credential cleared and service disabled.')
-          : copy('admin.external_services.saved', '外部服务设置已保存。', 'External service settings saved.'),
+        tone: refreshed ? 'success' : 'warning',
+        message: refreshed ? savedMessage : copy('admin.external_services.saved_read_failed', '设置已保存，但最新状态读取失败。请重试读取，无需再次保存。', 'Settings were saved, but the latest state could not be read. Retry reading; do not save again.'),
       });
-      await loadConnections();
       setEditingId('');
       setDraftCredential('');
       setCredentialRevealed(false);
@@ -209,13 +272,16 @@ export default function ExternalServicesPage() {
     } catch (saveError) {
       setDialogError(resolveUiErrorMessage(saveError, copy('admin.external_services.save_error', '保存外部服务失败。', 'Failed to save external service.')));
     } finally {
+      mutationRunning.current = false;
       setBusy('');
     }
   }
 
   async function testOption(option: ServiceOption) {
+    if (actionsBlocked || mutationRunning.current) return;
     const connection = connectionFor(option, connections);
     if (!connection) return;
+    mutationRunning.current = true;
     setBusy(`test:${option.id}`);
     setRowFeedback(option.id, { tone: 'success', message: copy('common.testing', '测试中…', 'Testing…') });
     try {
@@ -233,7 +299,9 @@ export default function ExternalServicesPage() {
         tone: 'error',
         message: resolveUiErrorMessage(testError, copy('admin.external_services.test_error', '连接测试失败。', 'Connection test failed.'), t),
       });
+      await loadConnections();
     } finally {
+      mutationRunning.current = false;
       setBusy('');
     }
   }
@@ -243,34 +311,40 @@ export default function ExternalServicesPage() {
   return (
     <BackofficePageStack data-page-model="configuration" data-external-services-page>
       <BackofficePageHeader
-        eyebrow={copy('admin.external_services.eyebrow', '运行设置', 'Runtime settings')}
         title={copy('admin.external_services.title', '搜索与图片', 'Search & images')}
         description={copy('admin.external_services.description', '从固定服务清单配置网页搜索和图库来源，无需创建供应商记录。', 'Configure web search and stock-image sources from a fixed service directory; no supplier records need to be created.')}
         secondaryAction={<Link href="/admin/troubleshooting" className="btn btn-secondary">{copy('admin.external_services.open_diagnostics', '查看运行诊断', 'Open runtime diagnostics')}</Link>}
         summaryItems={[
-          { label: copy('admin.external_services.ready', '已就绪服务', 'Ready services'), value: `${readyCount}/${SERVICE_OPTIONS.length}` },
+          { label: copy('admin.external_services.verified_services', '验证通过服务', 'Verified services'), value: snapshotCurrent ? `${readyCount}/${SERVICE_OPTIONS.length}` : '—' },
           { label: copy('admin.external_services.search_rule', '搜索规则', 'Search rule'), value: copy('admin.external_services.search_rule_value', '主服务单选 + Reader 增强', 'One primary + Reader enhancement') },
           { label: copy('admin.external_services.image_rule', '图片规则', 'Image rule'), value: copy('admin.external_services.image_rule_value', '已启用来源并行', 'Enabled sources in parallel') },
         ]}
       />
 
-      {error ? <BackofficeDiagnosticNotice message={error} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => void loadConnections()} /> : null}
+      {error ? <BackofficeDiagnosticNotice message={error} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => { if (!mutationRunning.current && !refreshing) void loadConnections(); }} /> : null}
 
-      <BackofficeSectionPanel>
+      {hasLoaded && !snapshotCurrent ? <p role="status" data-ui="external-stale-snapshot" className="text-sm text-amber-800 dark:text-amber-200">{copy('admin.external_services.stale_snapshot', '以下为上次读取的快照，最新配置尚未确认。确认前不能修改或测试连接。', 'The last read snapshot is shown below. The latest configuration is unconfirmed; changes and tests are unavailable until refreshed.')}</p> : null}
+      {hasLoaded ? <BackofficeSectionPanel>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label={copy('admin.external_services.categories', '服务类型', 'Service category')}>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label={copy('admin.external_services.categories', '服务类型', 'Service category')}
+            onKeyDown={(event) => {
+              const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+              const index = tabs.indexOf(event.target as HTMLButtonElement);
+              if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+              tabs[next].focus();
+              tabs[next].click();
+            }}>
             {(['search', 'image'] as ServiceCategory[]).map((value) => (
-              <button key={value} type="button" role="tab" aria-selected={category === value} className={category === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => setCategory(value)}>
+              <button key={value} id={`external-tab-${value}`} type="button" role="tab" aria-controls={`external-panel-${value}`} tabIndex={category === value ? 0 : -1} aria-selected={category === value} className={category === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => setCategory(value)}>
                 {value === 'search' ? copy('admin.external_services.search', '网页搜索', 'Web search') : copy('admin.external_services.images', '图库来源', 'Image sources')}
               </button>
             ))}
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            {copy('admin.external_services.table_hint', '先看状态，再配置或测试单个服务。', 'Scan status first, then configure or test one service.')}
-          </span>
         </div>
 
-        <div data-external-category={category}>
+        <div data-external-category={category} role="tabpanel" id={`external-panel-${category}`} aria-labelledby={`external-tab-${category}`} tabIndex={0}>
           <AdminDataTableFrame
             dataUi="external-service-directory"
             title={category === 'search'
@@ -288,7 +362,7 @@ export default function ExternalServicesPage() {
               </details>
             )}
           >
-            <table data-ui="external-service-table" className="w-full min-w-[58rem] table-fixed text-left text-sm">
+            <table data-ui="external-service-table" className="w-full table-fixed text-left text-sm">
               <thead className="border-b border-slate-200 bg-white text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                 <tr>
                   <th className="w-[22%] px-4 py-2.5">{copy('admin.external_services.column_service', '服务', 'Service')}</th>
@@ -303,16 +377,21 @@ export default function ExternalServicesPage() {
                 {visibleOptions.map((option) => {
                   const connection = connectionFor(option, connections);
                   const enabled = Boolean(connection?.enabled);
-                  const ready = enabled && Boolean(connection?.configured || option.secretless);
+                  const configured = Boolean(connection?.configured || option.secretless);
+                  const failed = connection?.verification_status === 'failed' || connection?.status === 'error';
+                  const ready = enabled && configured && connection?.verification_status === 'passed' && !connection.attention_required && connection.status === 'ready';
                   const rowFeedback = feedback[option.id];
                   return (
                     <React.Fragment key={option.id}>
                       <tr data-external-service-id={option.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/30">
                         <td className="px-4 py-3 align-top">
-                          <button type="button" className="font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300" onClick={() => openEditor(option)}>
+                          <button type="button" disabled={actionsBlocked} className="font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300 disabled:cursor-not-allowed" onClick={() => openEditor(option)}>
                             {option.label}
                           </button>
-                          <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{option.baseUrl}</p>
+                          <AdminHelpTip label={copy('admin.external_services.service_details', '服务详情', 'Service details')}>
+                            <span className="block break-all">{option.baseUrl}</span>
+                            <span className="mt-1 block">{zh ? option.descriptionZh : option.description}</span>
+                          </AdminHelpTip>
                         </td>
                         <td className="px-3 py-3 align-top">
                           <span className="font-medium text-slate-800 dark:text-slate-200">
@@ -322,17 +401,19 @@ export default function ExternalServicesPage() {
                                 ? copy('admin.external_services.role_enhancer', 'Reader 增强', 'Reader enhancement')
                                 : copy('admin.external_services.role_parallel', '并行来源', 'Parallel source')}
                           </span>
-                          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{zh ? option.descriptionZh : option.description}</p>
                         </td>
                         <td className="px-3 py-3 align-top">
                           <BackofficeStatusBadge
-                            label={ready
-                              ? copy('common.ready', '已就绪', 'Ready')
+                            label={failed
+                              ? copy('admin.external_services.verification_failed', '验证失败', 'Verification failed')
+                              : ready ? copy('admin.external_services.verification_passed', '验证通过', 'Verified')
+                              : enabled && configured ? copy('admin.external_services.not_verified', '未验证', 'Not verified')
                               : enabled
                                 ? copy('common.missing_config', '缺少凭据', 'Missing credential')
                                 : copy('common.disabled', '已停用', 'Disabled')}
-                            status={ready ? 'success' : enabled ? 'warning' : 'neutral'}
+                            status={failed ? 'failed' : ready ? 'success' : enabled ? 'warning' : 'neutral'}
                           />
+                          {failed && connection?.last_error_code ? <code className="mt-1 block break-all text-xs text-rose-700 dark:text-rose-300">{connection.last_error_code}</code> : null}
                         </td>
                         <td className="px-3 py-3 align-top text-slate-600 dark:text-slate-300">
                           {option.secretless
@@ -342,7 +423,7 @@ export default function ExternalServicesPage() {
                               : copy('admin.external_services.credential_missing', '未配置', 'Missing')}
                         </td>
                         <td className="px-3 py-3 align-top text-slate-600 dark:text-slate-300">
-                          <span>{enabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}</span>
+                          {enabled && !connection?.runtime_effective && connection?.runtime_effective_reason !== 'secondary' ? <span>{copy('common.enabled', '已启用', 'Enabled')}</span> : null}
                           {connection?.runtime_effective ? (
                             <span className="mt-1 block text-xs font-medium text-emerald-700 dark:text-emerald-300">
                               {connection.runtime_effective_reason === 'parallel'
@@ -358,13 +439,13 @@ export default function ExternalServicesPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             {connection?.configured || option.secretless ? (
-                              <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== '' || !connection} onClick={() => void testOption(option)}>
+                              <button type="button" className="btn btn-secondary btn-sm" disabled={actionsBlocked || !connection || !enabled} title={!connection || !enabled ? copy('admin.external_services.save_before_test', '先启用并保存，再测试连接。', 'Enable and save before testing the connection.') : undefined} onClick={() => void testOption(option)}>
                                 {busy === `test:${option.id}` ? copy('common.testing', '测试中…', 'Testing…') : copy('common.test_connection', '测试', 'Test')}
                               </button>
                             ) : null}
-                            <button type="button" className="btn btn-primary btn-sm" disabled={busy !== ''} onClick={() => openEditor(option)}>
+                            <button type="button" className="btn btn-secondary btn-sm" disabled={actionsBlocked} onClick={() => openEditor(option)}>
                               {copy('common.configure', '配置', 'Configure')}
                             </button>
                           </div>
@@ -372,7 +453,7 @@ export default function ExternalServicesPage() {
                       </tr>
                       {rowFeedback ? (
                         <tr data-external-service-feedback={option.id}>
-                          <td colSpan={6} className={`px-4 py-2 text-xs ${rowFeedback.tone === 'error' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'}`} role={rowFeedback.tone === 'error' ? 'alert' : 'status'}>
+                          <td colSpan={6} className={`px-4 py-2 text-xs ${rowFeedback.tone === 'error' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-300' : rowFeedback.tone === 'warning' ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-200' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'}`} role={rowFeedback.tone === 'error' ? 'alert' : 'status'}>
                             {rowFeedback.message}
                           </td>
                         </tr>
@@ -384,7 +465,7 @@ export default function ExternalServicesPage() {
             </table>
           </AdminDataTableFrame>
         </div>
-      </BackofficeSectionPanel>
+      </BackofficeSectionPanel> : null}
 
       <AdminWorkbenchDialog
         open={Boolean(editingOption) && !discardConfirmationOpen}
@@ -403,6 +484,7 @@ export default function ExternalServicesPage() {
         onSubmit={() => { if (editingOption) void saveOption(editingOption, draftEnabled); }}
       >
         {editingOption ? (
+          <fieldset disabled={busy !== '' || !snapshotCurrent} className="min-w-0">
           <AdminConfigurationTable
             ariaLabel={copy('admin.external_services.configuration_table', `${editingOption.label} 配置`, `${editingOption.label} configuration`)}
             itemHeading={copy('admin.external_services.configuration_item', '配置项', 'Setting')}
@@ -513,6 +595,7 @@ export default function ExternalServicesPage() {
               />
             ) : null}
           </AdminConfigurationTable>
+          </fieldset>
         ) : null}
       </AdminWorkbenchDialog>
 
@@ -537,6 +620,21 @@ export default function ExternalServicesPage() {
         variant="danger"
         onClose={() => setDiscardConfirmationOpen(false)}
         onConfirm={discardEditor}
+      />
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={copy('admin.external_services.discard_title', '放弃未保存的修改？', 'Discard unsaved changes?')}
+        message={copy('admin.external_services.discard_confirm', '当前服务有未保存的修改。放弃后，已保存的服务设置不会受影响。', 'This service has unsaved changes. Discarding them will not affect the saved service settings.')}
+        confirmLabel={copy('admin.external_services.discard_action', '放弃修改', 'Discard changes')}
+        cancelLabel={copy('admin.external_services.keep_editing', '继续编辑', 'Keep editing')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          const href = pendingNavigationHref;
+          discardEditor();
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
       />
     </BackofficePageStack>
   );

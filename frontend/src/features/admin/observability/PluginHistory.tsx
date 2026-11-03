@@ -8,32 +8,38 @@ import { createApiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
 
 const client = createApiClient({ idempotencyPrefix: 'plugin_history' });
-type Item = { id?: number; event_id?: string; site_id: string; plugin_slug: string; event_kind: string; received_at: string; events?: number; failed?: number; status?: string; run_id?: string | null };
+type Item = { id?: number; event_id?: string; site_id: string; plugin_slug: string; event_kind: string; received_at: string; events?: number; failed?: number; status?: string; error_code?: string | null; run_id?: string | null };
 type Snapshot = { at: string; id: number };
 type History = { items: Item[]; page: number; pages: number; total: number; totals: { events: number; succeeded: number; failed: number }; snapshot: Snapshot };
 
-export function PluginHistory({ hours, site, recordScope }: { hours: number; site: string; recordScope: string }) {
+type ProblemScope = { plugin: string; event: string; error: string; unassignedSite?: boolean };
+
+export function PluginHistory({ hours, site, recordScope, problem, plugin = '' }: { hours: number; site: string; recordScope: string; plugin?: string; problem?: ProblemScope }) {
   const { locale } = useLocale();
   const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
-  const [filters, setFilters] = useState({ status: 'all', sort: 'latest', view: 'groups', page: 1, group: null as Item | null });
+  const [filters, setFilters] = useState({ status: problem ? 'failed' : 'all', sort: 'latest', view: problem ? 'events' : 'groups', category: 'all', page: 1, group: null as Item | null });
   const [result, setResult] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
-  const snapshot = useRef<Snapshot | null>(null);
+  const snapshot = useRef<{ key: string; value: Snapshot } | null>(null);
+  const scopeKey = JSON.stringify([hours, site, recordScope, plugin, problem, filters.status, filters.sort, filters.view, filters.category, filters.group]);
   const change = (patch: Partial<typeof filters>) => { snapshot.current = null; setFilters(value => ({ ...value, ...patch, page: 1 })); };
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setFailed(false); setResult(null);
     const query = new URLSearchParams({ window_hours: String(hours), site_id: filters.group?.site_id || site, record_scope: recordScope, status: filters.status, sort: filters.sort, view: filters.view, page: String(filters.page), page_size: '20' });
+    query.set('event_category', filters.category);
+    if (plugin) query.set('plugin_slug', plugin);
+    if (problem) { query.set('plugin_slug', problem.plugin); query.set('event_kind', problem.event); query.set('error_code', problem.error); if (problem.unassignedSite) query.set('unassigned_site', 'true'); }
     if (filters.group) { query.set('plugin_slug', filters.group.plugin_slug); query.set('event_kind', filters.group.event_kind); }
-    if (snapshot.current) { query.set('snapshot_at', snapshot.current.at); query.set('snapshot_id', String(snapshot.current.id)); }
+    if (snapshot.current?.key === scopeKey) { query.set('snapshot_at', snapshot.current.value.at); query.set('snapshot_id', String(snapshot.current.value.id)); }
     void client.request<History>(`/api/admin/plugin-observability/history?${query}`, { signal: controller.signal }).then(response => {
       if (controller.signal.aborted) return;
-      snapshot.current = response.data.snapshot; setResult(response.data);
+      snapshot.current = { key: scopeKey, value: response.data.snapshot }; setResult(response.data);
     }).catch(() => { if (!controller.signal.aborted) setFailed(true); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [hours, site, recordScope, filters, retry]);
+  }, [hours, site, recordScope, plugin, problem, filters, retry, scopeKey]);
   const names: Record<string, string> = {
     'addon.monitoring.state_projected': c('插件状态同步', 'Plugin state sync'),
     'addon.monitoring.health_reported': c('插件健康上报', 'Plugin health report'),
@@ -51,11 +57,12 @@ export function PluginHistory({ hours, site, recordScope }: { hours: number; sit
   };
   const statusName = (value?: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[value || ''] || c('其他状态', 'Other status'));
   const groups = filters.view === 'groups';
-  return <AdminDataTableFrame title={c('插件事件', 'Plugin events')} dataUi="usage-recent-activity" bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
+  return <AdminDataTableFrame title={problem ? c('此问题的留存记录', 'Retained records for this problem') : c('插件事件', 'Plugin events')} dataUi="usage-recent-activity" bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
     resultLabel={result ? c(`${result.totals.events} 条记录 · ${result.totals.failed} 条失败`, `${result.totals.events} records · ${result.totals.failed} failed`) : c('读取已留存记录', 'Reading retained records')}
     headerActions={<div className="flex flex-wrap items-center gap-2">
-      {filters.group ? <button className="btn btn-secondary btn-sm" onClick={() => change({ group: null, view: 'groups' })}>{c('返回分组', 'Back to groups')}</button> : <label className="text-xs">{c('展示', 'View')} <select className="btn btn-secondary btn-sm" aria-label={c('记录展示', 'Record view')} value={filters.view} onChange={e => change({ view: e.target.value })}><option value="groups">{c('按事件分组', 'Event groups')}</option><option value="events">{c('逐条记录', 'Individual records')}</option></select></label>}
-      <select className="btn btn-secondary btn-sm" aria-label={c('状态筛选', 'Status filter')} value={filters.status} onChange={e => change({ status: e.target.value })}><option value="all">{c('全部状态', 'All statuses')}</option><option value="ok">{c('成功', 'Succeeded')}</option><option value="failed">{c('失败', 'Failed')}</option><option value="other">{c('其他状态', 'Other statuses')}</option></select>
+      {problem ? null : filters.group ? <button className="btn btn-secondary btn-sm" onClick={() => change({ group: null, view: 'groups' })}>{c('返回分组', 'Back to groups')}</button> : <label className="text-xs">{c('展示', 'View')} <select className="btn btn-secondary btn-sm" aria-label={c('记录展示', 'Record view')} value={filters.view} onChange={e => change({ view: e.target.value })}><option value="groups">{c('按事件分组', 'Event groups')}</option><option value="events">{c('逐条记录', 'Individual records')}</option></select></label>}
+      {!problem ? <select className="btn btn-secondary btn-sm" aria-label={c('状态筛选', 'Status filter')} value={filters.status} onChange={e => change({ status: e.target.value })}><option value="all">{c('全部状态', 'All statuses')}</option><option value="ok">{c('成功', 'Succeeded')}</option><option value="failed">{c('失败', 'Failed')}</option><option value="other">{c('其他状态', 'Other statuses')}</option></select> : null}
+      {!problem ? <select className="btn btn-secondary btn-sm" aria-label={c('事件类别', 'Event category')} value={filters.category} onChange={e => change({ category: e.target.value })}><option value="all">{c('全部事件', 'All events')}</option><option value="activity">{c('任务与反馈等事件', 'Activity and feedback')}</option><option value="status">{c('连接与状态上报', 'Connection and status')}</option></select> : null}
       <button className="btn btn-secondary btn-sm" onClick={() => change({ sort: filters.sort === 'latest' ? 'failures' : 'latest' })}>{filters.sort === 'latest' ? c('失败优先', 'Failures first') : c('最新优先', 'Latest first')}</button>
     </div>}
     footer={<div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-2 text-xs dark:border-slate-800">
@@ -63,14 +70,15 @@ export function PluginHistory({ hours, site, recordScope }: { hours: number; sit
       {result && result.pages > 1 ? <div className="flex gap-3"><button disabled={loading || result.page <= 1} onClick={() => setFilters(value => ({ ...value, page: result.page - 1 }))}>{c('上一页', 'Previous')}</button><button disabled={loading || result.page >= result.pages} onClick={() => setFilters(value => ({ ...value, page: result.page + 1 }))}>{c('下一页', 'Next')}</button></div> : null}
       <p className="w-full text-slate-500">{c('所选时段的已留存上报，每页 20 项；未上报或已清理的数据不在范围内。', 'Retained reports in this period, 20 per page; unreported or purged data is excluded.')} {result ? `${c('快照', 'Snapshot')}: ${formatDateTime(result.snapshot.at, locale)}` : ''}</p>
     </div>}>
+    {problem ? <p className="break-all px-3 py-2 text-xs">{site || c('未关联站点', 'Unassigned site')} · {problem.plugin} · {problem.event} · {problem.error || c('未提供错误码', 'No error code provided')}</p> : null}
     {filters.group ? <p className="px-3 py-2 text-sm">{names[filters.group.event_kind] || filters.group.event_kind} · {filters.group.site_id}</p> : null}
-    {failed ? <p role="alert" className="px-3 py-4">{c('记录加载失败，请重试。', 'History could not be loaded.')} <button className="btn btn-secondary btn-sm" onClick={() => setRetry(value => value + 1)}>{c('重试', 'Retry')}</button></p> : loading ? <p role="status" className="px-3 py-4">{c('正在加载记录…', 'Loading records…')}</p> : <table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900"><tr>{[c('时间', 'Time'), groups ? c('次数 / 失败', 'Events / failed') : c('状态', 'Status'), c('事件', 'Event'), c('来源 / 站点', 'Source / site'), c('查看', 'Inspect')].map(label => <th className="px-3 py-2" key={label}>{label}</th>)}</tr></thead><tbody>
+    {failed ? <p role="alert" className="px-3 py-4">{c('记录加载失败，请重试。', 'History could not be loaded.')} <button className="btn btn-secondary btn-sm" onClick={() => setRetry(value => value + 1)}>{c('重试', 'Retry')}</button></p> : loading ? <p role="status" className="px-3 py-4">{c('正在加载记录…', 'Loading records…')}</p> : <table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900"><tr>{[c('时间', 'Time'), groups ? c('次数 / 失败', 'Events / failed') : c('状态', 'Status'), c('事件', 'Event'), c('来源 / 站点', 'Source / site'), c('查看', 'Inspect')].map(label => <th className="whitespace-nowrap px-3 py-2" key={label}>{label}</th>)}</tr></thead><tbody>
       {result?.items.map(item => <tr key={item.id ?? JSON.stringify([item.site_id, item.plugin_slug, item.event_kind])} className="border-t border-slate-200 dark:border-slate-800">
         <td className="px-3 py-2 text-xs">{formatDateTime(item.received_at, locale)}</td>
-        <td className="px-3 py-2">{groups ? `${item.events} / ${item.failed}` : statusName(item.status)}</td>
-        <td className="px-3 py-2"><details><summary className="cursor-pointer">{names[item.event_kind] || `${c('其他事件', 'Other event')} · ${item.event_kind}`}</summary><code className="break-all text-xs text-slate-500">{item.event_kind}</code>{item.run_id ? <p className="break-all text-xs text-slate-500">{item.run_id}</p> : null}{item.event_id ? <p className="break-all text-xs text-slate-500">{item.event_id}</p> : null}</details></td>
+        <td className="whitespace-nowrap px-3 py-2">{groups ? `${item.events} / ${item.failed}` : statusName(item.status)}</td>
+        <td className="px-3 py-2"><details><summary className="cursor-pointer">{names[item.event_kind] || `${c('其他事件', 'Other event')} · ${item.event_kind}`}</summary><code className="break-all text-xs text-slate-500">{item.event_kind}</code>{item.run_id ? <p className="break-all text-xs text-slate-500">{item.run_id}</p> : null}{item.error_code ? <p className="break-all text-xs text-slate-500">{item.error_code}</p> : null}{item.event_id ? <p className="break-all text-xs text-slate-500">{item.event_id}</p> : null}</details></td>
         <td className="break-all px-3 py-2 text-xs">{item.plugin_slug}<br />{item.site_id}</td>
-        <td className="px-3 py-2">{groups ? <button className="text-blue-700 underline dark:text-blue-400" onClick={() => change({ view: 'events', group: item })}>{c('查看记录', 'View records')}</button> : item.run_id ? <Link className="text-blue-700 underline dark:text-blue-400" href={`/admin/troubleshooting?window=${hours}&site=${encodeURIComponent(item.site_id)}&from=usage-statistics`}>{c('站点诊断', 'Site diagnostics')}</Link> : <span className="text-xs text-slate-500">{c('未关联', 'Unlinked')}</span>}</td>
+        <td className="whitespace-nowrap px-3 py-2">{groups ? <button className="text-blue-700 underline dark:text-blue-400" onClick={() => change({ view: 'events', group: item })}>{c('查看记录', 'View records')}</button> : item.run_id ? <Link className="text-blue-700 underline dark:text-blue-400" href={`/admin/troubleshooting?window=${hours}&site=${encodeURIComponent(item.site_id)}&run_id=${encodeURIComponent(item.run_id)}&from=usage-statistics`}>{c('查看此运行', 'Inspect this run')}</Link> : <span className="text-xs text-slate-500">{c('未关联', 'Unlinked')}</span>}</td>
       </tr>)}
       {!result?.items.length ? <tr><td className="px-3 py-4" colSpan={5}>{c('所选范围暂无记录。', 'No records in this scope.')}</td></tr> : null}
     </tbody></table>}

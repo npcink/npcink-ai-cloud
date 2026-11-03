@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import json
+import math
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -70,8 +72,14 @@ def _connection_payload() -> dict[str, object]:
         "config": {
             "model_ids": [MODEL_ID, VISION_MODEL_ID],
             "model_metadata_overrides": {
+                MODEL_ID: {
+                    "endpoint_variant": "ollama_chat",
+                    "source": "m4_preview_operator_config",
+                    "revision": "ollama-native-chat-v1",
+                },
                 VISION_MODEL_ID: {
                     "feature": "vision",
+                    "endpoint_variant": "ollama_chat",
                     # Ollama receives the bounded image as a data URI. The
                     # runtime budget is measured before Provider execution, so
                     # leave enough room for the encoded media plus prompt.
@@ -142,7 +150,7 @@ def _probe_embedding(settings: Settings) -> int:
             execution_kind="embedding",
             model_id=SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
             instance_id=SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
-            endpoint_variant="embeddings",
+            endpoint_variant="ollama_embeddings",
             trace_id="m4-preview-ollama-embedding-probe",
             input_payload={"text": "猫咪媒体语义搜索"},
             policy={"storage_mode": "no_store"},
@@ -154,7 +162,44 @@ def _probe_embedding(settings: Settings) -> int:
         SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS
     ):
         raise RuntimeError("M4 Ollama embedding probe returned unexpected dimensions")
+    if not all(math.isfinite(float(value)) for value in embedding) or not any(embedding):
+        raise RuntimeError("M4 Ollama embedding probe returned invalid values")
     return max(0, int(result.latency_ms))
+
+
+def embedding_config(config: dict[str, object]) -> dict[str, object]:
+    """Replace only the embedding selection on the existing unified supplier."""
+    updated = dict(config)
+    previous = str(config.get("site_knowledge_model_id") or "")
+    raw_models = config.get("model_ids")
+    models = [str(model) for model in raw_models] if isinstance(raw_models, list) else []
+    updated["model_ids"] = list(dict.fromkeys([
+        model for model in models if model != previous
+    ] + [SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID]))
+    updated.update({
+        "site_knowledge_model_id": SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
+        "local_preview_profile_id": SITE_KNOWLEDGE_LOCAL_PREVIEW_PROFILE_ID,
+        "local_preview_probe_revision": SITE_KNOWLEDGE_LOCAL_PREVIEW_PROBE_REVISION,
+        "dimensions": SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS,
+        "metric": SITE_KNOWLEDGE_LOCAL_PREVIEW_METRIC,
+    })
+    return updated
+
+
+def configure_embedding_only(settings: Settings) -> dict[str, object]:
+    _validate_environment(settings)
+    # Probe before changing selection; a failed probe preserves the old row.
+    latency = _probe_embedding(settings)
+    with get_session(settings.database_url) as session:
+        connection = session.get(ProviderConnection, SITE_KNOWLEDGE_LOCAL_PREVIEW_CONNECTION_ID)
+        if connection is None or not connection.enabled or connection.status != "ready":
+            raise RuntimeError("Existing unified Ollama supplier must be ready")
+        if connection.base_url != SITE_KNOWLEDGE_LOCAL_PREVIEW_BASE_URL:
+            raise RuntimeError("Existing supplier is not the M4 Ollama endpoint")
+        connection.config_json = embedding_config(dict(connection.config_json or {}))
+        session.commit()
+    return {"status": "configured", "embedding_model_id": SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
+            "dimensions": SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS, "probe_latency_ms": latency}
 
 
 def _probe_vision(settings: Settings, instance: CatalogInstance) -> None:
@@ -213,6 +258,17 @@ def _apply_classification_timeout(profile: RoutingProfile) -> None:
 
 def configure(settings: Settings) -> dict[str, object]:
     _validate_environment(settings)
+    with get_session(settings.database_url) as session:
+        unified_connection = session.get(
+            ProviderConnection, SITE_KNOWLEDGE_LOCAL_PREVIEW_CONNECTION_ID,
+        )
+        config = dict(unified_connection.config_json or {}) if unified_connection else {}
+    if {"text_generation", "vision", "embedding"}.issubset(
+        set(config.get("capability_ids") or [])
+    ):
+        # Do not recreate the former split text/embedding suppliers when
+        # an operator reruns bootstrap on an already unified installation.
+        return configure_embedding_only(settings)
     service = ProviderConnectionAdminService(settings.database_url, settings)
     # Keep the route identity stable: capability evidence fingerprints use the
     # provider id when the connection id is identical. Disable the earlier
@@ -278,7 +334,12 @@ def configure(settings: Settings) -> dict[str, object]:
         # Qwen-VL's native Ollama API returns the visible answer reliably for
         # this bounded vision prompt and accepts the provider's think=false
         # control directly.
-        vision_instance.endpoint_variant = "ollama_chat"
+        # Persistent operator metadata selects native transport on every
+        # catalog refresh; do not rely on an in-memory one-off override.
+        if any(instance.endpoint_variant != "ollama_chat" for instance in (
+            text_instance, vision_instance,
+        )):
+            raise RuntimeError("M4 Ollama catalog did not preserve native chat transport")
         session.flush()
         _probe_vision(settings, vision_instance)
         # _probe_vision persists its evidence in a short-lived session.  The
@@ -363,7 +424,11 @@ def configure(settings: Settings) -> dict[str, object]:
 
 
 def main() -> int:
-    print(json.dumps(configure(get_settings()), ensure_ascii=False, sort_keys=True))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--embedding-only", action="store_true")
+    args = parser.parse_args()
+    action = configure_embedding_only if args.embedding_only else configure
+    print(json.dumps(action(get_settings()), ensure_ascii=False, sort_keys=True))
     return 0
 
 

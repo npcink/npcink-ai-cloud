@@ -4,15 +4,19 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { PortalSection, PortalCard } from '@/components/portal/PortalScaffold';
-import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
-import { PortalEmptyState } from '@/components/portal/PortalPageState';
+import { PortalActionIcon, PortalRowActions, type PortalRowActionItem } from '@/components/portal/PortalRowActions';
+import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
+import { PortalEmptyState, PortalLoadingState } from '@/components/portal/PortalPageState';
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
+import { resolveCurrentAddonAccountId } from '@/lib/portal-addon-account-default';
 import { Modal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   getPortalSiteDisplayName,
   getPortalSiteUrl,
+  getPortalSiteUrlDisplay,
+  getPortalWordPressAdminUrl,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -50,7 +54,123 @@ function siteRemovalNotice(t: PortalTranslator, relinkAvailableAt: string): stri
   );
 }
 
-function PortalSitesWorkspaceContent() {
+
+function siteConnectionLabel(site: Site, t: PortalTranslator): string {
+  if (site.status === 'active') {
+    return t('portal.sites.table_ready', {}, 'Connected');
+  }
+  if (site.status === 'inactive') {
+    return t('portal.site_status_inactive', {}, 'Inactive');
+  }
+  if (site.status === 'provisioning') {
+    return t('portal.site_status_provisioning', {}, 'Provisioning');
+  }
+  return t('portal.site_status_suspended', {}, 'Suspended');
+}
+
+function SiteConnectionStatus({ site, t }: { site: Site; t: PortalTranslator }) {
+  const label = siteConnectionLabel(site, t);
+  if (site.status === 'active') {
+    return <PortalStatusInline label={label} />;
+  }
+  return (
+    <PortalStatusBadge
+      status={site.status === 'inactive' || site.status === 'provisioning' ? 'warning' : 'error'}
+      label={label}
+      className="normal-case tracking-normal"
+    />
+  );
+}
+
+
+export type PortalSitesCapacityAlert = {
+  id?: string;
+  label: string;
+  detail?: string;
+  href?: string;
+  action?: string;
+};
+
+function buildSiteRowActions(args: {
+  site: Site;
+  t: PortalTranslator;
+  disabled: boolean;
+  openLifecycleModal: (site: Site, status: 'active' | 'inactive') => void;
+  onRemove: (site: Site) => void;
+}): {
+  primary: PortalRowActionItem;
+  secondary: PortalRowActionItem | null;
+  inline: PortalRowActionItem[];
+  overflow: PortalRowActionItem[];
+} {
+  const { site, t, disabled, openLifecycleModal, onRemove } = args;
+  const siteHref = `/portal/sites/${encodeURIComponent(site.site_id)}#service-status`;
+  const wpAdminUrl = getPortalWordPressAdminUrl(site);
+  const canProvision = Boolean(site.allowed_actions?.includes('provision_sites'));
+  const canRemove = Boolean(site.allowed_actions?.includes('remove_sites'));
+  const viewSite: PortalRowActionItem = {
+    id: 'view-site',
+    label: t('portal.site_record', {}, 'Open site'),
+    href: siteHref,
+    iconOnly: true,
+  };
+  const wpAdmin: PortalRowActionItem | null = wpAdminUrl
+    ? {
+        id: 'wp-admin',
+        label: t('portal.sites.open_wordpress_admin', {}, 'Open WordPress admin'),
+        href: wpAdminUrl,
+        external: true,
+        disabled: disabled || site.status === 'suspended',
+      }
+    : null;
+
+  // Desktop density: only the primary open-site (or Activate) control is visible;
+  // WP admin + deactivate/remove live in the overflow menu.
+  let primary: PortalRowActionItem = viewSite;
+  const secondary: PortalRowActionItem | null = null;
+  const inline: PortalRowActionItem[] = [];
+  const overflow: PortalRowActionItem[] = [];
+
+  if (canProvision && site.status === 'inactive') {
+    primary = {
+      id: 'activate',
+      label: t('portal.activate_site_action', {}, 'Activate'),
+      disabled,
+      onClick: () => openLifecycleModal(site, 'active'),
+    };
+    overflow.push({ ...viewSite, iconOnly: false });
+  }
+
+  if (wpAdmin) {
+    overflow.push(wpAdmin);
+  }
+
+  // Danger ops stay in ⋯; parent modals own confirm (confirm: false).
+  if (site.status === 'active' && canProvision) {
+    overflow.push({
+      id: 'deactivate',
+      label: t('portal.deactivate_site_action', {}, 'Deactivate'),
+      disabled,
+      danger: true,
+      confirm: false,
+      onClick: () => openLifecycleModal(site, 'inactive'),
+    });
+  }
+  if (canRemove && site.status !== 'suspended') {
+    overflow.push({
+      id: 'remove',
+      label: t('portal.remove_site_action', {}, 'Remove site'),
+      disabled,
+      danger: true,
+      confirm: false,
+      onClick: () => onRemove(site),
+    });
+  }
+
+  return { primary, secondary, inline, overflow };
+}
+
+function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?: PortalSitesCapacityAlert[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,6 +196,7 @@ function PortalSitesWorkspaceContent() {
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
   const [siteRefreshFailed, setSiteRefreshFailed] = useState(() => searchParams.get('site_refresh') === 'failed');
   const [isRefreshingSites, setIsRefreshingSites] = useState(false);
+  const [connectGuideOpen, setConnectGuideOpen] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const sites = session?.sites || EMPTY_SITES;
@@ -362,68 +483,143 @@ function PortalSitesWorkspaceContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  if (addonConnectMode) {
+    // Minimal bind page for ordinary site owners: no workspace, no dashboard chrome.
+    return (
+      <section className="mx-auto w-full max-w-md py-10" data-portal-bind="page">
+        <PortalSiteConnectPanel
+          onSubmittingChange={setIsConnecting}
+          accounts={addonAccounts}
+          currentAccountId={resolveCurrentAddonAccountId(addonAccounts)}
+          accountsError={addonAccountsError}
+          isLoadingAccounts={isLoadingAddonAccounts}
+          onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
+          initialSiteUrl={addonSiteUrl}
+          initialSiteName={addonSiteName}
+          addonReturnUrl={addonReturnUrl}
+          addonState={addonState}
+        />
+      </section>
+    );
+  }
+
   return (
     <section id="sites" className="scroll-mt-24" data-portal-home="sites-workspace">
-      <PortalSection className="space-y-4" variant="portal">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {t('portal.site_register', {}, 'Sites')}
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">
+      <PortalSection className="space-y-2 p-3 md:px-4 md:py-3" variant="portal" data-portal-sites="section">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
               {t('portal.home.my_sites_title', {}, 'My sites')}
             </h2>
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-              {visibleSites.length} {t('common.site')}
-              {visibleSites.filter((site) => site.status !== 'active').length > 0 ? (
-                <> · {t(
-                  'portal.home.site_connection_attention_value',
-                  { count: String(visibleSites.filter((site) => site.status !== 'active').length) },
-                  `${visibleSites.filter((site) => site.status !== 'active').length} need attention`
-                )}</>
-              ) : null}
-            </p>
           </div>
-          <div className="flex w-full flex-col gap-3 sm:items-end lg:max-w-3xl">
-            {showSiteSearch ? <div className="w-full sm:max-w-sm">
-              <label htmlFor="portal-service-site-search" className="sr-only">
-                {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
-              </label>
-              <input
-                id="portal-service-site-search"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => updateSearchQuery(event.target.value)}
-                placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
-                className="input"
-              />
-            </div> : null}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+            {showSiteSearch ? (
+              <div className="w-full sm:max-w-sm sm:shrink-0">
+                <label htmlFor="portal-service-site-search" className="sr-only">
+                  {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
+                </label>
+                <input
+                  id="portal-service-site-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => updateSearchQuery(event.target.value)}
+                  placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
+                  className="input"
+                />
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 sm:self-auto dark:bg-blue-500 dark:text-slate-950 dark:hover:bg-blue-400"
+              data-portal-sites="connect-new"
+              aria-label={
+                connectGuideOpen
+                  ? t('common.close', {}, 'Close')
+                  : t('portal.sites.connect_new_action', {}, 'Connect new site')
+              }
+              title={
+                connectGuideOpen
+                  ? t('common.close', {}, 'Close')
+                  : t('portal.sites.connect_new_action', {}, 'Connect new site')
+              }
+              aria-expanded={visibleSites.length > 0 ? connectGuideOpen : undefined}
+              data-portal-sites-connect={connectGuideOpen ? 'open' : 'closed'}
+              onClick={() => {
+                const nextOpen = !connectGuideOpen;
+                setConnectGuideOpen(nextOpen);
+                if (nextOpen && typeof document !== 'undefined') {
+                  window.requestAnimationFrame(() => {
+                    document.getElementById('portal-sites-connect-guide')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  });
+                }
+              }}
+            >
+              <PortalActionIcon id={connectGuideOpen ? 'connect-collapse' : 'connect-new'} />
+            </button>
           </div>
         </div>
-
-        {visibleSites.length > 0 ? (
-          <details className="border-b border-slate-200 py-3 text-sm dark:border-slate-800" data-portal-sites="connect-guide">
-            <summary className="cursor-pointer font-medium text-blue-700 dark:text-blue-300">{t('portal.sites.connect_hint_title')}</summary>
-            <p className="mt-2 text-slate-600 dark:text-slate-300">{t('portal.sites.connect_hint_desc')}</p>
-          </details>
-        ) : null}
-        {visibleSites.length === 0 && !searchQuery.trim() ? (
-          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
-            <p className="font-semibold">
-              {visibleSites.length
-                ? t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')
-                : t('portal.sites.connect_first_hint_title', {}, 'Connect your first WordPress site')}
-            </p>
-            <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
-              {t(
-                'portal.sites.connect_hint_desc',
-                {},
-                'Open npcink-cloud-addon in WordPress and start the connection there. After binding, the site will appear here.'
-              )}
-            </p>
+        {visibleSites.length > 0 && connectGuideOpen ? (
+          <div
+            id="portal-sites-connect-guide"
+            className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100"
+            data-portal-sites="connect-guide"
+            data-portal-sites-guide="under-connect"
+            role="region"
+            aria-label={t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')}
+          >
+            <div className="min-w-0">
+              <p className="font-semibold">
+                {t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')}
+              </p>
+              <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
+                {t(
+                  'portal.sites.connect_hint_desc',
+                  {},
+                  'Open npcink-cloud-addon in WordPress and start the connection there. After binding, the site will appear here.'
+                )}
+              </p>
+            </div>
           </div>
         ) : null}
-
+        {capacityAlerts.length > 0 ? (
+          <div
+            className="w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+            data-portal-sites="capacity-alerts"
+          >
+            <ul className="divide-y divide-amber-200/70 dark:divide-amber-900/50">
+              {capacityAlerts.map((item) => (
+                <li
+                  key={item.id || item.label}
+                  className="px-3 py-2"
+                  data-portal-sites="capacity-alert-row"
+                >
+                  <div className="flex flex-nowrap items-center gap-2">
+                    <p className="min-w-0 flex-1 text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
+                    {item.href && item.action ? (
+                      <Link
+                        href={item.href}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+                        aria-label={item.action}
+                        title={item.action}
+                        data-portal-sites="view-plan"
+                      >
+                        <PortalActionIcon id="view-plan" />
+                      </Link>
+                    ) : null}
+                  </div>
+                  {item.detail ? (
+                    <p
+                      className="mt-1 text-xs leading-5 text-amber-900/85 dark:text-amber-100/85"
+                      data-portal-sites="capacity-alert-detail"
+                    >
+                      {item.detail}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {removeNotice ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
             {removeNotice}
@@ -453,92 +649,71 @@ function PortalSitesWorkspaceContent() {
                 : t('portal.no_sites', {}, 'No sites')}
               description={visibleSites.length
                 ? t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')
-                : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.')}
+                : t('portal.sites.empty_list_hint', {}, 'Use Connect new site above for the WordPress binding steps.')}
             />
           ) : (
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full text-left text-sm">
               <caption className="sr-only">
                 {t('portal.site_register_desc', {}, 'Every connected site appears here with its current service status.')}
               </caption>
               <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
-                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_site', {}, 'Site')}</th>
-                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_status', {}, 'Connection')}</th>
-                  <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.sites.table_actions', {}, 'Actions')}</th>
+                  <th scope="col" className="min-w-0 px-2 py-1.5 font-medium">{t('portal.sites.table_site', {}, 'Site')}</th>
+                  <th scope="col" className="w-0 whitespace-nowrap px-2 py-1.5 font-medium">{t('portal.sites.table_status', {}, 'Connection')}</th>
+                  <th scope="col" className="w-0 whitespace-nowrap px-2 py-1.5 text-right font-medium">{t('portal.sites.table_actions', {}, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                {sortedSites.map((site) => (
-                  <tr key={site.site_id} className="align-middle">
-                    <th scope="row" className="max-w-[22rem] px-3 py-4 font-normal">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-semibold text-slate-950 dark:text-white">
+                {sortedSites.map((site) => {
+                  const rowActions = buildSiteRowActions({
+                    site,
+                    t,
+                    disabled: siteRefreshFailed || isRefreshingSites,
+                    openLifecycleModal,
+                    onRemove: (nextSite) => {
+                      setRemoveError('');
+                      setPendingRemoveSite(nextSite);
+                    },
+                  });
+                  return (
+                  <tr key={site.site_id} className="portal-list-row align-middle">
+                    <th scope="row" className="min-w-0 px-2 py-1.5 font-normal">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <Link
+                          href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`}
+                          className="max-w-[12rem] shrink-0 truncate font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300 sm:max-w-[16rem]"
+                          title={getPortalSiteUrl(site) || undefined}
+                          data-portal-sites="site-name"
+                        >
                           {getPortalSiteDisplayName(site)}
+                        </Link>
+                        <span
+                          className="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400"
+                          title={getPortalSiteUrl(site) || undefined}
+                          data-portal-sites="site-url"
+                        >
+                          {getPortalSiteUrlDisplay(site)
+                            || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-                        {getPortalSiteUrl(site) || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
-                      </p>
                     </th>
-                    <td className="whitespace-nowrap px-3 py-4">
-                      <PortalStatusBadge
-                        status={site.status === 'active' ? 'active' : 'warning'}
-                        label={site.status === 'active'
-                          ? t('portal.sites.table_ready', {}, 'Connected')
-                          : site.status === 'inactive'
-                            ? t('portal.site_status_inactive', {}, 'Inactive')
-                            : site.status === 'provisioning'
-                              ? t('portal.site_status_provisioning', {}, 'Provisioning')
-                              : t('portal.site_status_suspended', {}, 'Suspended')}
-                        className="normal-case tracking-normal"
+                    <td className="w-0 whitespace-nowrap px-2 py-1.5">
+                      <SiteConnectionStatus site={site} t={t} />
+                    </td>
+                    <td className="w-0 whitespace-nowrap px-2 py-1.5 text-right">
+                      <PortalRowActions
+                        primary={rowActions.primary}
+                        secondary={rowActions.secondary}
+                        inline={rowActions.inline}
+                        overflow={rowActions.overflow}
+                        moreLabel={t('portal.sites.more_actions', {}, 'More actions')}
+                        overflowTestId="desktop-actions"
+                        className="flex-nowrap justify-end gap-1.5"
                       />
                     </td>
-                    <td className="px-3 py-4">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
-                          {t('portal.site_record', {}, 'Open site')}
-                        </Link>
-                        {site.allowed_actions?.includes('provision_sites')
-                          && site.status === 'inactive' ? (
-                          <button
-                            type="button"
-                            onClick={() => openLifecycleModal(site, 'active')}
-                            disabled={siteRefreshFailed || isRefreshingSites}
-                            className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-                          >
-                            {t('portal.activate_site_action', {}, 'Activate')}
-                          </button>
-                        ) : null}
-                        {(site.allowed_actions?.includes('remove_sites') || (site.status === 'active' && site.allowed_actions?.includes('provision_sites')))
-                          && site.status !== 'suspended' ? (
-                          <details className="relative inline-block text-right" data-portal-sites="desktop-actions">
-                            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
-                              {t('portal.site_other_actions', {}, 'Other actions')}
-                            </summary>
-                            <div className="mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                              {site.status === 'active' && site.allowed_actions?.includes('provision_sites') ? (
-                                <button type="button" className="btn btn-secondary btn-sm" disabled={siteRefreshFailed || isRefreshingSites} onClick={() => openLifecycleModal(site, 'inactive')}>{t('portal.deactivate_site_action')}</button>
-                              ) : null}
-                              {site.allowed_actions?.includes('remove_sites') ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRemoveError('');
-                                  setPendingRemoveSite(site);
-                                }}
-                                disabled={siteRefreshFailed || isRefreshingSites}
-                                className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                              >
-                                {t('portal.remove_site_action', {}, 'Remove site')}
-                              </button>
-                              ) : null}
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
-                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -552,103 +727,76 @@ function PortalSitesWorkspaceContent() {
                 : t('portal.no_sites', {}, 'No sites')}
               description={visibleSites.length
                 ? t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')
-                : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.')}
+                : t('portal.sites.empty_list_hint', {}, 'Use Connect new site above for the WordPress binding steps.')}
             />
-          ) : sortedSites.map((site) => (
-            <PortalCard key={site.site_id} variant="portal">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-lg font-semibold text-slate-950 dark:text-white">
-                      {getPortalSiteDisplayName(site)}
-                    </p>
-                    <PortalStatusBadge
-                      status={site.status === 'active' ? 'active' : 'warning'}
-                      label={site.status === 'active'
-                        ? t('portal.sites.table_ready', {}, 'Connected')
-                        : site.status === 'inactive'
-                          ? t('portal.site_status_inactive', {}, 'Inactive')
-                          : site.status === 'provisioning'
-                            ? t('portal.site_status_provisioning', {}, 'Provisioning')
-                            : t('portal.site_status_suspended', {}, 'Suspended')}
-                      className="normal-case tracking-normal"
-                    />
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    {getPortalSiteUrl(site)
-                      || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
-                    {t('portal.site_record', {}, 'Site record')}
+          ) : sortedSites.map((site) => {
+              const rowActions = buildSiteRowActions({
+                site,
+                t,
+                disabled: siteRefreshFailed || isRefreshingSites,
+                openLifecycleModal,
+                onRemove: (nextSite) => {
+                  setRemoveError('');
+                  setPendingRemoveSite(nextSite);
+                },
+              });
+              return (
+            <PortalCard key={site.site_id} variant="portal" className="portal-list-row !px-3 !py-2.5">
+              <div className="flex flex-col gap-2">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <Link
+                    href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`}
+                    className="max-w-[14rem] truncate text-sm font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
+                    title={getPortalSiteUrl(site) || undefined}
+                    data-portal-sites="site-name"
+                  >
+                    {getPortalSiteDisplayName(site)}
                   </Link>
-                  {site.allowed_actions?.includes('provision_sites')
-                    && site.status === 'inactive' ? (
-                    <button
-                      type="button"
-                      onClick={() => openLifecycleModal(site, 'active')}
-                      disabled={siteRefreshFailed || isRefreshingSites}
-                      className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-                    >
-                      {t('portal.activate_site_action', {}, 'Activate')}
-                    </button>
-                  ) : null}
-                  {(site.allowed_actions?.includes('remove_sites') || (site.status === 'active' && site.allowed_actions?.includes('provision_sites')))
-                    && site.status !== 'suspended' ? (
-                    <details className="relative" data-portal-sites="mobile-actions">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
-                        {t('portal.site_other_actions', {}, 'Other actions')}
-                      </summary>
-                      <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                        {site.status === 'active' && site.allowed_actions?.includes('provision_sites') ? (
-                          <button type="button" className="btn btn-secondary btn-sm" disabled={siteRefreshFailed || isRefreshingSites} onClick={() => openLifecycleModal(site, 'inactive')}>{t('portal.deactivate_site_action')}</button>
-                        ) : null}
-                        {site.allowed_actions?.includes('remove_sites') ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRemoveError('');
-                            setPendingRemoveSite(site);
-                          }}
-                          disabled={siteRefreshFailed || isRefreshingSites}
-                          className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                        >
-                          {t('portal.remove_site_action', {}, 'Remove site')}
-                        </button>
-                        ) : null}
-                      </div>
-                    </details>
-                  ) : null}
+                  <span
+                    className="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400"
+                    title={getPortalSiteUrl(site) || undefined}
+                    data-portal-sites="site-url"
+                  >
+                    {getPortalSiteUrlDisplay(site)
+                      || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+                  </span>
+                  <SiteConnectionStatus site={site} t={t} />
                 </div>
+                <PortalRowActions
+                  primary={rowActions.primary}
+                  secondary={rowActions.secondary}
+                  inline={rowActions.inline}
+                  overflow={rowActions.overflow}
+                  moreLabel={t('portal.sites.more_actions', {}, 'More actions')}
+                  overflowTestId="mobile-actions"
+                  className="w-full flex-nowrap justify-start gap-1.5"
+                />
               </div>
             </PortalCard>
-          ))}
+              );
+            })}
         </div>
+        {visibleSites.length === 0 && !searchQuery.trim() ? (
+          <div
+            className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100"
+            data-portal-sites="connect-guide"
+            data-portal-sites-guide="empty"
+            id="portal-sites-connect-guide"
+          >
+            <p className="font-semibold">
+              {t('portal.sites.connect_first_hint_title', {}, 'Connect your first WordPress site')}
+            </p>
+            <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
+              {t(
+                'portal.sites.connect_hint_desc',
+                {},
+                'Open npcink-cloud-addon in WordPress and start the connection there. After binding, the site will appear here.'
+              )}
+            </p>
+          </div>
+        ) : null}
       </PortalSection>
 
-      <Modal
-        isOpen={addonConnectMode && showConnectModal}
-        onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
-        closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
-        description={t('portal.connect_site_addon_desc', undefined, 'Confirm this site connection, then return to WordPress to finish setup.')}
-        size="lg"
-        className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
-      >
-        <PortalSiteConnectPanel
-          onSubmittingChange={setIsConnecting}
-          accounts={addonAccounts}
-          accountsError={addonAccountsError}
-          isLoadingAccounts={isLoadingAddonAccounts}
-          onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
-          onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
-          initialSiteUrl={addonSiteUrl}
-          initialSiteName={addonSiteName}
-          addonReturnUrl={addonReturnUrl}
-          addonState={addonState}
-        />
-      </Modal>
 
       <Modal
         isOpen={Boolean(pendingLifecycleSite)}
@@ -774,10 +922,14 @@ function PortalSitesWorkspaceContent() {
   );
 }
 
-export function PortalSitesWorkspace() {
+export function PortalSitesWorkspace({
+  capacityAlerts = [],
+}: {
+  capacityAlerts?: PortalSitesCapacityAlert[];
+}) {
   return (
-    <Suspense fallback={<div className="h-48 rounded-[18px] bg-slate-100 dark:bg-slate-900" aria-hidden="true" />}>
-      <PortalSitesWorkspaceContent />
+    <Suspense fallback={<PortalLoadingState message="Loading" compact />}>
+      <PortalSitesWorkspaceContent capacityAlerts={capacityAlerts} />
     </Suspense>
   );
 }

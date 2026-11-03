@@ -151,6 +151,20 @@ Risk and command choice are related but not identical:
 - an agent MUST NOT choose `deploy` merely as a substitute for understanding
   the changed files.
 
+**`sync` ≠ `deploy`.** `m4:preview:sync` updates candidate source against a
+compatible runtime; `m4:preview:deploy` rebuilds or recreates runtime when
+images, Compose, proxy, dependencies, or deployment scripts change—or when
+live containers still run an older revision after a merge. A green sync exit
+and a clean `master` tip are not enough: confirm the **running** preview via
+`m4:preview:status` / `/health/live` `source_revision` before claiming a merged
+fix is live. Lesson (2026-10-23, #1200 / `8f47e4d5`): sync left the M4 runtime
+on an older rev (`d566744`); spot-check still showed assist-driven
+`latency_high` until `m4:preview:deploy` rebuilt runtime and
+`/health/live` matched a tip that contained #1200. Evidence filenames (not in
+repo): `/workspace/preview-sync-1200-2026-10-23.md`,
+`/workspace/preview-1200-redeploy-spotcheck-2026-10-23.md`.
+
+
 Within a valid source sync, successful content-bound markers select runtime
 operations independently. Unchanged migration source skips Alembic only after
 the live database revision equals the expected Alembic head. Unchanged worker
@@ -358,6 +372,17 @@ unchanged healthy preflight PID. A missing preflight listener MAY recover throug
 LaunchAgent KeepAlive, but the postflight MUST NOT bootstrap, enable, kickstart,
 stop, install, or take over Ollama. Explicit restart and recovery commands keep
 their existing lifecycle authority.
+
+Local Site Knowledge's `ollama-m4-embedding` native embedding requests keep
+the model resident for 10 minutes of inactivity to reduce repeated editor-check
+cold starts. This is finite residency, not guaranteed warm performance: the first
+request and requests after expiry or memory eviction can still load the model.
+Other Ollama connections retain their existing residency. The 8B/4096-dimensional
+local model occupies about 7 GB on the current 16 GB M4; do not make it permanently
+resident or extend residency further without checking competing model/build load.
+Local `postgres_json` scans are a development fallback, not evidence of hosted
+embedding API/vector-database latency. Model/vector-space changes require matching
+indexes and a separate hosted-path validation before production use.
 
 M4 source application MUST validate the fully extracted incoming Compose and
 Nginx inputs before changing the live source mirror. A configuration failure

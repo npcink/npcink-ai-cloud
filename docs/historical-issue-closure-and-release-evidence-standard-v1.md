@@ -160,6 +160,10 @@ pass because adjacent checks are green.
   not assign to `path`; use names such as `target_file` or `target_path`.
 - Inspect status and diff statistics before staging, cached file names before
   committing, and the committed file list after committing.
+- Serialize Git fetch, pull/fast-forward and promotion steps. A tool's running
+  session ID is not completion; await each dependent operation and check its
+  exit status before starting the next. Recheck HEAD against origin/master
+  after an interrupted update rather than carrying stale revision assumptions.
 - Keep an auxiliary worktree locked until its PR is merged and the worktree is
   clean; audit before removal.
 
@@ -198,3 +202,76 @@ redeploy the last accepted production revision, restore a retired allowlist
 only with its complete contract, or publish a corrected plugin tag under the
 WordPress.org release process. Never rewrite evidence to make an incomplete
 release appear complete.
+
+## 13. Turn Audit Findings into Executable Regressions
+
+An audit's document count or passing test count does not establish correctness.
+For each finding in the frozen ledger, link the owning behavior contract,
+implementation and executable counterexample. If a contract or regression is
+absent, record that absence rather than inventing a location. Separate confirmed
+behavior from suspected behavior and untested production impact.
+
+The [November correctness remediation record](history/engineering/2026/audit-correctness-remediation-2026-11-01.md)
+provides the source cases for these rules:
+
+| Failure boundary | Implementation and review rule | Required counterexample for a change at this boundary |
+| --- | --- | --- |
+| Paid period expiration | Treat paid periods as half-open; reconcile settled replacement orders before expiring uncovered periods. A read must not manufacture another paid period. | Compare exact expiry and late reads, both direct runtime access and an administrative read first; also verify a paid renewal. See [subscription tests](../tests/domain/test_subscription_commerce.py). |
+| Refund versus consumption | Identify a shared row lock and transaction order. Under PostgreSQL READ COMMITTED, a statement that waits on a lock can retain its earlier snapshot; acquire the grant lock, then read refund state in a separate statement. Do not hold a transaction across gateway IO. | Prove that a second connection actually waits on the lock, then sees requested/unknown/failed outcomes after commit. SQLite or a mocked repository does not prove PostgreSQL lock behavior. See [PostgreSQL acceptance tests](../tests/integration/test_portal_postgres_acceptance.py). |
+| Uncertain gateway result | Preserve unknown until a verified terminal result exists; a late error cannot downgrade confirmed success. Verify signed original text before accepting matching order and exact finite amount. | Send signed noncompact and escaped JSON, invalid signatures, missing/mismatched fields, ambiguous system errors and a late error after success. Use a real HTTP response body rather than a `.json()`-only substitute. See [refund safety tests](../tests/domain/test_payment_refund_safety.py) and [gateway tests](../tests/domain/test_payment_gateways.py). |
+| Idempotency identity | Hash normalized client intent and execution controls; preserve routing health, revisions and prices as execution evidence. Authenticate the site/binding before replay. Upgrade legacy identity only when persisted evidence proves a match. | The same key and intent must replay when current routing fails; changed controls must conflict. Assert one Provider call and one debit, not only the response status. See [runtime transaction tests](../tests/domain/test_runtime_provider_transactions.py). |
+| Paginated usage and civil time | Paginate bounded details on the server and aggregate the entire requested range separately. Use half-open boundaries and real day bounds rather than assuming 24 hours. | Insert more than the former cap, read the last page, verify the full total and exclude the next-day boundary. Exercise 23/25-hour days, nonintegral UTC offsets, loading, retry, pagination and return navigation. See [day bounds tests](../tests/domain/test_portal_day_usage_bounds.py), [day trend tests](../frontend/tests/vitest/portal-day-usage.test.ts) and [Portal browser cases](../frontend/tests/e2e/portal-workspace-path.spec.ts). |
+| Queue eligibility | Filter non-runnable work before choosing the oldest candidate; a bounded inspection prefix must not be mistaken for an empty runnable queue. | Prefix runnable work with 1, 50 and 101 saturated tasks. See [queue lifecycle tests](../tests/domain/test_runtime_run_lifecycle.py). |
+| CI coverage and dated documents | Validate discovered executable tests against shard selection and impacted-source routing. A date retention decision must preserve the rejection of unreviewed stale documents. | Compare real pytest collection with shard coverage and exercise the selector; freeze both sides of a month rollover and inject an unreviewed old document. See [CI behavior tests](../tests/contract/test_ci_efficiency_contract.py) and [month rollover tests](../tests/contract/test_document_month_rollover.py). |
+
+Keep detailed behavior in the owning [payment](payment-gateway-contract-v1.md),
+[entitlement](cloud-payment-entitlement-v1.md),
+[runtime](runtime-provider-transaction-boundary-v1.md),
+[Portal](portal-ui-spec.md) and [CI](ci-pytest-sharding-v1.md) contracts.
+This section defines review evidence; it does not create a second behavior spec
+or require every listed suite for an unrelated edit.
+
+Record full-run failures, the actual correction and targeted rerun separately.
+Skipped cases are unverified coverage. A browser test with controlled API
+responses proves component behavior; pair it with real ledger/service tests
+before making a database correctness claim. Pin the declared interpreter and
+lockfile environment when producing a receipt; an older interpreter failure is
+not a reason to weaken the assertion.
+
+Closing a conversation only preserves a stopping point. For an unmerged
+deliverable, record the exact worktree, branch, lock, owner and release condition
+under the [worktree lifecycle standard](single-session-worktree-lifecycle-v1.md).
+A merge-status question must receive fresh Git/PR evidence. It must not be
+reported as a merge, cleanup or production operation that has not occurred.
+
+## 14. Service Notices and Actionable Diagnostic Guidance
+
+The [2026-11-03 notice and diagnostics closeout](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)
+adds these review requirements when changing these existing seams. They do not
+activate new alert infrastructure or expand the current product scope.
+
+- Show one clear impact statement, the known cause or explicit uncertainty,
+  one next action and how to verify the result. Preserve site, issue and time
+  scope in diagnostic links. Distinguish historical evidence, stale reads and
+  current service state; no fresh sample is not proof of recovery.
+- Keep manual customer notices distinct from automatic operator alerts.
+  Inbox insertion is not reading or urgent reachability. Hosted-service alert
+  thresholds require real business samples and a sustained baseline; local
+  cold-start latency is not a production SLO.
+- Follow the [notice contract](customer-service-notifications-v1.md) for fresh
+  single-use transport keys versus a stable persisted dispatch ID. Query the
+  original batch after uncertainty, preserve atomic delivery/audit state and
+  recheck the original recipient before sending. Prove concurrency with the
+  actual PostgreSQL transaction boundary, not a mock-only response.
+- A new Admin route must reconcile the manifest, IA inventory, acceptance
+  matrix and existing workspace navigation assertions, including click and
+  active state. Keep explicit counts; do not skip a failing old test.
+- Pair source-level display restrictions with rendered-output checks. Reading
+  a technical input to choose approved plain-language guidance is different
+  from exposing its raw model/database identity or jargon in customer UI.
+  Preserve non-exposure tests in ordinary and development environments.
+- Separate merged code, remote refs, local refs and registered worktrees.
+  Squash ancestry is not patch loss when exact PR-head and tree evidence match.
+  Respect primary-checkout protection and preserve evidence before cleanup;
+  a tool rejection is not permission to bypass it. Scope-wide cleanup requires
+  the [stage-transition standard](repository-stage-transition-cleanup-standard-v1.md).

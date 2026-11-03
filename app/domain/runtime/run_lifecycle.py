@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from sqlalchemy.orm import Session
 
 from app.adapters.queue.base import RuntimeQueue, RuntimeQueueError
+from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import get_session
 from app.core.error_taxonomy import get_error_taxonomy
@@ -206,7 +207,23 @@ class RuntimeRunLifecycleService:
         self,
         request: RuntimeRequest,
         merged_policy: dict[str, object],
+        *,
+        client_identity: bool = False,
     ) -> str:
+        identity_controls = (
+            {
+                "identity_version": 2,
+                "canonical_run_id": request.canonical_run_id,
+                "storage_mode": request.storage_mode,
+                "retention_ttl": request.retention_ttl,
+                "timeout_seconds": request.timeout_seconds,
+                "retry_max": request.retry_max,
+                "task_backend": request.task_backend,
+                "callback_url": request.callback_url,
+            }
+            if client_identity
+            else {}
+        )
         canonical_payload = json.dumps(
             {
                 "site_id": request.site_id,
@@ -222,7 +239,8 @@ class RuntimeRunLifecycleService:
                 "data_classification": request.data_classification,
                 "profile_id": request.profile_id,
                 "input": request.input_payload,
-                "policy": merged_policy,
+                "policy": request.policy if client_identity else merged_policy,
+                **identity_controls,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -257,15 +275,61 @@ class RuntimeRunLifecycleService:
         site_id: str,
         idempotency_key: str | None,
         request_fingerprint: str,
+        client_request: RuntimeRequest | None = None,
     ) -> RunRecord | None:
         if not idempotency_key:
             return None
         existing = repository.get_run_by_idempotency(site_id, idempotency_key)
         if existing is None:
             return None
-        if existing.request_fingerprint != request_fingerprint:
+        if (
+            client_request is not None
+            and (existing.policy_json or {}).get("request_identity_version") != 2
+        ):
+            if not self._legacy_request_matches(repository, existing, client_request):
+                raise RuntimeIdempotencyConflictError(site_id, idempotency_key)
+            existing.request_fingerprint = request_fingerprint
+            existing.policy_json = {**(existing.policy_json or {}), "request_identity_version": 2}
+        elif existing.request_fingerprint != request_fingerprint:
             raise RuntimeIdempotencyConflictError(site_id, idempotency_key)
         return existing
+
+    def _legacy_request_matches(
+        self,
+        repository: RuntimeRepository,
+        existing: RunRecord,
+        request: RuntimeRequest,
+    ) -> bool:
+        # Legacy hashes omitted controls and included volatile routing evidence.
+        # Prove the old hash using its saved route, then compare persisted controls.
+        policy = existing.policy_json or {}
+        contract = policy.get("execution_contract")
+        if not isinstance(contract, dict):
+            return False
+        for key in (
+            "storage_mode",
+            "timeout_seconds",
+            "retry_max",
+            "retention_ttl",
+            "task_backend",
+        ):
+            if contract.get(key) != getattr(request, key):
+                return False
+        if (existing.canonical_run_id or "") != (
+            request.canonical_run_id or ""
+        ) or request.callback_url:
+            return False
+        profile = CatalogRepository(repository.session).get_routing_profile(request.profile_id)
+        if profile is None:
+            return False
+        legacy_policy = {**(profile.default_policy_json or {}), **request.policy}
+        for key in ("routing_revision", "routing_candidates", "routing_explainability"):
+            if key not in policy:
+                return False
+            legacy_policy[key] = policy[key]
+        return existing.request_fingerprint == self.build_request_fingerprint(
+            request, legacy_policy
+        )
 
     def publish_queue_signal(self, run_id: str) -> None:
         if self.runtime_queue is None:

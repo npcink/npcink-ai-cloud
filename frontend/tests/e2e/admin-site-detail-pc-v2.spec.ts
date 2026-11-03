@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 test('site detail keeps the PC first screen focused on one conclusion and one next action', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -65,4 +65,51 @@ test('direct and tampered Site detail return contexts fail closed to Accounts', 
     'href',
     '/admin/accounts'
   );
+});
+
+
+test('site details label independent states and keep released ownership controls visible', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  let archived = false;
+  await page.route('**/api/admin/sites/site_mvp', route => route.fulfill({
+    json: buildAdminApiEnvelope({
+      site: { site_id: 'site_mvp', account_id: 'acct_fixture', name: 'MVP Site', status: archived ? 'archived' : 'active' },
+      subscription: { subscription_id: 'sub_mvp', status: 'active', plan_id: 'pro' },
+      commercial_policy: { subscription_grace: { active: true } },
+      usage_meter: { totals: { cost_cny: 6.8, cost_usd: 1 }, accounting_fx: { usd_cny_rate: '6.8', rate_version: 'fixture-fx-v1' } },
+      runtime_operator_explanations: [{ state: 'ok', explain_text: 'Current runtime summary does not show an immediate operator blocker.' }],
+      site_relink_policy: { enabled: true, default_cooldown_days: 90, ownership_released_at: archived ? '2026-07-01T00:00:00Z' : null, cross_account_relink_ready: false },
+    }),
+  }));
+  await page.goto('/admin/sites/site_mvp');
+  const header = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(header).toContainText(/Overall: Needs follow-up|整体: 需跟进/);
+  await expect(header).toContainText(/Site: Active|站点: 活跃/i);
+  await expect(header).toContainText(/Subscription: Active|订阅: 活跃/i);
+  const primary = page.locator('[data-ui="site-primary-workspace"]');
+  await expect(primary).toContainText(/Grace period active|处于宽限期/);
+  const subscription = primary.locator('dd').filter({ hasText: /^Active$|^活跃$/i });
+  await expect(subscription).toHaveCount(1);
+  await expect(subscription).not.toHaveClass(/text-red-/);
+  await expect(primary).toContainText(/US\$1.00|\$1.00/);
+  await expect(primary).not.toContainText('fixture-fx-v1');
+  await expect(page.locator('[data-ui="site-relink-policy"]')).not.toHaveAttribute('open', '');
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-site-${width}.png` });
+  }
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await expect(subscription).not.toHaveClass(/text-red-/);
+  await page.screenshot({ path: '/tmp/admin-hierarchy-site-900-dark.png' });
+  await page.emulateMedia({ colorScheme: 'light' });
+  archived = true;
+  await page.reload();
+  const ownership = page.locator('[data-ui="site-relink-policy"]');
+  await expect(ownership).toHaveAttribute('open', '');
+  await expect(ownership.getByRole('button', { name: /Allow now|立即允许/ })).toBeVisible();
+  await expect(ownership.getByRole('button', { name: /Save unlock time|保存解锁时间/ })).toBeVisible();
 });

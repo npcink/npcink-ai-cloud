@@ -97,11 +97,17 @@
       "smokePath": "/admin/credit-packs",
       "pageModel": "configuration",
       "evidenceTier": "focused_behavior",
-      "allowedEmptyAdminRequests": [
-        "GET /api/admin/credit-packs"
-      ],
       "focusedSpecs": [
         "tests/e2e/admin-credit-packs-directory-v2.spec.ts"
+      ]
+    },
+    {
+      "routePattern": "/admin/economics",
+      "smokePath": "/admin/economics",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": [
+        "tests/e2e/admin-economics.spec.ts"
       ]
     },
     {
@@ -283,6 +289,15 @@
       "evidenceTier": "focused_behavior",
       "focusedSpecs": [
         "tests/e2e/admin-vector-settings.spec.ts"
+      ]
+    },
+    {
+      "routePattern": "/admin/customer-notifications",
+      "smokePath": "/admin/customer-notifications",
+      "pageModel": "configuration",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": [
+        "tests/e2e/admin-customer-notifications.spec.ts"
       ]
     }
   ]

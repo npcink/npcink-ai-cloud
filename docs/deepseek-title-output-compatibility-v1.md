@@ -1,6 +1,16 @@
 # DeepSeek 标题输出额度与推理兼容性
 
-日期：2026-10-18。状态：开发修复；生产尚未更新，真实 Provider 验收未完成。
+日期：2026-10-18；验收更新：2026-10-19。
+
+Status: implemented and deployed; one real DeepSeek title run and operator adoption/save/reload passed; formal smoke blocked before runtime by the public/internal health access mismatch; fallback acceptance pending.
+
+生产已部署冻结版本 `b8cc6049da7d1c33cbfffc9f8e5521f332a1adb5`。
+2026-10-19 00:24的真实标题由DeepSeek主连接完成，无回退/重试；输入901、输出14、
+推理0 token，账本扣3积分（包含运行基础项及辅助向量用量）。
+操作员确认邮件发送、人工采用、保存草稿和刷新回读通过。完整证据、295→292
+的账本推算、一次正式smoke在ready检查403处失败的证据及后续步骤见
+[生产人工验收与smoke交接](history/production/2026/deepseek-title-production-acceptance-2026-10-19.md)。
+以下故障与开发验证段保留原时点；不将单次成功扩展为其他能力或gpt-5.4回退已验收。
 
 ## 故障证据与判断
 
@@ -65,7 +75,7 @@ bash scripts/check-changed-python-quality.sh app/adapters/providers/openai.py ap
 后者的旧 48-token 断言由正式 CI 揭示后同步修正。定向 Ruff/mypy、发布策略检查通过。
 本次不调用付费模型、不修改生产配置。M4 只验证候选，不等于合并或生产更新。
 
-## 后续人工验收（修复经授权发布后执行）
+## 人工验收清单（本次结果见上方2026-10-19记录）
 
 | 顺序 | 操作 | 预期与记录 |
 | --- | --- | --- |

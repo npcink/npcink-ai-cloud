@@ -120,6 +120,12 @@ _ERROR_TAXONOMY: dict[str, ErrorTaxonomyEntry] = {
         retryable=False,
         fallback_eligible=False,
     ),
+    "runtime.stale_running_auto_failed": ErrorTaxonomyEntry(
+        error_code="runtime.stale_running_auto_failed",
+        error_stage="runtime",
+        retryable=False,
+        fallback_eligible=False,
+    ),
     "cloud_batch_runtime.item_invalid": ErrorTaxonomyEntry(
         error_code="cloud_batch_runtime.item_invalid",
         error_stage="runtime",

@@ -9,10 +9,101 @@ import { ApiClient, type ApiEnvelope, type ApiMethod } from './api-client';
 import { getPortalApiBaseUrl } from './env';
 import { ApiError } from './errors';
 import { generateIdempotencyKey } from './idempotency';
+import {
+  classifyPortalWriteFailure,
+  PortalWriteNotDispatchedError,
+  PortalWriteOutcomeError,
+} from './portal-write-outcome';
+import {
+  buildPortalSecondFactorSubmission,
+  PORTAL_SECOND_FACTOR_STATUS_PATH,
+  PORTAL_SECOND_FACTOR_VERIFY_PATH,
+  type PortalAuthResult,
+  type PortalSecondFactorRequired,
+  type PortalSecondFactorSubmission,
+} from './portal-auth-wire';
 
 // ============================================
 // 类型定义
 // ============================================
+
+export const PORTAL_NOTIFICATIONS_UPDATED = 'portal-notifications-updated';
+
+export function publishPortalNotificationCount(unreadCount: number): void {
+  window.dispatchEvent(new CustomEvent(PORTAL_NOTIFICATIONS_UPDATED, { detail: unreadCount }));
+}
+
+export interface PortalNotification {
+  notification_id: string;
+  account_id: string;
+  event_type: string;
+  title: string;
+  body: string | null;
+  link_href: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface PortalNotificationInbox {
+  items: PortalNotification[];
+  total_count: number;
+  unread_count: number;
+  limit: number;
+  offset: number;
+  unread_only: boolean;
+  fetched_at: string;
+}
+
+export interface PortalOwnSession {
+  session_id: string;
+  is_current: boolean;
+  created_at: string;
+  expires_at: string;
+  auth_method: 'email_code' | 'registration' | 'qq';
+  client_hint: string | null;
+}
+
+export interface PortalOwnSessionPage {
+  items: PortalOwnSession[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
+function sessionProjectionError(): ApiError {
+  return new ApiError({ statusCode: 502, errorCode: 'client.invalid_session_projection', message: 'Session management unavailable' });
+}
+
+function isSessionTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)
+    && Number.isFinite(Date.parse(value));
+}
+
+function parseOwnSessionPage(raw: unknown, limit: number, offset: number): PortalOwnSessionPage {
+  if (!raw || typeof raw !== 'object') throw sessionProjectionError();
+  const page = raw as PortalOwnSessionPage;
+  const pagination = page.pagination;
+  if (!pagination || pagination.limit !== limit || pagination.offset !== offset
+    || !Number.isSafeInteger(pagination.total) || pagination.total < 0
+    || !Array.isArray(page.items) || page.items.length > limit
+    || page.items.length !== Math.min(limit, Math.max(0, pagination.total - offset))) throw sessionProjectionError();
+  const ids = new Set<string>();
+  const items = page.items.map((item) => {
+    if (!item || typeof item.session_id !== 'string' || !item.session_id.trim() || item.session_id.length > 64
+      || ids.has(item.session_id) || typeof item.is_current !== 'boolean'
+      || !['email_code', 'registration', 'qq'].includes(item.auth_method)
+      || !isSessionTimestamp(item.created_at)
+      || !isSessionTimestamp(item.expires_at)
+      || Date.parse(item.expires_at) <= Date.parse(item.created_at)
+      || !(item.client_hint === null || (typeof item.client_hint === 'string'
+        && item.client_hint.trim().length > 0 && item.client_hint.length <= 120))) throw sessionProjectionError();
+    ids.add(item.session_id);
+    // Return only the public projection, never arbitrary response fields.
+    return { session_id: item.session_id, is_current: item.is_current, created_at: item.created_at,
+      expires_at: item.expires_at, auth_method: item.auth_method, client_hint: item.client_hint };
+  });
+  if (items.filter((item) => item.is_current).length > 1) throw sessionProjectionError();
+  return { items, pagination: { limit, offset, total: pagination.total } };
+}
 
 export interface PortalSession {
   email: string;
@@ -27,6 +118,9 @@ export interface PortalSession {
     revocable: boolean;
   };
 }
+
+export type PortalAuthenticationResult = PortalAuthResult<PortalSession>;
+export type { PortalSecondFactorRequired, PortalSecondFactorSubmission } from './portal-auth-wire';
 
 export interface PortalSelectedContext {
   site: Site;
@@ -104,6 +198,10 @@ export interface PortalSiteLifecycleResult {
     previous_status: string;
     deactivated_site_ids: string[];
   };
+}
+
+export interface PortalSiteProfileResult {
+  site: Site;
 }
 
 export interface PortalSiteDetail extends Site {
@@ -228,6 +326,8 @@ export interface PortalAddonConnectionAccount {
   account_id: string;
   name: string;
   site_count: number;
+  /** True only for the account that owns the session's selected site. Absent on older APIs. */
+  is_current?: boolean;
 }
 
 export interface PortalAddonConnectionAccountsPayload {
@@ -423,19 +523,47 @@ export interface PortalUsageSummaryPayload {
   };
 }
 
+export type PortalSiteKnowledgeUsageSourceType = 'text' | 'media' | 'video' | 'pdf';
+
+/** Counts of documents/images; reserved video records and PDF files (not seconds/pages). */
+export type PortalSiteKnowledgeUsageMeteringUnit = 'document' | 'image' | 'video' | 'pdf';
+
+export interface PortalSiteKnowledgeUsageItem {
+  site_id: string;
+  site_name: string;
+  status: string;
+  /** Usage in the response's metering_unit. */
+  used: number;
+  last_indexed_at: string;
+  /** Text-bucket compatibility alias of used. */
+  indexed_document_count?: number;
+}
+
 export interface PortalSiteKnowledgeUsageRow {
   site_id: string;
   site_name: string;
   status: string;
+  used: number;
   indexed_document_count: number;
   last_indexed_at: string;
 }
 
-export interface PortalAccountSiteKnowledgeUsagePayload {
+export interface PortalSiteKnowledgeUsagePayload {
   generated_at: string;
+  source_type: PortalSiteKnowledgeUsageSourceType;
+  metering_unit: PortalSiteKnowledgeUsageMeteringUnit;
+  total_used: number;
+  items: PortalSiteKnowledgeUsageItem[];
+}
+
+/** Text-bucket response including the legacy breakdown fields. */
+export interface PortalAccountSiteKnowledgeUsagePayload
+  extends PortalSiteKnowledgeUsagePayload {
+  source_type: 'text';
+  metering_unit: 'document';
+  sites: PortalSiteKnowledgeUsageRow[];
   total_indexed_document_count: number;
   indexed_document_limit: number;
-  sites: PortalSiteKnowledgeUsageRow[];
 }
 
 export interface PortalPluginObservabilityTotals {
@@ -1203,6 +1331,7 @@ export interface PortalCreditPack {
 }
 
 export interface PortalCreditPackCatalogPayload {
+  commercial_available?: boolean;
   site_id?: string;
   catalog_version?: string;
   period_policy?: string;
@@ -1295,6 +1424,7 @@ export interface PortalPlanComparisonRight {
 }
 
 export interface PortalPlanOfferListPayload {
+  commercial_available?: boolean;
   items: PortalPlanOffer[];
   comparison_tiers?: PortalPlanComparisonTier[];
   trial?: {
@@ -1454,6 +1584,7 @@ export interface CreatePortalSupportRequestPayload {
 
 export interface CreatePortalSupportRequestMessagePayload {
   body: string;
+  attachment_ids?: string[];
 }
 
 export interface CreatePortalSupportRequestAttachmentPayload {
@@ -1630,6 +1761,32 @@ export interface PortalCreditEventBucketsPayload {
   items: PortalCreditEventBucket[];
 }
 
+export type PortalCreditEventDayWindow = '7d' | '30d';
+export interface PortalCreditEventDay {
+  /** Local calendar day (YYYY-MM-DD) in the requested timezone. */
+  day: string;
+  start_at: string;
+  end_at: string;
+  event_count: number;
+  consumed_ai_credits: number;
+  feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
+}
+export interface PortalCreditEventDaysPayload {
+  contract_version: 'portal-credit-event-days-v1';
+  generated_at: string;
+  timezone: string;
+  filters: { window: PortalCreditEventDayWindow; site_id: string; feature: string };
+  summary: {
+    day_count: number;
+    event_count: number;
+    consumed_ai_credits: number;
+    /** Window-level service split (sorted by AI credits) used to pick day-table service columns. */
+    feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
+  };
+  pagination: { limit: number; offset: number; total: number; has_more: boolean };
+  items: PortalCreditEventDay[];
+}
+
 export interface PortalAuditBundle {
   summary: PortalAuditSummary;
   events: PortalAuditEvent[];
@@ -1657,6 +1814,12 @@ export interface PortalSiteDiagnostics {
 
 export type PortalEnvelope<T> = ApiEnvelope<T>;
 const MAX_PENDING_WRITE_INTENTS = 64;
+interface PendingWriteIntent {
+  key: string;
+  pendingAttempts: number;
+  everUnconfirmed: boolean;
+  reconciliationRequired: boolean;
+}
 
 function fallbackWriteIntentDigest(value: string): string {
   let first = 0x811c9dc5;
@@ -1675,16 +1838,34 @@ function fallbackWriteIntentDigest(value: string): string {
 
 export class PortalClient {
   private apiClient?: ApiClient;
-  private readonly pendingWriteKeys = new Map<string, string>();
+  private readonly pendingWriteKeys = new Map<string, PendingWriteIntent>();
+  private writeAuthEpoch = 0;
+  private writeContextVersion = 0;
+  private writeContextSite: string | null = null;
 
   constructor(private readonly baseUrl?: string) {}
+
+  // Local identity boundary only; this does not undo or adjudicate a write.
+  resetWriteIntentScope(): void {
+    this.writeAuthEpoch += 1;
+    this.writeContextVersion += 1;
+    this.writeContextSite = null;
+    this.pendingWriteKeys.clear();
+  }
+
+  setWriteIntentContext(siteId: string | null): void {
+    if (this.writeContextSite === siteId) return;
+    this.writeContextSite = siteId;
+    this.writeContextVersion += 1;
+  }
 
   private async writeIntentSignature(
     method: ApiMethod,
     path: string,
-    body: unknown
+    body: unknown,
+    contextSite: string | null
   ): Promise<string> {
-    const serializedIntent = `${method}:${path}:${body === undefined ? '' : JSON.stringify(body)}`;
+    const serializedIntent = JSON.stringify([contextSite, method, path, body === undefined ? '' : JSON.stringify(body)]);
     if (!globalThis.crypto?.subtle) {
       return fallbackWriteIntentDigest(serializedIntent);
     }
@@ -1695,62 +1876,68 @@ export class PortalClient {
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
-  private rememberPendingWriteKey(writeIntent: string, idempotencyKey: string): void {
-    if (
-      !this.pendingWriteKeys.has(writeIntent)
-      && this.pendingWriteKeys.size >= MAX_PENDING_WRITE_INTENTS
-    ) {
-      const oldestIntent = this.pendingWriteKeys.keys().next().value;
-      if (oldestIntent) {
-        this.pendingWriteKeys.delete(oldestIntent);
-      }
-    }
-    this.pendingWriteKeys.set(writeIntent, idempotencyKey);
-  }
-
-  private isUnconfirmedWriteError(error: unknown): boolean {
-    if (!(error instanceof ApiError)) {
-      return true;
-    }
-    return error.statusCode === 0 || error.errorCode.startsWith('client.');
-  }
-
   /**
    * 通用请求方法
    */
   private async request<T>(
     method: ApiMethod,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options: { idempotencyKey?: string } = {}
   ): Promise<PortalEnvelope<T>> {
     this.apiClient ??= new ApiClient({
       baseUrl: this.baseUrl || getPortalApiBaseUrl(),
       idempotencyPrefix: 'portal_write',
     });
     const isWrite = method !== 'GET' && method !== 'HEAD';
-    const writeIntent = isWrite ? await this.writeIntentSignature(method, path, body) : '';
-    const idempotencyKey = isWrite
-      ? this.pendingWriteKeys.get(writeIntent) || generateIdempotencyKey('portal_write')
-      : undefined;
-    if (isWrite && !this.pendingWriteKeys.has(writeIntent)) {
-      this.rememberPendingWriteKey(writeIntent, idempotencyKey as string);
+    const epoch = this.writeAuthEpoch;
+    const contextVersion = this.writeContextVersion;
+    const writeIntent = isWrite && options.idempotencyKey === undefined
+      ? await this.writeIntentSignature(method, path, body, this.writeContextSite) : '';
+    if (writeIntent && (epoch !== this.writeAuthEpoch || contextVersion !== this.writeContextVersion)) {
+      throw new PortalWriteNotDispatchedError('scope_changed');
     }
+    let entry = writeIntent ? this.pendingWriteKeys.get(writeIntent) : undefined;
+    if (writeIntent && !entry) {
+      if (this.pendingWriteKeys.size >= MAX_PENDING_WRITE_INTENTS) {
+        throw new PortalWriteNotDispatchedError('capacity');
+      }
+      entry = { key: generateIdempotencyKey('portal_write'), pendingAttempts: 0, everUnconfirmed: false, reconciliationRequired: false };
+      this.pendingWriteKeys.set(writeIntent, entry);
+    }
+    const idempotencyKey = isWrite
+      ? options.idempotencyKey ?? entry?.key
+      : undefined;
+    if (entry) entry.pendingAttempts += 1;
+    const ownsEntry = () => Boolean(entry && epoch === this.writeAuthEpoch && this.pendingWriteKeys.get(writeIntent) === entry);
 
     try {
       const response = await this.apiClient.request<T>(path, {
         method,
         ...(body === undefined ? {} : { body }),
-        ...(idempotencyKey ? { idempotencyKey } : {}),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
-      if (writeIntent) {
+      if (ownsEntry()) {
         this.pendingWriteKeys.delete(writeIntent);
       }
       return response;
     } catch (error) {
-      if (writeIntent && !this.isUnconfirmedWriteError(error)) {
-        this.pendingWriteKeys.delete(writeIntent);
+      if (ownsEntry() && entry) {
+        const failure = classifyPortalWriteFailure(error);
+        if (failure === 'outcome_unknown' || failure === 'reconciliation_required') entry.everUnconfirmed = true;
+        if (failure === 'reconciliation_required') entry.reconciliationRequired = true;
+        if (failure === 'rejected_current_attempt' && entry.everUnconfirmed && error instanceof ApiError) {
+          throw new PortalWriteOutcomeError(error, entry.reconciliationRequired ? 'reconciliation_required' : 'outcome_unknown');
+        }
       }
       throw error;
+    } finally {
+      if (entry) {
+        entry.pendingAttempts -= 1;
+        if (ownsEntry() && entry.pendingAttempts === 0 && !entry.everUnconfirmed) {
+          this.pendingWriteKeys.delete(writeIntent);
+        }
+      }
     }
   }
 
@@ -1772,8 +1959,73 @@ export class PortalClient {
    * 验证邮箱验证码
    * POST /portal/v1/auth/code/verify
    */
-  async verifyLoginCode(payload: PortalLoginCodeVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
+  async verifyLoginCode(payload: PortalLoginCodeVerifyRequest): Promise<PortalEnvelope<PortalAuthenticationResult>> {
     return this.request('POST', '/auth/code/verify', payload);
+  }
+
+  async getNotifications(limit = 20, offset = 0): Promise<PortalEnvelope<PortalNotificationInbox>> {
+    return this.request('GET', `/notifications?limit=${limit}&offset=${offset}`);
+  }
+
+  async markNotificationRead(notificationId: string): Promise<PortalEnvelope<{
+    notification_id: string; marked_read_count: number; unread_count: number;
+  }>> {
+    return this.request('POST', `/notifications/${encodeURIComponent(notificationId)}/read`);
+  }
+
+  async markAllNotificationsRead(): Promise<PortalEnvelope<{
+    marked_read_count: number; unread_count: number;
+  }>> {
+    return this.request('POST', '/notifications/read-all');
+  }
+
+  private async dataExportRequest(operation: 'code' | 'confirm', body: unknown): Promise<Response> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl || getPortalApiBaseUrl()}/account/data-export/${operation}`, {
+        method: 'POST', credentials: 'include', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        signal: AbortSignal.timeout(12_000),
+      });
+    } catch {
+      throw new ApiError({ statusCode: 0, errorCode: 'portal.data_export_network', message: 'Personal data copy unavailable' });
+    }
+    if (!response.ok) {
+      // Do not retain or log arbitrary response bodies in an ApiError.
+      throw new ApiError({ statusCode: response.status, errorCode: 'portal.data_export_failed', message: 'Personal data copy unavailable' });
+    }
+    return response;
+  }
+
+  async requestDataExportCode(locale: string): Promise<{ challenge_id: string; expires_in_seconds: number }> {
+    const response = await this.dataExportRequest('code', { locale });
+    const result = await response.json();
+    if (typeof result?.data?.challenge_id !== 'string') throw new Error('Personal data copy unavailable');
+    return result.data;
+  }
+
+  async downloadPersonalData(challenge_id: string, code: string): Promise<Blob> {
+    const response = await this.dataExportRequest('confirm', { challenge_id, code });
+    const body = await response.text();
+    if (new TextEncoder().encode(body).length > 2 * 1024 * 1024) throw new Error('Personal data copy unavailable');
+    const result = JSON.parse(body);
+    if (result?.schema !== 'cloud-principal-copy.v1' || !result.data) throw new Error('Personal data copy unavailable');
+    return new Blob([body], { type: 'application/json' });
+  }
+
+  async requestAccountDeletionCode(locale: string): Promise<PortalEnvelope<{
+    email: string; delivery: string; expires_in_seconds: number;
+  }>> {
+    return this.request('POST', '/account/deletion/request', { locale });
+  }
+
+  async confirmAccountDeletion(code: string): Promise<PortalEnvelope<{
+    account_deletion: {
+      closed_accounts: number; revoked_memberships: number;
+      released_site_bindings: number; revoked_api_keys: number;
+    };
+  }>> {
+    return this.request('POST', '/account/deletion/confirm', { code });
   }
 
   async requestEmailChangeCode(payload: PortalEmailChangeCodeRequest): Promise<PortalEnvelope<PortalEmailChangeCodeResponse>> {
@@ -1798,8 +2050,32 @@ export class PortalClient {
    * 验证注册验证码并创建账号及 Free 权益；站点与凭据由可信 WordPress Addon 连接建立
    * POST /portal/v1/register/verify
    */
-  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
+  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalAuthenticationResult>> {
     return this.request('POST', '/register/verify', payload);
+  }
+
+  /**
+   * Complete a restricted login challenge. The challenge credential is sent
+   * by the browser's HttpOnly cookie; it is never accepted as a body field.
+   * The endpoint/field mapping is intentionally isolated until B03 freezes it.
+   */
+  async verifySecondFactor(
+    payload: PortalSecondFactorSubmission
+  ): Promise<PortalEnvelope<PortalAuthenticationResult>> {
+    return this.request(
+      'POST',
+      PORTAL_SECOND_FACTOR_VERIFY_PATH,
+      buildPortalSecondFactorSubmission(payload),
+    );
+  }
+
+  /**
+   * Recover the active challenge projection from the HttpOnly cookie after a
+   * full document navigation. The status endpoint never returns a credential.
+   * GET /portal/v1/totp/challenge/status
+   */
+  async getSecondFactorStatus(): Promise<PortalEnvelope<unknown>> {
+    return this.request('GET', PORTAL_SECOND_FACTOR_STATUS_PATH, undefined);
   }
 
   /**
@@ -1877,6 +2153,28 @@ export class PortalClient {
     return this.request('POST', '/session/revoke');
   }
 
+  async listOwnSessions(limit = 10, offset = 0): Promise<PortalEnvelope<PortalOwnSessionPage>> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50
+      || !Number.isSafeInteger(offset) || offset < 0) throw new RangeError('Invalid session pagination');
+    const response = await this.request<unknown>('GET', `/sessions?limit=${limit}&offset=${offset}`);
+    return { ...response, data: parseOwnSessionPage(response.data, limit, offset) };
+  }
+
+  private async revokeOwnSessionTarget(path: string, idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    const response = await this.request<{ revoked_count: number }>('POST', path, undefined, { idempotencyKey });
+    if (!response.data || !Number.isSafeInteger(response.data.revoked_count) || response.data.revoked_count < 0) throw sessionProjectionError();
+    return { ...response, data: { revoked_count: response.data.revoked_count } };
+  }
+
+  async revokeOwnSession(sessionId: string, idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    if (!sessionId.trim() || sessionId.length > 64) throw new RangeError('Invalid session identifier');
+    return this.revokeOwnSessionTarget(`/sessions/${encodeURIComponent(sessionId)}/revoke`, idempotencyKey);
+  }
+
+  async revokeOtherSessions(idempotencyKey: string): Promise<PortalEnvelope<{ revoked_count: number }>> {
+    return this.revokeOwnSessionTarget('/sessions/revoke-others', idempotencyKey);
+  }
+
   // ========================================
   // 站点管理
   // ========================================
@@ -1916,6 +2214,13 @@ export class PortalClient {
       status,
       replace_site_ids: replaceSiteIds,
     });
+  }
+
+  async updateSiteName(
+    siteId: string,
+    name: string
+  ): Promise<PortalEnvelope<PortalSiteProfileResult>> {
+    return this.request('PATCH', `/sites/${siteId}/profile`, { name });
   }
 
   /**
@@ -2078,12 +2383,21 @@ export class PortalClient {
   }
 
   async getAccountCreditLedger(
-    options?: { limit?: number; offset?: number; siteId?: string }
+    options?: {
+      limit?: number;
+      offset?: number;
+      siteId?: string;
+      /** Comma-joined server filter: grant, adjustment, refund, consume */
+      eventTypes?: string[];
+    }
   ): Promise<PortalEnvelope<PortalCreditLedgerPayload>> {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', String(options.limit));
     if (options?.offset) params.set('offset', String(options.offset));
     if (options?.siteId) params.set('site_id', options.siteId);
+    if (options?.eventTypes && options.eventTypes.length > 0) {
+      params.set('event_types', options.eventTypes.join(','));
+    }
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/credit-ledger${query}`, undefined);
@@ -2123,13 +2437,33 @@ export class PortalClient {
     feature?: PortalCreditEventFeature;
     limit?: number;
     offset?: number;
+    startAt?: string;
+    endAt?: string;
   }): Promise<PortalEnvelope<PortalCreditEventBucketsPayload>> {
     const params = new URLSearchParams({ bucket: options.bucket, window: options.window });
     if (options.siteId) params.set('site_id', options.siteId);
     if (options.feature) params.set('feature', options.feature);
     if (options.limit) params.set('limit', String(options.limit));
     if (options.offset) params.set('offset', String(options.offset));
+    if (options.startAt) params.set('start_at', options.startAt);
+    if (options.endAt) params.set('end_at', options.endAt);
     return this.request('GET', `/account/credit-event-buckets?${params.toString()}`, undefined);
+  }
+
+  async getAccountCreditEventDays(options: {
+    window: PortalCreditEventDayWindow;
+    timezone: string;
+    siteId?: string;
+    feature?: PortalCreditEventFeature;
+    limit?: number;
+    offset?: number;
+  }): Promise<PortalEnvelope<PortalCreditEventDaysPayload>> {
+    const params = new URLSearchParams({ window: options.window, tz: options.timezone });
+    if (options.siteId) params.set('site_id', options.siteId);
+    if (options.feature) params.set('feature', options.feature);
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.offset) params.set('offset', String(options.offset));
+    return this.request('GET', `/account/credit-event-days?${params.toString()}`, undefined);
   }
 
   async listCreditPacks(siteId: string): Promise<PortalEnvelope<PortalCreditPackCatalogPayload>> {
@@ -2210,7 +2544,11 @@ export class PortalClient {
   async createSupportRequestMessage(
     requestId: string,
     payload: CreatePortalSupportRequestMessagePayload
-  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; message: PortalSupportRequestMessage }>> {
+  ): Promise<PortalEnvelope<{
+    request: PortalSupportRequest;
+    message: PortalSupportRequestMessage;
+    attachments?: PortalSupportRequestAttachment[];
+  }>> {
     return this.request('POST', `/support-requests/${requestId}/messages`, payload);
   }
 
@@ -2227,6 +2565,17 @@ export class PortalClient {
   ): Promise<PortalEnvelope<{ attachment: PortalSupportRequestAttachment }>> {
     return this.request(
       'GET',
+      `/support-requests/${requestId}/attachments/${attachmentId}`,
+      undefined
+    );
+  }
+
+  async deleteSupportRequestAttachment(
+    requestId: string,
+    attachmentId: string
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; attachment: PortalSupportRequestAttachment }>> {
+    return this.request(
+      'DELETE',
       `/support-requests/${requestId}/attachments/${attachmentId}`,
       undefined
     );
@@ -2376,6 +2725,13 @@ export class PortalClient {
 
   async getAccountSiteKnowledgeUsage(): Promise<PortalEnvelope<PortalAccountSiteKnowledgeUsagePayload>> {
     return this.request('GET', '/account/site-knowledge-usage', undefined);
+  }
+
+  async getAccountSiteKnowledgeUsageByType(
+    sourceType: PortalSiteKnowledgeUsageSourceType
+  ): Promise<PortalEnvelope<PortalSiteKnowledgeUsagePayload>> {
+    const query = sourceType === 'text' ? '' : `?source_type=${encodeURIComponent(sourceType)}`;
+    return this.request('GET', `/account/site-knowledge-usage${query}`, undefined);
   }
 
   async getUsageBundle(options?: { siteId?: string }): Promise<PortalUsageBundle> {

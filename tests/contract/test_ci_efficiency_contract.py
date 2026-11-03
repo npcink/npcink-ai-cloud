@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,7 @@ CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
 PRODUCTION_CI_EVIDENCE = ROOT / "scripts" / "production-ci-evidence.py"
 PRODUCTION_RELEASE_PLAN = ROOT / "scripts" / "production-release-plan.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+UBUNTU_ARCHIVE = ROOT / "scripts" / "ci-configure-ubuntu-archive.py"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
 
@@ -34,6 +37,137 @@ def _classify(*paths: str) -> dict[str, str]:
         check=True,
     )
     return dict(line.split("=", 1) for line in completed.stdout.splitlines())
+
+
+# runner-images ubuntu24/20261012.334 configure-apt-sources.sh creates this
+# mirrorlist and replaces the archive URI in ubuntu.sources with mirror+file.
+RUNNER_MIRRORS = (
+    "http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n"
+    "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
+    "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
+)
+ARCHIVE_STANZA = (
+    "Types: deb\n"
+    "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n"
+    "Suites: noble noble-updates noble-backports\n"
+    "Components: main universe restricted multiverse\n"
+    "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+)
+SECURITY_STANZA = (
+    "Types: deb\n"
+    "URIs: http://security.ubuntu.com/ubuntu/\n"
+    "Suites: noble-security\n"
+    "Components: main universe restricted multiverse\n"
+    "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+)
+
+
+def _archive_fixture(tmp_path: Path, archive: str, security: str = SECURITY_STANZA) -> Path:
+    sources = tmp_path / "sources.list.d"
+    sources.mkdir()
+    (sources / "ubuntu.sources").write_text(archive + "\n" + security)
+    (sources / "microsoft-prod.list").write_text(
+        "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] "
+        "https://packages.microsoft.com/ubuntu/24.04/prod noble main\n"
+    )
+    (tmp_path / "apt-mirrors.txt").write_text(RUNNER_MIRRORS)
+    return sources / "ubuntu.sources"
+
+
+def _configure_archive(apt_root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [shutil.which("python3") or "python3", str(UBUNTU_ARCHIVE), "--apt-root", str(apt_root)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "mirror+file:/etc/apt/apt-mirrors.txt",
+        "http://azure.archive.ubuntu.com/ubuntu/",
+        "http://archive.ubuntu.com/ubuntu/",
+        "https://archive.ubuntu.com/ubuntu",
+    ],
+)
+@pytest.mark.parametrize("shared_security_mirrorlist", [False, True])
+def test_ci_ubuntu_archive_preserves_security_and_other_sources(
+    tmp_path: Path, uri: str, shared_security_mirrorlist: bool
+) -> None:
+    archive = ARCHIVE_STANZA.replace("mirror+file:/etc/apt/apt-mirrors.txt", uri)
+    security = SECURITY_STANZA
+    if shared_security_mirrorlist:
+        security = security.replace(
+            "http://security.ubuntu.com/ubuntu/", "mirror+file:/etc/apt/apt-mirrors.txt"
+        )
+    source = _archive_fixture(tmp_path, archive, security)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert source.read_text() == archive.replace(uri, "https://archive.ubuntu.com/ubuntu") + (
+        "\n" + security
+    )
+    for path, content in before.items():
+        if path != source:
+            assert path.read_bytes() == content
+    once = source.read_bytes()
+    assert _configure_archive(tmp_path).returncode == 0
+    assert source.read_bytes() == once
+
+
+@pytest.mark.parametrize(
+    "archive,mirrors",
+    [
+        (
+            ARCHIVE_STANZA.replace("mirror+file:/etc/apt/apt-mirrors.txt", "https://unknown.test"),
+            RUNNER_MIRRORS,
+        ),
+        (ARCHIVE_STANZA.replace("noble-backports", "noble-security"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("URIs:", "URIs: x\nURIs:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("Suites:", " Suites:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA.replace("Signed-By:", "Unknown-Key:"), RUNNER_MIRRORS),
+        (ARCHIVE_STANZA, RUNNER_MIRRORS + "https://unknown.test/ubuntu priority:0\n"),
+        (ARCHIVE_STANZA, "http://azure.archive.ubuntu.com/ubuntu/ priority:1\n"),
+        (SECURITY_STANZA, RUNNER_MIRRORS),
+        # Validate every stanza before writing even when the first was supported.
+        (ARCHIVE_STANZA + "\n" + ARCHIVE_STANZA.replace("URIs:", "Other:"), RUNNER_MIRRORS),
+    ],
+)
+def test_ci_ubuntu_archive_unknown_layout_fails_without_writes(
+    tmp_path: Path, archive: str, mirrors: str
+) -> None:
+    _archive_fixture(tmp_path, archive)
+    (tmp_path / "apt-mirrors.txt").write_text(mirrors)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 1
+    assert "Ubuntu archive selection failed" in result.stderr
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+def test_ci_ubuntu_archive_is_scoped_to_original_e2e_install_step() -> None:
+    workflow = CI_WORKFLOW.read_text()
+    step = workflow.split("      - name: Install Playwright Chromium\n", 1)[1].split(
+        "      # The admin operator-path", 1
+    )[0]
+    assert "if: needs.classify.outputs.frontend_e2e_required == 'true'" in step
+    assert "PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers" in step
+    assert step.index("sudo python3 scripts/ci-configure-ubuntu-archive.py") < step.index(
+        "pnpm --dir frontend exec playwright install --with-deps chromium"
+    )
+    assert workflow.count("sudo python3 scripts/ci-configure-ubuntu-archive.py") == 1
+
+
+def test_ci_ubuntu_archive_missing_deb822_layout_fails(tmp_path: Path) -> None:
+    # Legacy/unknown layouts must not be rewritten by a broad sources.list sed.
+    legacy = tmp_path / "sources.list"
+    legacy.write_text("deb http://azure.archive.ubuntu.com/ubuntu noble main\n")
+    result = _configure_archive(tmp_path)
+    assert result.returncode == 1
+    assert legacy.read_text() == "deb http://azure.archive.ubuntu.com/ubuntu noble main\n"
+    assert list(tmp_path.iterdir()) == [legacy]
 
 
 def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
@@ -406,14 +540,14 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "Select frontend-only backend gate" in workflow
     assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
     assert "node scripts/run-cloud-frontend-playwright.js" in workflow
-    assert workflow.count("PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers") == 2
+    assert workflow.count("PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers") == 3
     assert "tests/e2e/admin-operator-path.spec.ts" in workflow
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
     assert (
         "portal workspace interaction path|Alipay return polls|"
         "account projections remain available|account-level support stays available"
     ) in workflow
-    assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 2
+    assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 3
 
 
 def test_critical_frontend_paths_run_admin_operator_spec_without_title_filter() -> None:
@@ -434,9 +568,7 @@ def test_critical_frontend_paths_run_admin_operator_spec_without_title_filter() 
 def test_portal_workspace_critical_grep_alternatives_match_real_test_titles() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     grep_lines = [
-        line
-        for line in workflow.splitlines()
-        if "portal workspace interaction path|" in line
+        line for line in workflow.splitlines() if "portal workspace interaction path|" in line
     ]
     assert grep_lines, "the portal workspace spec must stay behind a title grep"
     pattern_match = re.search(r"'([^']*portal workspace interaction path[^']*)'", grep_lines[0])
@@ -718,3 +850,88 @@ def test_manifest_visual_selection_and_advisor_paths_are_executed() -> None:
     assert "tests/e2e/admin-ai-advisor-pc-v2.spec.ts" in section
     for path in ("scripts/admin-visual-plan.mjs", "scripts/run-admin-visual-checks.mjs"):
         assert _classify(path)["frontend_e2e_required"] == "true"
+
+
+def test_totp_activation_contract_runs_after_build_with_private_artifacts() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    section = workflow.split("- name: TOTP activation contracts and compiled BFF", 1)[1].split(
+        "- name:", 1
+    )[0]
+    assert "if: needs.classify.outputs.frontend_e2e_required == 'true'" in section
+    assert "PLAYWRIGHT_NO_COPY_PROMPT: '1'" in section
+    bff = section.index("node frontend/tests/compiled/portal-totp-bff.mjs")
+    browser = section.index(
+        "tests/e2e/portal-totp-activation.spec.ts --grep '@contract' --retries=0 --workers=1"
+    )
+    assert browser < bff
+    assert "pnpm --dir frontend run build" not in section
+    config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
+    assert "command: `pnpm run build &&" in config
+    assert "reuseExistingServer: false" in config
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "frontend/tests/compiled/portal-totp-bff.mjs",
+        "frontend/tests/e2e/portal-totp-activation.spec.ts",
+        "app/api/main.py",
+        "app/api/routes/portal_totp.py",
+    ],
+)
+def test_totp_public_composition_selects_actual_frontend_lane(changed: str) -> None:
+    result = _classify(changed)
+    assert result["frontend_required"] == "true"
+    assert result["frontend_e2e_required"] == "true"
+    assert result["docs_only"] == "false"
+
+
+def test_complete_backend_shards_cover_real_collection(monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = ["tests/core", "tests/api", "tests/contract", "tests/domain", "tests/workers"]
+    workflow = CI_WORKFLOW.read_text()
+    gate = BACKEND_GATE.read_text()
+    assert " ".join(roots) in workflow
+    assert " ".join(roots) in gate
+    scheduler = runpy.run_path(str(ROOT / "scripts/select-pytest-shard.py"))
+    monkeypatch.chdir(ROOT)
+    files = scheduler["discover_test_files"]([Path(root) for root in roots])
+    shards = scheduler["assign_files"](files, {}, 4)
+    selectors = [selector for shard in shards for selector in shard.selectors]
+    assert len(selectors) == len(set(selectors))
+    assert set(selectors) == {path.as_posix() for path in files}
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *roots],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    nodes = [
+        line.split("::", 1)[0]
+        for line in collected.stdout.splitlines()
+        if line.startswith("tests/") and "::" in line
+    ]
+    assert nodes
+    assert set(nodes) <= set(selectors)
+    assert any(path.startswith("tests/core/") for path in nodes)
+    assert any(path.startswith("tests/workers/") for path in nodes)
+
+
+@pytest.mark.parametrize(
+    "source, suite",
+    [
+        ("app/core/secrets.py", "tests/core"),
+        ("app/workers/runtime_queue.py", "tests/workers"),
+        ("tests/workers/test_runtime_queue_worker_schedule.py", "tests/workers"),
+    ],
+)
+def test_core_and_worker_changes_select_executable_tests(source: str, suite: str) -> None:
+    selected = subprocess.run(
+        [sys.executable, str(BACKEND_SELECTOR), source],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert selected and any(path.startswith(suite + "/") for path in selected)
+    assert all((ROOT / path).is_file() for path in selected)

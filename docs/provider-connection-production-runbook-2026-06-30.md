@@ -17,11 +17,26 @@ Boundary:
 
 ## Current Gate
 
-Run the full matrix gate on the production host:
+The script defaults to local stub fixtures (`--dry-run`), with no DB, Docker,
+or Provider requests; it requires local `python3` (standard library only).
+A successful dry run proves only the fixture matrix and
+must not be recorded as live provider readiness. Run it locally with:
+
+```bash
+bash deploy/remote-provider-matrix-smoke.sh --dry-run
+```
+
+Real connection tests require explicit `--live`, may incur Provider charges,
+and require authorization for that operational check (and for production access
+when applicable). Do not run them solely to manufacture observation data.
+Existing no-argument invocations now produce stub evidence only. Unknown or
+combined mode arguments are rejected before any external command.
+
+After authorization, run the full live matrix gate on the production host:
 
 ```bash
 cd /opt/npcink-ai-cloud/current
-bash deploy/remote-provider-matrix-smoke.sh
+bash deploy/remote-provider-matrix-smoke.sh --live
 ```
 
 The production matrix is not complete until these capabilities are present:
@@ -38,7 +53,7 @@ When only the currently deployed text/image subset is expected, use:
 ```bash
 cd /opt/npcink-ai-cloud/current
 NPCINK_CLOUD_REQUIRED_PROVIDER_CAPABILITIES=text_generation,image_generation \
-  bash deploy/remote-provider-matrix-smoke.sh
+  bash deploy/remote-provider-matrix-smoke.sh --live
 ```
 
 ## Configure In Admin
@@ -216,12 +231,12 @@ After saving and testing the connections:
 ```bash
 cd /opt/npcink-ai-cloud/current
 bash deploy/remote-provider-status.sh
-bash deploy/remote-provider-matrix-smoke.sh
+bash deploy/remote-provider-matrix-smoke.sh --live
 ```
 
 Expected closeout:
 
-- matrix gate exits with status `0`;
+- live matrix gate exits with status `0` and reports `mode=live`, `live_validation=true`;
 - `missing_capabilities` is empty;
 - provider truth is `db_managed_provider_connections`;
 - secret exposure is `none`;

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type {
@@ -111,7 +112,7 @@ export function PortalPackageChangePanel({
         ? t(
             'portal.package.paid_offer_desc',
             { amount: formatOfferAmount(plusOffer) },
-            `${formatOfferAmount(plusOffer)} for 30 days.`
+            `${formatOfferAmount(plusOffer)}/month`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
       selectable: Boolean(plusOffer && plusRightsArePublished),
@@ -133,7 +134,7 @@ export function PortalPackageChangePanel({
         ? t(
             'portal.package.paid_offer_desc',
             { amount: formatOfferAmount(proOffer) },
-            `${formatOfferAmount(proOffer)} for 30 days.`
+            `${formatOfferAmount(proOffer)}/month`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
       selectable: Boolean(proOffer && proRightsArePublished),
@@ -169,7 +170,16 @@ export function PortalPackageChangePanel({
     const right = tier.comparison_rights[key];
     return `${right.state}:${right.value ?? ''}`;
   };
-  const visibleComparisonRows = showOnlyDifferences
+  const hasIdenticalComparisonRows = comparisonTiers.length >= 2 && comparisonRows.some((row) => (
+    new Set(comparisonTiers.map((tier) => comparisonRightSignature(tier, row.key))).size === 1
+  ));
+  const effectiveShowOnlyDifferences = showOnlyDifferences && hasIdenticalComparisonRows;
+  useEffect(() => {
+    if (showOnlyDifferences && !hasIdenticalComparisonRows) {
+      onShowOnlyDifferencesChange(false);
+    }
+  }, [hasIdenticalComparisonRows, onShowOnlyDifferencesChange, showOnlyDifferences]);
+  const visibleComparisonRows = effectiveShowOnlyDifferences
     ? comparisonRows.filter((row) => (
         new Set(comparisonTiers.map((tier) => comparisonRightSignature(tier, row.key))).size > 1
       ))
@@ -222,12 +232,18 @@ export function PortalPackageChangePanel({
   return (
     <>
       <div
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid gap-2.5 sm:grid-cols-3"
         role="radiogroup"
         aria-label={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
       >
         {packageChoices.map((choice) => {
           const selected = selectedTier === choice.tier;
+          const isCurrent = currentPlanId === choice.tier;
+          const selectLabel = t(
+            'portal.billing.package_select_tier',
+            { tier: choice.label },
+            `Select ${choice.label}`
+          );
           return (
             <div
               key={choice.tier}
@@ -242,8 +258,9 @@ export function PortalPackageChangePanel({
                 role="radio"
                 aria-checked={selected}
                 disabled={!choice.selectable || pendingAction !== null}
-                className="flex flex-1 flex-col items-start rounded-[14px] px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 dark:focus-visible:ring-[#2997ff] dark:focus-visible:ring-offset-slate-950"
+                className="flex flex-1 flex-col items-start rounded-[14px] px-3 py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-100 dark:focus-visible:ring-[#2997ff] dark:focus-visible:ring-offset-slate-950"
                 onClick={() => onSelectTier(choice.tier)}
+                data-portal-package-card={choice.tier}
               >
                 <span className="text-base font-semibold text-slate-950 dark:text-white">{choice.label}</span>
                 <span className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{choice.description}</span>
@@ -254,20 +271,43 @@ export function PortalPackageChangePanel({
                     className="mt-4 normal-case tracking-normal"
                   />
                 ) : null}
-                {choice.selectable ? (
-                  <span className="mt-auto pt-3 text-sm font-semibold text-[#0066cc] dark:text-[#2997ff]">
-                    {selected
-                      ? t('portal.billing.selected_target_package', {}, 'Selected')
-                      : t('portal.billing.package_select_action', {}, 'Select package')}
-                  </span>
-                ) : null}
+                <span className="mt-auto flex w-full pt-3">
+                  {choice.selectable ? (
+                    <span
+                      className={`inline-flex min-h-9 w-full items-center justify-center rounded-full border px-3 text-sm font-semibold transition-colors ${
+                        selected
+                          ? 'border-[#0071e3] bg-[#0071e3] text-white dark:border-[#2997ff] dark:bg-[#2997ff]'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600'
+                      }`}
+                      data-portal-package-select={choice.tier}
+                    >
+                      {selected
+                        ? t('portal.billing.selected_target_package', {}, 'Selected')
+                        : selectLabel}
+                    </span>
+                  ) : isCurrent ? (
+                    <span
+                      className="inline-flex min-h-9 w-full items-center justify-center rounded-full border border-transparent bg-transparent text-sm font-medium text-slate-400 dark:text-slate-500"
+                      data-portal-package-select="current"
+                    >
+                      {t('common.current', {}, 'Current')}
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex min-h-9 w-full items-center justify-center rounded-full border border-dashed border-slate-200 text-sm font-medium text-slate-400 dark:border-slate-700 dark:text-slate-500"
+                      data-portal-package-select="unavailable"
+                    >
+                      {choice.statusLabel || t('portal.package.offer_unavailable', {}, 'Unavailable')}
+                    </span>
+                  )}
+                </span>
               </button>
             </div>
           );
         })}
       </div>
 
-      <section className="mt-5" aria-labelledby="portal-package-comparison-title">
+      <section className="mt-4" aria-labelledby="portal-package-comparison-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 id="portal-package-comparison-title" className="text-base font-semibold text-slate-950 dark:text-white">
@@ -277,29 +317,32 @@ export function PortalPackageChangePanel({
               {t('portal.billing.package_comparison_desc', {}, 'Compare the customer-visible limits that change between packages.')}
             </p>
           </div>
-          <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={showOnlyDifferences}
-              onChange={(event) => onShowOnlyDifferencesChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-[#0066cc] focus:ring-[#0071e3]"
-            />
-            {t('portal.billing.package_only_differences', {}, 'Only show differences')}
-          </label>
+          {hasIdenticalComparisonRows ? (
+            <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={effectiveShowOnlyDifferences}
+                onChange={(event) => onShowOnlyDifferencesChange(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#0066cc] focus:ring-[#0071e3]"
+                data-portal-package="only-differences"
+              />
+              {t('portal.billing.package_only_differences', {}, 'Only show differences')}
+            </label>
+          ) : null}
         </div>
         {comparisonTiers.length > 0 ? (
-          <div className="mt-3 overflow-x-auto rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">
-            <table className="min-w-[42rem] w-full border-collapse text-sm">
+          <div className="mt-3 rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">
+            <table className="w-full table-fixed border-collapse text-sm">
               <thead className="bg-[#f5f5f7] dark:bg-slate-900/70">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">
+                  <th scope="col" className="px-2.5 py-2.5 text-left font-semibold text-slate-600 break-words dark:text-slate-300">
                     {t('portal.billing.package_comparison_right_label', {}, 'Right')}
                   </th>
                   {comparisonTiers.map((tier) => (
                     <th
                       key={tier.tier_id}
                       scope="col"
-                      className={`px-4 py-3 text-right font-semibold ${
+                      className={`px-2.5 py-2.5 text-right font-semibold break-words ${
                         selectedTier === tier.tier_id
                           ? 'bg-blue-50 text-[#0066cc] dark:bg-blue-950/25 dark:text-[#2997ff]'
                           : 'text-slate-950 dark:text-white'
@@ -318,7 +361,7 @@ export function PortalPackageChangePanel({
               <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-800 dark:bg-slate-950">
                 {visibleComparisonRows.map((row) => (
                   <tr key={row.key}>
-                    <th scope="row" className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300">
+                    <th scope="row" className="px-2.5 py-2.5 text-left font-medium text-slate-600 break-words dark:text-slate-300">
                       {row.label}
                     </th>
                     {comparisonTiers.map((tier) => {
@@ -327,7 +370,7 @@ export function PortalPackageChangePanel({
                         <td
                           key={tier.tier_id}
                           data-comparison-state={right.state}
-                          className={`px-4 py-3 text-right font-semibold ${
+                          className={`px-2.5 py-2.5 text-right font-semibold break-words ${
                           selectedTier === tier.tier_id
                             ? 'bg-blue-50/70 text-slate-950 dark:bg-blue-950/20 dark:text-white'
                             : right.state === 'unconfigured'
@@ -359,9 +402,17 @@ export function PortalPackageChangePanel({
           </div>
         )}
       </section>
-      <div className="mt-4 flex flex-col gap-4 rounded-[18px] border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        className={`mt-4 flex flex-col gap-4 rounded-[18px] border p-4 sm:flex-row sm:items-center sm:justify-between ${
+          selectedChoice
+            ? 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950'
+            : 'border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/40'
+        }`}
+        data-portal-package="confirm-bar"
+        data-portal-package-confirm={selectedChoice ? 'ready' : 'idle'}
+      >
         <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+          <p className={`text-sm ${selectedChoice ? 'font-semibold text-slate-950 dark:text-white' : 'font-medium text-slate-500 dark:text-slate-400'}`}>
             {selectedChoice
               ? t(
                   'portal.billing.package_change_path',
@@ -379,8 +430,13 @@ export function PortalPackageChangePanel({
           className="btn btn-primary shrink-0 whitespace-nowrap"
           disabled={selectionDisabled}
           onClick={onConfirm}
+          data-portal-package="confirm"
         >
-          {pendingAction ? t('common.saving', {}, 'Saving...') : actionLabel}
+          {pendingAction
+            ? t('common.saving', {}, 'Saving...')
+            : selectedChoice
+              ? actionLabel
+              : t('portal.billing.package_confirm_continue', {}, 'Confirm and continue')}
         </button>
       </div>
       <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
@@ -398,46 +454,47 @@ export function PortalPackageChangePanel({
           <Link href="/privacy" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
             {t('auth.privacy_link', {}, 'Privacy')}
           </Link>
-          <Link href="/portal/support?new=1&topic=billing" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
-            {t('portal.nav_support_requests', {}, 'Tickets')}
-          </Link>
         </p>
       </div>
 
-
-
-      <div className="mt-5 flex flex-col gap-4 rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+      <details
+        className="mt-5 rounded-[18px] border border-slate-200 bg-white open:bg-white dark:border-slate-800 dark:bg-slate-950"
+        data-portal-package="agency-quote"
+      >
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-600 marker:content-none dark:text-slate-300 [&::-webkit-details-marker]:hidden">
+          <span className="inline-flex items-center gap-2">
+            <span aria-hidden="true" className="text-slate-400">▸</span>
             {t('portal.billing.agency_separate_title', {}, 'Need more capacity?')}
-          </p>
-          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          </span>
+        </summary>
+        <div className="flex flex-col gap-4 border-t border-slate-200 px-4 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
             {agencyOffer
               ? t(
                   'portal.billing.agency_quote_ready_desc',
                   { amount: formatOfferAmount(agencyOffer) },
-                  `Your Agency quote is ready at ${formatOfferAmount(agencyOffer)} for 30 days.`
+                  `Your Agency quote is ready at ${formatOfferAmount(agencyOffer)}/month.`
                 )
               : t('portal.package.agency_desc', {}, 'Custom high-volume coverage. Submit a request for a time-limited quote and approved trial.')}
           </p>
+          {agencyOffer ? (
+            <button
+              type="button"
+              className="btn btn-secondary shrink-0 whitespace-nowrap"
+              disabled={pendingAction !== null}
+              onClick={() => onAgencyPurchase(agencyOffer)}
+            >
+              {pendingAction === 'order:agency'
+                ? t('common.saving', {}, 'Saving...')
+                : t('portal.package.buy_agency_quote', {}, 'Pay Agency quote')}
+            </button>
+          ) : (
+            <Link href="/portal/support?new=1&topic=billing" className="btn btn-secondary shrink-0 whitespace-nowrap">
+              {t('portal.package.request_agency_quote', {}, 'Request Agency quote')}
+            </Link>
+          )}
         </div>
-        {agencyOffer ? (
-          <button
-            type="button"
-            className="btn btn-secondary shrink-0 whitespace-nowrap"
-            disabled={pendingAction !== null}
-            onClick={() => onAgencyPurchase(agencyOffer)}
-          >
-            {pendingAction === 'order:agency'
-              ? t('common.saving', {}, 'Saving...')
-              : t('portal.package.buy_agency_quote', {}, 'Pay Agency quote')}
-          </button>
-        ) : (
-          <Link href="/portal/support?new=1&topic=billing" className="btn btn-secondary shrink-0 whitespace-nowrap">
-            {t('portal.package.request_agency_quote', {}, 'Request Agency quote')}
-          </Link>
-        )}
-      </div>
+      </details>
 
       {error ? (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-200">

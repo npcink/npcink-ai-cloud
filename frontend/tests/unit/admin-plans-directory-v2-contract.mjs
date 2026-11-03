@@ -4,6 +4,8 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const source = readFileSync(fromFrontendRoot('src/app/admin/plans/page.tsx'), 'utf8');
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
+const navigationSource = readFileSync(fromFrontendRoot('src/features/admin/navigation.ts'), 'utf8');
+const editor = readFileSync(fromFrontendRoot('src/features/admin/plans/use-plan-editor.ts'), 'utf8');
 const workbench = readFileSync(fromFrontendRoot('src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
 const proxy = readFileSync(fromFrontendRoot('src/app/api/admin/[...path]/route.ts'), 'utf8');
 
@@ -11,9 +13,9 @@ assert.match(source, /BackofficePageHeader[\s\S]*summaryItems=\{\[/, 'package ca
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeMetricStrip/, 'package catalog must not restore the old hero metric surface');
 assert.doesNotMatch(source, /admin\.plans\.open_credit_packs/, 'the independent package catalog must not duplicate the AI credit pack navigation entry');
 assert.match(
-  layoutSource,
-  /href: '\/admin\/plans'[\s\S]*activePrefixes: \['\/admin\/plans'\][\s\S]*href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.nav_credit_packs'[\s\S]*activePrefixes: \['\/admin\/credit-packs'\]/,
-  'package catalog and AI credit packs must be independent top-level sidebar destinations'
+  navigationSource,
+  /commercialWorkspaceTabs[\s\S]*href: '\/admin\/plans'[\s\S]*href: '\/admin\/credit-packs'/,
+  'package catalog and AI credit packs must stay sibling tabs in the commercial workspace'
 );
 
 assert.match(source, /searchParams\.get\('focus'\)/, 'the open management workbench must remain URL-backed');
@@ -33,7 +35,7 @@ assert.match(source, /headerVisibility="sr-only"/, 'the table must keep its acce
 assert.doesNotMatch(source, /admin\.plans\.search_label|admin\.plans\.sort_label|admin\.plans\.state_filter_label/, 'the fixed catalog must not expose redundant search, sort, or readiness controls');
 assert.match(source, /<p className="font-semibold text-slate-950 dark:text-white">\{packageAlias\}<\/p>/, 'package identity must remain plain text');
 assert.doesNotMatch(source, /<button[\s\S]{0,320}>\s*\{packageAlias\}\s*<\/button>/, 'package identity must not duplicate the manage action');
-assert.match(source, /text-blue-700[\s\S]{0,420}<span aria-hidden="true">›<\/span>/, 'active subscription counts must keep a persistent link affordance');
+assert.match(source, /text-blue-700[\s\S]{0,420}<span aria-hidden="true">›<\/span>/, 'the all-subscriptions action must keep a persistent link affordance');
 assert.match(source, /aria-label=\{planId[\s\S]{0,180}admin\.plans\.manage_title/, 'the compact manage button must keep an object-specific accessible name');
 assert.match(source, /PlanManagementWorkbench/, 'one package management workbench must own package context and maintenance');
 assert.doesNotMatch(workbench, /admin\.plans\.open_subscriptions_action/, 'the workbench must not duplicate the subscription link already owned by the catalog count');
@@ -49,7 +51,7 @@ assert.match(
 );
 assert.doesNotMatch(workbench, /sm:grid-cols-3/, 'the normal parameter view must not restore the redundant package ID/version metric row');
 assert.match(workbench, /activeTab === 'diagnostics'[\s\S]*admin\.plans\.package_id_label[\s\S]*admin\.plans\.latest_version_label/, 'technical package identity and version must remain diagnostics-only');
-assert.match(workbench, /method: 'PATCH'/, 'the normal workbench must use the structured Admin plan update contract');
+assert.match(editor, /method: 'PATCH'/, 'the normal workbench must use the structured Admin plan update contract');
 assert.match(
   proxy,
   /methods: \['PATCH'\],[\s\S]*?pattern: \/\^plans\\\/\[\^\/\]\+\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
@@ -105,6 +107,6 @@ for (const unitKey of [
 
 assert.match(source, /id="package-maintenance"/, 'package initialization and exceptional creation must remain in advanced maintenance');
 assert.match(source, /toast\.success/, 'transient plan mutation success must use global toast feedback');
-assert.match(workbench, /\/api\/admin\/plans\/\$\{encodeURIComponent\(planId\)\}/, 'the workbench must keep the structured Cloud plan detail and update API boundary');
+assert.match(editor, /\/api\/admin\/plans\/\$\{encodeURIComponent\(planId\)\}/, 'the workbench must keep the structured Cloud plan detail and update API boundary');
 
 console.log('admin_plans_directory_v2_contract: ok');

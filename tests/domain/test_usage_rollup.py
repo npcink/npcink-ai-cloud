@@ -46,6 +46,7 @@ def health_rollup_database(tmp_path: Path):
     now = datetime(2026, 10, 17, 8, tzinfo=UTC)
     with get_session(database_url) as session:
         session.add(CatalogProvider(provider_id="p", display_name="P", adapter_type="fake"))
+        session.flush()
         session.add(
             CatalogModel(
                 model_id="m",
@@ -56,6 +57,7 @@ def health_rollup_database(tmp_path: Path):
                 revision="test",
             )
         )
+        session.flush()
         for instance_id in ("a", "b", "unknown"):
             session.add(
                 CatalogInstance(
@@ -68,6 +70,7 @@ def health_rollup_database(tmp_path: Path):
             )
         for profile_id, candidates in (("text.test", ["a", "b"]), ("text.empty", [])):
             session.add(RoutingProfile(profile_id=profile_id, execution_kind="text"))
+            session.flush()
             session.add(
                 RoutingBinding(
                     profile_id=profile_id, candidate_instance_ids=candidates, revision="test"
@@ -159,13 +162,31 @@ def _uncached_payloads(database_url: str, now: datetime) -> dict[str, dict]:
     return expected
 
 
-def test_rollup_reuses_two_health_reads_without_changing_statistics(health_rollup_database) -> None:
+def test_rollup_reuses_two_health_reads_without_changing_statistics(
+    health_rollup_database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     database_url, now = health_rollup_database
-    expected = _uncached_payloads(database_url, now)
+    original = StatsRepository.list_latest_health_snapshots
+
+    def global_reference(repository, instance_ids=None, *, earliest_on_tie=False):
+        rows = original(repository, earliest_on_tie=earliest_on_tie)
+        return (
+            rows
+            if instance_ids is None
+            else [row for row in rows if row.instance_id in instance_ids]
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StatsRepository, "list_latest_health_snapshots", global_reference)
+        expected = _uncached_payloads(database_url, now)
     health_queries = []
 
     def count_health_queries(_connection, _cursor, statement, _parameters, _context, _many):
-        if statement.lstrip().upper().startswith("SELECT") and "health_snapshots" in statement:
+        if (
+            statement.lstrip().upper().startswith(("SELECT", "WITH"))
+            and "health_snapshots" in statement
+        ):
             health_queries.append(statement)
 
     engine = get_engine(database_url)
@@ -192,28 +213,42 @@ def test_rollup_reuses_two_health_reads_without_changing_statistics(health_rollu
     assert actual == expected
 
 
+@pytest.mark.parametrize("existing", [False, True])
 def test_rollup_refreshes_health_each_round_and_rolls_back_failed_writes(
     health_rollup_database,
     monkeypatch: pytest.MonkeyPatch,
+    existing: bool,
 ) -> None:
     database_url, now = health_rollup_database
     service = UsageRollupService(database_url, now_factory=lambda: now)
-    original_upsert = StatsRepository.upsert_usage_rollup
+    if existing:
+        service.generate_rollups()
+    with get_session(database_url) as session:
+        before_failure = {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        }
+    service.now_factory = lambda: now + timedelta(minutes=5)
+    original_upsert = StatsRepository.upsert_usage_rollups
     writes = 0
 
-    def fail_after_first_write(repository, **kwargs):
+    def fail_after_first_write(repository, rows):
         nonlocal writes
         writes += 1
         if writes == 2:
             raise RuntimeError("injected rollup failure")
-        return original_upsert(repository, **kwargs)
+        return original_upsert(repository, rows)
 
     with monkeypatch.context() as patch:
-        patch.setattr(StatsRepository, "upsert_usage_rollup", fail_after_first_write)
+        patch.setattr(StatsRepository, "upsert_usage_rollups", fail_after_first_write)
         with pytest.raises(RuntimeError, match="injected rollup failure"):
-            service.generate_rollups()
+            service.generate_rollups(write_batch_size=2)
     with get_session(database_url) as session:
-        assert list(session.scalars(select(UsageRollup))) == []
+        assert {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        } == before_failure
+    service.now_factory = lambda: now
     service.generate_rollups()
     before = _uncached_payloads(database_url, now)
     with get_session(database_url) as session:
@@ -235,6 +270,180 @@ def test_rollup_refreshes_health_each_round_and_rolls_back_failed_writes(
         assert {
             item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
         } == expected
+
+
+@pytest.mark.parametrize(
+    "site_ids,include_global", [(None, True), (["alpha"], False), (["absent"], True), ([], False)]
+)
+def test_rollup_batch_matches_live_statistics_at_window_boundaries(
+    health_rollup_database,
+    site_ids,
+    include_global,
+) -> None:
+    database_url, now = health_rollup_database
+    times = [
+        now - timedelta(hours=25),
+        now - timedelta(hours=24),
+        now.replace(hour=0),
+        now - timedelta(microseconds=1),
+        now,
+        now + timedelta(microseconds=1),
+    ]
+    with get_session(database_url) as session:
+        session.add(RoutingProfile(profile_id="text.unbound", execution_kind="text"))
+        binding = session.get(RoutingBinding, "text.test")
+        binding.candidate_instance_ids = ["a", "missing", "b", "a"]
+        for index in range(18):
+            at = times[index % len(times)]
+            run = RunRecord(
+                run_id=f"edge{index}",
+                site_id="alpha" if index % 2 else "beta",
+                ability_name="test",
+                channel="openapi",
+                execution_kind="text",
+                profile_id="text.test" if index % 3 else "text.empty",
+                status=["succeeded", "failed", "running"][index % 3],
+                trace_id=f"edge{index}",
+                fallback_used=index % 3 == 1,
+                started_at=at,
+                finished_at=at + timedelta(milliseconds=123 + index) if index % 4 else None,
+            )
+            session.add(run)
+            session.flush()
+            session.add(
+                ProviderCallRecord(
+                    run_id=run.run_id,
+                    provider_id="p",
+                    model_id="m",
+                    instance_id="a" if index % 2 else "b",
+                    region="test",
+                    latency_ms=90 + index,
+                    tokens_in=index,
+                    tokens_out=index + 1,
+                    cost=0.0000005 * index,
+                    fallback_used=index % 3 == 1,
+                    error_code=[None, "", "provider.timeout"][index % 3],
+                    # The run/call windows deliberately disagree, including retry calls
+                    # in-range for a run whose admission was outside the window.
+                    created_at=times[(index + 3) % len(times)],
+                )
+            )
+        session.commit()
+    scopes = list(site_ids or ["alpha", "beta"])
+    if include_global:
+        scopes.insert(0, GLOBAL_SITE_SCOPE)
+    live = UsageService(database_url, now_factory=lambda: now)
+    expected = {}
+    for scope in scopes:
+        site_id = None if scope == GLOBAL_SITE_SCOPE else scope
+        expected[f"{scope}:summary:__summary__"] = live.get_usage_summary(site_id=site_id)
+        for key in ["text.test", "text.empty", "text.unbound"]:
+            expected[f"{scope}:profile:{key}"] = live.get_profile_stats(key, site_id=site_id)
+        for key in ["a", "b", "unknown"]:
+            expected[f"{scope}:instance:{key}"] = live.get_instance_stats(key, site_id=site_id)
+    UsageRollupService(database_url, now_factory=lambda: now).generate_rollups(
+        site_ids=site_ids,
+        include_global=include_global,
+    )
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_accepts_naive_utc_clock_like_live_reader(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    now = now.replace(tzinfo=None)
+    expected = _uncached_payloads(database_url, now)
+    UsageRollupService(database_url, now_factory=lambda: now).generate_rollups()
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_refreshes_call_statistics_on_next_round(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    service = UsageRollupService(database_url, now_factory=lambda: now)
+    service.generate_rollups()
+    before = _uncached_payloads(database_url, now)
+    with get_session(database_url) as session:
+        session.add(
+            ProviderCallRecord(
+                run_id="r2",
+                provider_id="p",
+                model_id="m",
+                instance_id="b",
+                region="test",
+                latency_ms=999,
+                tokens_in=7,
+                tokens_out=3,
+                cost=0.1234567,
+                created_at=now,
+            )
+        )
+        session.commit()
+    expected = _uncached_payloads(database_url, now)
+    assert expected != before
+    service.generate_rollups()
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_keeps_empty_database_summary(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    now = datetime(2026, 10, 17, tzinfo=UTC)
+    expected = UsageService(database_url, now_factory=lambda: now).get_usage_summary()
+    result = UsageRollupService(database_url, now_factory=lambda: now).generate_rollups()
+    assert result["counts"] == {"summary": 1, "profile": 0, "instance": 0}
+    with get_session(database_url) as session:
+        assert session.get(UsageRollup, "__global__:summary:__summary__").payload_json == expected
+    dispose_engine(database_url)
+
+
+def test_rollup_statistic_queries_do_not_grow_with_catalog_size(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    queries = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _many):
+        if (
+            statement.lstrip().upper().startswith(("SELECT", "WITH"))
+            and "usage_rollups" not in statement
+        ):
+            queries.append(statement)
+
+    engine = get_engine(database_url)
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        service = UsageRollupService(database_url, now_factory=lambda: now)
+        service.generate_rollups()
+        small_queries = len(queries)
+        with get_session(database_url) as session:
+            for index in range(20):
+                session.add(
+                    CatalogInstance(
+                        instance_id=f"extra{index}",
+                        model_id="m",
+                        provider_id="p",
+                        endpoint_variant="default",
+                        region="test",
+                    )
+                )
+                session.add(RoutingProfile(profile_id=f"extra{index}", execution_kind="text"))
+            session.commit()
+        queries.clear()
+        result = service.generate_rollups()
+        # The bound protects against returning to per-profile/per-instance reads;
+        # rollup row writes are deliberately outside this query-count assertion.
+        assert len(queries) == small_queries
+        assert small_queries < 50
+        assert result["health_snapshot_reads"] == 2
+        assert result["rollups_total"] == 138
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
 
 
 def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
@@ -694,3 +903,84 @@ def test_usage_rollup_service_stores_alert_provider_degradation_batches(
     assert event["summary"]["provider"] == provider_id
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("batch_size", [128, 256])
+def test_rollup_saves_bounded_batches_with_one_commit(
+    health_rollup_database,
+    monkeypatch: pytest.MonkeyPatch,
+    batch_size: int,
+) -> None:
+    database_url, now = health_rollup_database
+    with get_session(database_url) as session:
+        session.add_all(
+            CatalogInstance(
+                instance_id=f"batch{index}",
+                model_id="m",
+                provider_id="p",
+                endpoint_variant="default",
+                region="test",
+            )
+            for index in range(262)
+        )
+        session.commit()
+    service = UsageRollupService(database_url, now_factory=lambda: now)
+    original_batch = StatsRepository.upsert_usage_rollups
+
+    def legacy_save(repository, rows):
+        for item in rows:
+            repository.upsert_usage_rollup(
+                rollup_key=item.rollup_key,
+                site_scope=item.site_scope,
+                scope_kind=item.scope_kind,
+                scope_id=item.scope_id,
+                payload_json=item.payload_json,
+            )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StatsRepository, "upsert_usage_rollups", legacy_save)
+        service.generate_rollups()
+    with get_session(database_url) as session:
+        expected = {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        }
+
+    batches, queries, commits = [], [], []
+
+    def save(repository, rows):
+        if rows:
+            batches.append(len(rows))
+        original_batch(repository, rows)
+
+    def capture(_conn, _cursor, sql, _parameters, _context, _many):
+        if sql.lstrip().upper().startswith("SELECT") and "usage_rollups" in sql:
+            queries.append(sql)
+
+    def committed(_conn):
+        commits.append(True)
+
+    engine = get_engine(database_url)
+    monkeypatch.setattr(StatsRepository, "upsert_usage_rollups", save)
+    event.listen(engine, "before_cursor_execute", capture)
+    event.listen(engine, "commit", committed)
+    try:
+        result = service.generate_rollups(write_batch_size=batch_size)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+        event.remove(engine, "commit", committed)
+    assert batches == ([128, 128, 12] if batch_size == 128 else [256, 12]) * 3
+    assert len(queries) == len(batches)
+    assert len(commits) == 1
+    assert result["rollups_total"] == 804
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+@pytest.mark.parametrize("batch_size", [0, -1, 257, 1.5, True, "128"])
+def test_rollup_rejects_unbounded_write_batch(batch_size: int) -> None:
+    with pytest.raises(ValueError, match="batch size"):
+        UsageRollupService("unused").generate_rollups(write_batch_size=batch_size)

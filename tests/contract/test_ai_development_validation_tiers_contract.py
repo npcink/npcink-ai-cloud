@@ -7,15 +7,18 @@ STANDARD = ROOT / "docs" / "ai-development-validation-tiers-v1.md"
 OPERATING_MODEL = ROOT / "docs" / "development-validation-operating-model-v1.md"
 SINGLE_OPERATOR_STANDARD = ROOT / "docs" / "single-operator-ai-development-standard-v1.md"
 AGENTS = ROOT / "AGENTS.md"
+SESSION_DETAIL = ROOT / "docs" / "engineering" / "agents-session-protocol-detail.md"
 
 
 def test_ai_validation_tiers_are_actionable_and_linked_from_session_entry() -> None:
     standard = STANDARD.read_text(encoding="utf-8")
     operating_model = OPERATING_MODEL.read_text(encoding="utf-8")
     agents = AGENTS.read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
 
     assert "ai-development-validation-tiers-v1.md" in operating_model
-    assert "ai-development-validation-tiers-v1.md" in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert "ai-development-validation-tiers-v1.md" in session_detail
 
     for required_text in (
         "preview clock",
@@ -53,6 +56,7 @@ def test_workflow_lanes_and_efficiency_stop_lines_are_normative() -> None:
     operating_model = OPERATING_MODEL.read_text(encoding="utf-8")
     single_operator = SINGLE_OPERATOR_STANDARD.read_text(encoding="utf-8")
     agents = AGENTS.read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
 
     for required_text in (
         "Three Workflow Lanes",
@@ -77,5 +81,6 @@ def test_workflow_lanes_and_efficiency_stop_lines_are_normative() -> None:
     ):
         assert required_text in single_operator
 
-    assert "Default every task to the `development` workflow lane" in agents
-    assert "Do not load all four for an unrelated" in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert "Default every task to the `development` workflow lane" in session_detail
+    assert "Do not load all four for an unrelated" in session_detail

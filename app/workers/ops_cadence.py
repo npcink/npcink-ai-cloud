@@ -256,6 +256,15 @@ def _run_payment_order_expiration(settings: Settings) -> dict[str, object]:
     ).expire_pending_payment_orders()
 
 
+def _run_payment_refund_reconciliation(settings: Settings) -> dict[str, object]:
+    return CommercialService(
+        settings.database_url,
+        settings=settings,
+    ).reconcile_payment_refunds(
+        limit=settings.payment_refund_reconciliation_batch_size,
+    )
+
+
 def cadence_task_specs() -> list[CadenceTaskSpec]:
     return [
         CadenceTaskSpec(
@@ -333,6 +342,14 @@ def cadence_task_specs() -> list[CadenceTaskSpec]:
             event_kind="payment.order_expiration.cadence",
             interval_seconds=lambda _settings: 60,
             runner=_run_payment_order_expiration,
+        ),
+        CadenceTaskSpec(
+            task_id="payment_refund_reconciliation",
+            event_kind="payment.refund_reconciliation.cadence",
+            interval_seconds=lambda settings: (
+                settings.payment_refund_reconciliation_interval_seconds
+            ),
+            runner=_run_payment_refund_reconciliation,
         ),
     ]
 

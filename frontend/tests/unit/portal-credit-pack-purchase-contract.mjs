@@ -4,13 +4,19 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const read = (path) => readFileSync(fromFrontendRoot(path), 'utf8');
 const billingSource = read('src/app/portal/billing/page.tsx');
+const accountCommerceSource = read('src/components/portal/PortalAccountCommercePanels.tsx');
 const dialogSource = read('src/components/portal/PortalCreditPackDialog.tsx');
 const clientSource = read('src/lib/portal-client.ts');
 
 assert.match(
-  billingSource,
+  accountCommerceSource,
   /<PortalCreditPackDialog[\s\S]*packs=\{availableCreditPacks\}/,
-  'Portal billing must pass the effective service catalog to the credit-pack purchase dialog'
+  'Portal account commerce must pass the effective service catalog to the credit-pack purchase dialog'
+);
+assert.doesNotMatch(
+  billingSource,
+  /<PortalCreditPackDialog/,
+  'Portal billing/plan page must not host the credit-pack purchase dialog after move to Account'
 );
 assert.match(
   clientSource,

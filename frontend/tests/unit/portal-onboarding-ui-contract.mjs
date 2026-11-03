@@ -12,42 +12,47 @@ const sitesSource = readFileSync(
   'utf8'
 );
 
-assert.match(source, /setupChecklistItems/);
-assert.match(source, /portal\.home\.onboarding_title/);
+assert.match(source, /setupChecklistItems/, 'home keeps a bounded first-use checklist when site setup is incomplete');
+assert.match(source, /data-portal-home="setup-checklist"/);
+assert.doesNotMatch(
+  source,
+  /homeState = primaryOperationFocusItem \? 'attention' : hasVisibleSites \? 'daily' : 'setup'|data-portal-home-state=/,
+  'home must not restore the old attention/daily/setup state machine chrome'
+);
 assert.match(
   source,
-  /onboarding_site_title[\s\S]*onboarding_package_title/,
-  'first-use checklist must cover only site connection and package readiness'
+  /shouldShowOnboardingChecklist/,
+  'checklist visibility must stay gated so it does not duplicate header focus'
 );
 assert.doesNotMatch(
   source,
   /onboarding_qq_|getIdentityProviders|currentSiteActiveKeyCount|getSiteDiagnostics/,
   'Portal home onboarding must not load identity, key, or diagnostic detail'
 );
-assert.match(
-  source,
-  /const selectedSite = session\.selected_context\?\.site \|\| null/,
-  'onboarding readiness must use the explicit selected context site'
-);
 assert.doesNotMatch(
   source,
   /sites\s*\[\s*0\s*\]|const selectedSite\s*=\s*(?:getVisiblePortalSites|session\??\.sites)/,
-  'onboarding may show the bounded site list but must not infer current context from it'
+  'home composition must not infer or mutate current account/site context'
+);
+assert.match(source, /filter\(\(site\) => portalSiteNeedsAttention\(site\)\)/);
+assert.match(source, /\/portal\/sites\/\$\{encodeURIComponent\((?:site|selectedSite)\.site_id\)\}#service-status/);
+assert.ok(
+  (sitesSource.match(/data-portal-sites="connect-guide"/g) || []).length >= 1,
+  'sites workspace must expose the WordPress connection guide'
+);
+assert.ok(
+  sitesSource.includes('id="portal-sites-connect-guide"'),
+  'connection guide must keep a stable scroll target id'
 );
 assert.match(
-  source,
-  /selectedSite\?\.status === 'active'[\s\S]*Boolean\(selectedSiteUrl\)/,
-  'site readiness must use the session site status and URL'
+  sitesSource,
+  /data-portal-sites="connect-guide"[\s\S]*portal\.sites\.connect_hint_desc|portal\.sites\.connect_hint_desc[\s\S]*data-portal-sites="connect-guide"/,
+  'connection guidance must point customers back to the WordPress addon handoff'
 );
-assert.match(
-  source,
-  /\/portal\/sites\/\$\{encodeURIComponent\(selectedSite\.site_id\)\}#service-status/,
-  'site follow-up must open the lazy-loaded site detail status section'
-);
-assert.match(
-  source,
-  /requiredAttentionItems = setupChecklistItems\.filter[\s\S]*shouldShowOnboardingChecklist = requiredAttentionItems\.length > 0/,
-  'first-use checklist must hide after all required steps are complete'
+assert.doesNotMatch(
+  sitesSource,
+  /connectionStep|data-portal-connection-flow|connection_step_open|connection_next/,
+  'sites workspace must not restore the multi-step connection wizard chrome'
 );
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
 
@@ -82,8 +87,8 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /soleAccount[\s\S]*type="radio"[\s\S]*checked=\{selectedAccountId === soleAccount\.account_id\}/,
-  'a sole eligible account must still require one explicit ownership confirmation'
+  /soleAccount[\s\S]*data-portal-bind="account"[\s\S]*accountLabel\(soleAccount, 0\)[\s\S]*type="submit"[\s\S]*portal\.connect_site_authorize_addon/,
+  'a sole eligible account is named plainly and confirmed by the single Finish connection click'
 );
 assert.match(
   connectSource,
@@ -92,8 +97,8 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /portal\.connect_site_ownership_title[\s\S]*portal\.connect_site_ownership_desc/,
-  'addon binding must explain account-owned Free service and cross-account cooldown before submission'
+  /portal\.bind_desc/,
+  'addon binding must say in plain words that the site uses the account plan and credits'
 );
 assert.doesNotMatch(
   `${sitesSource}\n${connectSource}`,
@@ -102,3 +107,14 @@ assert.doesNotMatch(
 );
 
 console.log('portal_onboarding_ui_contract: ok');
+
+// Minimal bind page: no account IDs, no jargon, no dashboard chrome, one action.
+assert.doesNotMatch(connectSource, />\s*\{\s*account\.account_id\s*\}|account\.name \|\| account\.account_id|site_count|connect_site_ownership_|type="text"/,
+  'bind page must not show account IDs, site counts, ownership jargon, or extra inputs');
+assert.equal((connectSource.match(/type="submit"/g) || []).length, 1, 'bind page must have exactly one submit action');
+assert.doesNotMatch(connectSource, /common\.cancel/, 'bind page must not render a cancel action');
+assert.match(sitesSource, /if \(addonConnectMode\)[\s\S]*data-portal-bind="page"[\s\S]*PortalSiteConnectPanel/,
+  'addon bind mode must render only the bind card, not the sites workspace');
+const navbarSource = readFileSync(resolve(process.cwd(), 'src/components/portal/PortalNavbar.tsx'), 'utf8');
+assert.match(navbarSource, /connect'\) === 'wordpress-addon'[\s\S]*if \(isAddonBindPage\) return null;/,
+  'portal navbar must stay hidden on the addon bind page');

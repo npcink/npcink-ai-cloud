@@ -289,3 +289,48 @@ def test_runtime_activity_preserves_24_hours_when_other_evidence_window_is_short
     assert summary["window"]["hours"] == 1
     assert summary["activity"]["runtime_runs_total"] == 3
     assert summary["activity"]["runtime_success_rate"] == 0.3333
+
+def test_site_monitoring_overview_skips_optional_plugin_missing(tmp_path: Path) -> None:
+    """Portal overview only expects Cloud Addon; optional Magick plugins must not warn."""
+    database_url = _database_url(tmp_path)
+    site_id = "site-monitoring-addon-only"
+    now = datetime.now(UTC)
+    seed_site_auth(database_url, site_id=site_id, scopes=["runtime:execute", "stats:read"])
+    with get_session(database_url) as session:
+        key = session.scalar(select(SiteApiKey).where(SiteApiKey.site_id == site_id))
+        assert key is not None
+        key.last_used_at = now - timedelta(minutes=10)
+        session.add(
+            PluginObservabilityEvent(
+                dedupe_key="plugin-addon-only-001",
+                site_id=site_id,
+                key_id="key_default",
+                schema_version="2026-06-01",
+                plugin_slug="npcink-cloud-addon",
+                plugin_version="0.1.0",
+                source="local",
+                event_kind="addon.monitoring.state_projected",
+                event_id="evt-addon-only-001",
+                status="ok",
+                error_code="",
+                payload_json={},
+                received_at=now - timedelta(minutes=5),
+                captured_at=now - timedelta(minutes=5),
+            )
+        )
+        session.commit()
+
+    summary = SiteMonitoringOverviewService(database_url).get_summary(
+        site_id=site_id,
+        commercial_policy=_policy(database_url, site_id),
+        window_hours=24,
+        now=now,
+    )
+    codes = {item["code"] for item in summary["action_required"]}
+    assert "plugin_observability.plugin_missing" not in codes
+    assert not any(
+        "governance-core" in str(item.get("detail") or "")
+        or "ai-client-adapter" in str(item.get("detail") or "")
+        for item in summary["action_required"]
+    )
+

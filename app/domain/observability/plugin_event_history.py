@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from app.core.db import get_session
 from app.core.models import PluginObservabilityEvent as Event
 from app.core.models import RunRecord
+from app.domain.observability.plugin_event_filters import plugin_event_category_conditions
 
 
 def get_plugin_event_history(
@@ -19,6 +20,9 @@ def get_plugin_event_history(
     site_id: str = "",
     plugin_slug: str = "",
     event_kind: str = "",
+    error_code: str | None = None,
+    event_category: str = "all",
+    unassigned_site: bool = False,
     record_scope: str = "operational",
     status: str = "all",
     sort: str = "latest",
@@ -44,6 +48,11 @@ def get_plugin_event_history(
     ]:
         if value:
             conditions.append(column == value)
+    if unassigned_site:
+        conditions.append(func.coalesce(Event.site_id, "") == "")
+    if error_code is not None:
+        conditions.append(func.coalesce(Event.error_code, "") == error_code)
+    conditions.extend(plugin_event_category_conditions(event_category))
     test_event = Event.event_kind == "validation.technical_monitoring_only"
     if record_scope == "operational":
         conditions.append(~test_event)
@@ -108,6 +117,7 @@ def get_plugin_event_history(
                     Event.plugin_slug,
                     Event.event_kind,
                     Event.status,
+                    Event.error_code,
                     Event.received_at,
                     RunRecord.run_id,
                 )

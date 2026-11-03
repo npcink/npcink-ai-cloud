@@ -35,6 +35,24 @@ type AdminRouteResolution = {
 };
 
 const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
+  {
+    methods: ['GET', 'POST'],
+    pattern: /^customer-notifications$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^customer-notifications\/notice_[a-f0-9]{32}$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^customer-notifications\/notice_[a-f0-9]{32}\/send$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
   // Operator and diagnostic reads.
   {
     methods: ['GET'],
@@ -82,12 +100,37 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
-    pattern: /^support-requests\/[^/]+(?:\/attachments\/[^/]+)?$/,
+    pattern: /^support-requests\/[^/]+(?:\/attachments\/[^/]+|\/operations\/[^/]+)?$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_accounts',
   },
 
+  {
+    methods: ['PATCH'],
+    pattern: /^accounts\/[^/]+\/operator-profile$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^accounts\/creation-operations\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^accounts\/[^/]+\/credit-ledger\/adjustments\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
+
   // Commercial and catalog reads.
+  {
+    methods: ['GET'],
+    pattern: /^accounts\/[^/]+\/payment-orders$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
   {
     methods: ['GET'],
     pattern: /^(?:coverage-work-queue|subscriptions)$/,
@@ -111,6 +154,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     pattern: /^(?:plans|credit-packs)$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^economics\/(?:usage-by-family|revenue)$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
   },
   {
     methods: ['GET'],
@@ -149,6 +198,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Customer, commercial, and catalog writes.
   {
     methods: ['POST'],
+    pattern: /^accounts\/[^/]+\/payment-orders\/[^/]+\/refunds$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_billing',
+  },
+  {
+    methods: ['POST'],
     pattern: /^accounts$/,
     namespace: 'service',
     requiredCapability: 'can_manage_accounts',
@@ -157,6 +212,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     methods: ['POST'],
     pattern: /^sites\/[^/]+\/activate$/,
     namespace: 'service',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^sites\/[^/]+\/operations\/[^/]+$/,
+    namespace: 'admin',
     requiredCapability: 'can_manage_accounts',
   },
   {
@@ -220,8 +281,26 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_catalog',
   },
   {
+    methods: ['GET'],
+    pattern: /^plans\/[^/]+\/parameter-operations\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
     methods: ['PATCH'],
     pattern: /^plans\/[^/]+$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['PATCH'],
+    pattern: /^plans\/[^/]+\/sales$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^credit-packs\/operations\/[^/]+$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },
@@ -259,7 +338,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['POST'],
-    pattern: /^provider-connections\/[^/]+\/image-delivery-probes$/,
+    pattern: /^provider-connections\/[^/]+\/(?:image-delivery-probes|model-tests)$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },
@@ -438,6 +517,7 @@ async function proxyAdminRequest(
       headers,
       body,
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
     });
   } catch {
     return buildErrorResponse(

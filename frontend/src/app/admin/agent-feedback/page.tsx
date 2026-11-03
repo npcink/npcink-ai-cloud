@@ -1,5 +1,7 @@
 'use client';
 
+import { RecommendationQuality } from '@/features/admin/agent-feedback/RecommendationQuality';
+
 import { normalizeObservationWindow, observationWindows } from '@/features/admin/observability/window';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +37,9 @@ type FeedbackTrendPoint = {
   eventsTotal: number;
   accepted: number;
   rejected: number;
+  ignored: number;
+  expired: number;
+  blocked: number;
   evidenceWeak: number;
   wrongNextStep: number;
 };
@@ -88,6 +93,9 @@ type AgentFeedbackSummary = {
   windowStartAt: string;
   lastEventAt: string;
   eventsTotal: number;
+  qualityEventsTotal: number;
+  engineeringEventsTotal: number;
+  qualityOutcomes: CountMap;
   limited: boolean;
   maxEvents: number;
   outcomes: CountMap;
@@ -99,6 +107,7 @@ type AgentFeedbackSummary = {
   lowQualityLabels: FeedbackTopCount[];
   rejectionReasons: FeedbackTopCount[];
   mediaQuality: MediaQualitySummary;
+  recommendationQuality: unknown;
   rates: {
     acceptedRate: number;
     evidenceUsefulRate: number;
@@ -182,6 +191,9 @@ function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
     windowStartAt: String(raw?.window_start_at ?? ''),
     lastEventAt: String(raw?.last_event_at ?? ''),
     eventsTotal: Number(raw?.events_total ?? 0),
+    qualityEventsTotal: Number(raw?.quality_events_total ?? raw?.events_total ?? 0),
+    engineeringEventsTotal: Number(raw?.engineering_events_total ?? 0),
+    qualityOutcomes: countMap(raw?.quality_outcomes ?? raw?.outcomes),
     limited: Boolean(raw?.limited),
     maxEvents: Number(raw?.max_events ?? 0),
     outcomes: countMap(raw?.outcomes),
@@ -206,6 +218,9 @@ function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
           eventsTotal: Number(item?.events_total ?? 0),
           accepted: Number(item?.accepted ?? 0),
           rejected: Number(item?.rejected ?? 0),
+          ignored: Number(item?.ignored ?? 0),
+          expired: Number(item?.expired ?? 0),
+          blocked: Number(item?.blocked ?? 0),
           evidenceWeak: Number(item?.evidence_weak ?? 0),
           wrongNextStep: Number(item?.wrong_next_step ?? 0),
         }))
@@ -222,6 +237,7 @@ function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
           count: Number(item?.count ?? 0),
         }))
       : [],
+    recommendationQuality: raw?.recommendation_quality ?? null,
     mediaQuality: {
       eventsTotal: Number(mediaQuality.events_total ?? 0),
       minimumSampleSize: Number(mediaQuality.minimum_sample_size ?? 20),
@@ -276,7 +292,8 @@ function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
   };
 }
 
-function formatPercent(value: number): string {
+function formatPercent(value: number, denominator?: number): string {
+  if (denominator === 0) return '—';
   return `${(Number(value || 0) * 100).toFixed(1)}%`;
 }
 
@@ -341,13 +358,15 @@ function AgentFeedbackQualityDashboard() {
   const windowHours = normalizeFeedbackWindow(searchParams.get('window'));
   const siteIdFilter = searchParams.get('site') || '';
   const focusedLabel = searchParams.get('focus') || '';
-  const [data, setData] = useState<AgentFeedbackSummary | null>(null);
+  const scopeKey = JSON.stringify([windowHours, siteIdFilter.trim()]);
+  const [snapshot, setSnapshot] = useState<{ scope: string; data: AgentFeedbackSummary } | null>(null);
+  const data = snapshot?.scope === scopeKey ? snapshot.data : null;
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [sourceError, setSourceError] = useState<{ scope: string; message: string } | null>(null);
+  const error = sourceError?.scope === scopeKey ? sourceError.message : '';
   const [siteIdInput, setSiteIdInput] = useState(siteIdFilter);
   const requestControllerRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
-  const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: { window?: number | null; site?: string | null; focus?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -359,11 +378,11 @@ function AgentFeedbackQualityDashboard() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
-  const loadData = useCallback(async (refresh = false) => {
+  const loadData = useCallback(async () => {
     requestControllerRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
-    if (!hasLoadedRef.current || !refresh) setLoading(true);
-    setError('');
+    setLoading(true);
+    setSourceError(null);
     const controller = new AbortController();
     requestControllerRef.current = controller;
     const timeout = globalThis.setTimeout(() => controller.abort(), 8000);
@@ -377,12 +396,11 @@ function AgentFeedbackQualityDashboard() {
         signal: controller.signal,
       });
       if (sequence === requestSequenceRef.current) {
-        setData(normalizeAgentFeedbackSummary(response.data));
-        hasLoadedRef.current = true;
+        setSnapshot({ scope: scopeKey, data: normalizeAgentFeedbackSummary(response.data) });
       }
     } catch (err) {
       if (sequence === requestSequenceRef.current) {
-        setError(resolveUiErrorMessage(err, t('admin.agent_feedback.load_error', {}, 'Failed to load Agent feedback diagnostics.')));
+        setSourceError({ scope: scopeKey, message: resolveUiErrorMessage(err, t('admin.agent_feedback.load_error', {}, 'Failed to load Agent feedback diagnostics.')) });
       }
     } finally {
       globalThis.clearTimeout(timeout);
@@ -391,10 +409,11 @@ function AgentFeedbackQualityDashboard() {
         setLoading(false);
       }
     }
-  }, [siteIdFilter, t, windowHours]);
+  }, [siteIdFilter, t, windowHours, scopeKey]);
 
   useEffect(() => {
     void loadData();
+    return () => { requestControllerRef.current?.abort(); requestSequenceRef.current += 1; };
   }, [loadData]);
 
   useEffect(() => {
@@ -409,7 +428,7 @@ function AgentFeedbackQualityDashboard() {
     return labelCounts.filter((item) => LOW_QUALITY_LABELS.has(item.label));
   }, [data, labelCounts]);
   const selectedQualityIssue = qualityIssues.find((item) => item.label === focusedLabel)
-    || qualityIssues[0]
+    || (!focusedLabel ? qualityIssues[0] : null)
     || null;
   const isEmpty = data !== null && data.eventsTotal === 0;
 
@@ -421,19 +440,18 @@ function AgentFeedbackQualityDashboard() {
     <BackofficePageStack spacing="compact">
       <BackofficePageHeader
         density="compact"
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.agent_feedback.title', {}, 'Agent Feedback Quality')}
         description={t(
           'admin.agent_feedback.desc',
           {},
           'Read-only quality signals from local operator feedback. Cloud summarizes feedback for evaluation; WordPress approval, preflight, and final writes stay local.'
         )}
-        secondaryAction={<button type="button" onClick={() => void loadData(true)} disabled={loading} className="btn btn-secondary btn-sm">{t('common.refresh', {}, 'Refresh')}</button>}
+        secondaryAction={<button type="button" onClick={() => void loadData()} disabled={loading} className="btn btn-secondary btn-sm">{t('common.refresh', {}, 'Refresh')}</button>}
         summaryItems={data ? [
           { label: t('admin.agent_feedback.events', {}, 'Events'), value: formatNumber(data.eventsTotal), detail: metricWindowDetail(t, data) },
-          { label: t('admin.agent_feedback.accepted_rate', {}, 'Accepted'), value: formatPercent(data.rates.acceptedRate), toneClassName: data.rates.acceptedRate < 0.5 && data.eventsTotal > 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
-          { label: t('admin.agent_feedback.evidence_weak', {}, 'Evidence weak'), value: formatPercent(data.rates.evidenceWeakRate), toneClassName: data.rates.evidenceWeakRate > 0.2 ? 'text-amber-600 dark:text-amber-400' : undefined },
-          { label: t('admin.agent_feedback.wrong_next_step', {}, 'Wrong next step'), value: formatPercent(data.rates.wrongNextStepRate), toneClassName: data.rates.wrongNextStepRate > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
+          { label: t('admin.agent_feedback.accepted_rate', {}, 'Accepted'), value: formatPercent(data.rates.acceptedRate, data.qualityEventsTotal), detail: `${formatNumber((data.qualityOutcomes.accepted || 0) + (data.qualityOutcomes.edited_before_accept || 0))} / ${formatNumber(data.qualityEventsTotal)}` },
+          { label: t('admin.agent_feedback.evidence_weak', {}, 'Evidence weak'), value: formatPercent(data.rates.evidenceWeakRate, data.qualityEventsTotal), detail: `${formatNumber(data.labels.evidence_weak || 0)} / ${formatNumber(data.qualityEventsTotal)}` },
+          { label: t('admin.agent_feedback.wrong_next_step', {}, 'Wrong next step'), value: formatPercent(data.rates.wrongNextStepRate, data.qualityEventsTotal), detail: `${formatNumber(data.labels.wrong_next_step || 0)} / ${formatNumber(data.qualityEventsTotal)}` },
           { label: t('admin.agent_feedback.quality_issues', {}, 'Quality issues'), value: formatNumber(qualityIssues.reduce((total, item) => total + item.count, 0)), toneClassName: qualityIssues.length ? 'text-rose-600 dark:text-rose-400' : undefined },
         ] : []}
         summaryAside={data ? <BackofficeStatusBadge status="read_only" label={t('admin.read_only', {}, 'Read-only')} /> : undefined}
@@ -483,13 +501,33 @@ function AgentFeedbackQualityDashboard() {
                   : t('admin.agent_feedback.no_mutation', {}, 'No mutation')
               }
             />
-            <BackofficeTag tone="neutral">{data.scope || 'all_sites'}</BackofficeTag>
+            <BackofficeTag tone="neutral">{!data.scope || data.scope === 'all_sites' ? t('admin.agent_feedback.all_sites', {}, 'All sites') : data.scope === 'site' ? t('admin.agent_feedback.site_filter', {}, 'Site ID') : data.scope}</BackofficeTag>
             {data.siteId ? <BackofficeIdentifier value={data.siteId} /> : null}
             {data.generatedAt ? <span>{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</span> : null}
             {data.lastEventAt ? <span>{t('admin.agent_feedback.last_event', {}, 'Last feedback')}: {formatDate(data.lastEventAt)}</span> : null}
           </div>
         ) : null}
       </BackofficeSectionPanel>
+
+      {data ? <p className="text-xs leading-5 text-slate-500" data-ui="feedback-quality-basis">{t('admin.agent_feedback.quality_basis', { count: formatNumber(data.qualityEventsTotal), accepted: formatNumber((data.qualityOutcomes.accepted || 0) + (data.qualityOutcomes.edited_before_accept || 0)), weak: formatNumber(data.labels.evidence_weak || 0), wrong: formatNumber(data.labels.wrong_next_step || 0) })}{data.engineeringEventsTotal > 0 ? ` ${t('admin.agent_feedback.engineering_samples', { count: formatNumber(data.engineeringEventsTotal) })}` : ''}</p> : null}
+
+      {data && !isEmpty ? <>
+          <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
+            <div className="border-b border-slate-200 px-5 py-3 dark:border-slate-800 md:px-6"><h2 className="text-sm font-semibold text-gray-950 dark:text-white">{t('admin.agent_feedback.issue_queue_title', {}, 'Quality issue queue')}</h2></div>
+            <div className={qualityIssues.length ? 'grid xl:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
+                {qualityIssues.map((item) => { const selected = selectedQualityIssue?.label === item.label; return <button key={item.label} type="button" data-ui="feedback-quality-item" aria-pressed={selected} aria-controls="feedback-quality-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.label })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><BackofficeTag tone={labelTone(item.label)}>{labelText(t, item.label)}</BackofficeTag><span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.label}</span></div></div><div className="text-sm font-semibold text-slate-700 md:text-right dark:text-slate-200">{formatNumber(item.count)}</div></button>; })}
+                {qualityIssues.length ? null : <p data-ui="feedback-no-issue-labels" className="px-5 py-3 text-sm text-slate-600 dark:text-slate-300 md:px-6">{t('admin.agent_feedback.no_quality_issues', {}, 'No low-quality labels received in this window.')} {t('admin.agent_feedback.no_quality_sample', { count: formatNumber(data.qualityEventsTotal) }, '{{count}} feedback samples; absence of labels does not establish quality.')}</p>}
+              </div>
+              {qualityIssues.length ? <div id="feedback-quality-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
+                {selectedQualityIssue ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.selected_issue', {}, 'Selected issue')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{labelText(t, selectedQualityIssue.label)}</h3><p className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">{selectedQualityIssue.label}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.events', {}, 'Events')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedQualityIssue.count)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_rate', {}, 'Share of feedback')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatPercent(data.qualityEventsTotal ? selectedQualityIssue.count / data.qualityEventsTotal : 0, data.qualityEventsTotal)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_scope', {}, 'Current scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.agent_feedback.all_sites', {}, 'All sites')} · {windowHours}h</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.agent_feedback.issue_boundary', {}, 'Cloud summarizes this metadata for evaluation only. Approval, preflight, and final writes remain local to WordPress.')}</p></div> : null}
+              </div> : null}
+            </div>
+          </BackofficeSectionPanel>
+
+      </> : null}
+
+      {data ? <RecommendationQuality value={data.recommendationQuality} /> : null}
 
       {data && data.mediaQuality.eventsTotal > 0 ? (
         <BackofficeSectionPanel className="overflow-hidden p-0">
@@ -509,7 +547,7 @@ function AgentFeedbackQualityDashboard() {
             </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
+            <table className="w-full min-w-[68rem] divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
               <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-3 text-left font-semibold">{t('admin.agent_feedback.media_metric', {}, 'Metric')}</th>
@@ -524,6 +562,7 @@ function AgentFeedbackQualityDashboard() {
                     key: 'search',
                     label: t('admin.agent_feedback.media_search_success', {}, 'Search result success'),
                     rate: data.mediaQuality.search.successRate,
+                    denominator: data.mediaQuality.search.completedTotal,
                     evidence: `${formatNumber(data.mediaQuality.search.withResultsTotal)} / ${formatNumber(data.mediaQuality.search.completedTotal)}`,
                     sampleStatus: data.mediaQuality.search.sampleStatus,
                     detail: t(
@@ -536,6 +575,7 @@ function AgentFeedbackQualityDashboard() {
                     key: 'adoption',
                     label: t('admin.agent_feedback.media_candidate_adoption', {}, 'Candidate adoption'),
                     rate: data.mediaQuality.candidateAdoption.adoptionRate,
+                    denominator: data.mediaQuality.candidateAdoption.resultSessionsTotal,
                     evidence: `${formatNumber(data.mediaQuality.candidateAdoption.adoptedSessionsTotal)} / ${formatNumber(data.mediaQuality.candidateAdoption.resultSessionsTotal)}`,
                     sampleStatus: data.mediaQuality.candidateAdoption.sampleStatus,
                     detail: t('admin.agent_feedback.media_candidate_detail', {}, 'Search sessions with at least one adopted local candidate'),
@@ -544,6 +584,7 @@ function AgentFeedbackQualityDashboard() {
                     key: 'alt',
                     label: t('admin.agent_feedback.media_alt_modification', {}, 'Saved ALT modification'),
                     rate: data.mediaQuality.alt.modificationRate,
+                    denominator: data.mediaQuality.alt.savedEditedTotal + data.mediaQuality.alt.savedUnchangedTotal,
                     evidence: `${formatNumber(data.mediaQuality.alt.savedEditedTotal)} / ${formatNumber(data.mediaQuality.alt.savedEditedTotal + data.mediaQuality.alt.savedUnchangedTotal)}`,
                     sampleStatus: data.mediaQuality.alt.sampleStatus,
                     detail: t(
@@ -562,7 +603,7 @@ function AgentFeedbackQualityDashboard() {
                       <div className="font-semibold text-slate-950 dark:text-white">{metric.label}</div>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{metric.detail}</div>
                     </td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-800 dark:text-slate-100">{formatPercent(metric.rate)}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-slate-800 dark:text-slate-100">{formatPercent(metric.rate, metric.denominator)}</td>
                     <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">{metric.evidence}</td>
                     <td className="px-5 py-3 text-right">
                       <BackofficeTag tone={metric.sampleStatus === 'sufficient' ? 'success' : 'warning'}>
@@ -590,7 +631,9 @@ function AgentFeedbackQualityDashboard() {
         </BackofficeSectionPanel>
       ) : null}
 
-      {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.agent_feedback.stale_notice', {}, 'The last successfully loaded feedback snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
+      {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.agent_feedback.stale_notice', {}, 'The last successfully loaded feedback snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData()} /> : null}
+
+      {data && focusedLabel && !selectedQualityIssue ? <BackofficeEmptyState title={t('admin.agent_feedback.focus_absent')} description={focusedLabel} /> : null}
 
       {isEmpty ? (
         <BackofficeEmptyState
@@ -603,30 +646,9 @@ function AgentFeedbackQualityDashboard() {
         />
       ) : data ? (
         <>
-          <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('admin.agent_feedback.attention_label', {}, 'Attention')}</p><h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{t('admin.agent_feedback.issue_queue_title', {}, 'Quality issue queue')}</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.agent_feedback.issue_queue_desc', {}, 'Select a low-quality feedback label to inspect its volume, rate, scope, and governance boundary.')}</p></div>
-            <div className={qualityIssues.length ? 'grid xl:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
-              <div className="max-h-[32rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
-                {qualityIssues.map((item) => { const selected = selectedQualityIssue?.label === item.label; return <button key={item.label} type="button" data-ui="feedback-quality-item" aria-pressed={selected} aria-controls="feedback-quality-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.label })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><BackofficeTag tone={labelTone(item.label)}>{labelText(t, item.label)}</BackofficeTag><span className="font-mono text-xs text-slate-500 dark:text-slate-400">{item.label}</span></div></div><div className="text-sm font-semibold text-slate-700 md:text-right dark:text-slate-200">{formatNumber(item.count)}</div></button>; })}
-                {qualityIssues.length ? null : <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.agent_feedback.no_quality_issues', {}, 'No quality issues in this window.')} description={t('admin.agent_feedback.no_quality_issues_desc', {}, 'The selected scope has no low-quality feedback labels that require evidence review.')} />}
-              </div>
-              {qualityIssues.length ? <div id="feedback-quality-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
-                {selectedQualityIssue ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.selected_issue', {}, 'Selected issue')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{labelText(t, selectedQualityIssue.label)}</h3><p className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">{selectedQualityIssue.label}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.events', {}, 'Events')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedQualityIssue.count)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_rate', {}, 'Share of feedback')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatPercent(data.eventsTotal ? selectedQualityIssue.count / data.eventsTotal : 0)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.agent_feedback.issue_scope', {}, 'Current scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{siteIdFilter || t('admin.agent_feedback.all_sites', {}, 'All sites')} · {windowHours}h</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.agent_feedback.issue_boundary', {}, 'Cloud summarizes this metadata for evaluation only. Approval, preflight, and final writes remain local to WordPress.')}</p></div> : null}
-              </div> : null}
-            </div>
-          </BackofficeSectionPanel>
-
-          <BackofficeSectionPanel className="overflow-hidden p-0">
-            <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800 md:px-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.agent_feedback.scenarios_label', {}, 'Scenarios')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                {t('admin.agent_feedback.scenarios_title', {}, 'Runtime and surface quality')}
-              </h2>
-            </div>
+          <BackofficeDisclosure summary={t('admin.agent_feedback.scenarios_title', {}, 'Runtime and surface quality')}>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
+              <table className="w-full min-w-[68rem] divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
                 <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
                   <tr>
                     <th className="px-5 py-3 text-left font-semibold">{t('admin.agent_feedback.runtime', {}, 'Runtime')}</th>
@@ -642,24 +664,24 @@ function AgentFeedbackQualityDashboard() {
                   {data.scenarios.map((scenario) => (
                     <tr key={`${scenario.sourceRuntime}:${scenario.localSurface}`} className="bg-white/55 dark:bg-slate-950/20">
                       <td className="px-5 py-3">
-                        <BackofficeIdentifier value={scenario.sourceRuntime || t('common.unknown')} />
+                        <BackofficeIdentifier full className="break-all whitespace-normal" value={scenario.sourceRuntime || t('common.unknown')} />
                       </td>
                       <td className="px-5 py-3">
-                        <BackofficeIdentifier value={scenario.localSurface || t('common.unknown')} />
+                        <BackofficeIdentifier full className="break-all whitespace-normal" value={scenario.localSurface || t('common.unknown')} />
                       </td>
                       <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">
                         {formatNumber(scenario.eventsTotal)}
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <BackofficeTag tone={scenario.acceptedRate >= 0.5 ? 'success' : 'warning'}>
-                          {formatPercent(scenario.acceptedRate)}
+                        <BackofficeTag tone="neutral">
+                          {formatPercent(scenario.acceptedRate, scenario.eventsTotal)}
                         </BackofficeTag>
                       </td>
                       <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">
-                        {formatPercent(scenario.evidenceWeakRate)}
+                        {formatPercent(scenario.evidenceWeakRate, scenario.eventsTotal)}
                       </td>
                       <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">
-                        {formatPercent(scenario.wrongNextStepRate)}
+                        {formatPercent(scenario.wrongNextStepRate, scenario.eventsTotal)}
                       </td>
                       <td className="px-5 py-3 text-right">
                         <div className="flex flex-wrap justify-end gap-1.5">
@@ -675,15 +697,12 @@ function AgentFeedbackQualityDashboard() {
                 </tbody>
               </table>
             </div>
-          </BackofficeSectionPanel>
+          </BackofficeDisclosure>
 
-          <div className="grid gap-5 xl:grid-cols-3">
-            <BackofficeSectionPanel className="space-y-4">
+          <BackofficeDisclosure summary={t('admin.agent_feedback.distributions', {}, 'Feedback labels, sources and hourly distribution')} contentClassName="grid gap-5 xl:grid-cols-3">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.labels_label', {}, 'Labels')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.labels_title', {}, 'Feedback label mix')}
                 </h2>
               </div>
@@ -695,14 +714,11 @@ function AgentFeedbackQualityDashboard() {
                   </BackofficeStackCard>
                 ))}
               </div>
-            </BackofficeSectionPanel>
+            </section>
 
-            <BackofficeSectionPanel className="space-y-4">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.sources_label', {}, 'Sources')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.sources_title', {}, 'Runtime and surface counts')}
                 </h2>
               </div>
@@ -724,19 +740,17 @@ function AgentFeedbackQualityDashboard() {
                   ))}
                 </div>
               </div>
-            </BackofficeSectionPanel>
+            </section>
 
-            <BackofficeSectionPanel className="space-y-4">
+            <section className="min-w-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.agent_feedback.trend_label', {}, 'Trend')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                <h2 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.agent_feedback.trend_title', {}, 'Hourly buckets')}
                 </h2>
               </div>
-              <div className="space-y-2">
-                {data.qualityTrend.slice(-8).map((point) => (
+              <p className="text-xs text-slate-500">{t('admin.agent_feedback.trend_scope', { count: formatNumber(data.qualityTrend.length) })}</p>
+              <div className="max-h-[32rem] space-y-2 overflow-y-auto">
+                {data.qualityTrend.map((point) => (
                   <BackofficeStackCard key={point.bucket}>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-semibold text-slate-950 dark:text-white">{trendBucketLabel(point.bucket)}</span>
@@ -755,6 +769,7 @@ function AgentFeedbackQualityDashboard() {
                       <span>
                         {t('admin.agent_feedback.trend_rejected', { count: formatNumber(point.rejected) }, 'Rejected {{count}}')}
                       </span>
+                      <span>{t('admin.agent_feedback.trend_other_outcomes', { ignored: formatNumber(point.ignored), expired: formatNumber(point.expired), blocked: formatNumber(point.blocked) })}</span>
                       <span>
                         {t('admin.agent_feedback.trend_evidence', { count: formatNumber(point.evidenceWeak) }, 'Evidence {{count}}')}
                       </span>
@@ -765,8 +780,8 @@ function AgentFeedbackQualityDashboard() {
                   </BackofficeStackCard>
                 ))}
               </div>
-            </BackofficeSectionPanel>
-          </div>
+            </section>
+          </BackofficeDisclosure>
         </>
       ) : null}
 

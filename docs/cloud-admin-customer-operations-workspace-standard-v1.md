@@ -177,7 +177,42 @@ but they must not dominate the default work queue. The backend must keep the
 global sort bounded and fail closed when the supported queue population is
 exceeded instead of performing unbounded enrichment.
 
-### 3.2 Commercial catalogs
+### 3.2 Customer evidence and follow-up rules
+
+- Customer labels use a valid `metadata.operator_display_name`, then the customer
+  name, then a localized unnamed label. Opaque Account IDs remain supporting
+  evidence. Directory, service queue, subscription queue, and details share this
+  rule; operational searches include the operator label.
+- Statistics maintenance covers currently owned, non-archived sites. Historical
+  site associations remain readable, but do not create current missing-statistics
+  or missing-key work. Current site and key issues take priority over statistics.
+- A missing or stale usage snapshot is a statistics task, not evidence of payment
+  failure or denied access. Free accounts also have subscription records; a
+  period end alone is not proof of a payment obligation. Subscription coverage
+  conclusions do not certify login, resource capacity, or runtime health.
+- Low AI credits can lead to existing top-up options. Resource limits or missing
+  site access lead to quota and site evidence; adding credits does not repair
+  those conditions. Missing evidence remains unknown rather than a healthy zero.
+- `active_api_key_sites` measures sites with active keys / bound sites, not
+  consumed capacity. Complete coverage (including 1/1) is healthy; use its
+  explicit coverage status instead of applying the 80%/100% capacity thresholds.
+  Entry warnings, metric colors, and detail-row badges share one presentation
+  classification. Preserve real capacity pressure and explicit coverage gaps.
+- A quota warning must identify its item and current values before the detail
+  tabs, including when the current tab contains healthy resources. Highlight
+  affected rows with text and a matching status. Do not show a warning header
+  over an unexplained all-normal table. If the server summary warns without an
+  identified item, state that the cause is unresolved and offer a bounded read
+  refresh; do not invent a cause or dismiss the server warning.
+- Missing or conflicting owner identity follows this sequence: confirm the
+  intended owner and login email; have an authorized maintainer reconcile the
+  existing Principal and owner Membership using the identity authority's
+  procedures; refresh customer access evidence; ask the customer to verify Portal
+  login; return to Service status. This guidance grants no ownership or restore
+  authority and does not authorize creating a replacement customer. Technical
+  accounts may intentionally have no customer login.
+
+### 3.3 Commercial catalogs
 
 `/admin/plans` owns package definitions, package limits, release state, and
 package-scoped subscription follow-up. `/admin/credit-packs` owns purchasable

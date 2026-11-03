@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
@@ -87,6 +87,96 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
+
+    def has_other_post_root(self, *, site_id: str, source_type: str, source_id: int) -> bool:
+        """Comments have a numeric parent only; do not guess between post and page."""
+        other_type = "page" if source_type == "post" else "post"
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            if (
+                self.session.scalar(
+                    select(model.source_id)
+                    .where(
+                        model.site_id == site_id,
+                        model.source_type == other_type,
+                        model.source_id == source_id,
+                    )
+                    .limit(1)
+                )
+                is not None
+            ):
+                return True
+        return False
+
+    def associated_comment_ids(self, *, site_id: str, parent_post_id: int) -> list[int]:
+        # Include orphan chunks: document-only enumeration is not physical cleanup.
+        identities: set[int] = set()
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            identities.update(
+                self.session.scalars(
+                    select(model.source_id).where(
+                        model.site_id == site_id,
+                        model.source_type == "comment",
+                        model.parent_post_id == parent_post_id,
+                    )
+                )
+            )
+        return sorted(identities)
+
+    def source_presence(
+        self, *, site_id: str, source_items: list[tuple[str, int]]
+    ) -> list[dict[str, Any]]:
+        """Physical SQL storage only. No vector read or WordPress-publicity claim."""
+        parents = [
+            source_id for source_type, source_id in source_items if source_type in ("post", "page")
+        ]
+        counts: list[dict[tuple[str, int], tuple[int, int]]] = []
+        associated: list[dict[int, int]] = []
+        for model in (SiteKnowledgeDocument, SiteKnowledgeChunk):
+            rows = self.session.execute(
+                select(
+                    model.source_type,
+                    model.source_id,
+                    func.count(),
+                    func.sum(case((model.post_status == "publish", 1), else_=0)),
+                )
+                .where(
+                    model.site_id == site_id,
+                    tuple_(model.source_type, model.source_id).in_(source_items),
+                )
+                .group_by(model.source_type, model.source_id)
+            ).all()
+            counts.append({(row[0], row[1]): (int(row[2]), int(row[3])) for row in rows})
+            linked = (
+                self.session.execute(
+                    select(model.parent_post_id, func.count())
+                    .where(
+                        model.site_id == site_id,
+                        model.source_type == "comment",
+                        model.parent_post_id.in_(parents),
+                    )
+                    .group_by(model.parent_post_id)
+                ).all()
+                if parents
+                else []
+            )
+            associated.append({int(row[0]): int(row[1]) for row in linked})
+        return [
+            {
+                "source_type": source_type,
+                "source_id": source_id,
+                "document_present": counts[0].get((source_type, source_id), (0, 0))[0] > 0,
+                "stored_chunk_count": counts[1].get((source_type, source_id), (0, 0))[0],
+                "public_document_present": counts[0].get((source_type, source_id), (0, 0))[1] > 0,
+                "public_chunk_count": counts[1].get((source_type, source_id), (0, 0))[1],
+                "associated_comment_document_count": associated[0].get(source_id, 0)
+                if source_type in ("post", "page")
+                else 0,
+                "associated_comment_stored_chunk_count": associated[1].get(source_id, 0)
+                if source_type in ("post", "page")
+                else 0,
+            }
+            for source_type, source_id in source_items
+        ]
 
     def list_public_source_types(self, site_id: str) -> list[str]:
         return [
@@ -322,6 +412,7 @@ class SiteKnowledgeRepository:
         self,
         site_ids: list[str],
         *,
+        source_type: str | None = None,
         exclude_source_type: str | None = None,
     ) -> list[dict[str, object]]:
         normalized_site_ids = list(
@@ -332,6 +423,8 @@ class SiteKnowledgeRepository:
         if not normalized_site_ids:
             return []
         join_condition = SiteKnowledgeDocument.site_id == Site.site_id
+        if source_type is not None:
+            join_condition &= SiteKnowledgeDocument.source_type == source_type
         if exclude_source_type is not None:
             join_condition &= SiteKnowledgeDocument.source_type != exclude_source_type
         statement = (
@@ -399,12 +492,20 @@ class SiteKnowledgeRepository:
         site_id: str,
         *,
         source_types: list[str] | None = None,
+        source_id: int | None = None,
+        embedding_input: str | None = None,
     ) -> list[str]:
         statement = select(SiteKnowledgeChunk.embedding_model).where(
             SiteKnowledgeChunk.site_id == site_id
         )
         if source_types:
             statement = statement.where(SiteKnowledgeChunk.source_type.in_(source_types))
+        if source_id is not None:
+            statement = statement.where(SiteKnowledgeChunk.source_id == source_id)
+        if embedding_input is not None:
+            statement = statement.where(
+                SiteKnowledgeChunk.metadata_json["embedding_input"].as_string() == embedding_input
+            )
         return [
             str(model)
             for model in self.session.scalars(
@@ -506,6 +607,10 @@ class SiteKnowledgeRepository:
                 SiteKnowledgeDocument.post_id,
                 SiteKnowledgeDocument.title,
                 SiteKnowledgeDocument.metadata_json,
+                SiteKnowledgeDocument.url,
+                SiteKnowledgeDocument.content_hash,
+                SiteKnowledgeDocument.modified_gmt,
+                SiteKnowledgeDocument.source_type,
             ).where(
                 SiteKnowledgeDocument.site_id == site_id,
                 SiteKnowledgeDocument.post_id.in_(normalized_ids),
@@ -517,6 +622,10 @@ class SiteKnowledgeRepository:
             int(row[0]): {
                 "title": str(row[1] or ""),
                 **(row[2] if isinstance(row[2], dict) else {}),
+                "url": str(row[3] or ""),
+                "content_hash": str(row[4] or ""),
+                "modified_gmt": str(row[5] or ""),
+                "source_type": str(row[6] or ""),
             }
             for row in rows
         }
@@ -525,6 +634,26 @@ class SiteKnowledgeRepository:
             for post_id in normalized_ids
             if post_id in metadata_by_post_id
         }
+
+    def grounding_metadata_for_post_ids(
+        self, *, site_id: str, post_ids: list[int],
+    ) -> dict[int, dict[str, Any]]:
+        metadata = self.reference_metadata_for_post_ids(site_id=site_id, post_ids=post_ids)
+        if not metadata:
+            return {}
+        chunks = self.session.scalars(select(SiteKnowledgeChunk).where(
+            SiteKnowledgeChunk.site_id == site_id,
+            SiteKnowledgeChunk.post_id.in_(list(metadata)),
+            SiteKnowledgeChunk.source_type.in_(("post", "page")),
+        ))
+        for chunk in chunks:
+            source = metadata[chunk.post_id]
+            if (
+                chunk.content_hash == source["content_hash"]
+                and chunk.source_type == source["source_type"]
+            ):
+                source.setdefault("chunks", {})[chunk.chunk_index] = chunk.chunk_text
+        return metadata
 
     def last_sync_at(self, site_id: str) -> datetime | None:
         return self.session.scalar(

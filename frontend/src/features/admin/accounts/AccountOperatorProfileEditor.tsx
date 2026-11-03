@@ -9,6 +9,24 @@ type AccountOperatorProfileEditorProps = {
   controller: AccountOperatorProfileController;
 };
 
+export function AccountOperatorProfileRecovery({ controller }: { controller: AccountOperatorProfileController }) {
+  const { t } = useLocale();
+  return (
+    <>
+    {controller.intent ? (
+      <div role="status" data-ui="customer-profile-unconfirmed" className="space-y-2 text-sm text-amber-800 dark:text-amber-200">
+        <p>{t('admin.customer_confirmation.profile_unconfirmed')}</p>
+        <p className="break-all">{t('admin.customer_confirmation.operation')}: {controller.intent.operation_id}</p>
+        <div role="region" aria-label={t('admin.customer_confirmation.submitted_values')} tabIndex={0} className="max-h-24 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{controller.intent.values.operator_display_name} · {controller.intent.values.operator_note}</div>
+        {controller.error ? <p role="alert">{controller.error}</p> : null}
+        <button type="button" className="btn btn-secondary" disabled={controller.isSaving} onClick={() => void controller.confirm()}>{t('admin.customer_confirmation.read_result')}</button>
+      </div>
+    ) : null}
+    {controller.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.customer_confirmation.storage_blocked')}</p> : null}
+    </>
+  );
+}
+
 export function AccountOperatorProfileEditor({
   accountTitle,
   controller,
@@ -52,6 +70,7 @@ export function AccountOperatorProfileEditor({
             )}
           </span>
           <input
+            disabled={controller.locked}
             type="text"
             value={controller.values.operator_display_name}
             onChange={(event) =>
@@ -73,6 +92,7 @@ export function AccountOperatorProfileEditor({
             )}
           </span>
           <input
+            disabled={controller.locked}
             type="text"
             value={controller.values.operator_note}
             onChange={(event) =>
@@ -89,7 +109,7 @@ export function AccountOperatorProfileEditor({
         <button
           type="submit"
           className="btn btn-secondary whitespace-nowrap"
-          disabled={controller.isSaving}
+          disabled={controller.locked}
         >
           {controller.isSaving
             ? t('common.saving', {}, 'Saving...')
@@ -100,7 +120,7 @@ export function AccountOperatorProfileEditor({
             {controller.notice}
           </p>
         ) : null}
-        {controller.error ? (
+        {controller.error && !controller.intent ? (
           <p className="text-sm text-red-600 dark:text-red-300 md:col-span-3">
             {controller.error}
           </p>
