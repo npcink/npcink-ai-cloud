@@ -86,6 +86,19 @@ Partial refunds may be recorded as payment evidence, but they must not revoke
 entitlement unless a future contract explicitly defines partial entitlement
 reduction.
 
+Credits have separate semantics by purchase kind:
+
+- A full subscription-order refund cancels the subscription created by that
+  order and supersedes only its entitlement snapshots. It writes no credit
+  ledger refund adjustment because a subscription package is entitlement time,
+  not a purchased credit grant.
+- A credit-pack refund writes one idempotent negative `credit_pack_refund`
+  ledger adjustment proportional to the verified refund amount and increments
+  the related paid grant's refunded amount. Full and partial credit-pack
+  refunds therefore reduce spendable paid credits.
+- A partial subscription refund remains payment evidence only. It does not
+  reduce entitlement or credits automatically.
+
 ## 5. Internal API
 
 The current service-plane API is internal only:
@@ -95,9 +108,12 @@ POST /internal/service/payments/orders
 POST /internal/service/payments/orders/{order_id}/mark-paid
 POST /internal/service/payments/orders/{order_id}/refunds
 POST /internal/service/payments/refunds/{refund_id}/mark-succeeded
+POST /internal/service/payments/refunds/{refund_id}/reconcile
 ```
 
-These routes require internal authentication and idempotency. They are not a
+These routes require internal authentication and idempotency. The reconcile
+route queries the provider using the persisted stable refund reference and
+returns `unknown` when the provider cannot prove settlement. They are not a
 customer checkout surface.
 
 Future customer-facing checkout endpoints may call the same domain services,
@@ -156,6 +172,10 @@ It covers existing Alipay CNY orders; no Portal self-refund surface is added.
   Only verified `succeeded` is shown as a successful refund. The operator can
   then refresh customer entitlement; monetary return still needs their actual
   Alipay acceptance.
+
+Portal self-refund is deliberately outside this contract. Customers have no
+Portal refund route or button; refunds are initiated through the bounded Admin
+surface or an internal service caller.
 
 This source contract authorizes neither production deployment/configuration nor
 an agent-executed real refund. The operator performs the real transaction test.

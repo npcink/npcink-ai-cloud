@@ -1730,12 +1730,14 @@ def test_http_callback_dispatcher_reuses_one_client_across_dispatches(
             request: httpx.Request,
             *,
             follow_redirects: bool,
+            stream: bool,
         ) -> httpx.Response:
             assert str(request.url) == "https://93.184.216.34/reuse"
             assert request.headers["host"] == "example.com"
             assert request.headers["connection"] == "close"
             assert request.extensions["sni_hostname"] == "example.com"
             assert follow_redirects is False
+            assert stream is True
             assert request.headers["X-Npcink-Run-Id"] in {"run-1", "run-2"}
             assert cast(dict[str, object], json.loads(request.content.decode("utf-8")))[
                 "run_id"

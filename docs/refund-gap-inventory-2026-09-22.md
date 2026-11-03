@@ -2,18 +2,20 @@
 
 Status: dated static inventory. 只读代码盘点与契约文档对照；无运行验证、无沙箱操作。行号会漂移，以文件与符号名为准。出处：[next-stage-plan-2026-09-22.md](next-stage-plan-2026-09-22.md) P1。
 
+> **历史盘点提示（2026-11-02）**：本文保留 2026-09-22 的盘点背景，以下“缺口清单”已按当前代码重标状态。当前退款通知分发见 `app/api/routes/open.py`，Admin 入口见 `app/api/routes/commercial_payments_admin.py`，失败状态落库与回调处理见 `app/domain/commercial/mixins/_payment_mixin.py`，对应本地回归见 `tests/api/test_admin_payment_refunds.py`、`tests/api/test_open_payment_notify_routes.py` 和 `tests/domain/test_payment_service.py`。真实支付网关与生产交易仍未验证。
+
 ## 0. 摘要
 
 真实退款（alipay.trade.refund）的网关调用、退款状态机、幂等与并发保护、
-credits 回冲**均已实现且有单元/领域测试覆盖，但从未经过沙箱或生产验证**。
-真正缺失的是四块：退款回调入口、退款对账（refund.query 与对账任务）、失败
-终态路径、以及除内部 service 路由之外的任何发起入口（Portal 无自助、Admin
-无操作界面）。
+credits 回冲、Alipay 退款回调入口和内部 Admin 退款入口均已实现，并有本地
+单元/领域/API 测试覆盖；Provider `refund.query` 对账适配器与有界
+`ops_cadence` 任务已实现并有本地回归，但从未经过沙箱或生产验证。Portal
+自助退款仍明确冻结；订阅退款的 credits 语义已写入活动契约。
 
 ## 1. 已实现（附证据路径）
 
-- 数据模型：`payment_refunds`（状态 requested/succeeded/failed；注意 failed
-  无写入路径）、`payment_events`（退款事件唯一键）、credit ledger 退款
+- 数据模型：`payment_refunds`（状态 requested/unknown/succeeded/failed；网关可判定
+  错误会写入 failed 与 failed_at）、`payment_events`（退款事件唯一键）、credit ledger 退款
   adjustment（幂等键 `credit_pack_refund:{refund_id}`）、
   `paid_credit_grants.refunded_ai_credits` 加 CHECK 封顶——
   `app/core/models.py`、`migrations/versions/20260612_0042_payment_orders_refunds.py`、
@@ -27,25 +29,30 @@ credits 回冲**均已实现且有单元/领域测试覆盖，但从未经过沙
 - 幂等与并发：Idempotency-Key 重放返回既有退款、订单 FOR UPDATE 行锁、
   累计退款上限、退款窗口过期拒绝、已消耗 credit pack 拒退——
   `_payment_mixin.py` 与 `app/adapters/repositories/commercial_*`。
-- 唯一执行入口：`POST /internal/service/payments/orders/{id}/refunds` 与
+- 执行入口：`POST /internal/service/payments/orders/{id}/refunds`、
   `POST /internal/service/payments/refunds/{id}/mark-succeeded`（内部 token +
-  幂等头）——`app/api/routes/service.py`。
+  幂等头），以及按账户列出订单并发起全额退款的
+  `POST /internal/service/admin/accounts/{account_id}/payment-orders/{order_id}/refunds`；
+  Alipay 退款通知入口为 `POST /open/payments/alipay/notify`（启用支付配置后按
+  退款字段分流）——`app/api/routes/service.py`、`app/api/routes/commercial_payments_admin.py`、
+  `app/api/routes/open.py`。
 - 测试：`tests/domain/test_payment_gateways.py`（真实网关 monkeypatch 单测）、
   `test_payment_service.py`、`test_subscription_commerce.py`（部分退款累计、
-  试用退款恢复、窗口过期、已消耗拒退）、`tests/api/test_payment_routes.py`。
+  试用退款恢复、窗口过期、已消耗拒退）、`tests/api/test_payment_routes.py`、
+  `tests/api/test_open_payment_notify_routes.py`、`tests/api/test_admin_payment_refunds.py`。
 
 ## 2. 缺口清单
 
 | # | 缺口 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| 1 | 退款回调入口 | 未实现 | `/open/payments/*` 无退款 notify 路由；`verify_payment_gateway_refund_callback` 已实现但无调用方；open-callback 契约本身未定义退款路径（契约级未定义） |
-| 2 | 退款对账 | 未实现 | 无 `alipay.trade.fastpay.refund.query`/`trade.query`；`ops_cadence` 无网关对账任务；超时 unknown 的退款只能人工排查 |
-| 3 | 失败终态 | 未实现 | `failed` 状态与 `failed_at` 无任何写入路径，无 mark-failed 路由/服务方法 |
+| 1 | 退款回调入口 | 已实现（Alipay） | `/open/payments/alipay/notify` 按退款字段调用 `process_payment_gateway_refund_callback`，完成签名、金额和幂等处理；WeChat 仍是预留未启用 |
+| 2 | 退款对账 | 已实现（本地验证） | `PaymentGatewayProvider.query_refund` 使用稳定 `out_request_no` 调用 `alipay.trade.fastpay.refund.query`；`payment_refund_reconciliation` cadence 以 5 分钟起步指数退避、默认最多 5 次，耗尽保持 `unknown` 并转人工；尚无沙箱/生产证据 |
+| 3 | 失败终态 | 已实现（网关错误路径） | `request_payment_refund` 将可判定网关错误写入 `failed`/`failed_at`，不可判定响应写入 `unknown`；没有独立的人工 mark-failed API |
 | 4 | Portal 自助退款 | 未实现 | 无路由无按钮；terms 页指引用工单提交订单号 |
-| 5 | Admin 运营退款入口 | 未实现 | admin 路由与前端均无退款操作入口（仅退款窗口等合规披露配置） |
+| 5 | Admin 运营退款入口 | 已实现（内部 API） | `POST /internal/service/admin/accounts/{account_id}/payment-orders/{order_id}/refunds` 支持全额退款、权限、幂等和阻断条件；是否提供 Portal 自助 UI 仍是缺口 |
 | 6 | 沙箱/生产验证 | 未执行 | 真实网关仅有 monkeypatch 单测；[local-first-validation-stage-2026-09-21.md](local-first-validation-stage-2026-09-21.md) 明确暂缓且无执行证据 |
-| 7 | 测试空白 | 部分 | 无幂等重放专项测试、无真实网关错误分支测试、无回调端到端（依赖缺口 1） |
-| 8 | 订阅退款 credits 语义 | 未声明 | ai-credit 契约只覆盖 credit pack 退款；订阅套餐退款走订阅撤销/恢复、不写 ledger，契约未声明该语义 |
+| 7 | 测试空白 | 部分 | 已有退款幂等、未知响应、金额校验、Alipay notify 路由和 Admin API 本地测试；仍无真实网关错误响应和沙箱端到端证据 |
+| 8 | 订阅退款 credits 语义 | 已声明（本地回归） | 活动契约明确：订阅全额退款撤销对应订阅且不写 credit ledger adjustment；credit pack 退款按比例写负向 adjustment；部分订阅退款只保留支付证据，不自动减少 entitlement |
 
 ## 3. 与暂缓清单的关系
 
@@ -55,15 +62,17 @@ local-first 计划暂缓"真实支付宝收款、生产支付配置和退款操�
 
 ## 4. 建议的后续任务拆分（不在本任务执行）
 
-1. 契约先行：扩展 cloud-open-callback 边界文档，定义退款 notify 路径与失败
-   终态语义（docs 任务）；
-2. 实现层：退款回调路由 + mark-failed + 对账 cadence 任务（L2，需 M4 证据）；
-3. 入口层：优先做 Admin 运营退款入口（经内部服务发起），Portal 自助退款
-   涉及产品政策后置；
+1. 契约先行：补充退款 notify、unknown/failed 终态和订阅 credits 语义的当前
+   活跃契约，避免只依赖本历史盘点；
+2. 实现层：已增加 Provider `refund.query` 适配器和 `ops_cadence` 对账任务，
+   对 requested/unknown 退款形成有界、可审计的状态收敛；
+3. 入口层：Portal 自助退款仍需产品政策与权限设计，当前 Admin 内部 API 不等同
+   于客户自助入口；
 4. 验证层：沙箱全链路（下单→退款→回调→异常重放→对账）作为商业化
    closeout 的前置证据。
 
 ## 5. 证据状态
 
-development lane、documentation-only、L0；全部结论来自静态阅读，证据路径
-见上；不含任何凭据。
+原始 2026-09-22 盘点属于 development lane、documentation-only、L0；本次
+2026-11-02 修订补充了当前代码与本地测试路径，但仍未执行沙箱、生产网关或
+真实交易验证；不含任何凭据。

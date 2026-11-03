@@ -14,6 +14,11 @@ class CommercialPaymentRepository(CommercialPaymentQueries):
             select(PaymentOrder).where(PaymentOrder.order_id == order_id).with_for_update()
         )
 
+    def get_payment_refund_for_update(self, refund_id: str) -> PaymentRefund | None:
+        return self.session.scalar(
+            select(PaymentRefund).where(PaymentRefund.refund_id == refund_id).with_for_update()
+        )
+
     def create_payment_order(
         self,
         *,

@@ -104,6 +104,38 @@ def test_http_callback_dispatcher_pins_validated_ip_and_preserves_host_and_sni(
     assert requests[0].extensions["sni_hostname"] == "callbacks.magick.test"
 
 
+def test_http_callback_dispatcher_does_not_buffer_success_response_body() -> None:
+    class Body(httpx.SyncByteStream):
+        emitted = 0
+
+        def __iter__(self):
+            for _ in range(128):
+                self.emitted += 65536
+                yield b"x" * 65536
+
+    body = Body()
+    dispatcher = HttpRuntimeCallbackDispatcher(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(204, stream=body))
+    )
+
+    result = dispatcher.dispatch(
+        RuntimeCallbackDispatchRequest(
+            callback_url="https://93.184.216.34/runtime",
+            event="runtime.run.terminal",
+            run_id="run_streaming_callback",
+            trace_id="trace-streaming-callback",
+            site_id="site_streaming_callback",
+            payload={},
+            key_id="",
+            secret="",
+        )
+    )
+
+    assert result.status_code == 204
+    assert body.emitted == 0
+    dispatcher.close()
+
+
 def test_callback_target_selects_a_stable_public_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

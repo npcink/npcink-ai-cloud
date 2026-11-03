@@ -131,6 +131,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "artifact_cleanup",
         "artifact_inventory_reconciliation",
         "payment_order_expiration",
+        "payment_refund_reconciliation",
     }
     assert all(item["outcome"] == "succeeded" for item in first_results)
     usage_rollup = next(item for item in first_results if item["task_id"] == "usage_rollup")
@@ -188,7 +189,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         limit=20,
         include_payload=True,
     )["items"]
-    assert len(first_events) == 11
+    assert len(first_events) == 12
     usage_event = next(
         item for item in first_events if item["event_kind"] == "usage.rollup_cadence"
     )
@@ -255,6 +256,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "artifact_cleanup",
         "artifact_inventory_reconciliation",
         "payment_order_expiration",
+        "payment_refund_reconciliation",
     }
 
     dispose_engine(database_url)
@@ -612,7 +614,7 @@ def test_manual_quality_is_reported_separately_without_stale_health_failure(
 
     monkeypatch.setattr(ops_cadence_module, "_latest_event", event)
     report = build_cadence_summary(settings, now=now)
-    assert report["totals"]["tasks_total"] == 11
+    assert report["totals"]["tasks_total"] == 12
     assert report["totals"]["non_fresh_total"] == 0
     assert report["manual_tasks"] == [
         {

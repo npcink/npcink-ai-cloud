@@ -2071,6 +2071,7 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
         "artifact_cleanup",
         "artifact_inventory_reconciliation",
         "payment_order_expiration",
+        "payment_refund_reconciliation",
     ):
         assert f'"{cadence_task_id}"' in diagnostics_block
     assert "safe_task_id_pattern" not in diagnostics_block

@@ -408,7 +408,7 @@ class RuntimeProviderExecutionService:
                     except ProviderExecutionError as error:
                         self._sanitize_review_error(run, error)
                         last_error_code = error.error_code
-                        last_error_message = error.message
+                        last_error_message = self._safe_error_message(run, error.message)
                         taxonomy = get_error_taxonomy(error.error_code)
                         if allow_fallback and taxonomy.fallback_eligible:
                             break
@@ -458,7 +458,7 @@ class RuntimeProviderExecutionService:
                         else (
                             VISION_PROVIDER_ERROR_MESSAGE
                             if run.execution_kind == "vision"
-                            else error.message
+                            else self._safe_error_message(run, error.message)
                         )
                     )
                     taxonomy = get_error_taxonomy(error.error_code)
@@ -485,7 +485,7 @@ class RuntimeProviderExecutionService:
                 )
                 if not decision.accepted:
                     last_error_code = decision.error_code
-                    last_error_message = decision.error_message
+                    last_error_message = self._safe_error_message(run, decision.error_message)
                     self._record_attempt_result(
                         repository=repository,
                         run=run,
@@ -539,7 +539,7 @@ class RuntimeProviderExecutionService:
                         repository,
                         run,
                         error_code=error.error_code,
-                        error_message=error.message,
+                        error_message=self._safe_error_message(run, error.message),
                         provider_id=candidate.provider_id,
                         model_id=candidate.model_id,
                         instance_id=candidate.instance_id,
@@ -608,6 +608,17 @@ class RuntimeProviderExecutionService:
             ),
             usage_context=error.usage_context,
         )
+
+    @staticmethod
+    def _safe_error_message(run: RunRecord, message: str) -> str:
+        """Keep payload text out of durable/public errors for no-store runs."""
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        if (
+            str(policy.get("storage_mode") or "") == "no_store"
+            or run.data_classification in {"pii", "secret"}
+        ):
+            return "runtime execution failed"
+        return message
 
     def _record_attempt_result(
         self,

@@ -35,7 +35,6 @@ class AgentFeedbackService:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         source_runtime = str(payload.get("source_runtime") or "agent").strip()
-        local_outcome = str(payload.get("local_outcome") or "").strip()
         labels = self._string_list(payload.get("feedback_labels"))
         event_payload = {
             **payload,
@@ -78,15 +77,20 @@ class AgentFeedbackService:
             event_id = int(event.id)
             created_at = event.created_at
 
+        stored_payload = (
+            event.payload_json if isinstance(event.payload_json, dict) else event_payload
+        )
+        stored_labels = self._string_list(stored_payload.get("feedback_labels"))
+
         return {
             "artifact_type": "cloud_agent_feedback_receipt",
-            "contract_version": str(payload.get("contract_version") or ""),
+            "contract_version": str(stored_payload.get("contract_version") or ""),
             "feedback_event_id": event_id,
             "site_id": site_id,
-            "agent_id": str(payload.get("agent_id") or ""),
-            "source_runtime": source_runtime,
-            "local_outcome": local_outcome,
-            "feedback_labels": labels,
+            "agent_id": str(stored_payload.get("agent_id") or ""),
+            "source_runtime": str(stored_payload.get("source_runtime") or "agent"),
+            "local_outcome": str(stored_payload.get("local_outcome") or ""),
+            "feedback_labels": stored_labels,
             "accepted_for_eval": True,
             "quality_rollup_candidate": True,
             "production_mutation": False,
@@ -138,8 +142,12 @@ class AgentFeedbackService:
             self._increment(outcomes, outcome)
             self._increment(source_runtimes, source_runtime)
             self._increment(local_surfaces, local_surface)
-            if source_runtime == "model_flow_smoke" or local_surface == "admin_preview_smoke":
+            is_engineering = (
+                source_runtime == "model_flow_smoke" or local_surface == "admin_preview_smoke"
+            )
+            if is_engineering:
                 engineering_total += 1
+                continue
             # Impressions remain raw operational evidence, never quality outcomes.
             action_id = str(payload.get("source_action_id") or "").strip()
             if (
@@ -206,7 +214,7 @@ class AgentFeedbackService:
             "media_quality": self._media_quality_summary(events),
             "recommendation_quality": self._recommendation_quality_summary(events),
             "rates": {
-                "accepted_rate": self._rate(
+                "accepted_rate": self._quality_rate(
                     quality_outcomes.get("accepted", 0)
                     + quality_outcomes.get("edited_before_accept", 0),
                     quality_total,
@@ -740,6 +748,12 @@ class AgentFeedbackService:
     def _rate(count: int, total: int) -> float:
         if total <= 0:
             return 0.0
+        return round(count / total, 4)
+
+    @staticmethod
+    def _quality_rate(count: int, total: int) -> float | None:
+        if total <= 0:
+            return None
         return round(count / total, 4)
 
     @staticmethod
