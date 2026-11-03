@@ -1,8 +1,8 @@
 # 退款能力缺口盘点（2026-09-22）
 
-Status: dated static inventory. 只读代码盘点与契约文档对照；无运行验证、无沙箱操作。行号会漂移，以文件与符号名为准。出处：[next-stage-plan-2026-09-22.md](next-stage-plan-2026-09-22.md) P1。
+Status: dated static inventory with dated follow-up receipts. 原始盘点为只读代码与契约对照；后续运行证据见文末，无沙箱交易。行号会漂移，以文件与符号名为准。出处：[next-stage-plan-2026-09-22.md](next-stage-plan-2026-09-22.md) P1。
 
-> **历史盘点提示（2026-11-02）**：本文保留 2026-09-22 的盘点背景，以下“缺口清单”已按当前代码重标状态。当前退款通知分发见 `app/api/routes/open.py`，Admin 入口见 `app/api/routes/commercial_payments_admin.py`，失败状态落库与回调处理见 `app/domain/commercial/mixins/_payment_mixin.py`，对应本地回归见 `tests/api/test_admin_payment_refunds.py`、`tests/api/test_open_payment_notify_routes.py` 和 `tests/domain/test_payment_service.py`。真实支付网关与生产交易仍未验证。
+> **历史盘点提示（2026-11-03 更新）**：本文保留 2026-09-22 的盘点背景，以下“缺口清单”已按当前代码重标状态。当前退款通知分发见 `app/api/routes/open.py`，Admin 入口见 `app/api/routes/commercial_payments_admin.py`，失败状态落库与回调处理见 `app/domain/commercial/mixins/_payment_mixin.py`，对应本地回归见 `tests/api/test_admin_payment_refunds.py`、`tests/api/test_open_payment_notify_routes.py` 和 `tests/domain/test_payment_service.py`。退款交易成功链路仍未验证；2026-11-03 的只读网关探测失败及操作者后续安排见文末。
 
 ## 0. 摘要
 
@@ -50,8 +50,8 @@ credits 回冲、Alipay 退款回调入口和内部 Admin 退款入口均已实�
 | 3 | 失败终态 | 已实现（网关错误路径） | `request_payment_refund` 将可判定网关错误写入 `failed`/`failed_at`，不可判定响应写入 `unknown`；没有独立的人工 mark-failed API |
 | 4 | Portal 自助退款 | 未实现 | 无路由无按钮；terms 页指引用工单提交订单号 |
 | 5 | Admin 运营退款入口 | 已实现（内部 API） | `POST /internal/service/admin/accounts/{account_id}/payment-orders/{order_id}/refunds` 支持全额退款、权限、幂等和阻断条件；是否提供 Portal 自助 UI 仍是缺口 |
-| 6 | 沙箱/生产验证 | 未执行 | 真实网关仅有 monkeypatch 单测；[local-first-validation-stage-2026-09-21.md](local-first-validation-stage-2026-09-21.md) 明确暂缓且无执行证据 |
-| 7 | 测试空白 | 部分 | 已有退款幂等、未知响应、金额校验、Alipay notify 路由和 Admin API 本地测试；仍无真实网关错误响应和沙箱端到端证据 |
+| 6 | 沙箱/生产交易验证 | 操作者暂缓 | 2026-11-03 明确由操作者在生产环境再做；本轮仅执行一次真实只读查询，响应缺少可验签签名，未通过网关验收，也未发生退款 |
+| 7 | 测试空白 | 部分 | 已有退款幂等、未知响应、金额校验、Alipay notify 路由和 Admin API 回归，2026-11-03 在 M4 纳入 232 项定向回归；有一次真实查询的缺失签名失败证据，仍无可验签的真实退款成功与端到端证据 |
 | 8 | 订阅退款 credits 语义 | 已声明（本地回归） | 活动契约明确：订阅全额退款撤销对应订阅且不写 credit ledger adjustment；credit pack 退款按比例写负向 adjustment；部分订阅退款只保留支付证据，不自动减少 entitlement |
 
 ## 3. 与暂缓清单的关系
@@ -76,3 +76,13 @@ local-first 计划暂缓"真实支付宝收款、生产支付配置和退款操�
 原始 2026-09-22 盘点属于 development lane、documentation-only、L0；本次
 2026-11-02 修订补充了当前代码与本地测试路径，但仍未执行沙箱、生产网关或
 真实交易验证；不含任何凭据。
+
+### 2026-11-03 后续状态
+
+M4 已验收 PR #1358；该运行证据与真实支付交易验证独立。
+一次 `alipay.trade.fastpay.refund.query` 正式网关只读请求返回缺少签名的响应，
+应用校验报告 `service.alipay_response_signature_missing`；没有发起支付或退款，
+没有账务写入，也没有把它登记为退款成功或已验签业务拒绝。
+操作者随后明确“支付相关的功能我生产环境再做”，本轮已停止支付验证。
+生产发布和实际交易不因此获得代理操作授权。
+详情见 [M4 后续验收记录](history/engineering/2026/runtime-audit-m4-acceptance-2026-11-03.md)。
