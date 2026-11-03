@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -178,3 +179,82 @@ def test_concurrent_fetch_change_stops_candidate_creation(
         helper.prepare(root, **inputs, apply=True)
     assert git(root, "rev-parse", tracking_ref) == replacement
     assert git(root, "for-each-ref", f"refs/heads/{inputs['branch']}") == ""
+
+
+def test_named_omitted_patches_restore_the_complete_reviewed_baseline(helper, history, tmp_path):
+    root, inputs = history
+    baseline = inputs["equivalent_master"]
+    initial = git(root, "rev-parse", f"{baseline}^")
+    production = git(
+        root, "commit-tree", f"{initial}^{{tree}}", "-p", initial, "-m", "isolated release"
+    )
+    git(root, "update-ref", "refs/remotes/origin/production", production)
+    inputs["production"] = production
+    path = tmp_path / "restoration.json"
+    receipt = {
+        "schema": "npcink.production_baseline_restoration.v1",
+        "production_sha": production,
+        "master_baseline_sha": baseline,
+        "omitted_commits": [baseline],
+    }
+    path.write_text(json.dumps(receipt))
+    before = git(root, "status", "--porcelain")
+    result = helper.prepare(root, **inputs, restoration_file=path, apply=True)
+    assert result["baseline_restoration"]["restored_tree"] == git(
+        root, "rev-parse", f"{baseline}^{{tree}}"
+    )
+    assert git(root, "rev-parse", f"{result['candidate_sha']}^{{tree}}") == git(
+        root, "rev-parse", f"{inputs['source']}^{{tree}}"
+    )
+    assert git(root, "status", "--porcelain") == before
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-patch",
+        "duplicate",
+        "foreign",
+        "unique-production",
+        "wrong-baseline",
+        "wrong-production",
+    ],
+)
+def test_restoration_cannot_discard_unexplained_production_changes(helper, history, tmp_path, case):
+    root, inputs = history
+    baseline = inputs["equivalent_master"]
+    initial = git(root, "rev-parse", f"{baseline}^")
+    production = git(
+        root, "commit-tree", f"{initial}^{{tree}}", "-p", initial, "-m", "isolated release"
+    )
+    if case == "unique-production":
+        git(root, "switch", "--detach", production)
+        (root / "protection.txt").write_text("production-only security fix\n")
+        git(root, "commit", "-qam", "production-only protection")
+        production = git(root, "rev-parse", "HEAD")
+    git(root, "update-ref", "refs/remotes/origin/production", production)
+    inputs["production"] = production
+    receipt = {
+        "schema": "npcink.production_baseline_restoration.v1",
+        "production_sha": production,
+        "master_baseline_sha": baseline,
+        "omitted_commits": [baseline],
+    }
+    if case == "missing-patch":
+        receipt["omitted_commits"] = []
+    elif case == "duplicate":
+        receipt["omitted_commits"] = [baseline, baseline]
+    elif case == "foreign":
+        receipt["omitted_commits"] = [inputs["source"]]
+    elif case == "wrong-baseline":
+        receipt["master_baseline_sha"] = initial
+    elif case == "wrong-production":
+        receipt["production_sha"] = initial
+    path = tmp_path / "restoration.json"
+    path.write_text(json.dumps(receipt))
+    before = git(root, "status", "--porcelain")
+    refs = git(root, "for-each-ref", "--format=%(refname) %(objectname)")
+    with pytest.raises(helper.IntegrationError):
+        helper.prepare(root, **inputs, restoration_file=path, apply=True)
+    assert git(root, "status", "--porcelain") == before
+    assert git(root, "for-each-ref", "--format=%(refname) %(objectname)") == refs

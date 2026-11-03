@@ -1,0 +1,13 @@
+{
+  "schema": "npcink.production_baseline_recovery.v1",
+  "repository": "npcink/npcink-ai-cloud",
+  "installed_sha": "b8cc6049da7d1c33cbfffc9f8e5521f332a1adb5",
+  "installed_tree": "7e442d74579d4eeb0a7d97f514fa8ca3e3af8347",
+  "manifest_sha256": "cbcff299459647277eee19b35a5fee39c721246386ae71c0945897fddad2bb3f",
+  "observation_sha256": "084baeacde19cd950d556ac4cf60ba3a08f93b92220ebe9af12a60ddb5e56827",
+  "workflow_run_id": 39122857578,
+  "workflow_run_attempt": 1,
+  "workflow_updated_at": "2026-10-18T11:24:58Z",
+  "observed_at_utc": "2026-11-03T10:42:34.630481Z",
+  "expires_at_utc": "2026-11-10T10:42:34.630481Z"
+}

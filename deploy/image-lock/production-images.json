@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-10-27T05:44:00Z",
-  "resolved_from_revision": "e520b81897fc31a4c9f0046f6112dccdd8b71529",
+  "resolved_at_utc": "2026-11-03T10:47:13.874788Z",
+  "resolved_from_revision": "b98fbbc25c9f082664a02ff04f655c06cc604380",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -14,10 +14,11 @@
     },
     {
       "key": "python_runtime",
+      "python_version": "3.14.10",
       "kind": "dockerfile_base",
       "tag": "python:3.14-alpine",
-      "digest": "sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
-      "reference": "python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+      "digest": "sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2",
+      "reference": "python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2",
       "source_file": "Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -146,7 +147,7 @@
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",
     "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
-    "authoritative_not_affected_sha256": "da54246cb9f61be6cb00d8b123f683f1f3aef55cc39132539cfde1b1ad9b7a36",
+    "authoritative_not_affected_sha256": "4638310e64415f4b2961f6ddcaa8a5743873235d086a320bdb7f71a1719bbdfb",
     "generated_artifacts_must_not_be_committed": true
   }
 }

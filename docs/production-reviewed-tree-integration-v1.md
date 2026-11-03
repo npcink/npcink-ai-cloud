@@ -10,11 +10,26 @@ merge may conflict on historical files outside the actual release delta.
 Do not resolve those files by guessing, rewriting branches, changing merge
 protection, or merging accumulated production history back into master.
 
-This bounded lane is available only when the **entire current production tree**
-equals a master ancestor of the frozen reviewed release source. That equality
-proves no production-only source protection is being discarded. If it does not
-hold, stop: classify and forward-port each production-only difference through
-a separate reviewed fix before using this lane.
+The ordinary lane requires the **entire current production tree** to equal a
+master ancestor of the frozen reviewed release source. That equality proves no
+production-only source protection is being discarded. If it does not hold,
+classify the differences separately. Unexplained production-only changes must
+be forward-ported through a reviewed fix before continuing.
+
+An isolated release that deliberately omitted master commits may instead supply
+`--restoration-file <reviewed-receipt.json>`. The receipt uses schema
+`npcink.production_baseline_restoration.v1`, exact `production_sha` and
+`master_baseline_sha`, and an ordered `omitted_commits` list of 1–20 unique full
+SHAs. Every commit must be a single-parent ancestor of the historical master
+baseline, in ancestry order. The tool applies their binary patches without
+three-way conflict resolution to a temporary index loaded from production.
+The resulting **whole tree** must equal that master baseline. Missing patches,
+foreign commits, conflicts or any residual production-only protection stop
+before branch creation. No path wildcard or force-equivalence switch exists.
+
+Review the original omitted PRs and the restoration receipt as a separate
+release-preparation change. This proves the historical difference exactly;
+the final source still needs its own review, CI and production authorization.
 
 ## Prepare and review
 
@@ -22,6 +37,8 @@ a separate reviewed fix before using this lane.
    reviewed master SHA, equivalent master baseline SHA, exact changed-path list,
    master CI receipt, and rollback plan. A later master commit is a separate
    batch; it must not silently expand this frozen scope.
+   When restoring an isolated baseline, also freeze the reviewed restoration
+   receipt and original omitted PR identities.
 2. Run the tool without `--apply` and inspect the JSON plan:
 
    ```bash

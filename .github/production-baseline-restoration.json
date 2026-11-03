@@ -1,0 +1,13 @@
+{
+  "schema": "npcink.production_baseline_restoration.v1",
+  "production_sha": "16747c401d2d1fc9d07bfbf5c530d3aca4a9cfa4",
+  "master_baseline_sha": "5fa1d47ca356b84ad767003315749890c2f412ab",
+  "omitted_commits": [
+    "65860cc770f11dd436fcd79f2b08d5575fa5cb2b",
+    "b9a173d6f7e1b12730ccaeb30dc2e68d14db9c4c",
+    "36f63e7e992b7aee9fe76c814998ef30a96da0af",
+    "db4baabd189ad4454787972d4157d3a08b15c14f",
+    "878720f53e3c90af96623c921d4b40652fece227",
+    "67a94d6dd19c1671d8e7f468e49d5d569496834f"
+  ]
+}
