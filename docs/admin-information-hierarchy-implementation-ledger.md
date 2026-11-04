@@ -1538,3 +1538,25 @@ human acceptance均未执行。设置完整长流程旧golden的198像素导航�
 通过，翻译契约1942 keys、定向ESLint通过。实际1440PC首页已目检并留存
 `admin-layout-final-overview-1440.png`；浏览器恢复到1440×1050诊断页。
 此后台账文档提交不改变该已验证运行源码候选。
+
+截图基线授权跟进（2026-11-04）：操作者在了解侧栏名称差异后明确要求
+“可以同步修改下吗？”。仅同步服务设置工作台PC的Darwin/Linux两份golden，
+应用内容、常显/按需层级、技术证据入口及查询/保存/草稿行为保持现状，无重复
+内容删除。本次授权仅覆盖已说明的侧栏名称外观，不代表整批人工或生产验收。
+两平台分别使用原生Chromium actual，代理逐图检查actual/diff；Darwin原差异
+198像素，Linux统一回环来源后原差异290像素，明显差异均为“运行观测”名称。
+Linux首次使用host.docker.internal会显示“使用当前访问地址”按钮，已纠正到
+容器内127.0.0.1回环转发再取证，未将该环境状态写入golden；该次日志保留。
+两份golden均来自各自平台的完整actual，未跨平台复制、改阈值或删断言。
+
+原失败的服务设置完整长用例在Darwin与Linux各1项重跑通过，覆盖截图及后续
+脏输入、离开保护、校验、保存失败/成功、单表单、时区及邮件预览键盘行为。
+旧用例附带窄屏断言沿用，不扩大当前PC开发范围。证据目录：
+`/Users/muze/.codex/visualizations/2026/11/04/admin-baseline-sync/`；
+本次通过取代上方“截图仍未通过”的当前状态，原失败记录不追溯改写。
+Darwin runner连接现有M4候选，Linux runner在临时Playwright容器中连接同一
+候选；测试设置保存均为模拟响应。Linux测试源码为`c8c5bcf8`的隔离archive，
+临时Git提交只供receipt采集，不代表仓库/M4源码版本。运行候选仍为
+`53bc8409`，本次只有测试图片与台账，无应用源码同步需求。
+local runner/M4 candidate定向检查通过；GitHub CI、合并、M4 accepted及生产
+均未执行，整批human acceptance仍独立。
