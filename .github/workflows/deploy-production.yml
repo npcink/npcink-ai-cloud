@@ -18,7 +18,7 @@ on:
         default: false
         type: boolean
       certificate_maintenance_confirmation:
-        description: "Only the approved 2026-11-04 release: Defer the renewal dry run for the approved 2026-11-04 release."
+        description: "Only the approved 2026-11-04 retention release: Defer the renewal dry run for the approved 2026-11-04 retention release."
         required: false
         type: string
       finalized_runtime_network_repair:
@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" ]; then
-            test "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" = "Defer the renewal dry run for the approved 2026-11-04 release."
+            test "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" = "Defer the renewal dry run for the approved 2026-11-04 retention release."
           fi
           [[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]
           test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"

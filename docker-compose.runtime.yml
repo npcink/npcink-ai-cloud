@@ -1,5 +1,12 @@
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   redis:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_REDIS_RELEASE_IMAGE:-npcink-ai-cloud-external-redis:prod}
     pull_policy: never
     restart: unless-stopped
@@ -13,6 +20,7 @@ services:
       - cloud-redis-prod:/data
 
   api:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_API_RELEASE_IMAGE:-npcink-ai-cloud-api:prod}
     pull_policy: never
     restart: unless-stopped
@@ -56,6 +64,7 @@ services:
       - cloud-artifacts-prod:/var/lib/npcink-ai-cloud/artifacts
 
   frontend:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_FRONTEND_RELEASE_IMAGE:-npcink-ai-cloud-frontend:prod}
     pull_policy: never
     restart: unless-stopped
@@ -86,6 +95,7 @@ services:
       - ${NPCINK_CLOUD_CONFIG_DIR_HOST:-./shared/config}/frontend:/run/npcink-frontend-config:ro
 
   worker:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}
     pull_policy: never
     restart: unless-stopped
@@ -105,6 +115,7 @@ services:
       - cloud-artifacts-prod:/var/lib/npcink-ai-cloud/artifacts
 
   callback-worker:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_CALLBACK_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}
     pull_policy: never
     restart: unless-stopped
@@ -122,6 +133,7 @@ services:
       - ${NPCINK_CLOUD_CONFIG_DIR_HOST:-./shared/config}:/run/npcink-config:ro
 
   ops-worker:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_OPS_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}
     pull_policy: never
     restart: unless-stopped
@@ -141,6 +153,7 @@ services:
       - cloud-artifacts-prod:/var/lib/npcink-ai-cloud/artifacts
 
   proxy:
+    logging: *bounded-logging
     image: ${NPCINK_CLOUD_PROXY_RELEASE_IMAGE:-npcink-ai-cloud-external-nginx:prod}
     pull_policy: never
     restart: unless-stopped
@@ -169,6 +182,7 @@ services:
         ipv4_address: ${NPCINK_CLOUD_RUNTIME_PROXY_IPV4:-172.28.0.10}
 
   release-one-off:
+    logging: *bounded-logging
     extends:
       service: api
     profiles: ["release-one-off"]

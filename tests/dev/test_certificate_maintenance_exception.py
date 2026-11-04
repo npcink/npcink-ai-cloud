@@ -83,7 +83,14 @@ def test_official_incident_must_still_be_active_and_exact(module):
         module.official_maintenance({})
 
 
-def test_recovered_staging_requires_normal_proof(module, monkeypatch):
+def test_official_status_check_does_not_infer_challenge_success_from_directory(module, monkeypatch):
+    item = {
+        "_id": module.INCIDENT,
+        "datetime_planned_start": "2026-11-03T16:00:00.000Z",
+        "datetime_planned_end": "2026-11-04T21:00:00.000Z",
+    }
+    calls = []
+
     class Response:
         status = 200
 
@@ -94,12 +101,28 @@ def test_recovered_staging_requires_normal_proof(module, monkeypatch):
             pass
 
         def read(self, limit):
-            return b"{}"
+            return json.dumps({"result": {"maintenance": {"active": [item]}}}).encode()
 
-    monkeypatch.setattr(module, "official_maintenance", lambda payload: None)
-    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *a, **k: Response())
-    with pytest.raises(ValueError, match="recovered"):
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", fetch)
+    module.check_official()
+    assert calls == [module.STATUS_URL]
+    item["_id"] = "ended-or-other-maintenance"
+    with pytest.raises(ValueError, match="not active"):
         module.check_official()
+
+
+def test_prior_release_approval_cannot_authorize_retention_release(module, monkeypatch):
+    monkeypatch.setenv(
+        "NPCINK_CLOUD_CERTIFICATE_MAINTENANCE_APPROVAL",
+        "Defer the renewal dry run for the approved 2026-11-04 release.",
+    )
+    monkeypatch.setattr(sys, "argv", ["exception", "--phase", "promotion", "--sha", SHA])
+    with pytest.raises(SystemExit, match="exact maintenance approval required"):
+        module.main()
 
 
 def test_scope_binds_clean_exact_candidate_and_frozen_application(module, monkeypatch):
@@ -128,6 +151,7 @@ def test_no_claim_selects_normal_lane(module, tmp_path):
         ("source_sha", "c" * 40),
         ("source_tree", "d" * 40),
         ("schema", "other"),
+        ("schema", "npcink.certificate_maintenance_exception.v1"),
         ("state", "consumed_before_image_mutation"),
         ("expires_at_epoch", 1),
         ("renewal_dry_run_passed", True),
