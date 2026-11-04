@@ -334,7 +334,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       };
       const contextualItems: AdminCommandItem[] = [
         ...withGroup('admin.nav_group_customer_service', 'Customer Ops', [
-          { href: '/admin/customer-notifications', labelKey: 'admin.notices.title', fallback: 'Customer notices', collapsedLabel: 'CN' },
+          { href: '/admin/customer-notifications', labelKey: 'admin.notices.title', fallback: 'Notices', collapsedLabel: 'N' },
           { href: '/admin/support-requests', labelKey: 'admin.workspace_tab_tickets', fallback: 'Tickets', collapsedLabel: 'TI' },
           { href: '/admin/coverage', labelKey: 'admin.workspace_tab_service_status', fallback: 'Service status', collapsedLabel: 'SO' },
           { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages', collapsedLabel: 'PC' },
