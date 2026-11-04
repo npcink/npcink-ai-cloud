@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 控制生产日志、旧发布制品与运维数据增长 | [生产保留维护规则](production-retention-maintenance-v1.md) — 保护恢复点、有限保留、分批清理与上线边界 |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
 | 接续 Admin 第1–7批功能审计、人工验收与有限清理 | [跨批次收口与验收交接 — 2026-11-03](history/engineering/2026/admin-functional-audit-batches-1-7-closeout-2026-11-03.md) — 58项修复逐项关联PR、契约和反例；第七批无新缺陷；人工/生产状态、Q01与保留工作树分开记录 |
 | 接续A01–E01历史、核销旧PR并查下一步 | [五会话综合对账与接续建议 — 2026-10-30](history/engineering/2026/five-chat-synthesis-and-next-stage-2026-10-30.md) — 精确会话身份、后继交付、证据缺口、价值优先顺序及归档回执；方法见[收尾规范§6](engineering/zero-backlog-closeout-efficiency-standard-v1.md#6-会话历史对账与经验入库)，不是新的生产或功能扩张授权 |
