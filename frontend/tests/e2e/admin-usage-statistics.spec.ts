@@ -66,9 +66,10 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.getByRole('group', { name: /Statistics dimension|统计维度/ })).toBeVisible();
   await expect(page.locator('[data-ui="usage-more-reference"]')).toBeHidden();
   const tabsBox = (await viewTabs.boundingBox())!;
-  const refreshBox = (await toolbar.getByRole('button', { name: /^Refresh$|^刷新$/ }).boundingBox())!;
-  expect(Math.abs(tabsBox.y - refreshBox.y)).toBeLessThan(2);
-  expect(tabsBox.x).toBeGreaterThan(refreshBox.x + refreshBox.width);
+  const refreshBox = (await page.locator('[data-ui="backoffice-page-header"]').getByRole('button', { name: /^Refresh$|^刷新$/ }).boundingBox())!;
+  const headerTitle = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+  expect(Math.abs(headerTitle.y + headerTitle.height / 2 - refreshBox.y - refreshBox.height / 2)).toBeLessThan(2);
+  expect(tabsBox.y).toBeGreaterThan(refreshBox.y + refreshBox.height);
   const dimensionBox = (await page.getByRole('group', { name: /Statistics dimension|统计维度/ }).boundingBox())!;
   const tableBox = (await page.locator('[data-ui="usage-breakdown"]').boundingBox())!;
   expect(tableBox.y - dimensionBox.y - dimensionBox.height).toBeLessThan(24);
@@ -128,7 +129,8 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await testRequest;
   await expect(page).toHaveURL(/records=test/);
   await expect(page.locator('[data-ui="usage-test-scope"]')).toContainText(/Technical validation records|技术验证记录/);
-  await expect(events.locator('code')).toHaveText('validation.technical_monitoring_only');
+  await events.locator('tbody summary').click();
+  await expect(events.locator('tbody dd')).toContainText(['validation.technical_monitoring_only']);
   await page.reload();
   await expect(page.locator('[data-ui="usage-test-scope"]')).toBeVisible();
   await expect(definitions).not.toHaveAttribute('open', '');

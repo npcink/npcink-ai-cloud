@@ -59,7 +59,7 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   const queryEvidence = page.locator('[data-ui="admin-audit-query-evidence"]');
   await expect(directory).toBeVisible();
   await expect(directory.locator('tbody tr')).toHaveCount(1);
-  await expect(queryEvidence).toContainText(/Evidence generated|证据生成时间/i);
+  await expect(page.locator('[data-ui="backoffice-page-freshness"]')).toContainText(/Evidence generated|证据生成时间/i);
   await expect(queryEvidence).toContainText(/1 records returned|返回 1 条记录/i);
   await expect(queryEvidence).toContainText(/Query duration:\s+4\.3 ms|查询耗时:\s+4\.3 ms/i);
   await expect(directory).toContainText(/Link subscription|订阅/i);

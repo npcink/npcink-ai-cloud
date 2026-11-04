@@ -319,6 +319,7 @@ function SubscriptionDetailView({ subscriptionId }: { subscriptionId: string }) 
   return (
     <BackofficePageStack>
       <BackofficePageHeader
+        scope={`${t('common.account')}: ${normalized.accountName || t('admin.accounts.unnamed_customer')} · ${normalized.accountId}`}
         title={t(
           'admin.subscription_detail.title',
           { subscription: packageLabel },

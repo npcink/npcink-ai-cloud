@@ -24,7 +24,7 @@ test('four observation views share time and site scope with one selected tab', a
   await page.waitForTimeout(1200); // Let the chart's initial animation settle before visual review.
   await page.screenshot({ path: testInfo.outputPath('quality-1440.png'), fullPage: true, animations: 'disabled' });
 
-  for (const [label, path] of [[/Media observability|媒体观测/, 'media-observability'], [/Vector observability|向量观测/, 'vector-observability'], [/Usage statistics|使用统计/, 'usage-statistics']] as const) {
+  for (const [label, path] of [[/Media observability|媒体观测/, 'media-observability'], [/Vector observability|向量观测/, 'vector-observability'], [/Runtime observation|运行观测/, 'usage-statistics']] as const) {
     await tabs.getByRole('link', { name: label, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/${path}\\?window=336&site=site-a$`));
     await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1);

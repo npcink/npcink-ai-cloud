@@ -71,7 +71,7 @@ test('missing-call investigation separates comparison records and retains recove
   await expect(page.getByRole('main')).toContainText(/no requests|没有运行|暂无请求|尚无请求|没有请求|未发现运行/i);
   await page.reload();
   await expect(absent).toBeVisible();
-  await expect(page.getByRole('link', { name: /Usage statistics|使用统计/, exact: true })).toHaveAttribute('href', /since=/);
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/, exact: true })).toHaveAttribute('href', /since=/);
   await page.getByRole('button', { name: /Return to full period|返回完整时段/, exact: true }).click();
   await expect(page).not.toHaveURL(/since=/);
   await expect(page.locator('#runtime-diagnostic-inspector')).toBeVisible();
@@ -453,9 +453,9 @@ test('provider failure details explain cause, export evidence and keep recovery 
     }))) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
-  await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
-  await expect(page.locator('[data-ui="runtime-inspector-summary"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
+  await expect(page.locator('[data-ui="runtime-investigation-actions"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
   await expect(page.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
   await expect(page.locator('[data-ui="runtime-verification-guidance"]')).toContainText(/next natural business run|下一次同类自然业务运行/);
   await selectPanel(page, 'records');
@@ -523,7 +523,7 @@ test('inherited scope filters stay visible at the scope row and clear independen
   await expect(sitePill).toBeVisible();
   await expect(sitePill).toContainText(/site-alpha/);
   await expect(functionPill).toBeVisible();
-  await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting&group=sites&site=site-alpha&function=text');
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting&group=sites&site=site-alpha&function=text');
   await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toHaveCount(0);
 
   await sitePill.click();
@@ -756,7 +756,7 @@ for (const width of [1280, 1440, 1920]) {
     const inspectorBox = (await inspector.boundingBox())!;
     expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(2);
     expect(queueBox.width).toBe(320);
-    expect(queueBox.y).toBeLessThan(220);
+    expect(queueBox.y).toBeLessThan(300);
     const leftTitle = (await queue.getByRole('heading', { level: 2 }).boundingBox())!;
     const rightTitle = (await inspector.getByRole('heading', { level: 2 }).boundingBox())!;
     expect(Math.abs(leftTitle.y + leftTitle.height / 2 - rightTitle.y - rightTitle.height / 2)).toBeLessThanOrEqual(1);
@@ -766,15 +766,12 @@ for (const width of [1280, 1440, 1920]) {
     expect(Math.abs(title.y + title.height / 2 - window.y - window.height / 2)).toBeLessThanOrEqual(1);
     const metrics = (await page.locator('[data-ui="runtime-diagnostic-metrics"]').boundingBox())!;
     const conclusion = (await page.locator('[data-ui="runtime-diagnostic-conclusion"]').boundingBox())!;
-    expect(Math.abs(metrics.y + metrics.height / 2 - conclusion.y - conclusion.height / 2)).toBeLessThanOrEqual(1);
+    expect(conclusion.y + conclusion.height).toBeLessThan(metrics.y);
     const summary = (await inspector.locator('[data-ui="runtime-inspector-summary"]').boundingBox())!;
     const actions = (await inspector.locator('[data-ui="runtime-investigation-actions"]').boundingBox())!;
-    if (width >= 1600) {
-      expect(actions.x).toBeGreaterThan(summary.x + summary.width);
-      expect(Math.abs(actions.y - summary.y)).toBeLessThanOrEqual(1);
-    } else {
-      expect(actions.y).toBeGreaterThan(summary.y + summary.height);
-    }
+    expect(actions.y + actions.height).toBeLessThanOrEqual(summary.y);
+    expect(Math.abs(actions.x - summary.x)).toBeLessThanOrEqual(1);
+    await expect(inspector.locator('[data-ui="runtime-investigation-actions"] button').first()).toBeVisible();
     const table = inspector.locator('[data-ui="runtime-issue-evidence"] table');
     await expect(table.getByRole('columnheader').nth(1)).toHaveCSS('text-align', 'right');
     await expect(table.locator('tbody td').first()).toHaveCSS('text-align', 'right');

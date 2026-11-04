@@ -1230,7 +1230,7 @@ function AccountDetailContent() {
       id: 'overview',
       label: t('admin.account_detail.overview_tab', undefined, 'Overview'),
       navLabel: t('admin.account_detail.overview_tab', undefined, 'Overview'),
-      detail: translateStatusLabel(postureTone, t),
+      detail: `${t('admin.hierarchy.coverage')}: ${translateStatusLabel(postureTone, t)}`,
       href: '#account-overview',
     },
     {
@@ -1515,6 +1515,7 @@ function AccountDetailContent() {
     <BackofficePageStack className="!space-y-4">
       <BackofficePageHeader
         title={accountTitle}
+        scope={<span>{account.primary_identity?.email || t('admin.accounts.unnamed_customer')} · {t('admin.hierarchy.customer_identity')}: {shortIdentity(account.account_id)}</span>}
         description={t('admin.account_detail.page_help', {}, 'Review this customer’s package, access, usage and sites.')}
         summaryItems={headerMetrics}
         secondaryAction={(

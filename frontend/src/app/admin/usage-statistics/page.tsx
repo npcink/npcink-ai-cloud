@@ -12,12 +12,13 @@ import { createApiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
 import { useLocale } from '@/contexts/LocaleContext';
 import { normalizeObservationWindow, observationCapability } from '@/features/admin/observability/window';
-import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
+import { readSiteDisplay, siteIdentity } from '@/lib/identity-display';
 
 const client = createApiClient({ idempotencyPrefix: 'admin_usage_statistics' });
 type Row = { id: string; runs: number; failed: number; success_rate: number | null; avg_latency_ms: number | null; succeeded_avg_latency_ms?: number | null; failed_avg_latency_ms?: number | null };
 type Stats = Row & { active_sites: number; latency_samples: number; possibly_truncated: boolean; sites: Row[]; functions: Row[]; timeline: (Row & { day: string })[]; comparison?: { sites: Comparison; functions: Comparison } };
-type Runtime = { generated_at: string; window: { since: string; until: string }; usage_statistics?: Stats };
+type Runtime = { site_display?: unknown; generated_at: string; window: { since: string; until: string }; usage_statistics?: Stats };
 
 
 export default function UsageStatisticsPage() {
@@ -95,21 +96,21 @@ export default function UsageStatisticsPage() {
     return `/admin/troubleshooting?${scope}`;
   };
   const nameColumn = dimension === 'functions' ? c('运行类型（配置）', 'Runtime type (profile)') : pluginMode ? c('插件', 'Plugin') : c('站点', 'Site');
+  const siteDisplay = readSiteDisplay(runtime?.site_display);
+  const siteLabel = (id: string) => siteIdentity(siteDisplay[id]?.name, siteDisplay[id]?.url, id, c('未命名站点', 'Unnamed site'));
   const rowName = (id: string) => dimension === 'functions'
     ? <span title={`${c('运行配置编号', 'Runtime profile ID')}: ${id}`}>{functionNames[id] || `${c('其他运行类型', 'Other runtime type')} (${id})`}</span>
-    : id;
+    : <div>{siteLabel(id)}<details className="mt-1 text-xs text-slate-500"><summary className="cursor-pointer">{c('站点编号', 'Site ID')}</summary><code className="select-text break-all">{id}</code></details></div>;
   return <BackofficePageStack spacing="compact">
-    <AdminObservabilityTabs />
-    <BackofficePageHeader density="compact" secondaryAction={qualityView ? <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button> : undefined} title={params.get('view') === 'quality' ? c('编辑质量证据', 'Editorial quality evidence') : c('运行观测', 'Runtime observation')} description={params.get('view') === 'quality' ? c('查看编辑辅助运行的质量证据', 'Review quality evidence from editorial assistance runs') : c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={params.get('view') === 'quality' ? [] : metrics.map(item => ({ ...item, size: 'compact' as const }))} primaryAction={params.get('view') === 'quality' ? undefined : <div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">{c('当前工作范围', 'Current workspace')}: {c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按运行类型' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)}<br />{runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')}</div>} />
+    <BackofficePageHeader density="compact" descriptionDisplay="hint" toolbarControls={<AdminObservationWindow />} secondaryAction={<button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button>} title={params.get('view') === 'quality' ? c('编辑质量证据', 'Editorial quality evidence') : c('运行观测', 'Runtime observation')} description={params.get('view') === 'quality' ? c('查看编辑辅助运行的质量证据', 'Review quality evidence from editorial assistance runs') : c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={params.get('view') === 'quality' ? [] : metrics.map(item => ({ ...item, size: 'compact' as const }))} scope={qualityView ? undefined : c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按运行类型' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)} freshness={qualityView ? undefined : runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')} />
     {params.get('view') === 'quality' ? <EditorAssistQualityPanel taskKey={params.get('task') || ''} onTaskKeyChange={value => router.push(filterHref('task', value))} onClearSite={() => router.push(filterHref('site', ''))} onRequestStateChange={onQualityState} disclosure={false} siteId={siteFilter} windowHours={hours} refreshSignal={refresh} /> : <>
     {pluginMode ? <p data-ui="usage-source-note" className="text-xs text-slate-500">{c('数据来源：插件已留存上报事件；下方次数和失败数均为事件数，一次 Cloud 运行可对应多条事件。', 'Source: retained plugin report events. Counts and failures below are events; one Cloud run can produce several events.')}{functionFilter ? ` ${c('此来源仅支持站点与时间范围，运行类型筛选不适用。', 'Only site and time filters apply to this source; the runtime-type filter does not apply.')}` : ''}</p> : <p data-ui="usage-source-note" className="text-xs text-slate-500">{c('数据来源：Cloud 运行记录；任务成功不代表结果被编辑采纳，调用证据完整性请查看运行诊断。', 'Source: Cloud run records. Task success does not establish editor adoption; inspect diagnostics for call-evidence completeness.')}</p>}
     {since && !pluginMode ? <p className="text-xs text-slate-500">{c('复核起点', 'Review since')}: {localTime(since)} · {c('仅统计此后开始的运行。', 'Only runs started after this point are included.')}</p> : null}
-    {siteFilter || functionFilter ? <p className="text-sm text-slate-600 dark:text-slate-300">{c('当前范围', 'Current scope')}: {siteFilter ? `${c('站点', 'Site')} ${siteFilter}` : null}{siteFilter && functionFilter ? ' · ' : null}{functionFilter ? `${c('功能', 'Function')} ${functionFilter}` : null}</p> : null}
+    {siteFilter || functionFilter ? <p className="text-sm text-slate-600 dark:text-slate-300">{c('当前范围', 'Current scope')}: {siteFilter ? `${c('站点', 'Site')} ${siteLabel(siteFilter)}` : null}{siteFilter && functionFilter ? ' · ' : null}{functionFilter ? `${c('功能', 'Function')} ${functionFilter}` : null}</p> : null}
     {loading ? <p role="status">{c('正在加载所选时段…', 'Loading selected period…')}</p> : null}
     {errors.length ? <p role="alert">{errors.includes('runtime') ? c('统计暂不可用，无法判断当前运行状态。请刷新重试。', 'Statistics unavailable; runtime status is unknown. Refresh to retry.') : c('部分统计加载失败，已成功加载的数据仍可查看。点击刷新重试。', 'Some statistics failed to load. Available sources remain visible. Refresh to retry.')} ({errors.map(source => source === 'runtime' ? c('运行统计', 'Runtime') : c('插件上报', 'Plugin reports')).join('、')})</p> : null}
     <section data-ui="usage-statistics-workspace" className="space-y-1">
     <div data-ui="usage-statistics-toolbar" className="relative z-10 flex w-full max-w-full flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-white/80 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/70">
-      <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button>
       <div className="ml-auto flex shrink-0 gap-1" role="tablist" aria-label={c('运行分析视图', 'Runtime analysis view')}><button type="button" role="tab" aria-selected={analysisView === 'chart'} className={`btn btn-sm ${analysisView === 'chart' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAnalysisView('chart'); if (pluginMode) window.history.replaceState(null, '', filterHref('group', 'sites')); }}>{c('图表', 'Chart')}</button><button type="button" role="tab" aria-selected={analysisView === 'table'} className={`btn btn-sm ${analysisView === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAnalysisView('table')}>{c('表格', 'Table')}</button></div>
     <div className="flex flex-wrap items-center gap-2 xl:ml-auto" role="group" aria-label={c('统计维度', 'Statistics dimension')}>
       {([['sites', c('按站点', 'By site')], ['functions', c('按运行类型', 'By runtime type')], ['plugins', c('插件运行记录', 'Plugin activity records')]]).map(([key, label]) => <Link key={key} onClick={() => { if (key === 'plugins') setAnalysisView('table'); }} className={`btn btn-sm ${dimension === key ? 'btn-primary' : 'btn-secondary'}`} aria-current={dimension === key ? 'page' : undefined} href={filterHref('group', key)}>{label}</Link>)}
@@ -123,7 +124,7 @@ export default function UsageStatisticsPage() {
       <PluginHistory key={`${hours}:${siteFilter}:${recordScope}:${refresh}`} hours={hours} site={siteFilter} recordScope={recordScope} /></> : null}
     <section data-ui="usage-more-reference" hidden={analysisView !== 'chart'}>
       <section aria-label={c('趋势', 'Trends')}><BackofficeSectionPanel className="space-y-2">
-        {loading ? <p role="status">{c('加载中', 'Loading')}</p> : errors.includes('runtime') ? <p>{c('运行统计暂不可用', 'Runtime statistics unavailable')}</p> : <DimensionTrend active={analysisView === 'chart'} comparison={dimension === 'functions' ? stats?.comparison?.functions : stats?.comparison?.sites} dimension={dimension} name={id => dimension === 'functions' ? `${functionNames[id] || id}` : id} />}
+        {loading ? <p role="status">{c('加载中', 'Loading')}</p> : errors.includes('runtime') ? <p>{c('运行统计暂不可用', 'Runtime statistics unavailable')}</p> : <DimensionTrend active={analysisView === 'chart'} comparison={dimension === 'functions' ? stats?.comparison?.functions : stats?.comparison?.sites} dimension={dimension} name={id => dimension === 'functions' ? `${functionNames[id] || id}` : siteLabel(id)} />}
       </BackofficeSectionPanel></section>
     </section>
     <div className={analysisView === 'table' && !pluginMode ? undefined : 'hidden'}><AdminDataTableFrame title={c('使用明细', 'Usage breakdown')} resultLabel={`${displayRows.length} ${c('组', 'groups')}`} dataUi="usage-breakdown" headerVisibility="sr-only">

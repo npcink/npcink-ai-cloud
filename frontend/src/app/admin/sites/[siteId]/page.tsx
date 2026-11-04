@@ -566,6 +566,7 @@ function SiteDetailContent() {
     <BackofficePageStack>
       <BackofficePageHeader
         title={siteIdentity(site.site_name, site.site_url, site.site_id, t('admin.readability.unnamed_site'))}
+        scope={site.site_url || undefined}
         description={c('查看站点覆盖、运行与归属证据。', 'Inspect site coverage, runtime and ownership evidence.')}
         primaryAction={site.status === 'provisioning' ? (
               <button

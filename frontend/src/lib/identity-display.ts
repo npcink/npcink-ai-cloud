@@ -21,3 +21,18 @@ export function siteIdentity(name: string | undefined, url: string | undefined, 
   }
   return id ? `${unnamed} · ${shortIdentity(id)}` : unnamed;
 }
+
+export type SiteDisplay = Record<string, { name: string; url: string }>;
+
+/** Optional read projection; malformed display metadata never determines runtime state. */
+export function readSiteDisplay(value: unknown): SiteDisplay {
+  const display = Object.create(null) as SiteDisplay;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return display;
+  const entries = Object.entries(value).flatMap(([id, item]) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    return typeof row.name === 'string' && typeof row.url === 'string'
+      ? [[id, { name: row.name, url: row.url }] as const] : [];
+  });
+  return Object.assign(display, Object.fromEntries(entries));
+}

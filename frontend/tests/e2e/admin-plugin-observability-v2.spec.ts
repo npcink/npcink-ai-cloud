@@ -97,7 +97,7 @@ test('administrator investigates errors and sites, preserves filters and manages
   await page.locator('[data-ui="plugin-sites"]').getByRole('button', {name: /View.*records|查看.*记录/}).click();
   await expect(drawer).toContainText(/24 reported records|24 条上报记录/);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', {name: /Last 3 days|近 3 天/}).click();
+  await page.getByRole('button', {name: /^3 days$|^3 天$/}).click();
   await expect(page).toHaveURL(/window=72/);
   await page.getByRole('combobox', {name: /^Plugin$|^插件$/}).selectOption('npcink-cloud-addon');
   await expect(page).toHaveURL(/plugin=npcink-cloud-addon/);
@@ -157,7 +157,7 @@ test('failed scope change clears obsolete data and retry loads requested scope',
   await page.goto('/admin/plugin-observability');
   await expect(page.locator('[data-ui="plugin-problems"]')).toBeVisible();
   harness.failNextRequest();
-  await page.getByRole('button', {name:/Last 7 days|近 7 天/}).click();
+  await page.getByRole('button', {name:/^7 days$|^7 天$/}).click();
   await expect(page).toHaveURL(/window=168/);
   await expect(page.getByRole('alert').filter({hasText:/加载数据失败|Failed to load data\./})).toBeVisible();
   await expect(page.locator('[data-ui="plugin-problems"]')).toHaveCount(0);

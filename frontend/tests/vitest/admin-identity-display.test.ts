@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readableIdentityName, siteIdentity } from '../../src/lib/identity-display';
+import { readableIdentityName, readSiteDisplay, siteIdentity } from '../../src/lib/identity-display';
 import { auditActorLabel, auditEventLabel, auditOutcomeLabel, auditScopeLabel } from '../../src/lib/admin-audit-display';
 import { translate } from '../../src/lib/i18n';
 import { supportCustomerLabel, supportSiteLabel } from '../../src/features/admin/support-requests/display';
@@ -33,4 +33,15 @@ describe('readable identities retain honest fallbacks', () => {
     expect(auditEventLabel('future.event.two', zh)).toContain('future.event.two');
     expect(auditOutcomeLabel('future-result', zh)).toContain('future-result');
   });
+});
+
+
+it('optional site display accepts only explicit names and URLs and retains safe fallback', () => {
+  const display = readSiteDisplay({ site_a: { name: 'Editorial site', url: 'https://example.test' },
+    site_bad: { name: { text: 'invented' }, url: 7 }, site_missing: null });
+  expect(Object.keys(display)).toEqual(['site_a']);
+  expect(siteIdentity(display.site_a.name, display.site_a.url, 'site_a', 'Unnamed')).toBe('Editorial site');
+  expect(readSiteDisplay(null)).toEqual({});
+  expect(readSiteDisplay({}).constructor).toBeUndefined();
+  expect(siteIdentity(undefined, undefined, 'site_missing', 'Unnamed')).toBe('Unnamed · site_missing');
 });

@@ -173,7 +173,8 @@ export function AdminAuditWorkspace() {
   return (
     <BackofficePageStack spacing="compact">
       <BackofficePageHeader
-        density="compact"
+        density="compact" descriptionDisplay="hint"
+        freshness={data ? `${t('admin.audit_workspace.generated_at')}: ${formatDate(generatedAt) || notAvailable}` : undefined}
         title={t('admin.audit_workspace.title', {}, 'Audit evidence')}
         description={t(
           'admin.audit_workspace.description',
@@ -206,7 +207,7 @@ export function AdminAuditWorkspace() {
               : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
-        summaryAside={t(
+        scope={t(
           'admin.audit_workspace.boundary',
           {},
           'Read-only Cloud service evidence. WordPress approval, final audit truth, and writes remain local.'
@@ -235,10 +236,6 @@ export function AdminAuditWorkspace() {
           className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
           data-ui="admin-audit-query-evidence"
         >
-          <span>
-            {t('admin.audit_workspace.generated_at', {}, 'Evidence generated')}: {' '}
-            {formatDate(generatedAt) || notAvailable}
-          </span>
           <span>
             {t(
               'admin.audit_workspace.returned_count',

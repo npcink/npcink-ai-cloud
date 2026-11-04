@@ -10,7 +10,7 @@ import pytest
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import Account, RunRecord, ServiceAuditEvent
+from app.core.models import Account, RunRecord, ServiceAuditEvent, Site
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.service import RuntimeService
 
@@ -112,3 +112,28 @@ def test_serializer_timezone_restores_on_error(tmp_path, original_tz):
             assert time.localtime(0) == original_localtime
     finally:
         time.tzset()
+
+
+def test_runtime_site_display_is_bounded_and_does_not_invent_missing_names(tmp_path):
+    serializer_examples(tmp_path)
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'diagnostic-contract.sqlite3'}"
+    with get_session(database_url) as session:
+        session.add_all([
+            Site(site_id="site_contract", name="Editorial site", site_url="https://example.test"),
+            Site(site_id="site_outside", name="Outside cohort", site_url="https://outside.test"),
+        ])
+        session.commit()
+    runtime = RuntimeService(database_url, settings=Settings(environment="test"))
+    with patch("app.domain.runtime.service.datetime", FixedDateTime):
+        data = runtime.get_runtime_telemetry_diagnostics(recent_minutes=1440)
+        assert data["site_display"] == {
+            "site_contract": {"name": "Editorial site", "url": "https://example.test"},
+        }
+        assert "account_id" not in data["site_display"]["site_contract"]
+        missing = runtime.get_runtime_telemetry_diagnostics(site_id="site_missing")
+        assert "site_display" not in missing
+        # Explicit scope may show the existing site even without new runs.
+        scoped = runtime.get_runtime_telemetry_diagnostics(site_id="site_outside")
+        assert list(scoped["site_display"]) == ["site_outside"]
+        assert scoped["totals"]["runs"] == 0
+    dispose_engine(database_url)
