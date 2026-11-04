@@ -17,6 +17,7 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.customer_journey.service import CustomerJourneyService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
+from app.domain.observability.retention import cleanup_operational_evidence
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.metrics import cleanup_site_knowledge_observability
 from app.domain.usage.rollup import UsageRollupService
@@ -68,6 +69,13 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
     customer_journey = CustomerJourneyService(settings.database_url).cleanup_expired_events(
         retention_days=settings.customer_journey_retention_days
     )
+    operational_evidence = cleanup_operational_evidence(
+        settings.database_url,
+        health_days=settings.health_snapshot_retention_days,
+        heartbeat_days=max(settings.worker_heartbeat_retention_days,
+                           settings.audit_retention_days_default),
+        batch_size=settings.operational_evidence_cleanup_batch_size,
+    )
     return {
         "purged_runs": purged_runs,
         "retention_batch_limit": settings.retention_cleanup_batch_size,
@@ -75,6 +83,7 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
         "retention_partial": remaining_due_runs > 0,
         "portal_auth": portal_auth,
         "customer_journey": customer_journey,
+        "operational_evidence": operational_evidence,
     }
 
 

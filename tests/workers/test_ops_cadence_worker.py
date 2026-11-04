@@ -146,6 +146,9 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert retention_cleanup["payload"]["retention_batch_limit"] == 2
     assert retention_cleanup["payload"]["retention_remaining_due_runs"] == 0
     assert retention_cleanup["payload"]["retention_partial"] is False
+    assert retention_cleanup["payload"]["operational_evidence"]["health_snapshots"] == {
+        "eligible_in_batch": 0, "deleted": 0, "batch_full": False, "retention_days": 30,
+    }
     artifact_cleanup = next(item for item in first_results if item["task_id"] == "artifact_cleanup")
     assert artifact_cleanup["payload"] == {
         "claimed": 0,
