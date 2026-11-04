@@ -192,10 +192,10 @@ def live(root: Path) -> dict:
             "live binding digest invalid",
         )
     # Validate the public trust chain as well as the loopback/PEM binding.
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     with socket.create_connection(("cloud.npc.ink", 443), timeout=10) as connection:
-        with ssl.create_default_context().wrap_socket(
-            connection, server_hostname="cloud.npc.ink"
-        ) as tls:
+        with context.wrap_socket(connection, server_hostname="cloud.npc.ink") as tls:
             require(
                 hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest()
                 == result["certificate_leaf_sha256"],

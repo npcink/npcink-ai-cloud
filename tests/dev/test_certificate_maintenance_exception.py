@@ -35,6 +35,7 @@ def module(monkeypatch, tmp_path):
     protected = tmp_path / "edge"
     protected.mkdir(mode=0o700)
     monkeypatch.setattr(result, "CLAIM", protected / "exception.json")
+    result.actual_live = result.live
     monkeypatch.setattr(result, "live", lambda root: {"checked": True})
     return result
 
@@ -245,3 +246,43 @@ def test_host_claim_is_bound_to_one_attempt_and_rejects_changed_baseline(module,
     bundle(current, "d" * 40)
     with pytest.raises(ValueError, match="baseline changed"):
         module.host_check(tmp_path, managed, SHA, TREE, "123", claim=False)
+
+
+def test_public_tls_enforces_protocol_floor_hostname_and_leaf(module, monkeypatch):
+    from contextlib import nullcontext
+
+    leaf = b"trusted-public-leaf"
+    checks = {
+        key: "a" * 64
+        for key in ("nginx_binding_sha256", "deploy_hook_sha256", "renewal_exec_start_sha256")
+    }
+    checks.update(
+        status="maintenance_live_checks_passed",
+        renewal_dry_run_passed=False,
+        certificate_leaf_sha256=module.hashlib.sha256(leaf).hexdigest(),
+    )
+    monkeypatch.setattr(module, "run", lambda *a, **k: json.dumps(checks))
+    context = module.ssl.create_default_context()
+    # Simulate a host whose default floor has been weakened; explicit policy must win.
+    context.minimum_version = module.ssl.TLSVersion.MINIMUM_SUPPORTED
+
+    class TrustedSocket:
+        def getpeercert(self, binary_form=False):
+            assert binary_form
+            return leaf
+
+    class Context:
+        minimum_version = context.minimum_version
+
+        def wrap_socket(self, connection, server_hostname):
+            assert self.minimum_version >= module.ssl.TLSVersion.TLSv1_2
+            assert server_hostname == "cloud.npc.ink"
+            assert context.verify_mode == module.ssl.CERT_REQUIRED and context.check_hostname
+            return nullcontext(TrustedSocket())
+
+    monkeypatch.setattr(module.ssl, "create_default_context", Context)
+    monkeypatch.setattr(module.socket, "create_connection", lambda *a, **k: nullcontext(object()))
+    assert module.actual_live(ROOT) == checks
+    checks["certificate_leaf_sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="leaves differ"):
+        module.actual_live(ROOT)
