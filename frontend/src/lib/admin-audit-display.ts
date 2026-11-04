@@ -1,6 +1,8 @@
 import { shortIdentity } from './identity-display';
 
 type Translate = (key: string, params?: Record<string, string>, fallback?: string) => string;
+const ownLabel = (labels: Record<string, string>, code: string): string | undefined =>
+  Object.hasOwn(labels, code) ? labels[code] : undefined;
 const workers: Record<string, string> = {
   ops_cadence: 'scheduled_tasks', runtime_queue: 'runtime_queue', callback_dispatch: 'callback_queue',
 };
@@ -46,14 +48,15 @@ const events: Record<string, string> = {
 
 export function auditEventLabel(value: string | undefined, t: Translate): string {
   const code = value || '';
-  return events[code] ? t(`admin.readability.event_${events[code]}`)
+  const label = ownLabel(events, code);
+  return label ? t(`admin.readability.event_${label}`)
     : `${t('admin.readability.unmapped_event')} · ${code || t('common.unknown')}`;
 }
 
 export function auditOutcomeLabel(value: string | undefined, t: Translate): string {
   const code = value || '';
-  const key = ({ succeeded: 'success', success: 'success', ok: 'success', failed: 'failed', error: 'failed',
-    partial: 'partial', blocked: 'blocked', denied: 'blocked' } as Record<string, string>)[code];
+  const key = ownLabel({ succeeded: 'success', success: 'success', ok: 'success', failed: 'failed', error: 'failed',
+    partial: 'partial', blocked: 'blocked', denied: 'blocked' }, code);
   return key ? t(`admin.readability.outcome_${key}`) : `${t('common.unknown')} · ${code || '—'}`;
 }
 
@@ -63,17 +66,17 @@ export function auditActorLabel(kind: string | undefined, ref: string | undefine
     : kind === 'system_worker' ? t('admin.readability.system_task')
     : kind === 'payment_gateway' ? t('admin.readability.payment_gateway')
     : t('admin.notices.sender_unknown');
-  const source = workers[ref || ''];
+  const source = ownLabel(workers, ref || '');
   // A role is not a unique person: keep a distinguishable reference visible.
   return `${role} · ${source && kind === 'system_worker' ? t(`admin.readability.${source}`) : shortIdentity(ref || kind || '—')}`;
 }
 
 export function auditScopeLabel(kind: string | undefined, id: string | undefined, t: Translate): string {
-  const label = ({ account: 'common.account', site: 'admin.audit_workspace.site_id',
+  const label = ownLabel({ account: 'common.account', site: 'admin.audit_workspace.site_id',
     subscription: 'admin.audit_workspace.subscription_id', platform: 'portal.role_platform_admin',
-    worker: 'admin.readability.system_task', ops_cadence: 'admin.readability.scheduled_tasks' } as Record<string, string>)[kind || ''];
-  const task = kind === 'ops_cadence' ? cadenceTasks[id || ''] : undefined;
-  const worker = kind === 'worker' ? workers[id || ''] : undefined;
+    worker: 'admin.readability.system_task', ops_cadence: 'admin.readability.scheduled_tasks' }, kind || '');
+  const task = kind === 'ops_cadence' ? ownLabel(cadenceTasks, id || '') : undefined;
+  const worker = kind === 'worker' ? ownLabel(workers, id || '') : undefined;
   const target = task ? t(`admin.readability.event_${task}`)
     : worker ? t(`admin.readability.${worker}`) : shortIdentity(id || '—');
   return `${label ? t(label) : kind || t('common.unknown')} · ${target}`;

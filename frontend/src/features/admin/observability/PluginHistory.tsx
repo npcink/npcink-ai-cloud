@@ -59,8 +59,10 @@ export function PluginHistory({ hours, site, recordScope, problem, plugin = '' }
   const siteLabel = (item: Pick<Item, 'site_id' | 'site_name' | 'site_url'>) => item.site_id
     ? siteIdentity(item.site_name, item.site_url, item.site_id, c('未命名站点', 'Unnamed site'))
     : c('未关联站点', 'Unassigned site');
-  const pluginLabel = (slug: string) => ({ 'magick-ai': 'Magick AI', 'npcink-ai': 'Npcink AI',
-    'npcink-ai-cloud-addon': 'Npcink AI Cloud Addon', 'npcink-cloud-addon': 'Npcink Cloud Addon', 'npcink-abilities-toolkit': 'Npcink Abilities Toolkit' }[slug] || `${c('插件', 'Plugin')} · ${slug || c('来源待确认', 'Source unconfirmed')}`);
+  const pluginNames: Record<string, string> = { 'magick-ai': 'Magick AI', 'npcink-ai': 'Npcink AI',
+    'npcink-ai-cloud-addon': 'Npcink AI Cloud Addon', 'npcink-cloud-addon': 'Npcink Cloud Addon', 'npcink-abilities-toolkit': 'Npcink Abilities Toolkit' };
+  const pluginLabel = (slug: string) => Object.hasOwn(pluginNames, slug) ? pluginNames[slug]
+    : `${c('插件', 'Plugin')} · ${slug || c('来源待确认', 'Source unconfirmed')}`;
   const statusName = (value?: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[value || ''] || c('其他状态', 'Other status'));
   const groups = filters.view === 'groups';
   return <AdminDataTableFrame title={problem ? c('此问题的留存记录', 'Retained records for this problem') : c('插件事件', 'Plugin events')} dataUi="usage-recent-activity" bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"

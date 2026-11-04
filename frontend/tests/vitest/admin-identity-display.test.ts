@@ -33,6 +33,15 @@ describe('readable identities retain honest fallbacks', () => {
     expect(auditEventLabel('future.event.two', zh)).toContain('future.event.two');
     expect(auditOutcomeLabel('future-result', zh)).toContain('future-result');
   });
+  it('preserves unknown codes that match inherited object properties', () => {
+    for (const code of ['constructor', '__proto__', 'toString']) {
+      expect(auditEventLabel(code, zh)).toBe(`未映射事件 · ${code}`);
+      expect(auditOutcomeLabel(code, zh)).toContain(code);
+      expect(auditActorLabel('system_worker', code, zh)).toBe(`系统任务 · ${code}`);
+      expect(auditScopeLabel('ops_cadence', code, zh)).toBe(`定时维护任务 · ${code}`);
+      expect(auditScopeLabel(code, 'raw-id', zh)).toBe(`${code} · raw-id`);
+    }
+  });
 });
 
 

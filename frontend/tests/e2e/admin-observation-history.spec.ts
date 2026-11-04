@@ -89,8 +89,9 @@ test('plugin retained records show readable source and site with complete labele
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
   await page.route('**/api/admin/plugin-observability/history?*', route => route.fulfill({ json: buildAdminApiEnvelope({
-    items: [{ id: 7, site_id: 'site_readable', site_name: '编辑站点', site_url: 'https://editorial.example.test', plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.monitoring.state_projected', received_at: '2026-11-04T01:00:00Z', events: 1, failed: 1, status: 'failed', run_id: 'run_exact', error_code: 'provider.unavailable', event_id: 'event_exact' }],
-    page: 1, pages: 1, total: 1, totals: { events: 1, failed: 1, succeeded: 0 }, snapshot: { at: '2026-11-04T01:00:00Z', id: 7 },
+    items: [{ id: 7, site_id: 'site_readable', site_name: '编辑站点', site_url: 'https://editorial.example.test', plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.monitoring.state_projected', received_at: '2026-11-04T01:00:00Z', events: 1, failed: 1, status: 'failed', run_id: 'run_exact', error_code: 'provider.unavailable', event_id: 'event_exact' },
+      { id: 8, site_id: 'site_readable', plugin_slug: '__proto__', event_kind: 'runtime_request', received_at: '2026-11-04T01:00:00Z', events: 1, failed: 0, status: 'ok' }],
+    page: 1, pages: 1, total: 2, totals: { events: 2, failed: 1, succeeded: 1 }, snapshot: { at: '2026-11-04T01:00:00Z', id: 8 },
   }) }));
   await page.goto('/admin/usage-statistics');
   await page.getByRole('link', { name: /插件运行记录|Plugin activity records/ }).click();
@@ -99,6 +100,7 @@ test('plugin retained records show readable source and site with complete labele
   await expect(table).toContainText('provider.unavailable');
   await expect(table).toContainText('编辑站点');
   await expect(table).toContainText('Npcink Cloud Addon');
+  await expect(table).toContainText('插件 · __proto__');
   await expect(table.getByText('site_readable', { exact: true })).toBeHidden();
   await table.getByText('插件状态同步', { exact: true }).click();
   await expect(table.getByText('site_readable', { exact: true })).toBeVisible();
