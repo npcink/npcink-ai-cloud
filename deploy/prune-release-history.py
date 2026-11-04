@@ -38,8 +38,10 @@ def image_ids(value: object) -> set[str]:
 
 
 def plan(root: Path, backups: Path, keep: int) -> dict:
-    if root.is_symlink() or root.resolve() != root or keep < 3:
+    if root == Path("/") or root.is_symlink() or root.resolve() != root or keep < 3:
         raise RuntimeError("canonical managed root and at least three releases required")
+    if backups.is_symlink() or not backups.is_dir():
+        raise RuntimeError("backup inventory root must exist and not be a symlink")
     current = (root / "current").resolve(strict=True)
     if current.parent != root or not RELEASE.fullmatch(current.name):
         raise RuntimeError("current must be a direct managed release")

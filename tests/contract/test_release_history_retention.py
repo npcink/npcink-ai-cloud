@@ -79,6 +79,8 @@ def test_plan_rejects_unsafe_roots_and_small_retention(tmp_path: Path) -> None:
     alias.symlink_to(tmp_path)
     with pytest.raises(RuntimeError, match="canonical"):
         retention.plan(alias, tmp_path / "backups", 3)
+    with pytest.raises(RuntimeError, match="backup inventory"):
+        retention.plan(tmp_path, tmp_path / "missing-backups", 3)
 
 
 def test_apply_rejects_changed_plan_and_releases_both_locks(
