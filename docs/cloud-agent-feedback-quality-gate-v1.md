@@ -146,6 +146,17 @@ raw event/outcome counts for operational traceability but are excluded from
 generic acceptance rates, quality trend, scenario summaries, low-quality label
 counts, and quality-label rates.
 
+The existing wire form identifies these impressions by the allowlisted
+`source_action_id` ending in `_impression`; `impression_only` is a semantic
+description, not an additional accepted outcome. `events_total` and `outcomes`
+retain raw counts. Additive `quality_events_total` and `quality_outcomes` expose
+the non-impression denominator and its outcomes. Acceptance is an action-level
+description, never a save-adoption rate. Trend buckets report `rejected`,
+`ignored`, `expired`, and `blocked` separately. Known engineering smoke sources
+are disclosed via `engineering_events_total`, not presented as customer-value
+proof. Recommendation families add deduplicated `saved_sessions_total` for the
+union of unchanged/edited save receipts; existing fields remain available.
+
 The gate must prove `raw_content_stored=false`, `raw_anchor_stored=false`, and
 `provider_output_stored=false`. Recommendation telemetry must also omit source
 matches, public URLs, WordPress post IDs and user IDs, raw prompts, and final
@@ -193,3 +204,9 @@ existing event JSON; there is no migration, write authority, or raw-content
 telemetry. Batch saved/undo events may carry up to eight `candidate_rank_N`
 reason codes instead of pretending that a batch has one candidate position.
 Developer smoke observations do not constitute human adoption or gold labels.
+
+Recommendation version compatibility also accepts `internal_links.v2` and
+`related_content.v2` for the independently versioned reading-task/abstention
+policy. v1 events remain valid. Empty impressions omit candidate rank; raw
+query, target content and anchor text remain excluded. See
+[abstention v2](site-knowledge-reading-task-abstention-v2.md).

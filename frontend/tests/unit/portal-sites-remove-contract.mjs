@@ -23,8 +23,13 @@ assert.match(
 
 assert.match(
   sitesPageSource,
-  /site\.allowed_actions\?\.includes\('remove_sites'\)[\s\S]*setPendingRemoveSite\(site\)/,
-  'the merged service page must use each row permission projection to open the remove confirmation'
+  /site\.allowed_actions\?\.includes\('remove_sites'\)[\s\S]*onRemove\(site\)/,
+  'the merged service page must gate remove in row actions via each site permission projection'
+);
+assert.match(
+  sitesPageSource,
+  /onRemove:[\s\S]*setPendingRemoveSite\(nextSite\)/,
+  'the merged service page must open the remove confirmation from PortalRowActions onRemove'
 );
 assert.match(
   sitesPageSource,

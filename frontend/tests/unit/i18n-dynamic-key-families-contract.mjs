@@ -26,6 +26,19 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'portal.monitoring.guidance_':
+    'src/lib/portal-monitoring-display.ts; bounded CUSTOMER_ISSUE_GUIDANCE kind tokens with title/detail suffixes and explicit unknown fallback',
+  'admin.payments.status.':
+    'src/features/admin/accounts/AccountPaymentOrders.tsx; existing payment/refund status values with literal unknown fallback',
+  'admin.payments.block.':
+    'src/features/admin/accounts/AccountPaymentOrders.tsx; bounded refund blocker codes from admin_payments.py with literal unknown fallback',
+  'admin.agent_feedback.recommendation_':
+    'src/features/admin/agent-feedback/RecommendationQuality.tsx; bounded metric array and internal_links/related_articles family identifiers',
+  'admin.economics.': 'src/app/admin/economics/page.tsx; table labels and backend family labels with literal unknown fallback',
+  'admin.notices.reason_':
+    'src/app/admin/customer-notifications/page.tsx; bounded recipient eligibility and change reasons',
+  'portal.notifications.event_':
+    'src/app/portal/notifications/page.tsx; bounded support_request_replied or unknown notification event label',
   'admin.ai_advisor.metric_':
     'src/app/admin/ai-advisor/page.tsx; bounded metric keys from src/features/admin/ai-advisor/advisor-presentation.ts',
   'admin.ai_advisor.action_':
@@ -38,6 +51,10 @@ export const FAMILY_SOURCES = {
     'src/app/portal/usage/page.tsx; component.key from backend credit event components',
   'portal.usage.credit_pack_':
     'PortalPaymentOrderHistory.tsx / PortalCreditPackDialog.tsx; pack.pack_id / order pack keys from backend credit pack catalog',
+  'portal.usage.site_knowledge_breakdown_title_':
+    'PortalEntitlementUsage.tsx; bounded vector_documents/media_images resource keys for site knowledge dialog titles',
+  'portal.usage.site_knowledge_breakdown_desc_':
+    'PortalEntitlementUsage.tsx; bounded vector_documents/media_images resource keys for site knowledge dialog descriptions',
   'portal.support_topic_':
     'portal/support pages and admin support workspaces; SUPPORT_REQUEST_TOPICS and backend support request topics',
   'portal.support_status_':
@@ -52,14 +69,20 @@ export const FAMILY_SOURCES = {
     'src/app/admin/page.tsx; overview.operatorProjection.readiness.failureScopes from backend',
   'admin.accounts.identity_':
     'src/app/admin/accounts/page.tsx, [accountId]/page.tsx, CustomerAccessPanel.tsx; identity_relationship_state enum from backend accounts',
+  'admin.accounts.directory_identity_':
+    'src/app/admin/accounts/page.tsx; compact directory labels over the backend identity_relationship_state enum',
   'admin.plugin_obs_action_':
     'src/app/admin/plugin-observability/page.tsx attentionActionLabel; bounded AttentionStateAction values (acknowledge/mute/...)',
   'admin.plans.state_':
     'src/app/admin/plans/page.tsx; plan state values from backend plans directory',
   'admin.troubleshooting.failure_reason_':
     'src/app/admin/troubleshooting/page.tsx; bounded set output_schema_invalid/invalid_request/timeout/unknown from provider failure reasons',
+  'admin.troubleshooting.impact_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded issue code mapping provider/failed/call_gap/meter_gap/unknown',
+  'admin.troubleshooting.verify_':
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded evidence/outcome verification paths',
   'admin.troubleshooting.failure_step_':
-    'src/app/admin/troubleshooting/page.tsx; bounded set schema/timeout/unknown from provider failure reasons',
+    'src/features/admin/observability/runtimeIssueCatalog.ts; bounded set schema/invalid_request/timeout/unknown from provider failure reasons',
   'admin.plugin_obs_attention_':
     'src/app/admin/plugin-observability/page.tsx attentionCopy; field title/detail with suffixes from attentionCodeSuffix over backend plugin_observability.* attention codes, plus *_default',
   'admin.plugin_obs_window_':
@@ -74,10 +97,14 @@ export const FAMILY_SOURCES = {
     'src/app/admin/subscriptions/page.tsx; ALLOWED_RISK_FILTERS values',
   'admin.subscriptions.risk_':
     'src/app/admin/subscriptions/page.tsx; ALLOWED_RISK_LEVELS values from backend operator risk levels',
+  'admin.subscription_detail.site_issue_':
+    'src/app/admin/subscriptions/[subscriptionId]/page.tsx; bounded SiteEvidence issue reasons invalid/duplicate/account from src/features/admin/subscriptions/evidence.ts; collection uses a separate literal key',
   'admin.runtime_profiles.':
     'src/app/admin/runtime-profiles/page.tsx copy(); suffix-only literals plus profileLabelKey(profile.profile_id) over the bounded runtime profile map',
   'admin.ai_resources.':
     'src/app/admin/ai-resources/page.tsx aiText(); suffix-only literals plus directory query fields, prefix prepended inside the helper',
+  'admin.model_test.':
+    'src/features/admin/ai-resources/ModelTestDialog.tsx text(); bounded literal suffixes for model test labels and outcomes',
   'admin.coverage.reason.':
     'src/app/admin/coverage/page.tsx translateReasonCode; backend coverage reason codes (service_*)',
   'admin.coverage.action.':
@@ -184,7 +211,7 @@ assert.ok(enBlockStart > 0, 'i18n catalog must contain the en block');
 assert.ok(zhBlockStart > enBlockStart, 'i18n catalog must contain the zh-CN block');
 const enBlock = i18nSource.slice(enBlockStart, zhBlockStart);
 for (const prefix of FAMILY_PREFIXES) {
-  const keyPattern = new RegExp(`^\\s*'${escapeRegExp(prefix)}[^']*':`, 'm');
+  const keyPattern = new RegExp(`^\\s*['"]${escapeRegExp(prefix)}[^'"]*['"]:`, 'm');
   assert.ok(
     keyPattern.test(enBlock),
     `family prefix ${prefix} owns no catalog key in the en block; the family and the catalog have drifted apart`

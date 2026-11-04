@@ -858,7 +858,8 @@ provider at `http://host.docker.internal:11434/v1`, allows
 `qwen3.5:9b`, sets provider-default `reasoning_effort=none`, refreshes its
 catalog, and points the three WordPress text profiles at the resulting 9B
 instance. It also creates the development-only, secretless
-`ollama_m4_embedding` connection for `qwen3-embedding:0.6b` with 1024
+`ollama_m4_embedding` connection for
+`npcink-qwen3-vl-embedding:8b-q4_k_m-mmproj-q8` with 4096
 dimensions and the existing PostgreSQL JSON development vector backend. The
 embedding connection is accepted only in development or test environments.
 The setting is explicit per provider connection; it does not change production
@@ -866,7 +867,7 @@ providers or the generic WordPress operation contract.
 
 Development and production embedding spaces are deliberately separate.
 Switching to the production SiliconFlow `BAAI/bge-m3` profile requires a full
-Site Knowledge index rebuild even though both profiles use 1024 dimensions.
+Site Knowledge index rebuild; never mix the development 4096D and production 1024D vectors.
 Media-library semantic search fails closed while only the deterministic
 placeholder embedding is active; it must not return random nearest-neighbor
 candidates.
@@ -1041,3 +1042,56 @@ If an operation reports a stale lock, inspect
 `~/.cache/npcink-ai-cloud-m4-dev/operation.lock/owner.txt` and confirm that no
 deploy, sync, test, restart, or stop process is active before removing only that
 lock directory.
+
+### Unified local multimodal embedding (2026-10-29)
+
+The operator selected Qwen3-VL-Embedding-8B Q4 (visual component Q8) for
+local research, accepting slower inference and about 6.56 GiB model residency.
+The prior small-pool experiment remains a failure against its original 200ms
+text-query P95 threshold (327.76ms); this is a new operating tradeoff, not a
+retroactive benchmark pass. No more candidate benchmarking is required.
+
+Keep the existing unified Ollama supplier, chat/vision model choices, PostgreSQL
+JSON vector database and `/admin/vector-settings` entry. The optional `runtime`
+readout shows actual environment/model/dimensions/backend/index compatibility;
+production credential forms still describe the separate production profile.
+For an already unified supplier, use the Python module
+`scripts.configure_m4_ollama_preview --embedding-only` inside the development API
+container instead of rerunning the legacy full bootstrap. It probes before
+changing the embedding fields and preserves other supplier configuration.
+Changing selection alone does not convert existing vectors.
+
+First verify a small real text/image batch. Then snapshot the old connection
+and chunks, stage replacement vectors with bounded serial inference and
+checkpoints, verify source IDs/hashes are unchanged, and atomically activate
+the complete new index and selection in PostgreSQL. Retain rollback material
+outside Git. Do not clear the live index before staging succeeds. Ordinary
+sync fails closed on unavailable image bytes and retains the old source;
+unchanged media skips inference only when its own chunks use the current space.
+
+Local images use site-owned uploaded artifacts, or bounded public HTTPS URLs
+with the existing DNS/IP/redirect protections. Private/LAN/HTTP fetches remain
+blocked. Images are resized to at most 768px, stripped of EXIF and sent to native
+Ollama `/api/embed`; text uses that same model/space. No OCR/ASR expansion or
+WordPress writes. Moving later to any production API requires a new small pilot
+and full index rebuild; this change does not select or deploy that API.
+
+On an already unified installation the normal bootstrap also detects all three
+capabilities and uses the embedding-only path, preventing recreation of the old
+split suppliers. The 2026-10-29 M4 integration pilot passed three real photo
+queries at rank 1, three text queries and cross-site artifact rejection, then
+rolled back its transaction (41.87 seconds including indexing/loading). This
+is a small integration check, not an independent human relevance benchmark.
+
+Legacy media whose originals are unavailable must be labelled
+`embedding_input=metadata_text.v1` / `image_pixels_status=unavailable_legacy_source`
+in the migration metadata and receipt, retaining existing text and identity.
+They must not be counted as successfully migrated pixel embeddings. A normal
+new sync still requires image bytes and preserves the previous source on error.
+
+The first pilot coincided with Docker Desktop's logged internal virtualization
+failure. Recovering the existing development engine preserved all volumes and
+2,132 source documents / 2,364 chunks; rerunning the same small pilot passed.
+A subsequent disk preflight stopped staging before mutation. Transfer only
+exact task-owned cache duplicates after verifying their local SHA-256 copies;
+do not lower the disk guard or prune unrelated models, volumes or worktrees.

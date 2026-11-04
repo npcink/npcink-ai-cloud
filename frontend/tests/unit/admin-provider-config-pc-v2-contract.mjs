@@ -7,7 +7,7 @@ const directory = readFileSync(resolve(process.cwd(), 'src/components/admin/Supp
 const dialog = readFileSync(resolve(process.cwd(), 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 
-assert.match(page, /<ModelSupplierTable[\s\S]*testingConnection=\{testingConnection\}[\s\S]*onTest=\{\(connectionId\) => void runProviderConnectionTest\(connectionId\)\}/, 'model suppliers must expose a bounded connection test flow');
+assert.match(page, /<ModelSupplierTable[\s\S]*testingConnection=\{testingConnection\}[\s\S]*onTest=\{\(connectionId\) => void runProviderConnectionTest\(connectionId\)\.catch\(\(\) => undefined\)\}/, 'row tests must retain inline failure feedback without an unhandled rejection');
 assert.match(directory, /data-feedback-for=\{connection\.connection_id\}[\s\S]*testResult\?\.ok[\s\S]*role="status"[\s\S]*test_result_passed_inline/, 'successful supplier tests must render beside the affected supplier row');
 assert.match(directory, /testResult && !testResult\.ok[\s\S]*role="alert"/, 'failed supplier tests must render beside the affected supplier row');
 assert.match(directory, /isConfirmingDelete[\s\S]*role="alert"[\s\S]*delete_confirmation_notice/, 'delete confirmation must state impact beside the affected supplier row');

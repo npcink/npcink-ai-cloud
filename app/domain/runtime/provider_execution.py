@@ -14,11 +14,13 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
     ProviderMediaCandidate,
+    known_provider_cost_usd,
 )
 from app.adapters.providers.compatibility import assess_context_budget
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.error_taxonomy import get_error_taxonomy
 from app.core.models import ProviderCallRecord, RunRecord
+from app.domain.article_review.identity import ABILITY as ARTICLE_REVIEW_ABILITY
 from app.domain.runtime.provider_budget import (
     ProviderBudgetClaimReceipt,
 )
@@ -233,7 +235,7 @@ class RuntimeProviderExecutionService:
             self.budget_guard.reconcile(
                 session=session,
                 claim_ids=claim_ids,
-                actual_cost_usd=result.cost,
+                actual_cost_usd=result.budget_cost_usd(),
             )
         return result
 
@@ -296,7 +298,11 @@ class RuntimeProviderExecutionService:
             self.budget_guard.reconcile(
                 session=repository.session,
                 claim_ids=command.budget_claim_ids,
-                actual_cost_usd=None if unknown_cost else command.cost,
+                actual_cost_usd=None
+                if unknown_cost
+                else known_provider_cost_usd(
+                    command.cost, str((usage_context or {}).get("cost_estimate_mode") or "")
+                ),
             )
         return provider_call
 
@@ -400,8 +406,9 @@ class RuntimeProviderExecutionService:
                             request=provider_request,
                         )
                     except ProviderExecutionError as error:
+                        self._sanitize_review_error(run, error)
                         last_error_code = error.error_code
-                        last_error_message = error.message
+                        last_error_message = self._safe_error_message(run, error.message)
                         taxonomy = get_error_taxonomy(error.error_code)
                         if allow_fallback and taxonomy.fallback_eligible:
                             break
@@ -433,6 +440,7 @@ class RuntimeProviderExecutionService:
                             **preflight_usage_context,
                             **(error.usage_context or {}),
                         }
+                    self._sanitize_review_error(run, error)
                     self._record_attempt_error(
                         repository=repository,
                         run=run,
@@ -450,7 +458,7 @@ class RuntimeProviderExecutionService:
                         else (
                             VISION_PROVIDER_ERROR_MESSAGE
                             if run.execution_kind == "vision"
-                            else error.message
+                            else self._safe_error_message(run, error.message)
                         )
                     )
                     taxonomy = get_error_taxonomy(error.error_code)
@@ -477,7 +485,7 @@ class RuntimeProviderExecutionService:
                 )
                 if not decision.accepted:
                     last_error_code = decision.error_code
-                    last_error_message = decision.error_message
+                    last_error_message = self._safe_error_message(run, decision.error_message)
                     self._record_attempt_result(
                         repository=repository,
                         run=run,
@@ -531,7 +539,7 @@ class RuntimeProviderExecutionService:
                         repository,
                         run,
                         error_code=error.error_code,
-                        error_message=error.message,
+                        error_message=self._safe_error_message(run, error.message),
                         provider_id=candidate.provider_id,
                         model_id=candidate.model_id,
                         instance_id=candidate.instance_id,
@@ -561,6 +569,13 @@ class RuntimeProviderExecutionService:
             instance_id=last_instance_id or None,
             fallback_used=last_fallback_used,
         )
+
+    @staticmethod
+    def _sanitize_review_error(run: RunRecord, error: ProviderExecutionError) -> None:
+        if run.ability_name == ARTICLE_REVIEW_ABILITY:
+            # Upstream error prose/metadata may echo the submitted article.
+            error.message = "article review provider request failed"
+            error.usage_context = {}
 
     def _record_attempt_error(
         self,
@@ -593,6 +608,17 @@ class RuntimeProviderExecutionService:
             ),
             usage_context=error.usage_context,
         )
+
+    @staticmethod
+    def _safe_error_message(run: RunRecord, message: str) -> str:
+        """Keep payload text out of durable/public errors for no-store runs."""
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        if (
+            str(policy.get("storage_mode") or "") == "no_store"
+            or run.data_classification in {"pii", "secret"}
+        ):
+            return "runtime execution failed"
+        return message
 
     def _record_attempt_result(
         self,

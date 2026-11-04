@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 
@@ -11,6 +11,37 @@ from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 class CommercialUsageQueries:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def list_runtime_usage_facts(
+        self,
+        site_id: str,
+        *,
+        subscription_id: str,
+        period_start_at: datetime,
+        period_end_at: datetime,
+    ) -> list[UsageMeterEvent]:
+        # Keep ORM visibility of already-loaded/unflushed attributes. SQL-side
+        # nightly filtering or SUM would change the current Python calculation.
+        statement = (
+            select(UsageMeterEvent)
+            .options(
+                load_only(
+                    UsageMeterEvent.meter_key,
+                    UsageMeterEvent.ability_family,
+                    UsageMeterEvent.execution_kind,
+                    UsageMeterEvent.quantity,
+                    raiseload=True,
+                )
+            )
+            .where(
+                UsageMeterEvent.site_id == site_id,
+                UsageMeterEvent.subscription_id == subscription_id,
+                UsageMeterEvent.created_at >= period_start_at,
+                UsageMeterEvent.created_at <= period_end_at,
+            )
+            .order_by(UsageMeterEvent.created_at.desc(), UsageMeterEvent.id.desc())
+        )
+        return list(self.session.scalars(statement))
 
     def list_usage_meter_events(
         self,

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -17,7 +21,13 @@ from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,
     resolve_runtime_callback_target,
 )
-from app.core.security import build_hmac_signature, build_secret_hash
+from app.core.security import build_hmac_signature, derive_stable_secret_digest
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _BatchSigningKey:
+    identity: tuple[str, str, bytes] | None
+    key: str
 
 
 class HttpRuntimeCallbackDispatcher:
@@ -32,6 +42,35 @@ class HttpRuntimeCallbackDispatcher:
         self.transport = transport
         self._client = client
         self._owns_client = client is None
+        self._batch_signing_key: ContextVar[_BatchSigningKey | None] = ContextVar(
+            "runtime_callback_batch_signing_key", default=None
+        )
+
+    @contextmanager
+    def signing_batch(self) -> Iterator[None]:
+        """Reuse at most one derived key in this context, never across batches."""
+        token = self._batch_signing_key.set(_BatchSigningKey(None, ""))
+        try:
+            yield
+        finally:
+            self._batch_signing_key.reset(token)
+
+    def _get_signing_key(self, request: RuntimeCallbackDispatchRequest) -> str:
+        cached = self._batch_signing_key.get()
+        if cached is None:
+            return derive_stable_secret_digest(request.secret)
+        # Registration is still read per attempt; rotation invalidates this entry
+        # even when the operator retains the same site and key ID.
+        identity = (
+            request.site_id,
+            request.key_id,
+            hashlib.sha256(request.secret.encode("utf-8")).digest(),
+        )
+        if cached.identity == identity:
+            return cached.key
+        key = derive_stable_secret_digest(request.secret)
+        self._batch_signing_key.set(_BatchSigningKey(identity, key))
+        return key
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -69,7 +108,7 @@ class HttpRuntimeCallbackDispatcher:
                 headers=headers,
             )
             self._pin_outbound_target(outbound_request, resolved_target=resolved_target)
-            response = client.send(outbound_request, follow_redirects=False)
+            response = client.send(outbound_request, follow_redirects=False, stream=True)
         except httpx.TimeoutException as error:
             raise RuntimeCallbackDispatchError(
                 "runtime.callback_timeout",
@@ -83,15 +122,18 @@ class HttpRuntimeCallbackDispatcher:
                 retryable=True,
             ) from error
 
-        if 200 <= response.status_code < 300:
-            return RuntimeCallbackDispatchResult(status_code=response.status_code)
+        try:
+            if 200 <= response.status_code < 300:
+                return RuntimeCallbackDispatchResult(status_code=response.status_code)
 
-        raise RuntimeCallbackDispatchError(
-            "runtime.callback_delivery_failed",
-            f"callback endpoint returned HTTP {response.status_code}",
-            retryable=response.status_code >= 500 or response.status_code in {408, 409, 429},
-            status_code=response.status_code,
-        )
+            raise RuntimeCallbackDispatchError(
+                "runtime.callback_delivery_failed",
+                f"callback endpoint returned HTTP {response.status_code}",
+                retryable=response.status_code >= 500 or response.status_code in {408, 409, 429},
+                status_code=response.status_code,
+            )
+        finally:
+            response.close()
 
     @staticmethod
     def _pin_outbound_target(
@@ -145,7 +187,7 @@ class HttpRuntimeCallbackDispatcher:
                 "X-Npcink-Key-Id": request.key_id,
                 "X-Npcink-Timestamp": timestamp,
                 "X-Npcink-Signature": build_hmac_signature(
-                    build_secret_hash(request.secret),
+                    self._get_signing_key(request),
                     canonical,
                 ),
                 "X-Npcink-Callback-Id": callback_id,

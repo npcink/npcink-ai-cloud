@@ -14,9 +14,16 @@ def build_usage_statistics(
         succeeded = sum(run.status == "succeeded" for run in items)
         failed = sum(run.status == "failed" for run in items)
         durations = []
+        succeeded_durations = []
+        failed_durations = []
         for run in items:
             if run.started_at and run.finished_at:
-                durations.append(max(0, (run.finished_at - run.started_at).total_seconds() * 1000))
+                duration = max(0, (run.finished_at - run.started_at).total_seconds() * 1000)
+                durations.append(duration)
+                if run.status == "succeeded":
+                    succeeded_durations.append(duration)
+                elif run.status == "failed":
+                    failed_durations.append(duration)
         return {
             "runs": len(items),
             "succeeded": succeeded,
@@ -24,6 +31,13 @@ def build_usage_statistics(
             "success_rate": succeeded / len(items) if items else None,
             "avg_latency_ms": sum(durations) / len(durations) if durations else None,
             "latency_samples": len(durations),
+            "succeeded_avg_latency_ms": (
+                sum(succeeded_durations) / len(succeeded_durations)
+                if succeeded_durations else None
+            ),
+            "failed_avg_latency_ms": (
+                sum(failed_durations) / len(failed_durations) if failed_durations else None
+            ),
         }
 
     def groups(attribute: str) -> list[dict[str, object]]:

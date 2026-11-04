@@ -85,7 +85,7 @@ assert.match(
 
 assert.match(
   source,
-  /pendingNavigationHref[\s\S]*setPendingNavigationHref[\s\S]*addEventListener\('beforeunload'[\s\S]*unsaved_leave_title[\s\S]*discard_and_leave/,
+  /pendingNavigationHref[\s\S]*useAdminNavigationGuard\([\s\S]*activeGroupDirty, setPendingNavigationHref[\s\S]*unsaved_leave_title[\s\S]*discard_and_leave/,
   'unsaved configuration must use an application confirmation for internal navigation and browser protection for unload'
 );
 assert.doesNotMatch(source, /window\.confirm/, 'service settings must not use a browser-native confirmation dialog');

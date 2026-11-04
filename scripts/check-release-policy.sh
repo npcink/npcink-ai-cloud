@@ -470,9 +470,9 @@ for production_path in deploy/nginx.prod.conf deploy/magick-domain-nginx.conf.te
 	reject_marker_case_insensitive "${production_path}" '/udp'
 done
 require_marker "deploy/image-lock/production-images.json" \
-	'python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72'
+	'python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2'
 require_marker "deploy/image-lock/production-images.json" \
-	'node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
+	'node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914'
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" \
@@ -1331,7 +1331,15 @@ require_marker ".github/workflows/release-smoke.yml" \
 require_marker ".github/workflows/release-smoke.yml" \
 	'[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]'
 require_marker ".github/workflows/release-smoke.yml" \
-	'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+	'echo "- tool_sha=${GITHUB_SHA}"'
+require_marker ".github/workflows/release-smoke.yml" \
+	'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+require_marker ".github/workflows/release-smoke.yml" 'bash deploy/with-smoke-internal-tunnel.sh --'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'StrictHostKeyChecking=yes'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'ExitOnForwardFailure=yes'
+require_marker "deploy/with-smoke-internal-tunnel.sh" '127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'verify_installed_revision || fail'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'manifest.get("source", {}).get("revision") != sys.argv[2]'
 require_marker ".github/workflows/release-smoke.yml" \
 	"actions/workflows/deploy-production.yml/runs"
 require_marker ".github/workflows/release-smoke.yml" \
@@ -1419,5 +1427,14 @@ done
 reject_marker ".github/workflows/deploy-production.yml" "workflow_run:"
 reject_marker ".github/workflows/deploy-production.yml" "push:"
 require_marker ".github/workflows/deploy-production.yml" "github.ref == 'refs/heads/production'"
+
+# The reviewed one-shot exception cannot replace the ordinary readiness lane.
+require_file "docs/certificate-maintenance-exception-2026-11-04.md"
+require_marker "deploy/certificate-maintenance-exception.py" 'EXPIRES = 1793851200'
+require_marker "deploy/certificate-maintenance-exception.py" 'os.O_CREAT | os.O_EXCL'
+require_marker "deploy/certificate-maintenance-exception.py" 'consumed_before_image_mutation'
+require_marker ".github/workflows/deploy-production.yml" 'certificate_maintenance_confirmation'
+require_marker "deploy/remote-load-and-up.sh" '--phase consume'
+require_marker "deploy/certificate-renewal-readiness.sh" '"renewal_dry_run_passed": False'
 
 echo "[ok] Lightweight release policy gate passed"

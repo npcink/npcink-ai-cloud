@@ -17,14 +17,20 @@ from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.api.routes.admin_model_tests import router as admin_model_tests_router
+from app.api.routes.commercial_payments_admin import router as commercial_payments_admin_router
 from app.api.routes.commercial_subscriptions_admin import (
     router as commercial_subscriptions_admin_router,
+)
+from app.api.routes.customer_notifications_admin import (
+    router as customer_notifications_admin_router,
 )
 from app.api.routes.site_compliance_admin import router as site_compliance_admin_router
 from app.core.db import get_session
 from app.core.logging import get_logger
 from app.core.models import CatalogInstance, CatalogModel, RunRecord
 from app.core.security import extract_trace_id
+from app.domain.advisor.availability import OPERATIONS_ADVISOR_PAUSED
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_feedback.service import AgentFeedbackService
 from app.domain.agent_workflow_metadata import (
@@ -32,6 +38,7 @@ from app.domain.agent_workflow_metadata import (
     get_agent_workflow_metadata_projection,
     get_workflow_metadata,
 )
+from app.domain.audio_generation.contracts import AUDIO_GENERATION_CLOUD_ABILITY
 from app.domain.audio_generation.workbench import (
     AudioWorkbenchError,
     AudioWorkbenchService,
@@ -39,10 +46,13 @@ from app.domain.audio_generation.workbench import (
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
-from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
+from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID, TEXT_AI_PROFILE_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
-from app.domain.model_capabilities.contracts import MODEL_CAPABILITIES
+from app.domain.model_capabilities.contracts import (
+    MODEL_CAPABILITIES,
+    model_supports_execution_kind,
+)
 from app.domain.model_capabilities.evidence import (
     capability_evidence_is_current,
     capability_evidence_is_fresh,
@@ -70,6 +80,7 @@ from app.domain.provider_connections.service import (
     ProviderConnectionAdminService,
 )
 from app.domain.provider_resources import build_admin_ai_resource_projection
+from app.domain.runtime.availability import paused_runtime_feature
 from app.domain.runtime.models import (
     RUNTIME_BACKLOG_SCOPE_KIND_PATTERN,
     RUNTIME_DIAGNOSTIC_ISSUE_KIND_PATTERN,
@@ -97,8 +108,11 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
 from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
+router.include_router(admin_model_tests_router)
 router.include_router(site_compliance_admin_router)
 router.include_router(commercial_subscriptions_admin_router)
+router.include_router(commercial_payments_admin_router)
+router.include_router(customer_notifications_admin_router)
 logger = get_logger(__name__)
 RFC3339_TIMESTAMP_PATTERN = (
     r"(?i)^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$"
@@ -438,6 +452,13 @@ class AccountPayload(BaseModel):
     bind_default_free: bool = False
 
 
+class AccountOperatorProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator_display_name: str = ""
+    operator_note: str = ""
+
+
 class AccountStatusPayload(BaseModel):
     reason: str = ""
 
@@ -538,6 +559,8 @@ class PlanVersionPayload(BaseModel):
 class AdminPlanParametersPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    revision: str = Field(min_length=1, max_length=128)
+
     monthly_included_points: float = Field(ge=0)
     site_limit: int = Field(ge=1)
     max_vector_documents: int = Field(ge=0)
@@ -625,6 +648,7 @@ class CreditPackCatalogItemPayload(BaseModel):
 
 
 class CreditPackCatalogPayload(BaseModel):
+    expected_revision: str | None = Field(default=None, max_length=128)
     items: list[CreditPackCatalogItemPayload] = Field(default_factory=list)
 
 
@@ -687,7 +711,7 @@ class ProviderConnectionPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     credential: str | None = None
     secret: str | None = None
-    secretless: bool = False
+    secretless: bool | None = None
 
 
 class ProviderConnectionDeletePayload(BaseModel):
@@ -1354,6 +1378,9 @@ def _serialize_hosted_runtime_instance(
         "capability_tags": list(instance.capability_tags or []),
         "model_status": str(model.status or ""),
         "model_feature": str(model.feature or ""),
+        "upstream_model_id": str(
+            model_metadata.get("upstream_model_id") or instance.model_id or ""
+        ),
         "catalog_source": str(model_metadata.get("catalog_source") or ""),
         "upstream_status": str(model_metadata.get("upstream_status") or "current"),
         "price_input": model.price_input,
@@ -1373,7 +1400,9 @@ def _serialize_hosted_runtime_instance(
     }
 
 
-def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | None:
+def _capability_route_fingerprint(
+    *, capability: str, instance: Any, provider_route_identity: str
+) -> str | None:
     fingerprint_builder = {
         "vision": vision_probe_fingerprint,
         "embedding": embedding_probe_fingerprint,
@@ -1383,7 +1412,7 @@ def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | No
     if fingerprint_builder is None:
         return None
     return fingerprint_builder(
-        provider_connection_id=str(instance.provider_id or ""),
+        provider_connection_id=provider_route_identity,
         model_id=str(instance.model_id or ""),
         endpoint_variant=str(instance.endpoint_variant or ""),
     )
@@ -1395,8 +1424,11 @@ def _capability_evidence_is_fresh_for_route(
     capability: str,
     instance: Any,
     now: datetime,
+    provider_route_identity: str,
 ) -> bool:
-    fingerprint = _capability_route_fingerprint(capability=capability, instance=instance)
+    fingerprint = _capability_route_fingerprint(
+        capability=capability, instance=instance, provider_route_identity=provider_route_identity
+    )
     return bool(
         fingerprint
         and capability_evidence_is_fresh(
@@ -1428,6 +1460,7 @@ def _build_hosted_runtime_profile_projection(
     evidence_now = datetime.now(UTC)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
+        route_identities = repository.provider_route_identities()
         instances = repository.list_instances_for_provider()
         models = repository.list_models_by_ids([instance.model_id for instance in instances])
         models_by_id = {model.model_id: model for model in models}
@@ -1476,6 +1509,9 @@ def _build_hosted_runtime_profile_projection(
                             capability="vision",
                             instance=instance,
                             now=evidence_now,
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                         else None
                     ),
@@ -1490,6 +1526,9 @@ def _build_hosted_runtime_profile_projection(
                             capability=capability,
                             instance=instance,
                             now=evidence_now,
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                     },
                 )
@@ -1534,6 +1573,12 @@ def _build_hosted_runtime_profile_projection(
                     "label": spec.label,
                     "description": spec.description,
                     "tasks": list(spec.tasks),
+                    "availability_state": (
+                        "paused" if paused_runtime_feature(
+                            ability_name="", execution_kind=spec.execution_kind,
+                            profile_id=spec.profile_id,
+                        ) else "active"
+                    ),
                     "execution_kind": (
                         profile.execution_kind if profile is not None else spec.execution_kind
                     ),
@@ -1541,7 +1586,7 @@ def _build_hosted_runtime_profile_projection(
                     "timeout_ms": int(policy.get("timeout_ms") or spec.timeout_ms),
                     "max_timeout_ms": spec.max_timeout_ms,
                     "allow_fallback": bool(policy.get("allow_fallback", spec.allow_fallback)),
-                    "max_retries": int(policy.get("max_retries") or spec.max_retries),
+                    "max_retries": int(policy.get("max_retries", spec.max_retries)),
                     "note": note,
                     "revision": str(binding.revision if binding is not None else ""),
                     "updated_at": (
@@ -1555,6 +1600,38 @@ def _build_hosted_runtime_profile_projection(
                 }
             )
 
+        # A snapshot of the existing automatic route, never an editable seventh
+        # WordPress profile. Reading this must not seed or change its binding.
+        text_binding = repository.get_routing_binding(TEXT_AI_PROFILE_ID)
+        read_only_profiles = [{
+            "profile_id": TEXT_AI_PROFILE_ID,
+            "selection_mode": "automatic",
+            "candidates": [
+                {
+                    "instance_id": read_only_instance.instance_id,
+                    "provider_id": read_only_instance.provider_id,
+                    "provider_display_name": (
+                        providers_by_id[read_only_instance.provider_id].display_name
+                        if read_only_instance.provider_id in providers_by_id
+                        else read_only_instance.provider_id
+                    ),
+                    "model_id": read_only_instance.model_id,
+                    "upstream_model_id": (
+                        str(
+                            (models_by_id[read_only_instance.model_id].raw_json or {}).get(
+                                "upstream_model_id"
+                            )
+                            or read_only_instance.model_id
+                        )
+                        if read_only_instance.model_id in models_by_id
+                        else read_only_instance.model_id
+                    ),
+                }
+                for instance_id in (text_binding.candidate_instance_ids if text_binding else [])
+                if (read_only_instance := instances_by_id.get(instance_id)) is not None
+            ],
+        }]
+
     return {
         "contract_version": "cloud-hosted-runtime-profiles.v1",
         "surface": "admin_hosted_runtime_profiles",
@@ -1565,6 +1642,7 @@ def _build_hosted_runtime_profile_projection(
         "operation_contract_version": WORDPRESS_OPERATION_CONTRACT,
         "available_instances": available_instances_by_kind,
         "profiles": profiles,
+        "read_only_profiles": read_only_profiles,
         "boundary": {
             "public_runtime_accepts_raw_model_instance": False,
             "results_write_posture": "suggestion_only",
@@ -1598,6 +1676,7 @@ def _validate_hosted_runtime_profile_payload(
     provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
+        route_identities = repository.provider_route_identities()
         for profile_payload in payload.profiles:
             profile_id = profile_payload.profile_id.strip()
             if profile_id not in known_profile_ids:
@@ -1640,8 +1719,8 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
-                feature_compatible = model.feature == spec.execution_kind or (
-                    spec.execution_kind == "vision" and model.feature == "text"
+                feature_compatible = model_supports_execution_kind(
+                    model.feature, spec.execution_kind
                 )
                 if not feature_compatible:
                     return [], (
@@ -1658,7 +1737,9 @@ def _validate_hosted_runtime_profile_payload(
                         "audio_generation": audio_generation_probe_fingerprint,
                     }[spec.execution_kind]
                     fingerprint = fingerprint_builder(
-                        provider_connection_id=instance.provider_id,
+                        provider_connection_id=route_identities.get(
+                            instance.provider_id, instance.provider_id
+                        ),
                         model_id=instance.model_id,
                         endpoint_variant=instance.endpoint_variant,
                     )
@@ -1675,6 +1756,9 @@ def _validate_hosted_runtime_profile_payload(
                             capability=spec.execution_kind,
                             instance=instance,
                             now=datetime.now(UTC),
+                            provider_route_identity=route_identities.get(
+                                instance.provider_id, instance.provider_id
+                            ),
                         )
                     ):
                         return [], (
@@ -1868,6 +1952,46 @@ async def upsert_account(
         )
         return _service_error_response(error)
     return build_envelope(status="ok", message="account saved", data=result, revision="m6")
+
+
+@router.get("/admin/accounts/creation-operations/{operation_id}")
+async def confirm_admin_account_creation(
+    request: Request, operation_id: str,
+    primary_email: str = Query(min_length=1, max_length=320),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_account_creation,
+        operation_id=operation_id, primary_email=primary_email,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(status="ok", message="creation confirmation", data=result, revision="m6")
+
+
+@router.patch("/admin/accounts/{account_id}/operator-profile")
+async def update_admin_account_operator_profile(
+    request: Request, account_id: str, payload: AccountOperatorProfilePayload
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_account_operator_profile,
+            account_id,
+            fields=payload.model_dump(exclude_unset=True),
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request, event_kind="account.operator_profile.update", error=error,
+            account_id=account_id, scope_kind="account", scope_id=account_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error, request=request)
+    return build_envelope(status="ok", message="operator profile saved", data=result, revision="m6")
 
 
 @router.post("/admin/accounts/{account_id}/suspend")
@@ -2629,6 +2753,24 @@ async def get_admin_credit_pack_catalog(request: Request) -> Any:
     )
 
 
+@router.get("/admin/credit-packs/operations/{operation_id}")
+async def confirm_admin_credit_pack_catalog(
+    request: Request, operation_id: str,
+    expected_revision: str = Query(min_length=1, max_length=128),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_credit_pack_catalog,
+        operation_id=operation_id, expected_revision=expected_revision,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="credit pack operation confirmation", data=result, revision="m6",
+    )
+
+
 @router.patch("/admin/credit-packs")
 async def update_admin_credit_pack_catalog(
     request: Request,
@@ -2644,6 +2786,7 @@ async def update_admin_credit_pack_catalog(
         result = await run_in_threadpool(
             service.update_admin_credit_pack_catalog,
             items=payload_items,
+            expected_revision=payload.expected_revision,
             audit_context=audit_context,
         )
     except CommercialServiceError as error:
@@ -3141,6 +3284,17 @@ async def get_runtime_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_runtime_advisor,
         site_id=site_id,
@@ -3163,6 +3317,17 @@ async def get_commercial_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_commercial_advisor,
         usage_window_days=usage_window_days,
@@ -3186,6 +3351,17 @@ async def get_routing_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_routing_advisor,
@@ -3220,6 +3396,17 @@ async def get_site_diagnostic_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_site_diagnostic_advisor,
         site_id=site_id,
@@ -3244,6 +3431,17 @@ async def get_operations_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_operations_advisor,
         site_id=site_id,
@@ -3278,6 +3476,17 @@ async def get_ops_summary_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_ops_summary,
@@ -3332,6 +3541,17 @@ async def get_ops_summary_preview_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_ops_summary_preview,
@@ -3375,6 +3595,17 @@ async def review_ops_summary_disclosure(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         actor_context = _build_audit_context(request)
         result = await run_in_threadpool(
@@ -3552,6 +3783,30 @@ async def get_admin_support_request(request: Request, request_id: str) -> Any:
     )
 
 
+@router.get("/admin/support-requests/{request_id}/operations/{operation_id}")
+async def confirm_admin_support_operation(
+    request: Request,
+    request_id: str,
+    operation_id: str,
+    action: str = Query(pattern="^(message|attachment|status)$"),
+    digest: str = Query(pattern="^[a-f0-9]{64}$"),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_support_operation,
+        request_id=request_id,
+        operation_id=operation_id,
+        action=action,
+        digest=digest,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="support operation evidence loaded", data=result, revision="m6"
+    )
+
+
 @router.post("/admin/support-requests/{request_id}/messages")
 async def create_admin_support_request_message(
     request: Request,
@@ -3571,7 +3826,11 @@ async def create_admin_support_request_message(
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    notification = _send_support_request_update_notification(request, result=result)
+    notification = (
+        {"attempted": False, "delivered": False, "reason": "operation_replayed"}
+        if result.get("replayed")
+        else _send_support_request_update_notification(request, result=result)
+    )
     return build_envelope(
         status="ok",
         message="support request message created",
@@ -3657,7 +3916,7 @@ async def update_admin_support_request(
     return build_envelope(
         status="ok",
         message="support request updated",
-        data={"request": result},
+        data={"request": result, "operation_receipt": result.get("operation_receipt")},
         revision="m6",
     )
 
@@ -3960,6 +4219,25 @@ async def disable_admin_portal_user(
     )
 
 
+@router.get("/admin/accounts/{account_id}/credit-ledger/adjustments/{operation_id}")
+async def get_admin_account_credit_adjustment(
+    request: Request, account_id: str, operation_id: str
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account_credit_adjustment,
+            account_id, operation_id=operation_id, audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok", message="credit adjustment confirmation", data=result, revision="m6"
+    )
+
+
 @router.post("/admin/accounts/{account_id}/credit-ledger/adjustments")
 async def apply_admin_account_credit_adjustment(
     request: Request,
@@ -4144,6 +4422,24 @@ async def get_admin_site(
     )
 
 
+@router.get("/admin/sites/{site_id}/operations/{operation_id}")
+async def confirm_admin_site_operation(
+    request: Request, site_id: str, operation_id: str,
+    action: Literal["activate", "set", "clear", "reset"] = Query(),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_site_operation,
+        site_id=site_id, operation_id=operation_id, action=action,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="site operation confirmation", data=result, revision="m6"
+    )
+
+
 @router.patch("/admin/sites/{site_id}/relink-cooldown")
 async def update_admin_site_relink_cooldown(
     request: Request,
@@ -4217,6 +4513,24 @@ async def get_admin_plan(
     )
 
 
+@router.get("/admin/plans/{plan_id}/parameter-operations/{operation_id}")
+async def confirm_admin_plan_parameters(
+    request: Request, plan_id: str, operation_id: str,
+    source_revision: str = Query(min_length=1, max_length=128),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = await run_in_threadpool(
+        _get_commercial_service(request).confirm_admin_plan_parameters,
+        plan_id=plan_id, operation_id=operation_id, source_revision=source_revision,
+        audit_context=_build_audit_context(request),
+    )
+    return build_envelope(
+        status="ok", message="plan parameter operation confirmation", data=result, revision="m6"
+    )
+
+
 @router.patch("/admin/plans/{plan_id}")
 async def update_admin_plan_parameters(
     request: Request,
@@ -4231,6 +4545,7 @@ async def update_admin_plan_parameters(
         result = await run_in_threadpool(
             _get_commercial_service(request).update_admin_plan_parameters,
             plan_id=plan_id,
+            revision=payload.revision,
             monthly_included_points=payload.monthly_included_points,
             site_limit=payload.site_limit,
             max_vector_documents=payload.max_vector_documents,
@@ -4273,6 +4588,9 @@ async def get_admin_plugin_history(
     site_id: str = Query(default="", max_length=191),
     plugin_slug: str = Query(default="", max_length=64),
     event_kind: str = Query(default="", max_length=96),
+    error_code: str | None = Query(default=None, max_length=128),
+    event_category: Literal["all", "activity", "status"] = Query(default="all"),
+    unassigned_site: bool = False,
     record_scope: Literal["all", "operational", "test"] = Query(default="operational"),
     status: Literal["all", "ok", "failed", "other"] = Query(default="all"),
     sort: Literal["latest", "failures"] = Query(default="latest"),
@@ -4289,7 +4607,8 @@ async def get_admin_plugin_history(
         result = await run_in_threadpool(partial(
             get_plugin_event_history, get_cloud_services(request).settings.database_url,
             window_hours=window_hours, site_id=site_id, plugin_slug=plugin_slug,
-            event_kind=event_kind, record_scope=record_scope, status=status, sort=sort,
+            event_kind=event_kind, error_code=error_code, event_category=event_category,
+            unassigned_site=unassigned_site, record_scope=record_scope, status=status, sort=sort,
             view=view, page=page, page_size=page_size, snapshot_at=snapshot_at,
             snapshot_id=snapshot_id,
         ))
@@ -4306,6 +4625,7 @@ async def get_admin_plugin_observability(
     window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default=""),
     plugin_slug: str = Query(default=""),
+    activity_category: Literal["all", "activity", "status"] = Query(default="all"),
     record_scope: Literal["all", "operational", "test"] = Query(default="all"),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -4318,6 +4638,7 @@ async def get_admin_plugin_observability(
         site_id=site_id,
         plugin_slug=plugin_slug,
         record_scope=record_scope,
+        activity_category=activity_category,
     )
     return build_envelope(
         status="ok",
@@ -5289,7 +5610,7 @@ async def create_admin_provider_connection(
         result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection, payload.model_dump(mode="json"))
+        ).save_connection, payload.model_dump(mode="json"), operation="create")
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5352,7 +5673,8 @@ async def update_admin_provider_connection(
         result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection, payload.model_dump(mode="json"), connection_id=connection_id)
+        ).save_connection, payload.model_dump(mode="json"), connection_id=connection_id,
+            operation="update")
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5910,7 +6232,9 @@ async def probe_admin_hosted_runtime_capability(
             "audio_generation": audio_generation_probe_fingerprint,
         }[payload.capability]
         fingerprint = fingerprint_builder(
-            provider_connection_id=provider_id,
+            provider_connection_id=repository.provider_route_identities().get(
+                provider_id, provider_id
+            ),
             model_id=model_id,
             endpoint_variant=endpoint_variant,
         )
@@ -6178,6 +6502,18 @@ async def create_admin_audio_job(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    feature = paused_runtime_feature(ability_name=AUDIO_GENERATION_CLOUD_ABILITY)
+    if feature:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="runtime.feature_paused",
+                message=f"{feature} is temporarily paused",
+                data={"feature": feature, "retryable": False},
+                revision="m6",
+            ),
+        )
     service = _audio_workbench_service(request)
     try:
         result = service.create_job(payload.model_dump(mode="json"))
@@ -6615,6 +6951,7 @@ async def get_runtime_telemetry_diagnostics(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
+    since: datetime | None = None,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6626,6 +6963,7 @@ async def get_runtime_telemetry_diagnostics(
         site_id=site_id,
         capability=capability,
         recent_minutes=recent_minutes,
+        since=since,
         limit=limit,
     )
     return build_envelope(
@@ -6641,21 +6979,31 @@ async def get_runtime_telemetry_diagnostics(
 async def get_runtime_run_evidence(
     request: Request,
     site_id: str | None = Query(default=None),
+    run_id: str | None = Query(default=None, min_length=1, max_length=191),
     capability: str | None = Query(default=None, max_length=191),
     issue_code: str | None = Query(default=None, max_length=64),
+    evidence_scope: Literal["affected", "context"] = Query(default="affected"),
     recent_minutes: int = Query(default=60, ge=1, le=129600),
+    since: datetime | None = None,
     limit: int = Query(default=25, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if run_id and not site_id:
+        return JSONResponse(
+            status_code=422, content={"detail": "site_id is required for exact run evidence"}
+        )
     services = get_cloud_services(request)
     result = await run_in_threadpool(
         RuntimeService(services.settings.database_url).get_runtime_run_evidence,
         site_id=site_id,
+        run_id=run_id,
         capability=capability,
         issue_code=issue_code,
+        evidence_scope=evidence_scope,
         recent_minutes=recent_minutes,
+        since=since,
         limit=limit,
     )
     return build_envelope(

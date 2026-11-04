@@ -252,6 +252,7 @@ def _admin_session_token(
 def _portal_session_token(
     *,
     principal_id: str = "principal:portal-probe@example.com",
+    database_url: str | None = None,
     claim_updates: dict[str, object] | None = None,
 ) -> str:
     now = datetime.now(UTC)
@@ -260,11 +261,27 @@ def _portal_session_token(
         "aud": "npcink-ai-cloud-portal",
         "sub": principal_id,
         "purpose": "portal_session",
+        "sid": "web-evidence-session",
         "session_version": 1,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=1)).timestamp()),
     }
     payload.update(claim_updates or {})
+    if database_url is not None:
+        from app.core.models import PortalSession
+
+        with get_session(database_url) as session:
+            session.add(
+                PortalSession(
+                    session_id=payload["sid"],
+                    principal_id=principal_id,
+                    session_version=1,
+                    created_at=datetime.fromtimestamp(payload["iat"], UTC),
+                    absolute_expires_at=datetime.fromtimestamp(payload["exp"], UTC),
+                    auth_method="email_code",
+                )
+            )
+            session.commit()
     return jwt.encode(payload, TEST_PORTAL_JWT_SECRET, algorithm="HS256")
 
 
@@ -706,70 +723,11 @@ def test_web_portal_rejects_malicious_temporal_claims_without_500(
     dispose_engine(database_url)
 
 
-@pytest.mark.parametrize(
-    ("kwargs", "error_code"),
-    [
-        ({"principal_id": "principal:missing"}, "auth.portal_session_revoked"),
-        (
-            {"principal_id": "principal:missing", "session_version": 0},
-            "auth.portal_session_invalid",
-        ),
-        (
-            {"principal_id": "principal:missing", "site_id": "site/invalid"},
-            "auth.portal_session_invalid",
-        ),
-    ],
-)
-def test_portal_cookie_signing_fails_closed_without_identity_or_valid_claims(
-    tmp_path: Path,
-    kwargs: dict[str, object],
-    error_code: str,
-) -> None:
+def test_portal_cookie_attachment_requires_issued_material(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
-    request = _request_for_client(client)
-    principal_id = kwargs.get("principal_id")
-    site_id = kwargs.get("site_id", "")
-    session_version = kwargs.get("session_version")
-    assert isinstance(principal_id, str)
-    assert isinstance(site_id, str)
-    assert session_version is None or isinstance(session_version, int)
-
-    with pytest.raises(PortalBearerTokenError) as exc_info:
-        set_portal_session_cookies(
-            request,
-            JSONResponse({}),
-            principal_id=principal_id,
-            site_id=site_id,
-            session_version=session_version,
-        )
-
-    assert exc_info.value.error_code == error_code
-    dispose_engine(database_url)
-
-
-def test_portal_cookie_signing_failure_does_not_emit_session_cookie(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    database_url, client = _build_client(tmp_path)
-    principal_id = "principal:signing-failure"
-    CommercialService(database_url).upsert_platform_admin_grant(principal_id=principal_id)
     response = JSONResponse({})
-
-    def fail_signing(*args: object, **kwargs: object) -> str:
-        raise RuntimeError("signing failed")
-
-    monkeypatch.setattr(
-        "app.api.portal_session.build_portal_session_token",
-        fail_signing,
-    )
-    with pytest.raises(RuntimeError, match="signing failed"):
-        set_portal_session_cookies(
-            _request_for_client(client),
-            response,
-            principal_id=principal_id,
-        )
-
+    with pytest.raises(TypeError):
+        set_portal_session_cookies(_request_for_client(client), response, principal_id="missing")
     assert response.headers.getlist("set-cookie") == []
     dispose_engine(database_url)
 
@@ -782,6 +740,7 @@ def test_web_portal_session_evidence_comes_only_from_signed_claims(tmp_path: Pat
     expires_at = int((datetime.now(UTC) + timedelta(hours=1)).timestamp())
     token = _portal_session_token(
         principal_id=principal_id,
+        database_url=database_url,
         claim_updates={"iat": issued_at, "exp": expires_at},
     )
     client.cookies.set("npcink_portal_session_token", token)

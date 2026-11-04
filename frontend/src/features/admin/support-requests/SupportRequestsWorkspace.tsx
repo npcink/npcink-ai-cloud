@@ -2,12 +2,15 @@
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
-import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
+import { SupportRequestEditor } from './SupportRequestEditor';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -18,7 +21,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
-import { resolveUiErrorMessage } from '@/lib/errors';
+import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
 import {
   ADMIN_QUEUE_PATHNAMES,
   buildAdminDetailHref,
@@ -40,7 +43,7 @@ import {
 } from './directory-model';
 import {
   getLatestSupportRequestsDirectoryData,
-  useSupportRequestUpdate,
+  supportRequestKeys,
   useSupportRequestsDirectory,
 } from './queries';
 import type {
@@ -48,8 +51,6 @@ import type {
   SupportRequestAttention,
   SupportRequestStatus,
 } from './types';
-
-const NEXT_STATUSES: SupportRequestStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
 
 function statusTone(status: SupportRequestStatus): string {
   if (status === 'open') return 'warning';
@@ -63,6 +64,7 @@ export function SupportRequestsWorkspace() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const [queueParamsKey, setQueueParamsKey] = useState(searchParamsKey);
@@ -80,8 +82,8 @@ export function SupportRequestsWorkspace() {
   const focusedRequestId = queueParams.get('focus') || '';
 
   const [queryDraft, setQueryDraft] = useState(appliedQuery);
-  const [actionError, setActionError] = useState('');
   const [editRequest, setEditRequest] = useState<SupportRequest | null>(null);
+  const savedToastRef = useRef<string | null>(null);
   const inspectorTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const requestKey = useMemo(
@@ -99,7 +101,6 @@ export function SupportRequestsWorkspace() {
     [appliedAttention, appliedQuery, appliedStatus, appliedTopic, offset, sort]
   );
   const directoryQuery = useSupportRequestsDirectory(requestKey);
-  const updateRequest = useSupportRequestUpdate();
   const fallbackDirectory = directoryQuery.isError
     ? getLatestSupportRequestsDirectoryData(queryClient)
     : undefined;
@@ -110,15 +111,14 @@ export function SupportRequestsWorkspace() {
     isPlaceholderData: directoryQuery.isPlaceholderData,
     hasError: directoryQuery.isError,
   });
-  const summary = directory?.summary || {};
+  const summary = directory?.summary;
   const total = Number(directory?.pagination?.total || 0);
   const loadedAt = directory?.loadedAt ? new Date(directory.loadedAt) : null;
   const hasLoaded = Boolean(directory);
   const isLoading = directoryQuery.isPending && !hasLoaded;
   const isRefreshing = directoryQuery.isFetching;
-  const loadError = directoryQuery.error
-    ? resolveUiErrorMessage(directoryQuery.error, t('error.failed_load'))
-    : '';
+  const directoryBlocked = displayScope.isRetainedScope || directoryQuery.isError || isRefreshing || Boolean(directory?.issues?.length);
+  const loadError = directoryQuery.isError ? t('error.failed_load') : '';
 
   const updateQueueUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(queueParamsKey);
@@ -145,6 +145,29 @@ export function SupportRequestsWorkspace() {
 
   const items = directory?.items || [];
   const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || null;
+  const supportReturnPolicy = {
+    allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
+    fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
+  } as const;
+  const supportRequestDetailHref = (requestId: string) => buildAdminDetailHref({
+    detailPathname: `/admin/support-requests/${encodeURIComponent(requestId)}`,
+    returnTo: buildAdminQueueReturnTo({
+      pathname,
+      searchParams: queueParamsKey,
+      policy: supportReturnPolicy,
+      focusId: requestId,
+    }),
+    policy: supportReturnPolicy,
+  });
+
+  const { keyboardFocus, inspect } = useAdminQueueKeyboard({
+    itemIds: items.map((item) => item.request_id),
+    focusedId: focusedRequestId,
+    enabled: !editRequest,
+    onFocus: (requestId) => updateQueueUrl({ focus: requestId }),
+    onOpen: (requestId) => router.push(supportRequestDetailHref(requestId)),
+    onClose: () => updateQueueUrl({ focus: null }),
+  });
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -172,31 +195,6 @@ export function SupportRequestsWorkspace() {
       offset: null,
       focus: null,
     });
-  };
-
-  const handleUpdate = async (formData: FormData) => {
-    if (!editRequest) return;
-    const requestedStatus = String(formData.get('status') || '');
-    if (!NEXT_STATUSES.includes(requestedStatus as SupportRequestStatus)) {
-      setActionError(t('error.failed_save'));
-      return;
-    }
-    setActionError('');
-    try {
-      const data = await updateRequest.mutateAsync({
-        requestId: editRequest.request_id,
-        status: requestedStatus as SupportRequestStatus,
-        adminNote: String(formData.get('admin_note') || ''),
-      });
-      if (!data.request) {
-        throw new Error(t('error.failed_save'));
-      }
-      updateQueueUrl({ focus: editRequest.request_id });
-      setEditRequest(null);
-      toast.success(t('admin.support_requests_updated_notice', {}, 'Ticket updated.'), t('admin.support_requests_updated_title', {}, 'Ticket saved'));
-    } catch (error) {
-      setActionError(resolveUiErrorMessage(error, t('error.failed_save')));
-    }
   };
 
   if (loadError && !hasLoaded) {
@@ -233,29 +231,14 @@ export function SupportRequestsWorkspace() {
         ? t('admin.support_requests_reason_in_progress', {}, 'Work has started; keep the customer conversation and internal next step current.')
         : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
   const closeInspector = () => updateQueueUrl({ focus: null });
-  const supportReturnPolicy = {
-    allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
-    fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
-  } as const;
-  const supportRequestDetailHref = (requestId: string) => buildAdminDetailHref({
-    detailPathname: `/admin/support-requests/${encodeURIComponent(requestId)}`,
-    returnTo: buildAdminQueueReturnTo({
-      pathname,
-      searchParams: queueParamsKey,
-      policy: supportReturnPolicy,
-      focusId: requestId,
-    }),
-    policy: supportReturnPolicy,
-  });
   const openEditor = (item: SupportRequest) => {
-    setActionError('');
+    if (savedToastRef.current) { toast.removeToast(savedToastRef.current); savedToastRef.current = null; }
     setEditRequest(item);
   };
 
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={t('admin.support_requests_title', {}, 'Tickets')}
         description={t('admin.support_requests_workspace_desc', {}, 'Prioritize unanswered customer issues, inspect one ticket, then continue the full conversation in its detail view.')}
         secondaryAction={(
@@ -287,39 +270,69 @@ export function SupportRequestsWorkspace() {
         </div>
       ) : null}
 
+      {directory?.issues?.length ? <div role="alert" data-ui="support-directory-issues" className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-200">
+        <p>{t('admin.support_drafts.directory_issues', { count: String(directory.issues.length) })}</p>
+        <p>{directory.issues.join(', ')}</p>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={isRefreshing} onClick={() => void directoryQuery.refetch()}>{t('common.retry')}</button>
+      </div> : null}
+      {loadError && !displayScope.isRetainedScope ? <p role="status" className="text-sm">{t('admin.support_drafts.directory_blocked')}</p> : null}
+
       <AdminDataTableFrame
         title={t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}
-        resultLabel={`${t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)} · ${t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}`}
+        resultLabel={t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)}
         dataUi="support-request-table"
         density="compact"
         bodyClassName="overflow-hidden"
-        footer={<ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />}
+        headerActions={<AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}><p>{t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}</p><div className="mt-2"><AdminQueueKeyboardHint /></div></AdminHelpTip>}
+        footer={(
+          <>
+            {total <= SUPPORT_REQUEST_PAGE_SIZE && offset === 0 ? (
+              <p data-ui="support-request-single-page-range" className="border-t border-slate-200 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                {t('common.pagination_summary', { start: total > 0 ? '1' : '0', end: String(total), total: String(total) })}
+              </p>
+            ) : null}
+            <ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />
+          </>
+        )}
       >
         <form
           data-ui="support-request-toolbar"
           onSubmit={applySearch}
-          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6"
+          className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800"
         >
-          <label className="text-sm text-slate-700 dark:text-slate-200 xl:col-span-2">
+          <div
+            role="group"
+            aria-label={t('admin.support_requests_view_filter_label', {}, 'Ticket view')}
+            data-ui="support-request-view-pills"
+            className="flex basis-full flex-wrap items-center gap-1.5"
+          >
+            <span className="mr-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
+            <BackofficeFilterPill active={!queueView} aria-pressed={!queueView} onClick={() => updateQueueView('')}>
+              {t('common.all', {}, 'All')}
+            </BackofficeFilterPill>
+            <BackofficeFilterPill active={queueView === 'attention:waiting_for_operator'} aria-pressed={queueView === 'attention:waiting_for_operator'} tone="warning" onClick={() => updateQueueView('attention:waiting_for_operator')}>
+              {t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}
+            </BackofficeFilterPill>
+            <BackofficeFilterPill active={queueView === 'attention:overdue'} aria-pressed={queueView === 'attention:overdue'} tone="danger" onClick={() => updateQueueView('attention:overdue')}>
+              {t('admin.support_requests_overdue', {}, 'Overdue')}
+            </BackofficeFilterPill>
+            {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => (
+              <BackofficeFilterPill key={status} active={queueView === `status:${status}`} aria-pressed={queueView === `status:${status}`} tone={status === 'open' ? 'warning' : status === 'resolved' ? 'success' : 'neutral'} onClick={() => updateQueueView(`status:${status}`)}>
+                {t(`admin.support_status_${status}`, {}, status)}
+              </BackofficeFilterPill>
+            ))}
+          </div>
+          <label className="min-w-[14rem] flex-1 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
             <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            <span className="sr-only">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
-            <select className="input w-full" value={queueView} onChange={(event) => updateQueueView(event.target.value)}>
-              <option value="">{t('common.all', {}, 'All')}</option>
-              <option value="attention:waiting_for_operator">{t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}</option>
-              <option value="attention:overdue">{t('admin.support_requests_overdue', {}, 'Overdue')}</option>
-              {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => <option key={status} value={`status:${status}`}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-            </select>
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="w-40 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</span>
             <select className="input w-full" value={appliedTopic} onChange={(event) => updateQueueUrl({ topic: event.target.value || null, offset: null, focus: null })}>
               {SUPPORT_REQUEST_TOPICS.map((topic) => <option key={topic || 'all'} value={topic}>{topic ? t(`portal.support_topic_${topic}`, {}, topic) : t('admin.support_topic_all', {}, 'All topics')}</option>)}
             </select>
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="w-44 text-sm text-slate-700 dark:text-slate-200">
             <span className="sr-only">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
             <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
               <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
@@ -333,15 +346,15 @@ export function SupportRequestsWorkspace() {
         </form>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[68rem] table-fixed text-left text-sm">
+          <table className="w-full min-w-[60rem] table-fixed text-left text-sm">
             <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
               <tr>
-                <th scope="col" className="w-44 px-3 py-2">{t('admin.support_requests_table_waiting', {}, 'Priority / waiting')}</th>
-                <th scope="col" className="w-[28%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
-                <th scope="col" className="w-36 px-3 py-2">{t('common.status')}</th>
-                <th scope="col" className="w-52 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
-                <th scope="col" className="w-36 px-3 py-2">{t('common.updated_at', {}, 'Updated')}</th>
-                <th scope="col" className="w-56 px-3 py-2 text-right">{t('common.actions', {}, 'Actions')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('admin.support_requests_table_waiting', {}, 'Priority / waiting')}</th>
+                <th scope="col" className="w-[24%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
+                <th scope="col" className="w-28 px-3 py-2">{t('common.status')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
+                <th scope="col" className="w-32 px-3 py-2">{t('common.updated_at', {}, 'Updated')}</th>
+                <th scope="col" className="w-64 px-3 py-2 text-right">{t('common.actions', {}, 'Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
@@ -368,11 +381,11 @@ export function SupportRequestsWorkspace() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <BackofficeStatusBadge status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
+                      <BackofficeStatusBadge className="whitespace-nowrap normal-case tracking-normal" status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
-                      <p className="truncate font-medium text-slate-950 dark:text-white">{item.account_id}</p>
+                      <BackofficeIdentifier value={item.account_id} className="block text-xs" />
                       <p className="mt-1 truncate">{item.site_id || t('common.not_available', {}, 'N/A')}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
@@ -380,9 +393,9 @@ export function SupportRequestsWorkspace() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-2">
-                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; updateQueueUrl({ focus: item.request_id }); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
+                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; inspect(item.request_id); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
                         <Link
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-secondary btn-sm"
                           href={supportRequestDetailHref(item.request_id)}
                         >
                           {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}
@@ -395,8 +408,8 @@ export function SupportRequestsWorkspace() {
                 <tr>
                   <td colSpan={6} className="px-3 py-3">
                     <AdminEmptyState className="mx-auto max-w-2xl text-center">
-                      <p className="font-semibold text-slate-700 dark:text-slate-200">{hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}</p>
-                      <p className="mt-1">{hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{directory?.issues.length ? t('admin.support_drafts.rows_unavailable') : hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}</p>
+                      <p className="mt-1">{directory?.issues.length ? t('admin.support_drafts.directory_blocked') : hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}</p>
                       {hasFilters ? <button type="button" className="btn btn-secondary btn-sm mt-2" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
                     </AdminEmptyState>
                   </td>
@@ -408,7 +421,7 @@ export function SupportRequestsWorkspace() {
       </AdminDataTableFrame>
 
       <AdminContextDrawer
-        open={Boolean(selectedRequest) && !editRequest}
+        open={Boolean(selectedRequest) && !editRequest && !keyboardFocus}
         title={selectedRequest?.title || t('admin.support_requests_inspector_title', {}, 'Current ticket')}
         titleId="support-request-drawer-title"
         eyebrow={t('admin.support_requests_inspector_eyebrow', {}, 'Inspector')}
@@ -417,7 +430,7 @@ export function SupportRequestsWorkspace() {
         returnFocusRef={inspectorTriggerRef}
         footer={selectedRequest ? (
           <>
-            <button type="button" className="btn btn-secondary" disabled={displayScope.isRetainedScope} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
+            <button type="button" className="btn btn-secondary" disabled={directoryBlocked} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
             <Link className="btn btn-primary" href={supportRequestDetailHref(selectedRequest.request_id)}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
           </>
         ) : null}
@@ -458,38 +471,13 @@ export function SupportRequestsWorkspace() {
         ) : null}
       </AdminContextDrawer>
 
-      <AdminWorkbenchDialog
-        key={editRequest?.request_id || 'closed-support-request-editor'}
-        open={Boolean(editRequest)}
-        title={t('admin.support_requests_edit_title', { title: editRequest?.title || '' }, 'Edit internal handling')}
-        titleId="support-request-edit-title"
-        saving={updateRequest.isPending}
-        error={actionError}
-        closeLabel={t('common.close')}
-        cancelLabel={t('common.cancel')}
-        saveLabel={t('common.save')}
-        savingLabel={t('common.saving', {}, 'Saving...')}
-        footerNotice={t('admin.support_requests_edit_notice', {}, 'This changes the Cloud ticket status and internal note only.')}
-        width="compact"
-        density="compact"
-        onClose={() => setEditRequest(null)}
-        onSubmit={(formData) => void handleUpdate(formData)}
-      >
-        {editRequest ? (
-          <>
-            <label className="block text-sm text-slate-700 dark:text-slate-200">
-              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_status_edit_label', { title: editRequest.title }, `Status for ${editRequest.title}`)}</span>
-              <select name="status" className="input w-full" defaultValue={editRequest.status}>
-                {NEXT_STATUSES.map((status) => <option key={status} value={status}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-              </select>
-            </label>
-            <label className="block text-sm text-slate-700 dark:text-slate-200">
-              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_note_edit_label', { title: editRequest.title }, `Internal note for ${editRequest.title}`)}</span>
-              <textarea name="admin_note" className="input min-h-32 w-full" defaultValue={editRequest.admin_note || ''} placeholder={t('admin.support_requests_note_placeholder', {}, 'Internal handling note')} />
-            </label>
-          </>
-        ) : null}
-      </AdminWorkbenchDialog>
+      {editRequest ? <SupportRequestEditor key={editRequest.request_id} request={editRequest}
+        directoryBlocked={directoryBlocked} onClose={() => setEditRequest(null)}
+        onSaved={() => {
+          void queryClient.invalidateQueries({ queryKey: supportRequestKeys.directories() });
+          updateQueueUrl({ focus: editRequest.request_id }); setEditRequest(null);
+          savedToastRef.current = toast.success(t('admin.support_requests_updated_notice'), t('admin.support_requests_updated_title'));
+        }} /> : null}
     </BackofficePageStack>
   );
 }

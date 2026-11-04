@@ -24,22 +24,29 @@ const aiResourcesTranslationSource = i18nSource
   .filter((line) => line.includes("'admin.ai_resources."))
   .join('\n');
 
+const navigationSource = read('src/features/admin/navigation.ts');
+const externalCapabilityTabsSource = navigationSource.slice(
+  navigationSource.indexOf('externalCapabilityTabs'),
+  navigationSource.indexOf('systemSettingsTabs')
+);
 const aiResourcesNavIndex = layoutSource.indexOf("href: '/admin/ai-resources'");
-const externalServicesNavIndex = layoutSource.indexOf("href: '/admin/external-services'");
-const vectorSettingsNavIndex = layoutSource.indexOf("href: '/admin/vector-settings'");
+const externalServicesNavIndex = externalCapabilityTabsSource.indexOf("href: '/admin/external-services'");
+const vectorSettingsNavIndex = externalCapabilityTabsSource.indexOf("href: '/admin/vector-settings'");
 const diagnosticsNavIndex = layoutSource.indexOf("href: '/admin/troubleshooting'");
 const runtimeProfilesNavIndex = layoutSource.indexOf("href: '/admin/runtime-profiles'");
+const configurationGroupIndex = layoutSource.indexOf('admin.nav_group_configuration');
+const aiResourcesTabIndex = externalCapabilityTabsSource.indexOf("href: '/admin/ai-resources'");
 
 assert.ok(aiResourcesNavIndex >= 0, 'Model suppliers must have a primary admin navigation entry');
-assert.ok(externalServicesNavIndex > aiResourcesNavIndex, 'Search and images must follow model suppliers');
+assert.ok(aiResourcesTabIndex >= 0, 'Model suppliers must lead the external capability tabs');
+assert.ok(externalServicesNavIndex > aiResourcesTabIndex, 'Search and images must follow model suppliers');
 assert.ok(vectorSettingsNavIndex > externalServicesNavIndex, 'Vector settings must follow search and images');
-assert.ok(runtimeProfilesNavIndex > vectorSettingsNavIndex, 'Hosted runtime profiles must follow vector settings');
-assert.ok(diagnosticsNavIndex > runtimeProfilesNavIndex, 'Runtime diagnostics must follow hosted runtime profiles');
-assert.ok(diagnosticsNavIndex > vectorSettingsNavIndex, 'Runtime diagnostics must remain the final runtime-plane entry');
-assert.match(layoutSource, /href: '\/admin\/ai-resources'[\s\S]*fallback: 'Model Suppliers'/);
-assert.match(layoutSource, /href: '\/admin\/external-services'[\s\S]*fallback: 'Search & Images'/);
+assert.ok(runtimeProfilesNavIndex > aiResourcesNavIndex, 'Hosted runtime profiles must follow external capabilities');
+assert.ok(configurationGroupIndex > diagnosticsNavIndex, 'Configuration must stay a separate group after runtime observation and diagnostics');
+assert.match(layoutSource, /href: '\/admin\/ai-resources'[\s\S]*fallback: 'External capabilities'/);
+assert.match(navigationSource, /href: '\/admin\/external-services'[\s\S]*fallback: 'Search & images'/);
 assert.match(i18nSource, /'admin\.nav_ai_resources': '模型供应商'/);
-assert.match(i18nSource, /'admin\.nav_external_services': '搜索与图片'/);
+assert.match(i18nSource, /'admin\.workspace_tab_external_services': '搜索与图片'/);
 assert.match(i18nSource, /'admin\.ai_resources\.title': '模型供应商'/);
 
 assert.match(pageSource, /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*summaryItems=\{\[/);
@@ -47,9 +54,9 @@ assert.match(pageSource, /openNewProviderConnection[\s\S]*action_add_model_suppl
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*toolbar=\{\([\s\S]*<SupplierToolbar/);
 assert.doesNotMatch(pageSource, /<SupplierSummaryCards/);
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*connections=\{aiSupplierConnections\}/);
-assert.match(pageSource, /href="\/admin\/runtime-profiles"[\s\S]*action_open_runtime_profiles/);
+assert.match(pageSource, /data-ui="supplier-next-step"[\s\S]*href=\{`\/admin\/runtime-profiles\?provider=[\s\S]*action_configure_usage/);
 assert.match(pageSource, /modelFeatureLabel/);
-assert.match(pageSource, /hosted runtime profile candidate chains/);
+assert.match(read('src/app/admin/runtime-profiles/page.tsx'), /Cloud-hosted candidate chain/);
 assert.doesNotMatch(pageSource, /abilityModelFeatureLabel|ability-model routing|new routing choices/i);
 assert.doesNotMatch(
   aiResourcesTranslationSource,
@@ -94,11 +101,7 @@ assert.match(
 );
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
 assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
-assert.match(
-  pageSource,
-  /catch \(testError\) \{[\s\S]*?testFailed = true;[\s\S]*?setMessage\(''\);[\s\S]*?testErrorMessage = aiText\([\s\S]*?message_connection_saved_test_failed[\s\S]*?await loadResources\(\);[\s\S]*?if \(testFailed\) \{[\s\S]*?setError\(testErrorMessage\);/,
-  'Provider save failures must clear the transient testing message and restore the test error after refreshing resources'
-);
+assert.match(pageSource, /setSavedSupplier[\s\S]*directoryError: testFailed \? testErrorMessage/, 'a directory failure must retain saved connection state and retry action');
 assert.match(
   pageSource,
   /useState<AsyncOperationState>\(IDLE_ASYNC_OPERATION\)/,
@@ -119,19 +122,18 @@ assert.match(
   /setLoadingModelReferences\(IDLE_ASYNC_OPERATION\)/,
   'Switching away from model references must clear the prior loading operation'
 );
-assert.match(
-  pageSource,
-  /if \(referenceSyncFailed\) \{[\s\S]*?setFetchingProviderCatalog\(failAsyncOperation\(referenceSyncFailed\)\);[\s\S]*?\} else \{[\s\S]*?setFetchingProviderCatalog\(succeedAsyncOperation\(\)\);/,
-  'Catalog refresh must settle its status after the optional reference sync'
-);
+const catalogFetch = pageSource.slice(pageSource.indexOf('  async function fetchProviderCatalogPreview()'), pageSource.indexOf('  async function syncModelReferences()'));
+assert.doesNotMatch(catalogFetch, /setProviderModelIds/, 'directory fetch never auto-enables models');
+assert.match(catalogFetch, /ensureFreshModelReferences\(referenceProviderId\)/, 'catalog fetch checks reference freshness independently');
+assert.match(catalogFetch, /setFetchingProviderCatalog\(succeedAsyncOperation\(\)\)/, 'catalog success must settle independently');
 assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
 assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
 assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
 assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
 assert.match(pageSource, /imageOutputHostsAreExact\(imageOutputHosts\)/);
-assert.match(pageSource, /Connection testing does not prove image delivery/);
-assert.match(pageSource, /Test image delivery/);
+assert.match(pageSource, /Fetching the model catalog does not verify image generation/);
+assert.match(pageSource, /Generate test image/);
 assert.match(pageSource, /may incur a small provider charge/);
 assert.match(pageSource, /image-delivery-probes/);
 assert.match(pageSource, /evidence_probe_id: evidenceProbeId/);
@@ -146,17 +148,16 @@ assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url'[
 assert.doesNotMatch(pageSource, /modelMoreFiltersOpen|action_more_filters/);
 assert.match(pageSource, /field_visibility_filter[\s\S]*filter_all_visibility/);
 assert.match(pageSource, /field_feature_filter[\s\S]*filter_all_features/);
-assert.match(pageSource, /data-ui="model-metadata-gap-filter"[\s\S]*set_reference_intelligence_filter/);
-assert.match(pageSource, /<details data-ui="model-maintenance-table"/);
-assert.match(pageSource, /data-ui="model-maintenance-table"[\s\S]*rowId="historical-model-visibility"[\s\S]*field_show_deprecated_models_compact/);
-assert.match(pageSource, /data-ui="model-clear-all-request"/);
-assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
+assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.match(pageSource, /sourceScope: 'account'/);
+assert.match(pageSource, /<ModelReferencePanel/);
+assert.doesNotMatch(pageSource, /data-ui="model-(?:clear-all|metadata-gap-filter|list-scope)/);
 assert.match(pageSource, /data-ui="model-filtered-enable-request"/);
 assert.match(pageSource, /data-ui="model-filtered-disable-request"/);
 assert.match(pageSource, /filtered_models_batch_confirmation[\s\S]*data-ui="model-filtered-batch-confirm"/);
 assert.match(pageSource, /model_reference_compact_synced/);
-assert.match(pageSource, /column_model_intelligence[\s\S]*data-ui="model-reference-details"/);
-assert.match(pageSource, /catalog_model_status_upstream_available/);
+assert.match(pageSource, /model_details[\s\S]*data-ui="model-reference-details"/);
+assert.match(pageSource, /role="switch"[\s\S]*aria-checked=\{row\.selected\}/);
 assert.match(providerPresetsSource, /id: 'ollama'[\s\S]*https:\/\/docs\.ollama\.com\/api\/openai-compatibility/);
 assert.match(providerPresetsSource, /id: 'siliconflow'[\s\S]*capabilityIds: 'text_generation, embedding, image_generation'/);
 assert.match(providerPresetsSource, /connection\.metadata\?\.website_url/);

@@ -8,7 +8,12 @@ session syntheses, and stage summaries that do not belong to a more
 specific history collection. Migrated from the `docs/` root on
 2026-09-22 so dated evidence lives in the history namespace.
 
+- [本地开发生图与 WordPress 闭环验证（2026-10-28）](development-image-wordpress-loop-2026-10-28.md)
+- [M4 视觉 ALT 接入修正（2026-10-29）](m4-vision-alt-verification-2026-10-29.md)
+- [A01–E01五会话综合对账、开发经验与接续建议（2026-10-30）](five-chat-synthesis-and-next-stage-2026-10-30.md)
+
 - [account entitlement site relink and frontend release retrospective 2026 07 26](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
+- [admin ia v2 consolidation closeout and development retrospective 2026 10 23](admin-ia-v2-consolidation-closeout-and-development-retrospective-2026-10-23.md)
 - [ai assisted development tooling and parallel session closeout 2026 08 01](ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md)
 - [ai credit ledger detail summary 2026 06 13](ai-credit-ledger-detail-summary-2026-06-13.md)
 - [ai credit unification addon recovery and development retrospective 2026 07 28](ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md)
@@ -24,6 +29,9 @@ specific history collection. Migrated from the `docs/` root on
 - [cloud site capacity production release retrospective 2026 08 08](cloud-site-capacity-production-release-retrospective-2026-08-08.md)
 - [cloud site connection closeout history 2026 06 29](cloud-site-connection-closeout-history-2026-06-29.md)
 - [cny budget contract cutover closeout and development retrospective 2026 07 28](cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
+- [B01 商业下单限流与紧急停止本地候选](b01-commercial-guards-closeout-2026-10-23.md)
+- [commerce sale availability candidate 2026 10 23](commerce-sale-availability-candidate-2026-10-23.md)
+- [全用户购买与 14 天试用本地组合交付](commercial-self-serve-integration-2026-10-23.md)
 - [commercial billing payment stage summary 2026 06 23](commercial-billing-payment-stage-summary-2026-06-23.md)
 - [commercial repository decomposition closeout and development retrospective 2026 08 03](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
 - [customer account identity simplification closeout and development retrospective 2026 07 31](customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
@@ -45,6 +53,8 @@ specific history collection. Migrated from the `docs/` root on
 - [mqzj gpt54 mini vision validation 2026 07 29](mqzj-gpt54-mini-vision-validation-2026-07-29.md)
 - [multi session development observation synthesis and next stage plan 2026 08 15](multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md)
 - [pc launch readiness 2026 07 10](pc-launch-readiness-2026-07-10.md)
+- [Portal 自助开通与文本/图片知识库交付证据 2026 10 26](portal-self-service-and-knowledge-delivery-2026-10-26.md)
+- [primary source reconciliation 2026 10 26](primary-source-reconciliation-2026-10-26.md)
 - [pi provider runtime compatibility evidence 2026 07 25](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [pre user customer journey observability closeout and development retrospective 2026 08 17](pre-user-customer-journey-observability-closeout-and-development-retrospective-2026-08-17.md)
 - [project remediation and development retrospective 2026 07 25](project-remediation-and-development-retrospective-2026-07-25.md)
@@ -61,6 +71,7 @@ specific history collection. Migrated from the `docs/` root on
 - [runtime diagnostics information density closeout and development retrospective 2026 07 31](runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md)
 - [runtime stability observation 2026 07 09](runtime-stability-observation-2026-07-09.md)
 - [runtime stack decision history 2026 07 09](runtime-stack-decision-history-2026-07-09.md)
+- [security review scoped remediation closeout 2026 10 23](security-review-scoped-remediation-closeout-2026-10-23.md)
 - [seven session development synthesis and open issues 2026 08 04](seven-session-development-synthesis-and-open-issues-2026-08-04.md)
 - [single operator pre user development closeout and next stage 2026 08 18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md)
 - [single session ai development closeout and retrospective 2026 08 04](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)

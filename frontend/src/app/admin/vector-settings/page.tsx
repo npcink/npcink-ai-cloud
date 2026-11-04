@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
@@ -14,9 +15,13 @@ import {
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { ConfirmModal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
+import { readVectorProfile, type VectorProfile } from '@/features/admin/vector-settings/profile';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 
@@ -24,73 +29,19 @@ const vectorSettingsClient = createApiClient({
   idempotencyPrefix: 'vector_settings'
 });
 
-type VectorProfile = {
-  profile_id: string;
-  model_id: string;
-  dimensions: number;
-  metric: string;
-  production_backend: string;
-  local_test_backend: string;
-  active_backend: string;
-  status: string;
-  editable_fields: string[];
-  reindex_policy: string;
-  provider: {
-    provider_id: string;
-    display_name: string;
-    connection_id: string;
-    configured: boolean;
-    verified: boolean;
-    status: string;
-    last_tested_at: string;
-  };
-  vector_store: {
-    provider_id: string;
-    display_name: string;
-    connection_id: string;
-    configured: boolean;
-    verified: boolean;
-    status: string;
-    settings_owner: string;
-    endpoint: string;
-    token_configured: boolean;
-    collection: string;
-    last_tested_at: string;
-  };
-  validation: {
-    connection: {
-      status: string;
-      provider_verified: boolean;
-      vector_store_verified: boolean;
-    };
-    index: {
-      status: string;
-      reason: string;
-      embedding_space_id: string;
-      source_document_count: number;
-      source_chunk_count: number;
-      indexed_chunk_count: number;
-      roundtrip_status: string;
-      last_reindexed_at: string;
-      last_error_code: string;
-    };
-    retrieval: {
-      status: string;
-      last_verified_at: string;
-      result_count: number;
-      top1_score: number;
-      evidence_source: string;
-    };
-  };
-};
-
 type ConfigurationSaveStep = 'embedding' | 'vector_store';
-type ConfigurationStepStatus = 'pending' | 'succeeded' | 'failed' | 'not_started';
+type ConfigurationStepStatus = 'pending' | 'succeeded' | 'failed' | 'not_started' | 'unconfirmed';
 type ConfigurationSaveReceipt = {
   embedding: ConfigurationStepStatus;
   vectorStore: ConfigurationStepStatus;
   failedStep: ConfigurationSaveStep | null;
 };
+
+function writeResultUnknown(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.statusCode === 0
+    || error.errorCode.startsWith('client.')
+    || (error.statusCode >= 500 && !error.errorCode.startsWith('site_knowledge_vector_profile.'));
+}
 
 function formatBackend(value: string): string {
   if (value === 'zilliz_cloud') return 'Zilliz Cloud';
@@ -112,29 +63,55 @@ export default function VectorSettingsPage() {
   const [providerCredentialRevealed, setProviderCredentialRevealed] = useState(false);
   const [zillizTokenRevealed, setZillizTokenRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [snapshotCurrent, setSnapshotCurrent] = useState(false);
+  const router = useRouter();
+  const [endpointBaseline, setEndpointBaseline] = useState('');
+  const endpointDirty = zillizEndpoint !== endpointBaseline;
+  const editorDirty = Boolean(credential || zillizToken || endpointDirty);
+  const draftState = useRef({ endpointDirty: false });
+  useEffect(() => { draftState.current = { endpointDirty }; }, [endpointDirty]);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
+    editorDirty, setPendingNavigationHref, href => router.push(href),
+  );
+  const operation = useRef<'save' | 'rebuild' | null>(null);
+  const readRevision = useRef(0);
+  const readInFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [savingVectorStore, setSavingVectorStore] = useState(false);
   const [savingConfiguration, setSavingConfiguration] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [recoveryAction, setRecoveryAction] = useState<ConfigurationSaveStep | 'rebuild' | 'read' | null>(null);
   const [configurationReceipt, setConfigurationReceipt] = useState<ConfigurationSaveReceipt | null>(null);
 
-  const loadProfile = useCallback(async () => {
-    setError('');
+  const loadProfile = useCallback(async (confirmingWrite = false) => {
+    if ((operation.current && !confirmingWrite) || readInFlight.current) return null;
+    const revision = ++readRevision.current;
+    readInFlight.current = true;
+    setLoadError('');
     try {
       const response = await vectorSettingsClient.request<VectorProfile>(
         '/api/admin/site-knowledge-vector-profile'
       );
-      const nextProfile = response.data;
+      const nextProfile = readVectorProfile(response.data);
+      if (revision !== readRevision.current) return null;
       setProfile(nextProfile);
-      setZillizEndpoint(nextProfile.vector_store.endpoint || '');
-      setProviderCredentialRevealed(!nextProfile.provider.configured);
-      setZillizTokenRevealed(!nextProfile.vector_store.token_configured);
-    } catch (loadError) {
-      setError(
+      setSnapshotCurrent(true);
+      setEndpointBaseline(nextProfile.vector_store.endpoint);
+      if (!draftState.current.endpointDirty) setZillizEndpoint(nextProfile.vector_store.endpoint);
+      // Revealing a field is not a modification; never hide a nonempty draft.
+      if (!nextProfile.provider.configured) setProviderCredentialRevealed(true);
+      if (!nextProfile.vector_store.token_configured) setZillizTokenRevealed(true);
+      return nextProfile;
+    } catch (loadFailure) {
+      if (revision !== readRevision.current) return null;
+      setSnapshotCurrent(false);
+      setLoadError(
         resolveUiErrorMessage(
-          loadError,
+          loadFailure,
           copy(
             'admin.vector_settings.load_error',
             '加载向量服务失败。',
@@ -142,21 +119,28 @@ export default function VectorSettingsPage() {
           )
         )
       );
+      return null;
     } finally {
-      setLoading(false);
+      if (revision === readRevision.current) {
+        readInFlight.current = false;
+        setLoading(false);
+      }
     }
   }, [copy]);
 
   useEffect(() => {
     void loadProfile();
+    return () => { readRevision.current += 1; readInFlight.current = false; };
   }, [loadProfile]);
+  const indexInProgress = ['awaiting_site_sync', 'rebuilding'].includes(profile?.validation.index.status || '')
+    || ['awaiting_site_sync', 'rebuilding'].includes(profile?.status || '');
   useEffect(() => {
-    if (!['awaiting_site_sync', 'rebuilding'].includes(String(profile?.status || ''))) return;
+    if (!indexInProgress) return;
     const timer = window.setInterval(() => {
       void loadProfile();
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [loadProfile, profile?.status]);
+  }, [loadProfile, indexInProgress]);
 
   async function saveAndVerify() {
     if (!credential.trim() && !profile?.provider.configured)
@@ -167,7 +151,8 @@ export default function VectorSettingsPage() {
         '/api/admin/site-knowledge-vector-profile',
         { method: 'PUT', body: { credential: credential.trim() || null } }
       );
-      setProfile(response.data);
+      const nextProfile = readVectorProfile(response.data);
+      setProfile(nextProfile);
       setCredential('');
       setProviderCredentialRevealed(false);
     } finally {
@@ -190,8 +175,10 @@ export default function VectorSettingsPage() {
           }
         }
       );
-      setProfile(response.data);
-      setZillizEndpoint(response.data.vector_store.endpoint || zillizEndpoint.trim());
+      const nextProfile = readVectorProfile(response.data);
+      setProfile(nextProfile);
+      setEndpointBaseline(nextProfile.vector_store.endpoint);
+      setZillizEndpoint(nextProfile.vector_store.endpoint);
       setZillizToken('');
       setZillizTokenRevealed(false);
     } finally {
@@ -200,6 +187,15 @@ export default function VectorSettingsPage() {
   }
 
   async function saveConfiguration(startAt: ConfigurationSaveStep = 'embedding') {
+    // A replacement typed after a partial save invalidates the old embedding
+    // receipt. An unchanged failed store can still retry without another probe.
+    if (credential) startAt = 'embedding';
+    if (!snapshotCurrent || operation.current || indexInProgress) return;
+    if ((credential && !credential.trim()) || (zillizToken && !zillizToken.trim())) {
+      setError(copy('admin.vector_settings.credential_blank', '密钥或 Token 不能只有空白字符，请填写或取消替换。', 'A key or token cannot contain only whitespace. Enter a value or cancel replacement.'));
+      setRecoveryAction(null);
+      return;
+    }
     if (!credential.trim() && !profile?.provider.configured) {
       setError(
         copy(
@@ -230,8 +226,12 @@ export default function VectorSettingsPage() {
       );
       return;
     }
+    operation.current = 'save';
+    readRevision.current += 1;
+    readInFlight.current = false;
     setSavingConfiguration(true);
     setError('');
+    setRecoveryAction(null);
     setMessage('');
     let activeStep: ConfigurationSaveStep = startAt;
     setConfigurationReceipt({
@@ -256,11 +256,20 @@ export default function VectorSettingsPage() {
         failedStep: null
       });
     } catch (saveError) {
+      const unconfirmed = writeResultUnknown(saveError);
+      const stepStatus = unconfirmed ? 'unconfirmed' : 'failed';
+      setRecoveryAction(unconfirmed ? 'read' : activeStep);
       setConfigurationReceipt({
-        embedding: activeStep === 'embedding' ? 'failed' : 'succeeded',
-        vectorStore: activeStep === 'vector_store' ? 'failed' : 'not_started',
+        embedding: activeStep === 'embedding' ? stepStatus : 'succeeded',
+        vectorStore: activeStep === 'vector_store' ? stepStatus : 'not_started',
         failedStep: activeStep
       });
+      if (unconfirmed) {
+        setSnapshotCurrent(false);
+        setError(copy('admin.vector_settings.write_unconfirmed', '提交结果待确认。已尝试读取最新状态，不会自动重复保存。草稿已保留；已保存的密钥不会回显，无法据此确认本次替换。', 'The submission result is unconfirmed. The latest state was requested without repeating the write. Drafts are retained; saved keys are never shown, so their replacement cannot be confirmed from this read.'));
+        await loadProfile(true);
+        return;
+      }
       const errorCode = saveError instanceof ApiError ? saveError.errorCode : '';
       const knownMessage =
         errorCode === 'site_knowledge_vector_profile.zilliz_endpoint_invalid'
@@ -300,6 +309,7 @@ export default function VectorSettingsPage() {
           )
       );
     } finally {
+      operation.current = null;
       setSaving(false);
       setSavingVectorStore(false);
       setSavingConfiguration(false);
@@ -307,7 +317,12 @@ export default function VectorSettingsPage() {
   }
 
   async function rebuildIndex() {
+    if (!snapshotCurrent || operation.current || indexInProgress || profile?.validation.connection.status !== 'ready') return;
+    operation.current = 'rebuild';
+    readRevision.current += 1;
+    readInFlight.current = false;
     setRebuilding(true);
+    setRecoveryAction(null);
     setError('');
     setMessage('');
     try {
@@ -318,9 +333,10 @@ export default function VectorSettingsPage() {
           body: { confirmation: 'rebuild_site_knowledge_index' }
         }
       );
-      setProfile(response.data);
+      const nextProfile = readVectorProfile(response.data);
+      setProfile(nextProfile);
       setMessage(
-        response.data.validation.index.status === 'awaiting_site_sync'
+        nextProfile.validation.index.status === 'awaiting_site_sync'
           ? copy(
               'admin.vector_settings.site_sync_requested',
               '已通知各站点在后台自动重送公开内容；无需站点管理员手动操作。',
@@ -349,12 +365,14 @@ export default function VectorSettingsPage() {
                 'Existing vectors do not match the fixed profile. Run a full Site Knowledge sync from the site.'
               )
             : '';
-      if (
-        rebuildError instanceof ApiError &&
-        rebuildError.statusCode > 0 &&
-        !errorCode.startsWith('client.')
-      )
-        await loadProfile();
+      const unconfirmed = writeResultUnknown(rebuildError);
+      setRecoveryAction(unconfirmed ? 'read' : 'rebuild');
+      setSnapshotCurrent(false);
+      await loadProfile(true);
+      if (unconfirmed) {
+        setError(copy('admin.vector_settings.rebuild_unconfirmed', '重建提交结果待确认。已尝试读取最新状态，不会自动再次重建；请核对当前索引状态。', 'The rebuild submission is unconfirmed. The latest state was requested without starting another rebuild; review the current index state.'));
+        return;
+      }
       setError(
         knownMessage ||
           resolveUiErrorMessage(
@@ -367,6 +385,7 @@ export default function VectorSettingsPage() {
           )
       );
     } finally {
+      operation.current = null;
       setRebuilding(false);
     }
   }
@@ -380,6 +399,11 @@ export default function VectorSettingsPage() {
         description: string;
       }
     > = {
+      not_configured: {
+        label: copy('admin.vector_settings.status_not_configured', '未配置', 'Not configured'),
+        tone: 'inactive',
+        description: copy('admin.vector_settings.connection_required', '请先完成连接配置和检测。', 'Complete connection configuration and checks first.')
+      },
       ready: {
         label: copy('admin.vector_settings.status_ready', '已就绪', 'Ready'),
         tone: 'success',
@@ -457,32 +481,67 @@ export default function VectorSettingsPage() {
       }
     };
     return (
-      states[profile?.status || ''] || {
-        label: copy('admin.vector_settings.status_not_configured', '未配置', 'Not configured'),
+      states[profile?.status === 'ready' && profile.validation.connection.status !== 'ready'
+        ? 'vector_store_pending' : profile?.status || ''] || {
+        label: copy('admin.vector_settings.status_unknown', '状态未知', 'Unknown state'),
         tone: 'inactive' as const,
         description: copy(
-          'admin.vector_settings.status_not_configured_desc',
-          '填写 SiliconFlow API Key 后即可验证并启用。',
-          'Enter a SiliconFlow API key to verify and enable the profile.'
+          'admin.vector_settings.unknown_state_desc',
+          '当前状态无法识别，请刷新或查看诊断。',
+          'The current state is not recognized. Refresh or review diagnostics.'
         )
       }
     );
-  }, [copy, profile?.status]);
+  }, [copy, profile]);
 
   if (loading) return <AdminRouteSkeleton />;
+  if (!profile) return (
+    <BackofficePageStack data-page-model="configuration">
+      <BackofficeConfigurationHeader title={copy('admin.vector_settings.title', '站点向量服务', 'Site vector service')}
+        description={copy('admin.vector_settings.unavailable', '尚未读取到向量配置，无法判断连接和索引状态。', 'Vector configuration has not been read; connection and index state are unknown.')} summaryItems={[]} />
+      <BackofficeDiagnosticNotice message={loadError} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => void loadProfile()} />
+    </BackofficePageStack>
+  );
+  const actionBusy = savingConfiguration || rebuilding || saving || savingVectorStore;
+  const stepLabels: Record<ConfigurationStepStatus, string> = {
+    pending: copy('admin.vector_settings.step_pending', '进行中', 'In progress'),
+    succeeded: copy('admin.vector_settings.step_succeeded', '已完成', 'Completed'),
+    failed: copy('admin.vector_settings.step_failed', '失败', 'Failed'),
+    not_started: copy('admin.vector_settings.step_not_started', '未开始', 'Not started'),
+    unconfirmed: copy('admin.vector_settings.step_unconfirmed', '结果待确认', 'Result unconfirmed'),
+  };
+  const localRuntime = profile?.runtime?.provider_id === 'ollama-m4-embedding';
+  const runtimeIndexStatus = profile?.runtime?.index_status || '';
+  const runtimeStatusLabel = {
+    ready: zh ? '已就绪' : 'Ready',
+    empty: zh ? '暂无索引' : 'No index',
+    reindex_required: zh ? '待重建' : 'Rebuild required'
+  }[runtimeIndexStatus] || runtimeIndexStatus;
   const indexNeedsAction = ['reindex_required', 'awaiting_site_sync', 'failed'].includes(
     profile?.validation.index.status || ''
   );
   const connectionReady = profile?.validation.connection.status === 'ready';
   const indexReady = profile?.validation.index.status === 'ready';
   const retrievalPassed = profile?.validation.retrieval.status === 'passed';
+  const retrievalStatusLabel = retrievalPassed
+    ? copy('common.ready', '已通过', 'Passed')
+    : profile.validation.retrieval.status === 'failed'
+      ? copy('common.failed', '失败', 'Failed')
+      : profile.validation.retrieval.status === 'no_hit'
+        ? copy('admin.vector_settings.retrieval_no_hit', '已检索，零命中', 'Searched, no hits')
+        : profile.validation.retrieval.status === 'pending'
+          ? copy('admin.vector_settings.pending_validation', '等待验证', 'Pending')
+          : copy('admin.vector_settings.status_unknown', '状态未知', 'Unknown state');
 
   return (
     <BackofficePageStack data-page-model="configuration">
       <BackofficeConfigurationHeader
-        eyebrow={copy('admin.vector_settings.eyebrow', 'Site Knowledge', 'Site Knowledge')}
         title={copy('admin.vector_settings.title', '站点向量服务', 'Site vector service')}
-        description={copy(
+        description={localRuntime
+          ? (zh
+              ? '本地通过 Ollama 提供图文向量；下方生产连接配置在发布时单独使用。'
+              : 'Ollama provides local text and image embeddings. Production connections below are configured separately for release.')
+          : copy(
           'admin.vector_settings.description',
           '使用平台固定的中文站点向量档案。管理员只需提供供应商密钥和 Zilliz 连接凭证。',
           'Use the platform-defined Chinese Site Knowledge vector profile. Admins only provide the provider key and Zilliz connection credentials.'
@@ -497,36 +556,53 @@ export default function VectorSettingsPage() {
           </Link>
         }
         summaryItems={[
-          { label: 'Profile', value: profile?.profile_id || 'site-knowledge.zh.v1' },
-          {
-            label: copy('admin.vector_settings.model', '模型', 'Model'),
-            value: profile?.model_id || 'BAAI/bge-m3'
-          },
           {
             label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
-            value: status.label,
-            toneClassName: status.tone === 'success'
+            value: localRuntime ? runtimeStatusLabel : status.label,
+            toneClassName: (localRuntime ? runtimeIndexStatus === 'ready' : status.tone === 'success')
               ? 'text-emerald-700 dark:text-emerald-300'
               : status.tone === 'warning' || status.tone === 'failed'
                 ? 'text-amber-700 dark:text-amber-300'
                 : undefined
-          }
+          },
+          {
+            label: copy('admin.vector_settings.retrieval_check', '真实检索', 'Live retrieval'),
+            value: retrievalStatusLabel,
+          },
         ]}
       />
 
+      <div data-ui="vector-configuration-next-step" className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
+        <p>{copy('admin.vector_settings.production_validation_title', '生产连接与索引验证', 'Production connection and index validation')}: {status.description}</p>
+        {profile.validation.retrieval.status === 'pending' ? <p>{copy('admin.vector_settings.retrieval_pending', '重建后执行一次正常的 Site Knowledge 搜索；这里会自动记录结果，不另设测试入口。', 'After rebuilding, run a normal Site Knowledge search. Its evidence appears here automatically.')}</p> : null}
+      </div>
+      {profile?.runtime ? <details data-testid="vector-runtime-profile" className="text-xs text-slate-500 dark:text-slate-400">
+        <summary className="cursor-pointer">{zh ? '当前运行配置' : 'Current runtime'}: {profile.runtime.environment} · {runtimeStatusLabel}</summary>
+        <p className="mt-2 break-all">{profile.runtime.model_id} · {profile.runtime.dimensions}D · {formatBackend(profile.runtime.backend)}</p>
+      </details> : null}
+
+      {loadError ? <BackofficeDiagnosticNotice message={loadError} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => void loadProfile()} /> : null}
+      {!snapshotCurrent ? <p role="status" className="text-sm text-amber-800 dark:text-amber-200">{copy('admin.vector_settings.stale_snapshot', '以下为上次读取的快照，最新状态未确认。请重试读取后再保存或重建。', 'The last read snapshot is shown below. The latest state is unconfirmed. Retry reading before saving or rebuilding.')}</p> : null}
       {error ? (
         <BackofficeDiagnosticNotice
           message={error}
-          retryLabel={configurationReceipt?.failedStep === 'embedding'
-            ? copy('admin.vector_settings.retry_embedding', '重试 Embedding 并继续', 'Retry embedding and continue')
-            : configurationReceipt?.failedStep === 'vector_store'
-              ? copy('admin.vector_settings.retry_vector_store', '仅重试 Vector store', 'Retry vector store only')
-              : copy('common.retry', '重试', 'Retry')}
-          onRetry={() => configurationReceipt?.failedStep
-            ? void saveConfiguration(configurationReceipt.failedStep)
-            : void loadProfile()}
+          retryLabel={!snapshotCurrent || recoveryAction === 'read'
+            ? copy('admin.vector_settings.retry_read', '重试读取状态', 'Retry reading state')
+            : recoveryAction === 'embedding' || (recoveryAction === 'vector_store' && credential)
+              ? copy('admin.vector_settings.retry_embedding', '重试 Embedding 并继续', 'Retry embedding and continue')
+              : recoveryAction === 'vector_store'
+                ? copy('admin.vector_settings.retry_vector_store', '仅重试 Vector store', 'Retry vector store only')
+                : recoveryAction === 'rebuild'
+                  ? copy('admin.vector_settings.retry_rebuild', '重试索引重建', 'Retry index rebuild')
+                  : undefined}
+          onRetry={recoveryAction || !snapshotCurrent ? () => {
+            if (!snapshotCurrent || recoveryAction === 'read') { void loadProfile(); return; }
+            if (recoveryAction === 'rebuild') void rebuildIndex();
+            else if (recoveryAction) void saveConfiguration(recoveryAction);
+          } : undefined}
         />
       ) : null}
+      {editorDirty ? <p role="status" data-ui="vector-unsaved-draft" className="text-sm text-amber-800 dark:text-amber-200">{copy('admin.vector_settings.unsaved_draft', '有未保存的修改。步骤回执仅对应已提交的配置。', 'There are unsaved changes. Step receipts describe the submitted configuration only.')}</p> : null}
       {message ? (
         <p
           role="status"
@@ -536,28 +612,29 @@ export default function VectorSettingsPage() {
         </p>
       ) : null}
 
-      <BackofficeSectionPanel data-vector-section="configuration">
+      <BackofficeSectionPanel data-vector-section="configuration" className="!shadow-none">
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="flex items-center gap-1">
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
-              {copy(
+              {localRuntime ? (zh ? '生产向量配置' : 'Production vector configuration') : copy(
                 'admin.vector_settings.configuration_title',
                 '向量配置',
                 'Vector configuration'
               )}
             </h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <AdminHelpTip label={copy('admin.vector_settings.configuration_scope', '配置范围', 'Configuration scope')}>
               {copy(
                 'admin.vector_settings.configuration_desc',
                 '固定档案由平台维护；只填写连接凭据并保存。',
                 'The platform owns the fixed profile; only connection values can be saved here.'
               )}
-            </p>
+            </AdminHelpTip>
           </div>
           <BackofficeStatusBadge label={status.label} status={status.tone} />
         </div>
-        <div className="mt-4" data-vector-section="fixed-profile">
+        <fieldset disabled={actionBusy} className="mt-3 min-w-0" data-density="compact" data-vector-section="fixed-profile">
           <AdminConfigurationTable
+            density="compact"
             ariaLabel={copy(
               'admin.vector_settings.configuration_table',
               '向量配置表',
@@ -583,11 +660,10 @@ export default function VectorSettingsPage() {
                 'Fixed vector profile'
               )}
               value={
-                <code className="text-xs">
-                  {profile?.profile_id || 'site-knowledge.zh.v1'} ·{' '}
-                  {profile?.model_id || 'BAAI/bge-m3'} · {profile?.dimensions || 1024} ·{' '}
-                  {profile?.metric || 'COSINE'}
-                </code>
+                <details className="text-xs">
+                  <summary className="cursor-pointer">{copy('admin.vector_settings.model', '模型', 'Model')}: {profile?.model_id || 'BAAI/bge-m3'}</summary>
+                  <code className="mt-2 block break-all">{profile?.profile_id || 'site-knowledge.zh.v1'} · {profile?.dimensions || 1024} · {profile?.metric || 'COSINE'}</code>
+                </details>
               }
               detail={copy(
                 'admin.vector_settings.fixed_profile_desc',
@@ -737,12 +813,12 @@ export default function VectorSettingsPage() {
               )}
             />
           </AdminConfigurationTable>
-        </div>
+        </fieldset>
         <div className="mt-4 flex justify-end">
           <button
             type="button"
             className="btn btn-primary"
-            disabled={savingConfiguration || saving || savingVectorStore}
+            disabled={actionBusy || indexInProgress || !snapshotCurrent}
             onClick={() => void saveConfiguration()}
           >
             {savingConfiguration
@@ -756,7 +832,7 @@ export default function VectorSettingsPage() {
             data-ui="vector-configuration-save-receipt"
             role="status"
           >
-            {!configurationReceipt.failedStep && configurationReceipt.vectorStore === 'succeeded' ? (
+            {!editorDirty && !configurationReceipt.failedStep && configurationReceipt.vectorStore === 'succeeded' ? (
               <p className="mb-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                 {copy(
                   'admin.vector_settings.configuration_saved',
@@ -768,11 +844,11 @@ export default function VectorSettingsPage() {
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <span>
                 {copy('admin.vector_settings.embedding_step', 'Embedding 配置', 'Embedding configuration')}: {' '}
-                <strong>{configurationReceipt.embedding}</strong>
+                <strong>{stepLabels[configurationReceipt.embedding === 'succeeded' && credential ? 'not_started' : configurationReceipt.embedding]}</strong>
               </span>
               <span>
                 {copy('admin.vector_settings.vector_store_step', 'Vector store 配置', 'Vector store configuration')}: {' '}
-                <strong>{configurationReceipt.vectorStore}</strong>
+                <strong>{stepLabels[configurationReceipt.vectorStore === 'succeeded' && (endpointDirty || zillizToken) ? 'not_started' : configurationReceipt.vectorStore]}</strong>
               </span>
             </div>
           </div>
@@ -782,13 +858,13 @@ export default function VectorSettingsPage() {
       <BackofficeSectionPanel data-vector-section="validation">
         <div className="border-b border-slate-200 pb-4 dark:border-slate-800">
           <h2 className="text-base font-semibold text-slate-950 dark:text-white">
-            {copy('admin.vector_settings.validation_title', '验证结果', 'Validation results')}
+            {copy('admin.vector_settings.production_validation_title', '生产连接与索引验证', 'Production connection and index validation')}
           </h2>
           <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
             {copy(
-              'admin.vector_settings.validation_desc',
-              '保存会完成连接检测；索引和真实检索证据在此持续更新。',
-              'Saving completes connection checks; index and live-retrieval evidence continues to update here.'
+              'admin.vector_settings.production_validation_desc',
+              '下表验证生产 BGE-M3 / Zilliz 配置，不代表上方本地运行环境。进行中的索引任务会自动刷新。',
+              'These checks cover the production BGE-M3 / Zilliz configuration, independently of the local runtime above. Index work in progress refreshes automatically.'
             )}
           </p>
         </div>
@@ -834,6 +910,10 @@ export default function VectorSettingsPage() {
                   label={
                     indexReady
                       ? copy('common.ready', '已通过', 'Passed')
+                      : profile.validation.index.status === 'not_ready'
+                        ? copy('admin.vector_settings.index_waiting_connection', '等待连接配置', 'Awaiting connection configuration')
+                      : profile.validation.index.status === 'rebuilding'
+                        ? copy('admin.vector_settings.status_rebuilding', '正在重建', 'Rebuilding')
                       : profile?.validation.index.status === 'awaiting_site_sync'
                         ? copy(
                             'admin.vector_settings.awaiting_site_sync',
@@ -842,17 +922,19 @@ export default function VectorSettingsPage() {
                           )
                         : profile?.validation.index.status === 'empty'
                           ? copy('admin.vector_settings.index_empty', '暂无资料', 'No content')
-                          : copy(
-                              'admin.vector_settings.reindex_needed',
-                              '需要重建',
-                              'Rebuild needed'
-                            )
+                          : profile.validation.index.status === 'failed'
+                            ? copy('admin.vector_settings.status_rebuild_failed', '重建失败', 'Rebuild failed')
+                          : profile.validation.index.status === 'reindex_required'
+                            ? copy('admin.vector_settings.reindex_needed', '需要重建', 'Rebuild needed')
+                            : copy('admin.vector_settings.status_unknown', '状态未知', 'Unknown state')
                   }
                   status={indexReady ? 'success' : 'warning'}
                 />
               }
               detail={
-                profile?.validation.index.reason === 'embedding_space_mismatch'
+                profile.validation.index.status === 'not_ready'
+                  ? copy('admin.vector_settings.connection_required', '请先完成连接配置和检测。', 'Complete connection configuration and checks first.')
+                  : profile?.validation.index.reason === 'embedding_space_mismatch'
                   ? copy(
                       'admin.vector_settings.index_space_mismatch',
                       '现有资料属于旧向量空间。启动后，各站点会在后台自动重送公开内容，不会混入旧索引。',
@@ -871,11 +953,7 @@ export default function VectorSettingsPage() {
               value={
                 <BackofficeStatusBadge
                   label={
-                    retrievalPassed
-                      ? copy('common.ready', '已通过', 'Passed')
-                      : profile?.validation.retrieval.status === 'failed'
-                        ? copy('common.failed', '失败', 'Failed')
-                        : copy('admin.vector_settings.pending_validation', '等待验证', 'Pending')
+                    retrievalStatusLabel
                   }
                   status={
                     retrievalPassed
@@ -887,17 +965,12 @@ export default function VectorSettingsPage() {
                 />
               }
               detail={
-                retrievalPassed
-                  ? copy(
-                      'admin.vector_settings.retrieval_passed',
-                      `最近一次 Zilliz 搜索返回 ${profile?.validation.retrieval.result_count} 条结果。`,
-                      `The latest Zilliz search returned ${profile?.validation.retrieval.result_count} results.`
-                    )
-                  : copy(
-                      'admin.vector_settings.retrieval_pending',
-                      '重建后执行一次正常的 Site Knowledge 搜索；这里会自动记录结果，不另设测试入口。',
-                      'After rebuilding, run a normal Site Knowledge search. Its evidence appears here automatically.'
-                    )
+                profile.validation.retrieval.status !== 'pending' && profile.validation.retrieval.last_verified_at
+                  ? <div className="space-y-1">
+                      <p>{copy('admin.vector_settings.retrieval_evidence', `最近检索：${profile.validation.retrieval.last_verified_at} · ${profile.validation.retrieval.result_count} 条结果。`, `Latest search: ${profile.validation.retrieval.last_verified_at} · ${profile.validation.retrieval.result_count} results.`)}</p>
+                      {profile.validation.retrieval.status === 'no_hit' ? <p>{copy('admin.vector_settings.no_hit_next', '请核对资料范围、索引和查询相关性；零命中不表示尚未执行。', 'Check content scope, indexing, and query relevance; no hits does not mean the search was not executed.')}</p> : null}
+                    </div>
+                  : copy('admin.vector_settings.retrieval_pending', '重建后执行一次正常的 Site Knowledge 搜索；这里会自动记录结果，不另设测试入口。', 'After rebuilding, run a normal Site Knowledge search. Its evidence appears here automatically.')
               }
             />
           </AdminConfigurationTable>
@@ -914,7 +987,7 @@ export default function VectorSettingsPage() {
             <button
               type="button"
               className="btn btn-secondary shrink-0"
-              disabled={rebuilding}
+              disabled={actionBusy || indexInProgress || !connectionReady || !snapshotCurrent}
               onClick={() => void rebuildIndex()}
             >
               {rebuilding
@@ -997,6 +1070,23 @@ export default function VectorSettingsPage() {
           )}
         </p>
       </AdminSettingsDisclosure>
+      <ConfirmModal
+        isOpen={Boolean(pendingNavigationHref)}
+        title={copy('admin.vector_settings.discard_title', '放弃未保存的修改？', 'Discard unsaved changes?')}
+        message={copy('admin.vector_settings.discard_confirm', '离开将丢弃向量配置草稿，已保存的配置不会受影响。', 'Leaving discards the vector configuration draft. Saved configuration is not affected.')}
+        confirmLabel={copy('admin.vector_settings.discard_action', '放弃修改并离开', 'Discard and leave')}
+        cancelLabel={copy('admin.vector_settings.keep_editing', '继续编辑', 'Keep editing')}
+        variant="danger"
+        onClose={cancelNavigation}
+        onConfirm={() => {
+          const href = pendingNavigationHref;
+          setCredential('');
+          setZillizToken('');
+          setZillizEndpoint(endpointBaseline);
+          setPendingNavigationHref('');
+          confirmNavigation(href);
+        }}
+      />
     </BackofficePageStack>
   );
 }

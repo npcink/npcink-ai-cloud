@@ -75,9 +75,11 @@ test('account runtime diagnostics show unavailable evidence and recover through 
   );
   await expect(diagnostics).toBeVisible();
   await diagnostics.locator('summary').click();
+  // Unknown admin API failures surface the localized load-failure copy; the
+  // backend prose stays diagnostic data and is not product copy.
   await expect(
     diagnostics.locator('[data-ui="account-site-runtime-error"]')
-  ).toContainText('runtime evidence unavailable');
+  ).toContainText(/Failed to load data|加载数据失败/i);
   await expect(
     diagnostics.locator('[data-ui="account-site-runtime-card"]')
   ).toHaveCount(0);

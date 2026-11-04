@@ -21,6 +21,7 @@ class RuntimeResultNormalizationCommand:
     input_payload: dict[str, Any]
     connector_envelope: dict[str, Any] | None = None
     automatic_web_search: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +49,7 @@ class RuntimeResultNormalizationService:
                 site_id=command.site_id,
                 connector_envelope=command.connector_envelope,
                 output=provider_output,
+                usage=command.usage,
             )
 
         if command.connector_envelope is not None:
@@ -59,6 +61,7 @@ class RuntimeResultNormalizationService:
                 site_id=command.site_id,
                 connector_envelope=command.connector_envelope,
                 output=prepared_output,
+                usage=command.usage,
             )
         else:
             prepared_result = self._prepare_result_for_storage(

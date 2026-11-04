@@ -5,15 +5,24 @@ Status: active engineering standard; Stages 1 through 3 and one bounded Stage
 
 Date: 2026-07-29.
 
+Current device scope and local verification dimensions follow
+[PC scope and selective verification](frontend-pc-scope-and-selective-verification-v1.md)
+(operator decision 2026-10-26): PC only; select pages, themes, widths and
+behavior checks by impact. Existing required CI and risk gates remain in force.
+
 Purpose: reduce the change risk and maintenance cost of
 `frontend/src/app/admin/**` without replacing the accepted Cloud Admin
 information architecture, visual language, product boundary, or operator
 workflow.
 
+Request deadlines, form recovery and authentication navigation follow the
+[frontend request recovery contract](frontend-request-recovery-v1.md).
+
 This document is the engineering companion to:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
+- [Admin Quiet Queue Contract Index](admin-ui-spec.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md);
 - [Development Validation Operating Model v1](development-validation-operating-model-v1.md).

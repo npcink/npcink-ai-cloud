@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useState } from 'react';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { NavigationHandoff } from '@/components/ui/NavigationHandoff';
 import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { QqLoginButton } from '@/components/portal/QqLoginButton';
@@ -12,6 +13,7 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { useSession } from '@/hooks/useSession';
 import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown';
 import { cn } from '@/lib/utils';
+import { isPortalSecondFactorRequired } from '@/lib/portal-auth-wire';
 
 interface FormState {
   email: string;
@@ -42,6 +44,7 @@ function LoginFormContent() {
   const { isAuthenticated, isLoading, requestLoginCode, verifyLoginCode } = useSession();
   const verificationCooldown = useVerificationCodeCooldown();
   const redirectTo = resolvePortalLoginRedirect(searchParams.get('redirect'));
+  const [handoffHref, setHandoffHref] = useState('');
   const loginReason = searchParams.get('reason');
   const initialMessage =
     loginReason === 'qq_unbound'
@@ -69,8 +72,8 @@ function LoginFormContent() {
   // Session discovery runs in parallel with the public login form. The server
   // remains the authentication authority, while a slow session probe does not
   // block a signed-out visitor from starting the passwordless flow.
-  if (isAuthenticated) {
-    return <LoadingFallback />;
+  if (isAuthenticated || handoffHref) {
+    return <NavigationHandoff href={handoffHref || redirectTo} />;
   }
 
   const handleEmailChange = (email: string) => {
@@ -157,7 +160,14 @@ function LoginFormContent() {
     setForm((prev) => ({ ...prev, status: 'verifying', message: '' }));
 
     try {
-      await verifyLoginCode(normalizedEmail, normalizedCode, { rememberMe: form.rememberMe });
+      const result = await verifyLoginCode(normalizedEmail, normalizedCode, { rememberMe: form.rememberMe });
+      if (isPortalSecondFactorRequired(result)) {
+        const destination = `/portal/second-factor?redirect=${encodeURIComponent(redirectTo)}`;
+        setHandoffHref(destination);
+        router.push(destination);
+        return;
+      }
+      setHandoffHref(redirectTo);
       window.location.replace(redirectTo);
     } catch (error) {
       setForm((prev) => ({

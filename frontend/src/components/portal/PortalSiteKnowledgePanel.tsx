@@ -1,14 +1,18 @@
 'use client';
 
+import Link from 'next/link';
+import { PortalActionIcon } from '@/components/portal/PortalRowActions';
 import {
   PortalCard,
+  PortalInfoHint,
   PortalMetricStrip,
   PortalSection,
 } from '@/components/portal/PortalScaffold';
-import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
+import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
 import type { PortalVectorObservabilitySummary } from '@/lib/portal-client';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
 type PortalSiteKnowledgePanelProps = {
   summary: PortalVectorObservabilitySummary | null;
@@ -26,79 +30,162 @@ export function PortalSiteKnowledgePanel({
   const { t } = useLocale();
   const totals = summary?.totals || null;
   const snapshot = summary?.index_snapshots?.[0] || null;
+  // Describe the observed index, not a production performance guarantee or
+  // a claim that an old index snapshot is the current runtime configuration.
+  const localPreviewIndex = process.env.NEXT_PUBLIC_ENV === 'development'
+    && snapshot?.vector_backend === 'postgres_json'
+    && snapshot?.embedding_provider === 'ollama-m4-embedding';
   const indexedPages = Number(snapshot?.document_count ?? totals?.current_document_count ?? 0);
   const searchCount = Number(totals?.search_queries_total || 0);
   const noAnswerCount = Number(totals?.no_hit_total || 0);
   const lastUpdatedAt = snapshot?.last_indexed_at || totals?.last_index_job_finished_at || '';
   const hasKnowledge = indexedPages > 0 || Number(totals?.index_jobs_total || 0) > 0;
+  const healthStatus = String(summary?.health?.status || '');
+  const indexJobs = Number(totals?.index_jobs_total || 0);
+  const indexSucceeded = Number(totals?.index_succeeded_total || 0);
+  const indexFailed = Number(totals?.index_failed_total || 0);
+  // Hard failure: empty index, or every recent index job failed with nothing succeeding.
+  const hardUpdateFailure = Boolean(
+    hasKnowledge
+    && healthStatus === 'error'
+    && (
+      indexedPages === 0
+      || (indexJobs > 0 && indexSucceeded === 0 && indexFailed > 0)
+    )
+  );
+  const softUpdateIssue = Boolean(
+    hasKnowledge && healthStatus === 'error' && !hardUpdateFailure
+  );
   const needsAttention = Boolean(
-    hasKnowledge && summary && ['warning', 'error'].includes(summary.health.status)
+    hasKnowledge && summary && healthStatus === 'warning'
   );
   const windowDays = Math.max(1, Math.round(Number(summary?.window?.hours || 168) / 24));
+  const failedSearches = Number(totals?.search_failed_total || 0);
+  const slowOnlyWarning = needsAttention
+    && indexFailed === 0 && failedSearches === 0
+    && Number(totals?.no_hit_rate || 0) < 0.25
+    && Number(totals?.p95_search_latency_ms || 0) >= 1200;
+  const warningReasons = [
+    indexFailed > 0 ? t('portal.vector_obs.warning_updates', { count: formatNumber(indexFailed) }, '{{count}} knowledge update(s) failed.') : '',
+    failedSearches > 0 ? t('portal.vector_obs.warning_searches', { count: formatNumber(failedSearches) }, '{{count}} search(es) failed.') : '',
+    searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25
+      ? t('portal.vector_obs.warning_no_hits', { count: formatNumber(noAnswerCount), total: formatNumber(searchCount) }, '{{count}} of {{total}} searches found no related content.') : '',
+    Number(totals?.p95_search_latency_ms || 0) >= 1200
+      ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, '95% of searches finished within {{seconds}} seconds.') : '',
+  ].filter(Boolean);
+
+  const softFailedCount = Math.max(0, indexFailed);
+  const softUpdateNote = softUpdateIssue
+    ? (softFailedCount > 0
+      ? t(
+        'portal.vector_obs.soft_update_note',
+        { days: String(windowDays), count: formatNumber(softFailedCount) },
+        'In the last {{days}} days, {{count}} update(s) did not succeed. Indexed pages are still available.'
+      )
+      : t(
+        'portal.vector_obs.soft_update_note_generic',
+        { days: String(windowDays) },
+        'In the last {{days}} days knowledge health dipped (slow or incomplete updates). Indexed pages are still available.'
+      ))
+    : '';
+  // Soft issues stay usable — no mystery yellow 「更新异常」 badge.
   const statusLabel = !hasKnowledge
     ? t('portal.vector_obs.status_empty', {}, 'Not started')
-    : needsAttention
-      ? summary?.health.status === 'error'
-        ? t('portal.vector_obs.status_error', {}, 'Update failed')
-        : t('portal.vector_obs.status_pending', {}, 'To confirm')
-      : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
+    : hardUpdateFailure
+      ? t('portal.vector_obs.status_error', {}, 'Update failed')
+      : softUpdateIssue
+        ? t('portal.vector_obs.status_usable', {}, 'Knowledge is usable')
+        : needsAttention
+          ? slowOnlyWarning
+            ? localPreviewIndex
+              ? t('portal.vector_obs.status_local_slow', {}, 'Development searches were slow')
+              : t('portal.vector_obs.status_slow', {}, 'Searches were slow')
+            : t('portal.vector_obs.status_attention', {}, 'Needs attention')
+          : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
   const displayedStatusLabel = error
     ? t('portal.home.package_pending_label', {}, 'To confirm')
     : summary
       ? statusLabel
       : t('common.loading');
-  const statusTone = error || !hasKnowledge ? 'inactive' : needsAttention ? 'warning' : 'active';
-  const showRefresh = Boolean(error || summary?.health.status === 'error');
+  const statusTone = error || !hasKnowledge
+    ? 'inactive'
+    : hardUpdateFailure
+      ? 'error'
+      : needsAttention
+        ? 'warning'
+        : 'active';
+  const showRefresh = Boolean(error || hardUpdateFailure || softUpdateIssue || needsAttention);
+  const knowledgeDesc = t(
+    'portal.vector_obs.customer_desc',
+    {},
+    'Site knowledge helps AI use this site\'s pages. Content changes are updated automatically.'
+  );
+  const knowledgeScopeNote = t(
+    'portal.vector_obs.site_scope_note',
+    {},
+    'The figures below describe this site only. Account-wide limits are shown under Billing.'
+  );
+  const refreshLabel = t('common.refresh', {}, 'Refresh');
+  const updateHint = t(
+    'portal.vector_obs.update_hint',
+    {},
+    'Content changes are updated automatically from the connected WordPress site.'
+  );
+  const helpAria = [knowledgeDesc, knowledgeScopeNote].filter(Boolean).join(' ');
+  const lastUpdatedDetailLabel = softUpdateNote
+    ? `${updateHint} ${softUpdateNote}`
+    : updateHint;
 
   return (
     <PortalSection
       id="site-knowledge"
-      className="scroll-mt-24 space-y-4"
+      className="scroll-mt-24 space-y-3 p-3 md:px-4 md:py-3"
       data-portal-site="site-knowledge"
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {t('portal.vector_obs.title', {}, 'Site knowledge')}
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t(
-              'portal.vector_obs.customer_desc',
-              {},
-              'Site knowledge helps AI use this site\'s pages. Content changes are updated automatically.'
-            )}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t(
-              'portal.vector_obs.site_scope_note',
-              {},
-              'The figures below describe this site only. Account-wide limits are shown under Billing.'
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+          {t('portal.vector_obs.title', {}, 'Site knowledge')}
+        </h2>
+        <PortalInfoHint
+          label={t('portal.vector_obs.title', {}, 'Site knowledge')}
+          aria-label={helpAria}
+          data-portal-site="knowledge-help"
+          detail={(
+            <>
+              <span className="block">{knowledgeDesc}</span>
+              <span className="mt-1 block text-slate-500 dark:text-slate-400">{knowledgeScopeNote}</span>
+            </>
+          )}
+        />
+        {softUpdateIssue ? (
+          <PortalStatusInline
+            label={displayedStatusLabel}
+            className="normal-case tracking-normal"
+          />
+        ) : (
           <PortalStatusBadge
             status={statusTone}
             label={displayedStatusLabel}
             className="normal-case tracking-normal"
           />
-          {onRetry && showRefresh ? (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={onRetry}
-              disabled={isLoading}
-            >
-              {t('common.refresh', {}, 'Refresh')}
-            </button>
-          ) : null}
-        </div>
+        )}
+        {onRetry && showRefresh ? (
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:text-white"
+            onClick={onRetry}
+            disabled={isLoading}
+            aria-label={refreshLabel}
+            title={refreshLabel}
+            data-portal-site="knowledge-refresh"
+          >
+            <PortalActionIcon id="recheck" />
+          </button>
+        ) : null}
       </div>
 
       {isLoading ? (
-        <PortalCard className="text-sm text-slate-600 dark:text-slate-300">
-          {t('common.loading')}
-        </PortalCard>
+        <PortalLoadingState message={t('common.loading')} compact />
       ) : null}
 
       {error ? (
@@ -109,6 +196,29 @@ export function PortalSiteKnowledgePanel({
             'Site knowledge status could not be loaded. Try again later.'
           )}
         </PortalCard>
+      ) : null}
+
+      {!isLoading && !error && summary && needsAttention ? (
+        <div className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300" data-portal-site="knowledge-guidance">
+          <p>
+            {t('portal.vector_obs.warning_period', { days: String(windowDays) }, 'In the last {{days}} days:')}{' '}
+            {warningReasons.join(' ') || t('portal.vector_obs.warning_unknown', {}, 'Knowledge health needs review; the exact cause is not identified here.')}
+          </p>
+          {slowOnlyWarning ? (
+            <p>{t('portal.vector_obs.warning_slow_successes', { queries: formatNumber(searchCount), updates: formatNumber(indexJobs) }, 'No failed searches or knowledge updates were recorded ({{queries}} searches, {{updates}} updates).')}</p>
+          ) : null}
+          {slowOnlyWarning && totals?.last_search_finished_at ? (
+            <p>{t('portal.vector_obs.warning_last_search', { time: formatDate(totals.last_search_finished_at) }, 'Last recorded search: {{time}}. These historical figures do not establish current response time.')}</p>
+          ) : null}
+          <p>{slowOnlyWarning
+            ? localPreviewIndex
+              ? t('portal.vector_obs.warning_next_local_slow', {}, 'Local development: the latest index uses the local search setup. Its response time does not represent the hosted vector services planned for launch. Continue checking search results; latency is a development task and does not require reconnecting or resyncing the site.')
+              : t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
+            : t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.')}</p>
+          <Link className="btn btn-secondary btn-sm" href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(summary.site_id)}`}>
+            {t('portal.site_attention_contact_support', {}, 'Contact support')}
+          </Link>
+        </div>
       ) : null}
 
       {!isLoading && !error && summary && !hasKnowledge ? (
@@ -123,7 +233,7 @@ export function PortalSiteKnowledgePanel({
 
       {!isLoading && !error && summary && hasKnowledge ? (
         <PortalMetricStrip
-          columnsClassName="md:grid-cols-3"
+          layout="grid"
           variant="header"
           items={[
             {
@@ -134,17 +244,33 @@ export function PortalSiteKnowledgePanel({
                 {},
                 'Pages currently available to site knowledge.'
               ),
+              detailDisplay: 'hint',
             },
             {
               label: t('portal.vector_obs.last_indexed', {}, 'Last updated'),
               value: lastUpdatedAt
                 ? formatDate(lastUpdatedAt)
                 : t('portal.home.package_pending_label', {}, 'To confirm'),
-              detail: t(
-                'portal.vector_obs.update_hint',
-                {},
-                'Content changes are updated automatically from the connected WordPress site.'
-              ),
+              detail: softUpdateNote ? (
+                <>
+                  <span className="block">{updateHint}</span>
+                  <span
+                    className="mt-1 block text-slate-500 dark:text-slate-400"
+                    data-portal-site="knowledge-soft-note-help"
+                  >
+                    {softUpdateNote}
+                  </span>
+                </>
+              ) : updateHint,
+              detailLabel: lastUpdatedDetailLabel,
+              detailDisplay: 'hint',
+              hintProps: {
+                'data-portal-site': 'knowledge-last-updated-help',
+                ...(softUpdateNote ? { 'data-portal-knowledge-soft': '1' } : {}),
+              },
+              hintPanelProps: softUpdateNote
+                ? { 'data-portal-site': 'knowledge-soft-note-help' }
+                : undefined,
               size: 'compact',
             },
             {
@@ -163,6 +289,7 @@ export function PortalSiteKnowledgePanel({
                 { count: formatNumber(noAnswerCount) },
                 '{{count}} could not find related content.'
               ),
+              detailDisplay: 'hint',
               size: 'compact',
             },
           ]}

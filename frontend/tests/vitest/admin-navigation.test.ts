@@ -77,7 +77,11 @@ describe('Admin navigation scope contracts', () => {
     for (const route of ['/admin/audit', '/admin/agent-feedback', '/admin/ai-advisor']) {
       expect(adminSecondaryParentHref(route)).toBe('/admin/troubleshooting');
     }
-    expect(adminSecondaryParentHref('/admin/accounts')).toBeNull();
+    expect(adminSecondaryParentHref('/admin/accounts')).toBe('/admin/accounts');
+    expect(adminSecondaryParentHref('/admin/support-requests')).toBe('/admin/accounts');
+    expect(adminSecondaryParentHref('/admin/coverage')).toBe('/admin/subscriptions');
+    expect(adminSecondaryParentHref('/admin/external-services')).toBe('/admin/ai-resources');
+    expect(adminSecondaryParentHref('/admin/site-compliance')).toBe('/admin/service-settings');
     expect(adminSecondaryParentHref('/admin/plugin-observability-unknown')).toBeNull();
   });
 });

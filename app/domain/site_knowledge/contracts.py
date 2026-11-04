@@ -25,6 +25,7 @@ SITE_KNOWLEDGE_EXECUTION_KIND = "knowledge"
 SITE_KNOWLEDGE_ABILITY_FAMILY = "knowledge"
 SITE_KNOWLEDGE_DATA_CLASSIFICATION = "public_site_content"
 MAX_SITE_KNOWLEDGE_STATUS_POST_IDS = 1000
+MAX_SOURCE_ITEMS = 100
 MAX_SOURCE_PASSAGES = 24
 MAX_SOURCE_PASSAGE_CHARS = 1200
 MAX_SOURCE_PASSAGES_TOTAL_CHARS = 12000
@@ -141,6 +142,55 @@ def validate_site_knowledge_runtime_contract(
             "site_knowledge.write_field_forbidden",
             f"site knowledge input may not include write/control field '{forbidden_path}'",
         )
+    normalize_source_items(input_payload, ability_name=ability_name)
+
+
+def normalize_source_items(
+    input_payload: dict[str, Any], *, ability_name: str
+) -> list[tuple[str, int]] | None:
+    """None is legacy input; an explicit invalid selector can never mean all-site."""
+    if "source_items" not in input_payload:
+        return None
+    is_delete = ability_name == SITE_KNOWLEDGE_SYNC_ABILITY
+    if ability_name not in (SITE_KNOWLEDGE_SYNC_ABILITY, SITE_KNOWLEDGE_STATUS_ABILITY) or (
+        is_delete and str(input_payload.get("sync_mode") or "").strip().lower() != "delete"
+    ):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_selector_conflict",
+            "source_items is available only for typed delete or status",
+        )
+    conflicts = {"site_id", "customer_id", "account_id"}
+    if is_delete:
+        conflicts.update({"post_ids", "documents", "comments", "media_items", "maintenance"})
+    if conflicts.intersection(input_payload):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_selector_conflict",
+            "source_items may not override authenticated scope or mix delete selectors",
+        )
+    value = input_payload["source_items"]
+    allowed_types = {"post", "page", "media"} if is_delete else PUBLIC_SOURCE_TYPES
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_SOURCE_ITEMS:
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_items_invalid", "source_items must contain 1 to 100 identities"
+        )
+    identities: list[tuple[str, int]] = []
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"source_type", "source_id"}
+            or not isinstance(item["source_type"], str)
+            or item["source_type"] not in allowed_types
+            or type(item["source_id"]) is not int
+            or item["source_id"] <= 0
+        ):
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.source_items_invalid",
+                "source_items requires exact source_type and positive integer source_id",
+            )
+        identity = (item["source_type"], item["source_id"])
+        if identity not in identities:
+            identities.append(identity)
+    return identities
 
 
 def find_forbidden_write_field(value: Any, *, path: str = "") -> str:

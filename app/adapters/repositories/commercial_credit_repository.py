@@ -10,8 +10,11 @@ from app.adapters.repositories.commercial_credit_ledger_queries import (
 )
 from app.core.models import (
     CREDIT_LEDGER_EVENT_CONSUME,
+    PAYMENT_REFUND_STATUS_REQUESTED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     CreditLedgerEntry,
     PaidCreditGrant,
+    PaymentRefund,
 )
 
 
@@ -78,6 +81,16 @@ class CommercialCreditRepository(CommercialCreditLedgerQueries):
         self.session.flush()
         return entry
 
+    def get_credit_ledger_entry_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> CreditLedgerEntry | None:
+        return self.session.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.idempotency_key == idempotency_key
+            )
+        )
+
     def get_paid_credit_grant_by_order(
         self,
         payment_order_id: str,
@@ -88,7 +101,7 @@ class CommercialCreditRepository(CommercialCreditLedgerQueries):
             PaidCreditGrant.payment_order_id == payment_order_id
         )
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         return self.session.scalar(statement)
 
     def upsert_paid_credit_grant(
@@ -136,8 +149,26 @@ class CommercialCreditRepository(CommercialCreditLedgerQueries):
             .order_by(PaidCreditGrant.expires_at.asc(), PaidCreditGrant.created_at.asc())
         )
         if for_update:
-            statement = statement.with_for_update()
-        return list(self.session.scalars(statement))
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        grants = list(self.session.scalars(statement))
+        if not grants:
+            return []
+        # Read AFTER acquiring grant locks. A SELECT snapshot taken before a
+        # concurrent refund commits could miss its requested row after waiting.
+        frozen_orders = set(
+            self.session.scalars(
+                select(PaymentRefund.order_id).where(
+                    PaymentRefund.order_id.in_([grant.payment_order_id for grant in grants]),
+                    PaymentRefund.status.in_(
+                        [
+                            PAYMENT_REFUND_STATUS_REQUESTED,
+                            PAYMENT_REFUND_STATUS_UNKNOWN,
+                        ]
+                    ),
+                )
+            )
+        )
+        return [grant for grant in grants if grant.payment_order_id not in frozen_orders]
 
     def consume_paid_credit_grants(
         self,

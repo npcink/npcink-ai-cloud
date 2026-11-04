@@ -2,6 +2,13 @@
 
 Status: active product-development standard.
 
+The operator reaffirmed this focus on 2026-10-27. The maintained decision,
+current problem assessment, expansion-freeze list and reopening conditions are
+in [Phase 1 scope](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27).
+This does not refresh the dated usage baseline below. The approved
+[existing-sales/shared-trial exception](engineering/commercial-development-next-stage-v1.md)
+remains in effect; the freeze does not disable existing commercial paths.
+
 Date: 2026-08-17.
 
 Purpose: keep the pre-commercial Npcink AI phase focused on proving that

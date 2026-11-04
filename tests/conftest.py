@@ -476,6 +476,7 @@ def build_internal_headers(
 
 def build_portal_headers(
     *,
+    database_url: str | None = None,
     principal_id: str = "principal:portal-admin@example.com",
     session_version: int = 1,
     secret: str = TEST_PORTAL_JWT_SECRET,
@@ -487,6 +488,7 @@ def build_portal_headers(
     trace_id: str = "00112233445566778899aabbccddeeff",
 ) -> dict[str, str]:
     headers = build_portal_bearer_headers(
+        database_url=database_url,
         principal_id=principal_id,
         session_version=session_version,
         secret=secret,
@@ -504,6 +506,7 @@ def build_portal_headers(
 
 def build_portal_bearer_headers(
     *,
+    database_url: str | None = None,
     principal_id: str = "principal:portal-admin@example.com",
     session_version: int = 1,
     secret: str = TEST_PORTAL_JWT_SECRET,
@@ -521,12 +524,36 @@ def build_portal_bearer_headers(
         portal_jwt_issuer=issuer,
         portal_jwt_audience=audience,
     )
+    from uuid import uuid4
+
+    from app.core.models import PortalSession
+
+    sid = uuid4().hex
+    issued_at = datetime.now(UTC).replace(microsecond=0)
+    expiry = (
+        expires_at or issued_at + timedelta(seconds=settings.portal_session_ttl_seconds)
+    ).replace(microsecond=0)
+    if database_url is not None:
+        with get_session(database_url) as session:
+            session.add(
+                PortalSession(
+                    session_id=sid,
+                    principal_id=principal_id,
+                    session_version=session_version,
+                    created_at=min(issued_at, expiry - timedelta(minutes=1)),
+                    absolute_expires_at=expiry,
+                    auth_method="email_code",
+                )
+            )
+            session.commit()
     token = build_portal_session_token(
         settings,
+        session_id=sid,
         principal_id=principal_id,
         session_version=session_version,
         site_id=site_id,
-        expires_at=(expires_at if expires_at is None or expires_at > datetime.now(UTC) else None),
+        expires_at=(expiry if expiry > issued_at else None),
+        issued_at=issued_at,
     )
     if expires_at is not None and expires_at <= datetime.now(UTC):
         payload = jwt.decode(token, options={"verify_signature": False})

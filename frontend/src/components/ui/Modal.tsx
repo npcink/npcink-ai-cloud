@@ -1,6 +1,9 @@
 'use client';
 
+import { isTopmostDialog, registerDialog } from '@/lib/dialog-layer';
+
 import React, { useEffect, useCallback, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Button } from './Button';
 
@@ -11,7 +14,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full';
   closeOnOverlay?: boolean;
   showCloseButton?: boolean;
   closeLabel?: string;
@@ -41,12 +44,20 @@ export function Modal({
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
   const descriptionId = useId();
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   // Keep keyboard focus inside the active dialog and return it to the trigger.
+  // onClose is read via ref so unstable parent callbacks (common with inline
+  // handlers) do not re-run this effect on every keystroke and steal focus.
   useEffect(() => {
     if (!isOpen) return;
+    const unregisterDialog = registerDialog(dialogRef.current);
 
     previousActiveElementRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -66,13 +77,31 @@ export function Modal({
 
     const focusFrame = window.requestAnimationFrame(() => {
       const focusableElements = visibleFocusableElements();
-      (focusableElements[0] || dialogRef.current)?.focus();
+      const preferred = focusableElements.find((element) => (
+        element instanceof HTMLInputElement
+        || element instanceof HTMLTextAreaElement
+        || element instanceof HTMLSelectElement
+      )) || focusableElements[0] || dialogRef.current;
+      preferred?.focus();
+      // Avoid select-all on open: it fights CJK IME composition and feels like the field won't accept input.
+      if (
+        preferred instanceof HTMLInputElement
+        && (preferred.type === 'text' || preferred.type === 'search' || preferred.type === '' || !preferred.type)
+      ) {
+        const end = preferred.value.length;
+        try {
+          preferred.setSelectionRange(end, end);
+        } catch {
+          // Some input types reject setSelectionRange; focus alone is enough.
+        }
+      }
     });
 
     const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmostDialog(dialogRef.current)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -100,12 +129,13 @@ export function Modal({
 
     document.addEventListener('keydown', handleDialogKeyDown);
     return () => {
+      unregisterDialog();
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleDialogKeyDown);
       previousActiveElementRef.current?.focus();
       previousActiveElementRef.current = null;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   // Preserve the previous body scroll state while the dialog is active.
   useEffect(() => {
@@ -131,10 +161,12 @@ export function Modal({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
+    '2xl': 'max-w-4xl',
+    '3xl': 'max-w-3xl',
     full: 'max-w-[calc(100vw-2rem)] h-[calc(100vh-2rem)]',
   };
 
-  return (
+  return createPortal(
     <div
       ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -154,7 +186,7 @@ export function Modal({
       {/* 模态框内容 */}
       <div
         className={cn(
-          'relative w-full rounded-xl bg-white dark:bg-gray-900 shadow-2xl',
+          'relative z-10 w-full rounded-xl bg-white dark:bg-gray-900 shadow-2xl',
           'border border-gray-200 dark:border-gray-800',
           'flex flex-col max-h-full',
           sizeStyles[size],
@@ -213,7 +245,8 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -132,7 +132,7 @@ assert.match(
 );
 assert.match(
   portalSessionBoundarySource,
-  /if \(!sessionInvalid\) \{[\s\S]*Your browser has not been signed out[\s\S]*void refresh\(\)/,
+  /if \(!sessionInvalid\) \{[\s\S]*Your browser has not been signed out[\s\S]*void refresh\(\)\.catch\(\(\) => undefined\)/,
   'transient session verification failures must retain the cookie and offer retry'
 );
 assert.match(

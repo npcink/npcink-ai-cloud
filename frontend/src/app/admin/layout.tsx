@@ -1,5 +1,7 @@
 'use client';
 
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -10,11 +12,13 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
-import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
+import { AdminHeaderLayout } from '@/components/admin/AdminHeaderLayout';
+import { AdminWorkspaceNavigation } from '@/components/admin/AdminWorkspaceNavigation';
 import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
+import { installAdminHistoryTracking } from '@/hooks/useAdminNavigationGuard';
 import { getAdminCommandShortcutLabel } from '@/lib/admin-shortcuts';
 
 interface AdminLayoutProps {
@@ -35,6 +39,7 @@ type AdminNavGroup = {
   descKey: string;
   fallback: string;
   descFallback: string;
+  headerless?: boolean;
   items: AdminNavItem[];
 };
 
@@ -71,6 +76,7 @@ function isTypingShortcutTarget(target: EventTarget | null): boolean {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
+  useEffect(() => { installAdminHistoryTracking(); }, []);
   const pathname = usePathname();
   const { t } = useLocale();
   const isLoginPage = pathname === '/admin/login';
@@ -185,6 +191,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       }
 
       if (key === 'k') {
+        if (document.querySelector('[aria-modal]') && !document.querySelector('[data-ui="admin-command-dialog"]')) return;
         event.preventDefault();
         setCommandOpen((current) => !current);
       }
@@ -208,6 +215,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       descKey: 'admin.nav_group_overview_desc',
       fallback: 'Workspace',
       descFallback: 'Platform posture and next operator actions.',
+      headerless: true,
       items: [
         { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview', collapsedLabel: 'OV' },
       ],
@@ -216,7 +224,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       groupKey: 'admin.nav_group_customer_service',
       descKey: 'admin.nav_group_customer_service_desc',
       fallback: 'Customer Ops',
-      descFallback: 'Accounts, coverage, subscriptions, and package records.',
+      descFallback: 'Customers, tickets, and commercial records.',
       items: [
         {
           href: '/admin/accounts',
@@ -226,81 +234,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
-          href: '/admin/support-requests',
-          labelKey: 'admin.nav_support_requests',
-          fallback: 'Tickets',
-          collapsedLabel: 'TI',
-        },
-        {
-          href: '/admin/coverage',
-          labelKey: 'admin.nav_coverage',
-          fallback: 'Service Operations',
-          collapsedLabel: 'SO',
-          activePrefixes: ['/admin/coverage'],
-        },
-        {
           href: '/admin/subscriptions',
-          labelKey: 'admin.nav_subscriptions',
-          fallback: 'Subscription Operations',
-          collapsedLabel: 'SU',
-          activePrefixes: ['/admin/subscriptions'],
-        },
-        {
-          href: '/admin/plans',
-          labelKey: 'admin.nav_plan_catalog',
-          fallback: 'Package Catalog',
-          collapsedLabel: 'PC',
-          activePrefixes: ['/admin/plans'],
-        },
-        {
-          href: '/admin/credit-packs',
-          labelKey: 'admin.nav_credit_packs',
-          fallback: 'AI Credit Packs',
-          collapsedLabel: 'CP',
-          activePrefixes: ['/admin/credit-packs'],
+          labelKey: 'admin.nav_commercial_records',
+          fallback: 'Commercial records',
+          collapsedLabel: 'CR',
+          activePrefixes: ['/admin/coverage', '/admin/plans', '/admin/credit-packs', '/admin/economics'],
         },
       ],
     },
     {
       groupKey: 'admin.nav_group_runtime_ops',
       descKey: 'admin.nav_group_runtime_ops_desc',
-      fallback: 'Runtime Plane',
-      descFallback: 'Provider readiness, hosted runtime profiles, and diagnostics.',
+      fallback: 'Runtime & Observability',
+      descFallback: 'Runtime observation and runtime diagnostics.',
       items: [
-        {
-          href: '/admin/ai-resources',
-          labelKey: 'admin.nav_ai_resources',
-          fallback: 'Model Suppliers',
-          collapsedLabel: 'MS',
-          activePrefixes: ['/admin/ai-resources'],
-        },
-        {
-          href: '/admin/external-services',
-          labelKey: 'admin.nav_external_services',
-          fallback: 'Search & Images',
-          collapsedLabel: 'SI',
-          activePrefixes: ['/admin/external-services'],
-        },
-        {
-          href: '/admin/vector-settings',
-          labelKey: 'admin.nav_vector_settings',
-          fallback: 'Vector Settings',
-          collapsedLabel: 'VS',
-          activePrefixes: ['/admin/vector-settings'],
-        },
-        {
-          href: '/admin/runtime-profiles',
-          labelKey: 'admin.nav_runtime_profiles',
-          fallback: 'Runtime Profiles',
-          collapsedLabel: 'RP',
-          activePrefixes: ['/admin/runtime-profiles'],
-        },
         {
           href: '/admin/usage-statistics',
           labelKey: 'admin.nav_runtime_observation',
-          fallback: 'Runtime observation',
+          fallback: 'Observability overview',
           collapsedLabel: 'US',
-          activePrefixes: ['/admin/usage-statistics', '/admin/media-observability', '/admin/vector-observability'],
+          activePrefixes: ['/admin/usage-statistics', '/admin/plugin-observability', '/admin/media-observability', '/admin/vector-observability'],
         },
         {
           href: '/admin/troubleshooting',
@@ -312,22 +265,31 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
     {
-      groupKey: 'admin.nav_group_system',
-      descKey: 'admin.nav_group_system_desc',
-      fallback: 'System',
-      descFallback: 'Cloud-owned service configuration.',
+      groupKey: 'admin.nav_group_configuration',
+      descKey: 'admin.nav_group_configuration_desc',
+      fallback: 'Configuration',
+      descFallback: 'External capabilities, runtime profiles, and Cloud-owned service settings.',
       items: [
+        {
+          href: '/admin/ai-resources',
+          labelKey: 'admin.nav_external_capabilities',
+          fallback: 'External capabilities',
+          collapsedLabel: 'EC',
+          activePrefixes: ['/admin/ai-resources', '/admin/external-services', '/admin/vector-settings'],
+        },
+        {
+          href: '/admin/runtime-profiles',
+          labelKey: 'admin.nav_runtime_profiles',
+          fallback: 'Runtime Profiles',
+          collapsedLabel: 'RP',
+          activePrefixes: ['/admin/runtime-profiles'],
+        },
         {
           href: '/admin/service-settings',
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
           collapsedLabel: 'SS',
-        },
-        {
-          href: '/admin/site-compliance',
-          labelKey: 'admin.nav_site_compliance',
-          fallback: 'Site Compliance',
-          collapsedLabel: 'SC',
+          activePrefixes: ['/admin/service-settings', '/admin/site-compliance'],
         },
       ],
     },
@@ -345,8 +307,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
     return (item.activePrefixes || [href]).some(isPathMatch);
   };
-  const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
-  const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -359,20 +319,42 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           label: t(item.labelKey, {}, item.fallback),
         }));
       });
-      const diagnosticsGroupLabel = t('admin.nav_group_diagnostics', {}, 'Diagnostics');
+      const withGroup = (
+        groupKey: string,
+        groupFallback: string,
+        items: Array<Pick<AdminCommandItem, 'href' | 'labelKey' | 'fallback' | 'collapsedLabel'>>
+      ): AdminCommandItem[] => {
+        const groupLabel = t(groupKey, {}, groupFallback);
+        return items.map((item) => ({
+          ...item,
+          groupLabel,
+          groupFallback,
+          label: t(item.labelKey, {}, item.fallback),
+        }));
+      };
       const contextualItems: AdminCommandItem[] = [
-        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
-        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
-        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
-        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
-        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
-        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
-      ].map((item) => ({
-        ...item,
-        groupLabel: diagnosticsGroupLabel,
-        groupFallback: 'Diagnostics',
-        label: t(item.labelKey, {}, item.fallback),
-      }));
+        ...withGroup('admin.nav_group_customer_service', 'Customer Ops', [
+          { href: '/admin/customer-notifications', labelKey: 'admin.notices.title', fallback: 'Customer notices', collapsedLabel: 'CN' },
+          { href: '/admin/support-requests', labelKey: 'admin.workspace_tab_tickets', fallback: 'Tickets', collapsedLabel: 'TI' },
+          { href: '/admin/coverage', labelKey: 'admin.workspace_tab_service_status', fallback: 'Service status', collapsedLabel: 'SO' },
+          { href: '/admin/plans', labelKey: 'admin.workspace_tab_packages', fallback: 'Packages', collapsedLabel: 'PC' },
+          { href: '/admin/credit-packs', labelKey: 'admin.workspace_tab_credit_packs', fallback: 'Credit packs', collapsedLabel: 'CP' },
+          { href: '/admin/economics', labelKey: 'admin.workspace_tab_economics', fallback: 'Unit economics', collapsedLabel: 'UE' },
+        ]),
+        ...withGroup('admin.nav_group_diagnostics', 'Diagnostics', [
+          { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
+          { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
+          { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
+          { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
+          { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
+          { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
+        ].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor')),
+        ...withGroup('admin.nav_group_configuration', 'Configuration', [
+          { href: '/admin/external-services', labelKey: 'admin.workspace_tab_external_services', fallback: 'Search & images', collapsedLabel: 'SI' },
+          { href: '/admin/vector-settings', labelKey: 'admin.workspace_tab_vector', fallback: 'Site vector service', collapsedLabel: 'VS' },
+          { href: '/admin/site-compliance', labelKey: 'admin.workspace_tab_compliance', fallback: 'Site compliance', collapsedLabel: 'SC' },
+        ]),
+      ];
       return [...primaryItems, ...contextualItems];
     },
     [navGroups, t]
@@ -402,16 +384,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     >
       {navGroups.map((group) => (
         <div key={group.groupKey} className={cn('space-y-1.5', collapsed && 'space-y-1')}>
-          <div className={cn(variant === 'desktop' ? 'px-2' : '', collapsed && 'sr-only')}>
-            <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              {t(group.groupKey, {}, group.fallback)}
-            </p>
-            {variant === 'desktop' ? (
-              <p className="sr-only">
-                {t(group.descKey, {}, group.descFallback)}
+          {group.headerless ? null : (
+            <div className={cn(variant === 'desktop' ? 'px-2' : '', collapsed && 'sr-only')}>
+              <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                {t(group.groupKey, {}, group.fallback)}
               </p>
-            ) : null}
-          </div>
+              {variant === 'desktop' ? (
+                <p className="sr-only">
+                  {t(group.descKey, {}, group.descFallback)}
+                </p>
+              ) : null}
+            </div>
+          )}
           <div className="space-y-1">
             {group.items.map((item) => {
               const active = isActive(item);
@@ -536,7 +520,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
       <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">
         <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
-          <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
+          <AdminHeaderLayout left={(<>
             <Link
               href="/admin"
               className="flex items-center gap-3 lg:hidden"
@@ -556,7 +540,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-sidebar-control" className="hidden lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -576,16 +560,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   <path d="M15 6 9 12l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                {t('admin.operator_surface', {}, 'Operator surface')}
-              </span>
-              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-              {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
-                <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
-              </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
             </div>
 
-            <div className="flex items-center gap-2">
+          </>)} navigation={(
+            <React.Suspense fallback={null}><AdminWorkspaceNavigation /></React.Suspense>
+          )} utilities={(
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 className="hidden h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 text-sm text-slate-500 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white sm:inline-flex"
@@ -607,15 +587,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <Link
                 href="/admin/logout"
                 prefetch={false}
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
+                aria-label={t('portal.logout')}
+                title={t('portal.logout')}
+                className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
               >
-                {t('portal.logout')}
-              </Link>
-              <Link
-                href="/portal"
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
-              >
-                {t('nav.portal')} →
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <path d="m16 17 5-5-5-5M21 12H9" />
+                </svg>
               </Link>
               <button
                 type="button"
@@ -636,7 +615,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 )}
               </button>
             </div>
-          </div>
+          )} />
 
         <div
           id="admin-mobile-nav"
@@ -651,14 +630,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <ThemeToggle />
             </div>
             {renderNavGroups('mobile')}
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/portal"
-                className="btn btn-secondary justify-center"
-                onClick={() => setMobileNavOpen(false)}
-              >
-                {t('nav.portal')}
-              </Link>
+            <div className="grid gap-2">
               <Link
                 href="/admin/logout"
                 prefetch={false}
@@ -734,7 +706,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
-              <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>
           </AdminQueryProvider>

@@ -217,11 +217,23 @@ def test_deletion_inventory_reports_phase_specific_status() -> None:
     inventory = _read("docs/refactor-deletion-inventory-v1.md")
 
     for marker in (
-        "P1 is incomplete",
+        "P0–P5 engineering refactor is complete for the exact controlled-production",
+        "`972fee82dd4e599bb5705fe2e37f0596c016d6f9`",
+        "`98662e3886a2d3b4d74fd51cdf40fb9c91cf8fd3`",
+        "formerly operator-only `P1-E05`/`P1-E06` evidence",
         "P3 is complete",
         "P4 is complete",
-        "global P5 hardening and release closure is incomplete",
+        "does not mean the latest `master` is deployed",
+        "does not authorize",
+        "production promotion or GA",
+        "does not prove current natural-user value",
+        "Current Status Reconciliation — 2026-10-25",
+        "post-p5-final-integration-and-production-validation-closeout-2026-07-22.md",
         "not standalone proof",
+        "historical delivery evidence",
+        "not current-master production acceptance",
+        "natural-use evidence, or a new",
+        "must be rechecked for any",
     ):
         assert marker in inventory
 
@@ -231,13 +243,17 @@ def test_active_refactor_rules_use_the_current_central_matrix_repository() -> No
     retired_matrix_root = "/Users/muze/gitee/npcink-toolbox"
 
     for path in (
-        "AGENTS.md",
+        "docs/engineering/agents-session-protocol-detail.md",
         "docs/refactor-master-plan-v1.md",
         "docs/runtime-stability-performance-evidence-v1.md",
     ):
         source = _read(path)
         assert current_matrix_root in source
         assert retired_matrix_root not in source
+
+    agents = _read("AGENTS.md")
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert retired_matrix_root not in agents
 
 
 def test_p4_inventory_has_no_stale_remaining_work_after_closeout() -> None:

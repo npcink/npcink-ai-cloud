@@ -228,14 +228,19 @@ production deploy path.
 Configure these repository or environment secrets:
 
 ```text
-PROD_SSH_HOST=120.24.237.214
-PROD_SSH_USER=root
+PROD_SSH_HOST=<production SSH host; set only in GitHub Secrets / env store>
+PROD_SSH_USER=<release SSH user; set only in GitHub Secrets / env store>
 PROD_SSH_PORT=22
-PROD_SSH_KEY=<private key for the root-managed release account>
+PROD_SSH_KEY=<private key for the release account>
 PROD_SSH_KNOWN_HOSTS=<pinned known_hosts line verified through an independent channel>
 PROD_REMOTE_DIR=/opt/npcink-ai-cloud
 PROD_BASE_URL=https://cloud.npc.ink
 ```
+
+Do not paste the live SSH host or user into this tracked document. Workstation
+deploy helpers load the same class of values from
+`.deploy-secrets/workspace-target.env.sh` (see `deploy/WORKSPACE_TARGET.md`);
+CI uses GitHub Secrets only.
 
 Protected formal release-smoke secrets used by either an explicitly selected
 deploy smoke or the separate `Release Smoke` workflow:
@@ -255,9 +260,14 @@ Do not keep an old code as durable release configuration. If the deployment may
 outlast that TTL, leave `run_formal_release_smoke=false`, finish the deploy,
 request and store a fresh code through the protected operator path, then
 immediately dispatch `Release Smoke` from `production`, pasting the successful
-deploy's full SHA into `expected_deployed_sha`. The smoke fails before checkout
-unless that SHA equals the selected workflow revision and has a successful
-`Deploy Production` run. Before selecting the inline smoke, run the release
+deploy's full application SHA into `expected_deployed_sha`. The smoke fails
+before checkout without a successful `Deploy Production` run for that SHA.
+Tool and application revisions are recorded separately; the temporary SSH
+transport verifies the installed manifest before and after smoke. It uses the
+existing pinned `PROD_SSH_*` credentials without changing the server configuration.
+Run `preflight_only=true` before requesting a new OTP; only an explicitly
+authorized `preflight_only=false` run can provide full formal evidence. See
+[the entry runbook](../docs/formal-release-smoke-entry-v1.md). Before selecting the inline smoke, run the release
 preflight with `--require-formal-smoke`; missing
 secret names or a stale code must stop the smoke rather than be reported as a
 skip. The operator-only admin key must be captured at setup/rotation time and

@@ -5,6 +5,10 @@ Status: active standard.
 
 日期：2026-08-02。
 
+2026-10-26 当前范围：遵循[前端 PC 范围与选择检查规范](frontend-pc-scope-and-selective-verification-v1.md)。
+仅做 PC 开发与验收，按改动影响选择检查；下文移动端做法保留为既有实现与
+历史经验，不构成当前手机/平板适配或验收要求。
+
 目的：把 `/admin/ai-resources` 多轮真实使用反馈中形成的界面判断、实现
 方法、验证分级和多 AI 会话协作经验，整理为后续人类与 AI 可以直接执行的
 工作规范。

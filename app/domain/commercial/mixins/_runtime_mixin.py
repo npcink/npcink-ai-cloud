@@ -55,6 +55,10 @@ from app.domain.commercial.mixins._billing_mixin import (
     DEFAULT_RUNTIME_CONCURRENCY,
     DEFAULT_RUNTIME_ENTITLEMENTS,
 )
+from app.domain.commercial.notifications import (
+    build_commercial_notification_id,
+    notify_unique_account_owner,
+)
 from app.domain.runtime.errors import (
     RuntimeConcurrencyExceededError,
     RuntimeEntitlementDeniedError,
@@ -64,10 +68,15 @@ from app.domain.runtime.errors import (
     RuntimeSiteNotProvisionedError,
     RuntimeSubscriptionInactiveError,
 )
+from app.domain.runtime.models import RUNTIME_INLINE_RUN_LEASE_SECONDS
 from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_SYNC_ABILITY
 
 
 class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
+    @staticmethod
+    def _inline_active_run_lease_cutoff(now: datetime) -> datetime:
+        return now - timedelta(seconds=RUNTIME_INLINE_RUN_LEASE_SECONDS)
+
     def provision_runtime_baseline(
         self,
         *,
@@ -443,6 +452,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         active_runs = repository.count_active_runs(
             site_id,
             execution_patterns=concurrency_patterns,
+            active_lease_cutoff=(
+                self._inline_active_run_lease_cutoff(now)
+                if "inline" in concurrency_patterns
+                else None
+            ),
         )
         concurrency = service._normalize_concurrency(
             getattr(entitlement_source, "concurrency_json", None)
@@ -471,25 +485,29 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                     "active_runs": active_runs,
                     "execution_pattern": execution_pattern,
                     "max_active_runs": max_active_runs,
+                    "active_run_lease_seconds": (
+                        RUNTIME_INLINE_RUN_LEASE_SECONDS
+                        if "inline" in concurrency_patterns
+                        else 0
+                    ),
                 },
             )
             session.commit()
             raise error
 
-        meter_events = repository.list_usage_meter_events(
+        meter_events = repository.list_runtime_usage_facts(
             site_id,
             subscription_id=subscription.subscription_id,
             period_start_at=period_start_at,
             period_end_at=period_end_at,
-            limit=None,
         )
         budgets = service._resolve_effective_subscription_budgets(
             plan_version=plan_version,
             subscription=subscription,
             snapshot=snapshot,
         )
-        credit_entries = repository.list_credit_ledger_entries(
-            account_ids=[subscription.account_id],
+        credit_entries = repository.list_runtime_credit_facts(
+            account_id=subscription.account_id,
             subscription_id=subscription.subscription_id,
             event_types=[
                 CREDIT_LEDGER_EVENT_CONSUME,
@@ -499,7 +517,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             ],
             since=period_start_at,
             until=period_end_at,
-            limit=None,
         )
         package_net_delta = package_credit_net_delta(credit_entries)
         used_ai_credits = package_credit_used_from_net_delta(package_net_delta)
@@ -592,6 +609,26 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                         "limit": round(float(limit), 6),
                     },
                 )
+                if (
+                    meter_key == "ai_credits"
+                    and period_start_at is not None
+                    and period_end_at is not None
+                ):
+                    notify_unique_account_owner(
+                        session=session,
+                        account_id=subscription.account_id,
+                        notification_id=build_commercial_notification_id(
+                            "pnotif_ai_credits_denied",
+                            subscription.account_id,
+                            subscription.subscription_id,
+                            period_start_at.isoformat(),
+                            period_end_at.isoformat(),
+                        ),
+                        event_type="runtime.ai_credits_denied",
+                        title="AI 积分不足",
+                        body="本订阅周期的 AI 积分额度不足，本次执行未开始。",
+                        link_href="/portal/usage",
+                    )
                 session.commit()
                 raise error
             policy_actions.append(budget_action)
@@ -940,8 +977,8 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             entry_metadata["package_credit_consumed"] = round(current_credits, 6)
             entry.metadata_json = entry_metadata
             return
-        period_entries = repository.list_credit_ledger_entries(
-            account_ids=[str(entry.account_id)],
+        period_entries = repository.list_runtime_credit_facts(
+            account_id=str(entry.account_id),
             subscription_id=subscription.subscription_id,
             event_types=[
                 CREDIT_LEDGER_EVENT_CONSUME,
@@ -951,7 +988,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             ],
             since=period_start_at,
             until=period_end_at,
-            limit=None,
         )
         package_net_after = package_credit_net_delta(period_entries)
         package_net_before = package_net_after + current_credits

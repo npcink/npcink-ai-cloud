@@ -259,7 +259,7 @@ def _run_release_policy_with_restricted_path(
         docker_stub = restricted_bin / "docker"
         docker_stub.write_text(
             "#!/bin/sh\n"
-            "if [ \"$1\" = compose ]; then\n"
+            'if [ "$1" = compose ]; then\n'
             "  printf '%s\\n' '{\"services\":{}}'\n"
             "  exit 0\n"
             "fi\n"
@@ -1662,6 +1662,13 @@ def test_prod_env_files_use_canonical_admin_names_and_do_not_expose_ai_provider_
 
 def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
     env_text = (_cloud_root() / ".env.example").read_text()
+    # Compare exact keys: dev-stack-only names such as
+    # NPCINK_CLOUD_DEV_POSTGRES_PASSWORD (docker-compose.dev.yml, loopback) are allowed.
+    env_keys = {
+        line.split("=", 1)[0].strip() + "="
+        for line in env_text.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
 
     for retired_or_protected in (
         "NPCINK_CLOUD_DATABASE_URL=",
@@ -1676,7 +1683,10 @@ def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
         "NPCINK_CLOUD_PORTAL_JWT_SECRET=",
         "POSTGRES_PASSWORD=",
     ):
-        assert retired_or_protected not in env_text
+        assert retired_or_protected not in env_keys
+
+    dev_only_password_keys = {key for key in env_keys if key.endswith("POSTGRES_PASSWORD=")}
+    assert dev_only_password_keys <= {"NPCINK_CLOUD_DEV_POSTGRES_PASSWORD="}
 
     assert "NPCINK_CLOUD_ADMIN_PRINCIPAL_ID=platform:internal_root" in env_text
     assert "NPCINK_CLOUD_ADMIN_PLATFORM_ADMIN_ROLE" not in env_text
@@ -2061,6 +2071,7 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
         "artifact_cleanup",
         "artifact_inventory_reconciliation",
         "payment_order_expiration",
+        "payment_refund_reconciliation",
     ):
         assert f'"{cadence_task_id}"' in diagnostics_block
     assert "safe_task_id_pattern" not in diagnostics_block
@@ -2161,7 +2172,7 @@ def test_remote_deploy_keeps_env_file_private_end_to_end() -> None:
 
     assert 'REMOTE_INCOMING_ROOT="${REMOTE_DIR}/.incoming"' in deploy_script
     assert (
-        'install -d -o root -g root -m 0700 -- '
+        "install -d -o root -g root -m 0700 -- "
         '$(remote_shell_arg "${REMOTE_INCOMING_ROOT}")' in deploy_script
     )
     assert 'chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")' in deploy_script
@@ -2396,7 +2407,17 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "deploy_required:" in ci_workflow
     assert "frontend_only:" in ci_workflow
     ci_classifier = (cloud_root / "scripts" / "classify-ci-changes.sh").read_text()
-    assert ".github/workflows/ci.yml|frontend/*" in ci_classifier
+    for changed_path in (".github/workflows/ci.yml", "frontend/src/app/page.tsx"):
+        classification = subprocess.run(
+            ["bash", "scripts/classify-ci-changes.sh", changed_path],
+            cwd=cloud_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        outputs = dict(line.split("=", 1) for line in classification.stdout.splitlines())
+        for gate in ("deploy_required", "frontend_required", "frontend_e2e_required"):
+            assert outputs[gate] == "true", (changed_path, gate, outputs)
     assert ".github/workflows/deploy-production.yml|docker-compose*.yml" in ci_classifier
     assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_classifier
     assert "needs: [classify, backend-scope]" in ci_workflow
@@ -2449,10 +2470,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "wait_seconds=900" in deploy_workflow
     assert "poll_seconds=15" in deploy_workflow
     assert "Timed out waiting ${wait_seconds}s for exact production checks" in deploy_workflow
-    assert '-f status=completed' not in deploy_workflow
+    assert "-f status=completed" not in deploy_workflow
     assert (
-        'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]'
-        in deploy_workflow
+        'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]' in deploy_workflow
     )
     assert '"repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs"' in deploy_workflow
     assert "exact_run codeql.yml" in deploy_workflow
@@ -2503,9 +2523,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert setup_node_refs
     assert setup_python_refs
     assert all(re.fullmatch(r"actions/setup-node@v[1-9]\d*", ref) for ref in setup_node_refs)
-    assert all(
-        re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs
-    )
+    assert all(re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs)
     assert "pnpm/action-setup@v6" in ci_workflow
     assert "docker/setup-buildx-action@v4" in ci_workflow
     assert "gitleaks/gitleaks-action@v3" in ci_workflow
@@ -2643,11 +2661,17 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert "actions: read" in release_smoke_workflow
     assert "EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}" in release_smoke_workflow
     assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
-    assert 'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"' in release_smoke_workflow
+    assert 'echo "- tool_sha=${GITHUB_SHA}"' in release_smoke_workflow
+    assert (
+        "NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}"
+        in release_smoke_workflow
+    )
+    assert "bash deploy/with-smoke-internal-tunnel.sh --" in release_smoke_workflow
+    assert "preflight_only:" in release_smoke_workflow
     assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow
     assert '.head_sha == $sha and .conclusion == "success"' in release_smoke_workflow
     assert release_smoke_workflow.index(
-        'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+        '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]'
     ) < release_smoke_workflow.index("uses: actions/checkout@v6")
     assert "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_KEY" in release_smoke_workflow
@@ -2919,9 +2943,9 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
 def test_release_policy_compose_guard_rejects_unknown_mode() -> None:
     script_text = (_cloud_root() / "scripts" / "check-release-policy.sh").read_text()
 
-    assert 'NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required' in script_text
-    assert 'Production Compose protocol guard skipped for a non-runtime policy lane' in script_text
-    assert 'Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD' in script_text
+    assert "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required" in script_text
+    assert "Production Compose protocol guard skipped for a non-runtime policy lane" in script_text
+    assert "Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD" in script_text
 
 
 def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound() -> None:
@@ -3105,3 +3129,46 @@ def test_runtime_image_prepares_writable_shared_artifact_volume() -> None:
         compose = (cloud_root / compose_name).read_text()
         assert "NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts" in compose
         assert "cloud-artifacts-" in compose
+
+
+def test_prod_and_runtime_compose_require_service_healthchecks() -> None:
+    cloud_root = _cloud_root()
+    for compose_name in ("docker-compose.prod.yml", "docker-compose.runtime.yml"):
+        compose = (cloud_root / compose_name).read_text()
+        proxy = _compose_service_block(compose, "proxy")
+        api = _compose_service_block(compose, "api")
+        frontend = _compose_service_block(compose, "frontend")
+
+        assert "healthcheck:" in api
+        assert "/health/live" in api
+        assert "healthcheck:" in frontend
+        assert "/api/health" in frontend
+        assert "healthcheck:" in proxy
+        assert "/health/live" in proxy
+        assert "condition: service_healthy" in proxy
+        assert "condition: service_started" not in proxy
+        assert "127.0.0.1:${NPCINK_CLOUD_PORT:-8010}:8080" in proxy
+        release_one_off = _compose_service_block(compose, "release-one-off")
+        assert "healthcheck:" in release_one_off
+        assert "disable: true" in release_one_off
+
+
+def test_prod_compose_does_not_passthrough_provider_api_key_env() -> None:
+    compose = (_cloud_root() / "docker-compose.prod.yml").read_text()
+    forbidden = (
+        "NPCINK_CLOUD_OPENAI_API_KEY",
+        "NPCINK_CLOUD_ANTHROPIC_API_KEY",
+        "NPCINK_CLOUD_LITELLM_API_KEY",
+        "NPCINK_CLOUD_VLLM_API_KEY",
+        "NPCINK_CLOUD_TEI_API_KEY",
+        "NPCINK_CLOUD_OPENROUTER_API_KEY",
+        "NPCINK_CLOUD_SILICONFLOW_API_KEY",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_JINA_API_KEY",
+        "NPCINK_CLOUD_HUGGINGFACE_API_TOKEN",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_ZILLIZ_TOKEN",
+    )
+    for key in forbidden:
+        assert key not in compose
+
+    env_example = (_cloud_root() / ".env.example").read_text()
+    assert "/admin/ai-resources" in env_example

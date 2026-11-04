@@ -20,6 +20,8 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SCHEDULED,
     AccountSubscription,
     PaymentOrder,
+    PlanOffer,
+    Site,
     SubscriptionOrder,
     TrialClaim,
 )
@@ -101,6 +103,186 @@ def _pay(
         amount=float(order["amount"]),
         audit_context=_audit(f"{key}-paid"),
     )
+
+
+@pytest.mark.parametrize("elapsed_days", [30, 31, 61, 365])
+@pytest.mark.parametrize("read_first", [False, True])
+def test_paid_month_expires_without_a_settled_renewal(
+    tmp_path: Path,
+    elapsed_days: int,
+    read_first: bool,
+) -> None:
+    clock = [datetime(2026, 11, 1, tzinfo=UTC)]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_expiry")
+    paid = _pay(service, account_id="acct_expiry", offer_id="plus_monthly_v1", key="expiry")
+    original_end = paid["subscription"]["current_period_end_at"]
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_expiry", name="Expiry", status="active", account_id="acct_expiry")
+        )
+        session.commit()
+    clock[0] += timedelta(days=elapsed_days)
+    if read_first:
+        account = service.get_admin_account("acct_expiry")
+        assert account["subscriptions"][0]["subscription"]["plan_id"] == "free"
+    with get_session(database_url) as session:
+        decision = service.authorize_runtime_request(
+            session=session,
+            site_id="site_expiry",
+            ability_family="text",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            data_classification="internal",
+            request_kind="execute",
+            estimated_ai_credits=1,
+        )
+        session.commit()
+        assert decision["plan_version_id"] == "free_v1"
+        expired = session.get(AccountSubscription, paid["subscription"]["subscription_id"])
+        assert expired.status == "canceled"
+        assert service._serialize_datetime(expired.current_period_end_at) == original_end
+        assert len(list(session.scalars(select(PaymentOrder)))) == 1
+    dispose_engine(database_url)
+
+
+def test_settled_renewal_covers_runtime_until_its_paid_end(tmp_path: Path) -> None:
+    clock = [datetime(2026, 11, 1, tzinfo=UTC)]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_renewal")
+    _pay(service, account_id="acct_renewal", offer_id="plus_monthly_v1", key="first-month")
+    renewed = _pay(
+        service, account_id="acct_renewal", offer_id="plus_monthly_v1", key="second-month"
+    )
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_renewal", name="Renewal", status="active", account_id="acct_renewal")
+        )
+        session.commit()
+    clock[0] += timedelta(days=31)
+    with get_session(database_url) as session:
+        decision = service.authorize_runtime_request(
+            session=session,
+            site_id="site_renewal",
+            ability_family="text",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            data_classification="internal",
+            request_kind="execute",
+            estimated_ai_credits=1,
+        )
+        session.commit()
+        assert decision["plan_version_id"] == "plus_v1"
+        assert decision["period_renewed"] is False
+        assert (
+            decision["period_end_at"].isoformat()
+            == renewed["subscription"]["current_period_end_at"]
+        )
+    dispose_engine(database_url)
+
+
+def test_emergency_stop_does_not_seed_or_change_offers_and_recovers(tmp_path: Path) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_stop")
+    service.settings.commercial_emergency_stop = True
+    offers = service.list_account_plan_offers(account_id="acct_stop")
+    assert offers["commercial_available"] is False
+    assert offers["items"] == []
+    assert offers["trial"]["allowed_tiers"] == []
+    with get_session(database_url) as session:
+        assert session.scalar(select(PlanOffer)) is None
+    service.settings.commercial_emergency_stop = False
+    assert len(service.list_account_plan_offers(account_id="acct_stop")["items"]) == 2
+    service.settings.commercial_emergency_stop = True
+    service.list_account_plan_offers(account_id="acct_stop")
+    with get_session(database_url) as session:
+        offers = session.scalars(select(PlanOffer)).all()
+        assert {offer.status for offer in offers} == {"active"}
+        assert {offer.amount for offer in offers} == {Decimal("15.00"), Decimal("29.00")}
+
+
+def test_emergency_stop_allows_existing_settlement_replay_and_refunds(tmp_path: Path) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_stop_settle")
+    _account(service, "acct_stop_pack")
+    subscription_order = service.create_account_subscription_payment_order(
+        account_id="acct_stop_settle",
+        offer_id="plus_monthly_v1",
+        audit_context=_audit("before-stop"),
+    )
+    pack = service.create_credit_pack_payment_order(
+        account_id="acct_stop_pack", pack_id="pack_small", audit_context=_audit("pack-before-stop")
+    )
+    service.settings.commercial_emergency_stop = True
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.create_account_subscription_payment_order(
+            account_id="acct_stop_settle",
+            offer_id="pro_monthly_v1",
+            audit_context=_audit("new-order"),
+        )
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.start_account_plan_trial(account_id="acct_stop_settle", tier_id="plus")
+    with pytest.raises(CommercialValidationError, match="temporarily unavailable"):
+        service.create_credit_pack_payment_order(
+            account_id="acct_stop_settle", pack_id="pack_small"
+        )
+    replay = service.create_account_subscription_payment_order(
+        account_id="acct_stop_settle",
+        offer_id="plus_monthly_v1",
+        audit_context=_audit("before-stop"),
+    )
+    assert replay["order"]["order_id"] == subscription_order["order"]["order_id"]
+    assert (
+        service.create_credit_pack_payment_order(
+            account_id="acct_stop_pack",
+            pack_id="pack_small",
+            audit_context=_audit("pack-before-stop"),
+        )["order_id"]
+        == pack["order_id"]
+    )
+    paid = service.mark_payment_order_paid(
+        order_id=subscription_order["order"]["order_id"],
+        provider_event_id="stop-subscription-paid",
+        amount=15.0,
+        audit_context=_audit("settle-subscription"),
+    )
+    assert paid["subscription"]["plan_id"] == "plus"
+    pack_paid = service.mark_payment_order_paid(
+        order_id=pack["order_id"],
+        provider_event_id="stop-pack-paid",
+        amount=99.0,
+        audit_context=_audit("settle-pack"),
+    )
+    assert pack_paid["credit_ledger_entry"]["ai_credit_delta"] == 10000.0
+    pack_refund = service.request_payment_refund(
+        order_id=pack["order_id"], audit_context=_audit("refund-pack")
+    )
+    refunded = service.mark_payment_refund_succeeded(
+        refund_id=pack_refund["refund_id"],
+        provider_event_id="stop-pack-refunded",
+        audit_context=_audit("refunded-pack"),
+    )
+    assert refunded["credit_ledger_entry"]["ai_credit_delta"] == -10000.0
+    subscription_refund = service.request_payment_refund(
+        order_id=subscription_order["order"]["order_id"],
+        audit_context=_audit("refund-subscription"),
+    )
+    restored = service.mark_payment_refund_succeeded(
+        refund_id=subscription_refund["refund_id"],
+        provider_event_id="stop-subscription-refunded",
+        audit_context=_audit("refunded-subscription"),
+    )
+    assert restored["restored_subscription"]["plan_id"] == "free"
 
 
 def test_public_plan_catalog_reads_published_versions_and_active_offers(
@@ -875,3 +1057,100 @@ def test_partial_refunds_revoke_subscription_when_total_reaches_full_amount(
     assert second_succeeded["order"]["status"] == PAYMENT_ORDER_STATUS_REFUNDED
     assert second_succeeded["restored_subscription"]["plan_id"] == "free"
     dispose_engine(database_url)
+
+
+def test_upgrade_activation_preserves_same_period_operator_topups(tmp_path: Path) -> None:
+    """Upgrade must keep same-period operator top-ups in metadata and budgets.
+
+    ``_activate_subscription_order_in_session`` used to replace subscription
+    metadata from the order payload, dropping ``operator_managed_topups`` so
+    package_limit fell back to the new plan budgets only.
+    """
+
+    now = datetime(2026, 7, 10, 8, 0, tzinfo=UTC)
+    clock = [now]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_topup_upgrade")
+
+    plus_paid = _pay(
+        service,
+        account_id="acct_topup_upgrade",
+        offer_id="plus_monthly_v1",
+        key="plus-topup-upgrade",
+    )
+    plus_subscription = plus_paid["subscription"]
+    subscription_id = str(plus_subscription["subscription_id"])
+    period_start = now - timedelta(days=10)
+    period_end = now + timedelta(days=20)
+
+    with get_session(database_url) as session:
+        current = session.get(AccountSubscription, subscription_id)
+        assert current is not None
+        current.current_period_start_at = period_start
+        current.current_period_end_at = period_end
+        session.commit()
+
+    topup = service.apply_operator_managed_subscription_topup(
+        subscription_id=subscription_id,
+        ai_credits_increment=10_000.0,
+        reason="operator_overage_buffer",
+        note="preserve-across-upgrade",
+        audit_context=_audit("topup-before-upgrade"),
+    )
+    topup_id = str(topup["topup"]["topup_id"])
+    assert topup["topup_summary"]["current_period_totals"]["ai_credits"] == 10_000.0
+    assert (
+        topup["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"] == 13_000.0
+    )
+
+    pro_created = service.create_account_subscription_payment_order(
+        account_id="acct_topup_upgrade",
+        offer_id="pro_monthly_v1",
+        audit_context=_audit("pro-upgrade-after-topup-create"),
+    )
+    assert pro_created["subscription_order"]["order_kind"] == "upgrade"
+    pro_paid = service.mark_payment_order_paid(
+        order_id=str(pro_created["order"]["order_id"]),
+        amount=float(pro_created["order"]["amount"]),
+        provider_event_id="pro-upgrade-after-topup-paid",
+        audit_context=_audit("pro-upgrade-after-topup-paid"),
+    )
+    assert pro_paid["subscription"]["plan_id"] == "pro"
+    assert str(pro_paid["subscription"]["subscription_id"]) == subscription_id
+
+    with get_session(database_url) as session:
+        upgraded = session.get(AccountSubscription, subscription_id)
+        assert upgraded is not None
+        metadata = dict(upgraded.metadata_json or {})
+        topups = metadata.get("operator_managed_topups")
+        assert isinstance(topups, list)
+        matching = [
+            item
+            for item in topups
+            if isinstance(item, dict) and str(item.get("topup_id") or "") == topup_id
+        ]
+        assert len(matching) == 1
+        assert matching[0]["increments"]["ai_credits"] == 10_000.0
+        assert metadata.get("current_period_topup_totals", {}).get("ai_credits") == 10_000.0
+
+        repository = CommercialRepository(session)
+        plan_version = repository.get_plan_version(upgraded.plan_version_id)
+        assert plan_version is not None
+        effective = service._resolve_effective_subscription_budgets(
+            plan_version=plan_version,
+            subscription=upgraded,
+        )
+        # Pro plan base 10_000 + preserved top-up 10_000.
+        assert effective["max_ai_credits_per_period"] == 20_000.0
+
+        ledger = repository.get_credit_ledger_entry_by_idempotency_key(
+            f"subscription_topup:{topup_id}"
+        )
+        assert ledger is not None
+        assert ledger.source_type == "subscription_topup"
+        assert float(ledger.ai_credit_delta) == 10_000.0
+
+    dispose_engine(database_url)
+

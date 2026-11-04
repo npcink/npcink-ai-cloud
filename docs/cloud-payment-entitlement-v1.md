@@ -31,7 +31,16 @@ changes:
 
 Creating a payment order must not grant entitlement. Requesting a refund must
 not revoke entitlement. Only confirmed provider success events may change
-entitlement.
+entitlement. Requested/unknown credit-pack refunds temporarily freeze their grant
+for runtime spending without changing the subscription entitlement; a confirmed
+failure releases it and a confirmed success reverses it atomically.
+
+Payment-backed subscription periods are half-open: at `current_period_end_at`
+the paid subscription expires unless another settled order already covers the
+next period. Runtime and administrative reads reconcile the same state. An
+unpaid/pending order never extends paid entitlement; when no other active or
+trialing subscription remains, the registered-account Free fallback applies.
+Free and explicitly managed subscriptions retain their separate renewal policy.
 
 ## 2. Tables
 
@@ -77,6 +86,19 @@ Partial refunds may be recorded as payment evidence, but they must not revoke
 entitlement unless a future contract explicitly defines partial entitlement
 reduction.
 
+Credits have separate semantics by purchase kind:
+
+- A full subscription-order refund cancels the subscription created by that
+  order and supersedes only its entitlement snapshots. It writes no credit
+  ledger refund adjustment because a subscription package is entitlement time,
+  not a purchased credit grant.
+- A credit-pack refund writes one idempotent negative `credit_pack_refund`
+  ledger adjustment proportional to the verified refund amount and increments
+  the related paid grant's refunded amount. Full and partial credit-pack
+  refunds therefore reduce spendable paid credits.
+- A partial subscription refund remains payment evidence only. It does not
+  reduce entitlement or credits automatically.
+
 ## 5. Internal API
 
 The current service-plane API is internal only:
@@ -86,9 +108,12 @@ POST /internal/service/payments/orders
 POST /internal/service/payments/orders/{order_id}/mark-paid
 POST /internal/service/payments/orders/{order_id}/refunds
 POST /internal/service/payments/refunds/{refund_id}/mark-succeeded
+POST /internal/service/payments/refunds/{refund_id}/reconcile
 ```
 
-These routes require internal authentication and idempotency. They are not a
+These routes require internal authentication and idempotency. The reconcile
+route queries the provider using the persisted stable refund reference and
+returns `unknown` when the provider cannot prove settlement. They are not a
 customer checkout surface.
 
 Future customer-facing checkout endpoints may call the same domain services,
@@ -111,3 +136,46 @@ Cloud payment must not:
 
 The allowed Cloud role is payment evidence, entitlement grant/revoke, usage
 metering, billing snapshots, and auditability.
+
+## 7. Account-scoped Admin full refunds
+
+The operator-authorized Admin entry lives at customer detail → Commercial →
+Payment orders and refunds (`/admin/accounts/{account_id}#payment-orders`).
+It covers existing Alipay CNY orders; no Portal self-refund surface is added.
+
+- `GET /internal/service/admin/accounts/{account_id}/payment-orders` is a
+  read-only, bounded list (`limit` 1–20, default 5; non-negative `offset`). It
+  includes payment/refund status, amount, deadline, blocking reason and safe
+  order/refund references. Historical orders are retained; gateway payloads,
+  payment settings, checkout URLs and arbitrary metadata are not returned.
+- `POST /internal/service/admin/accounts/{account_id}/payment-orders/{order_id}/refunds`
+  accepts exactly a trimmed, non-empty `reason` of at most 500 characters.
+  It requires internal authentication and an HTTP idempotency key. The browser
+  proxy additionally requires a platform-admin session with `can_manage_billing`
+  for both routes. Manual `mark-paid`/`mark-succeeded` remain unexposed.
+- The server verifies account/order ownership, uses the original full amount
+  and delegates execution to the existing refund domain. Refund windows,
+  downstream package-order dependencies, purchased-credit consumption, locking,
+  signed gateway results and entitlement reversal remain authoritative.
+- One deterministic, domain idempotency key per order protects the Admin full
+  refund across refreshes, new HTTP request keys and operator tabs. Repeating
+  that action returns its existing refund; it never reissues the gateway call.
+  An existing refund from any other entry blocks a new Admin refund. This
+  bounded surface does not introduce partial refunds or retry failed refunds.
+- The confirmation shows the customer, original order, amount and consequence.
+  Busy controls reject duplicate clicks. A transport failure means unconfirmed,
+  not failed or refunded; recovery only reads the same account's original
+  refund. `requested`/`unknown` require provider reconciliation using the stable
+  reference. Refresh does not query Alipay or manufacture successful settlement.
+- Refund and readback success are separate. A stale/failed order read disables
+  new refund actions; the UI retains the uncertainty and a read-only refresh.
+  Only verified `succeeded` is shown as a successful refund. The operator can
+  then refresh customer entitlement; monetary return still needs their actual
+  Alipay acceptance.
+
+Portal self-refund is deliberately outside this contract. Customers have no
+Portal refund route or button; refunds are initiated through the bounded Admin
+surface or an internal service caller.
+
+This source contract authorizes neither production deployment/configuration nor
+an agent-executed real refund. The operator performs the real transaction test.

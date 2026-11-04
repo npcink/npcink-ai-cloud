@@ -1,0 +1,154 @@
+# 模型供应商管理修复方案 v1（provider-model-management-remediation-plan-v1）
+
+> 状态：待执行。本文档是实施蓝图，不含已落代码。
+> 范围声明：仅后端 domain 层两项 P0 修复。不动前端 admin 目录（多 AI 冲突约束），不动 adapter if/elif 重构，不删 metadata fallback。
+
+## 1. 背景与问题
+
+模型供应商连接（`ProviderConnection`）的添加与模型管理存在两个 P0 缺陷：
+
+| # | 问题 | 证据位置 | 后果 |
+|---|------|---------|------|
+| 1 | 保存时不校验 `kind` 合法性 | [service.py `_normalize_payload`](../../app/domain/provider_connections/service.py) | 可保存 `kind="foobar"` 的连接，保存成功但运行时 adapter 实例化返回 `None`，静默失效 |
+| 2 | model_ids "config 优先、metadata 回退" 的读取逻辑在 4 处重复实现 | 见下表 | 任一处单独修改即产生行为漂移；双重存储来源真相模糊 |
+
+model_ids 重复读取的 4 处调用点（行号为撰写时快照，执行时以函数名为准）：
+
+1. [model_allowlist.py](../../app/domain/provider_connections/model_allowlist.py) `build_provider_model_allowlist`（路由白名单）
+2. [service.py](../../app/domain/provider_connections/service.py) `_serialize`（admin 列表投影）
+3. 同文件 `_select_image_delivery_probe_target`（图片探针目标选择）
+4. 同文件 `_merge_configured_catalog_candidates`（catalog 快照合并）
+
+## 2. 变更一：kind 保存校验（P0-A）
+
+### 2.1 registry.py 新增允许清单
+
+在 [registry.py](../../app/adapters/providers/registry.py) 顶层导出一个 frozenset，作为唯一真相源：
+
+```python
+SUPPORTED_CONNECTION_KINDS = frozenset(
+    {
+        # adapter 可实例化（与 _instantiate_connection_adapter 分支一一对应）
+        "openai",
+        "openai_compatible",
+        "openai-compatible",  # 历史变体
+        "text_provider",
+        "image_generation_provider",
+        "siliconflow",
+        "minimax",
+        "audio_provider",
+        "minimax_audio",
+        "anthropic",
+        "litellm",
+        "litellm_gateway",
+        "vllm",
+        "tei",
+        "openrouter",
+        # runtime config 连接：不经过 adapter 实例化，
+        # 由 WebSearchService / site knowledge 等直接读取连接行
+        "web_search_provider",
+        "image_source_provider",
+        "embedding_provider",
+        "rerank_provider",
+        "vector_store_provider",
+    }
+)
+```
+
+注意：后 5 个 kind 来自 service.py 的 `_RUNTIME_CONFIG_CONNECTION_KINDS`，**不能漏**，否则会挡住现有 web search / embedding 供应商的保存流程。建议把 `_RUNTIME_CONFIG_CONNECTION_KINDS` 从 service.py 上移到 registry.py 并在 `SUPPORTED_CONNECTION_KINDS` 中引用，避免两份清单漂移。
+
+### 2.2 service.py `_normalize_payload` 加校验
+
+在 `config_json` 组装之前、kind 归一化之后插入：
+
+```python
+resolved_kind = _string(payload.get("kind") or normalized_provider_type)
+if resolved_kind not in SUPPORTED_CONNECTION_KINDS:
+    raise ProviderConnectionAdminError(
+        "provider_connection.kind_unsupported",
+        f"unsupported provider kind: {resolved_kind!r}; "
+        f"allowed kinds: {', '.join(sorted(SUPPORTED_CONNECTION_KINDS))}",
+        status_code=400,
+    )
+```
+
+### 2.3 已知风险与决策
+
+- **行为变化（有意）**：经 API 直接保存且不传 `kind`、`provider_type` 又等于具体 provider_id（如 `tavily`）的调用会被 400 拒绝。这是本修复的目的——把"运行时静默失效"提前到"保存时显式失败"。前端所有 preset 均显式传 kind，不受影响。
+- 校验只作用于 `save_connection` 写入路径，不回填校验存量行（不做数据迁移）。
+
+## 3. 变更二：model_ids 读取收口（P0-B）
+
+### 3.1 新增单一函数
+
+放在 [model_allowlist.py](../../app/domain/provider_connections/model_allowlist.py)（无循环导入风险：它只依赖 registry/config/db/models，service.py 本就依赖这些）：
+
+```python
+def connection_model_ids(config: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    """Single source for reading a connection's model_ids.
+
+    config_json is authoritative; metadata_json is a legacy fallback that is
+    scheduled for removal after an inventory of existing rows (separate step).
+    """
+    model_ids = _normalize_id_list(config.get("model_ids"))
+    if not model_ids:
+        model_ids = _normalize_id_list(metadata.get("model_ids"))
+    return model_ids
+```
+
+### 3.2 替换 4 处调用点
+
+以上文第 1 节列出的 4 处为准，全部改为 `connection_model_ids(config, metadata)`，删除各自的内联 fallback。**不改判断顺序、不改去重行为**——这是纯收口重构，行为必须逐字节等价。
+
+### 3.3 明确不做
+
+- 不删除 metadata 回退本身。存量行的 model_ids 可能只在 metadata 中（历史前端只写 metadata 的情况无法从代码排除），直接删会静默断掉路由白名单。删除需先做一次存量数据核查（见第 6 节后续步骤）。
+
+## 4. 涉及文件与冲突检查
+
+| 文件 | 当前工作区状态 | 变更类型 |
+|------|--------------|---------|
+| `app/adapters/providers/registry.py` | 无未提交改动 | 新增常量 |
+| `app/domain/provider_connections/service.py` | 无未提交改动 | 校验 + 3 处收口 |
+| `app/domain/provider_connections/model_allowlist.py` | 无未提交改动 | 新函数 + 1 处收口 |
+| `tests/domain/test_provider_connection_registry.py` | 无未提交改动 | 新增 kind 校验用例 |
+| `tests/domain/test_provider_connection_projection.py` | 无未提交改动 | 新增收口等价性用例 |
+
+不触碰：`app/api/routes/service.py`（当前有未提交改动，且校验在 domain 层无需改路由）、全部 `frontend/**`、`admin` 目录。
+
+## 5. 验证门（repository-real）
+
+```bash
+# 1) 缝隙检查（执行前规划、执行后核对）
+pnpm run check:changed -- --plan \
+  app/adapters/providers/registry.py \
+  app/domain/provider_connections/service.py \
+  app/domain/provider_connections/model_allowlist.py \
+  tests/domain/test_provider_connection_registry.py \
+  tests/domain/test_provider_connection_projection.py
+
+# 2) 窄门：contract + domain（compose）
+pnpm run check:fast
+
+# 3) lint/type
+pnpm run lint
+```
+
+新增测试用例清单：
+
+- kind 校验：不支持的 kind → 400 `provider_connection.kind_unsupported`；`web_search_provider` / `embedding_provider` 仍可保存；`openai-compatible` 变体仍可保存。
+- model_ids 收口：config-only、metadata-only、两者皆有（config 胜出）三态断言，覆盖 `_serialize` 与 `build_provider_model_allowlist` 两条路径。
+
+## 6. 后续步骤（本方案不含实施）
+
+1. **存量数据核查**：对生产库跑只读查询，统计 `config_json->model_ids` 为空但 `metadata_json->model_ids` 非空的连接数；为 0 才可删除 metadata 回退。
+2. **P1：namespace prefix 收口**：`_effective_connection_model_ids`（model_allowlist.py）与 `_connection_model_namespace_prefix`（registry.py）合并为单一函数。
+3. **P1：`_merge_configured_catalog_candidates` 抽离**到独立 catalog 工具模块，消除 catalog → provider_connections 的局部导入循环。
+4. **P2/P3**：动态模型发现（连接测试成功后用 `fetch_catalog` 回填可选模型）、adapter 分发表重构、preset 后端化、deprecated 模型告警（复用 portal_notifications）。
+
+## 7. PR 契约要点
+
+- **Scope**: provider connection 保存校验与 model_ids 读取收口
+- **Boundary**: 仅 domain 层；不改 admin 前端、不改路由层、不做数据迁移
+- **Verification**: `check:changed` + `check:fast` + `lint`（附本地输出）
+- **Risk**: kind 校验对无 kind 的 API 直连调用是破坏性变化（有意，见 2.3）；model_ids 收口为行为等价重构

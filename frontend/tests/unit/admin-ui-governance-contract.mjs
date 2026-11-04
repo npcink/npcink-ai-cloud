@@ -12,6 +12,10 @@ const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.jso
 const standardSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-ui-standard-v1.md'), 'utf8');
 const architectureSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-information-architecture-v2.md'), 'utf8');
 const agentsSource = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+const sessionDetailSource = readFileSync(
+  join(repositoryRoot, 'docs/engineering/agents-session-protocol-detail.md'),
+  'utf8'
+);
 const pullRequestTemplateSource = readFileSync(join(repositoryRoot, '.github/pull_request_template.md'), 'utf8');
 const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
 const tailwindConfigSource = readFileSync(fromFrontendRoot('tailwind.config.ts'), 'utf8');
@@ -216,8 +220,8 @@ assert.match(
 );
 assert.match(
   providerPageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*data-ui="model-maintenance-table"[\s\S]*rowId="manual-model-add"[\s\S]*data-ui="model-clear-all-confirm"/,
-  'the reference provider editor must keep model controls in one stable toolbar and in-flow maintenance table'
+  /data-ui="model-visibility-toolbar"[\s\S]*<details data-ui="model-maintenance-table"[\s\S]*data-ui="model-filtered-batch-confirm"/,
+  'the reference provider editor must keep model controls in one stable toolbar and collapsed in-flow maintenance operations'
 );
 assert.doesNotMatch(
   providerPageSource,
@@ -246,8 +250,13 @@ assert.match(
 );
 assert.match(
   backofficeScaffoldSource,
-  /export function BackofficePageHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
-  'the shared page header must own compact geometry, hint disclosure, action placement, and summary density while keeping the configuration alias'
+  /export function BackofficePageHeader[\s\S]*data-density="default"[\s\S]*<BackofficeInfoHint detail=\{description\}[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
+  'the shared page header must own one title row with a hint, one compact summary row, and the configuration alias'
+);
+assert.doesNotMatch(
+  backofficeScaffoldSource.match(/export function BackofficePageHeader[\s\S]*?export function BackofficeConfigurationHeader/)?.[0] ?? '',
+  /eyebrow/,
+  'the page header must not repeat parent context as an eyebrow; the breadcrumb and workspace tabs own that context'
 );
 for (const [name, source] of [
   ['vector settings', vectorSettingsPageSource],
@@ -285,8 +294,8 @@ assert.match(
 );
 assert.match(
   runtimeProfilesPageSource,
-  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*primaryAction=\{[\s\S]*saveProfiles\(\)[\s\S]*summaryItems=\{\[[\s\S]*summaryAside=/,
-  'runtime profiles must declare its page model and keep supplier navigation secondary to the one save action'
+  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*summaryItems=\{\[[\s\S]*<AdminWorkbenchDialog[\s\S]*onSubmit=\{\(\) => void saveProfiles\(\)\}/,
+  'runtime profiles must declare the configuration model and save only inside the usage dialog'
 );
 assert.match(
   configurationTableSource,
@@ -345,6 +354,10 @@ assert.deepEqual(
   'new route-local credential fields are forbidden; use AdminCredentialField and reduce the legacy list'
 );
 
+assert.ok(
+  agentsSource.includes('docs/engineering/agents-session-protocol-detail.md'),
+  'AGENTS.md must link docs/engineering/agents-session-protocol-detail.md'
+);
 for (const requiredEntry of [
   'docs/cloud-admin-ui-standard-v1.md',
   'frontend/admin-ui-manifest.json',
@@ -352,7 +365,10 @@ for (const requiredEntry of [
   'pnpm run check:admin-ui:visual',
   'border-dashed',
 ]) {
-  assert.ok(agentsSource.includes(requiredEntry), `AGENTS.md must require ${requiredEntry}`);
+  assert.ok(
+    sessionDetailSource.includes(requiredEntry),
+    `agents-session-protocol-detail.md must require ${requiredEntry}`
+  );
 }
 for (const requiredPullRequestField of [
   'Page model:',

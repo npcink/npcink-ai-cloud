@@ -1,17 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalSection,
   PortalCard,
+  PortalInfoHint,
 } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
+import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
+import { PortalDataExport } from '@/components/portal/PortalDataExport';
+import { PortalTotpSettings } from '@/components/portal/PortalTotpSettings';
+import { PortalSessions } from '@/components/portal/PortalSessions';
+import { PortalRevokeSessions } from '@/components/portal/PortalRevokeSessions';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import {
+  PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
@@ -19,9 +26,11 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
+  publishPortalNotificationCount,
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { formatPortalErrorMessage, formatPortalWriteErrorMessage } from '@/lib/portal-error';
+import { ApiError } from '@/lib/errors';
 import { cn, formatDate } from '@/lib/utils';
 
 type AccountActionState =
@@ -45,7 +54,9 @@ function normalizePortalContact(value?: string): string {
 function AccountPageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
-  const { session, isLoading, isAuthenticated, refresh } = useSession();
+  const router = useRouter();
+  const { session, isLoading, isAuthenticated, refresh, logout, clearSession } = useSession();
+  const unbindPendingRef = useRef(false);
   const [providerState, setProviderState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [providerError, setProviderError] = useState('');
   const [providers, setProviders] = useState<PortalIdentityProviderStatus[]>([]);
@@ -55,6 +66,50 @@ function AccountPageContent() {
   const [emailChangeCode, setEmailChangeCode] = useState('');
   const [emailChangePendingEmail, setEmailChangePendingEmail] = useState('');
   const [showEmailChange, setShowEmailChange] = useState(false);
+
+  const [showClosure, setShowClosure] = useState(false);
+  const [closureStep, setClosureStep] = useState<'review' | 'code'>('review');
+  const [closureBusy, setClosureBusy] = useState(false);
+  const [closureCode, setClosureCode] = useState('');
+  const [closureError, setClosureError] = useState('');
+  const [closureEmail, setClosureEmail] = useState('');
+
+  const closeClosureDialog = () => {
+    if (closureBusy) return;
+    setShowClosure(false);
+    setClosureCode('');
+    setClosureError('');
+  };
+
+  const handleClosure = async (requestNewCode = false) => {
+    setClosureBusy(true);
+    setClosureError('');
+    try {
+      if (closureStep === 'review' || requestNewCode) {
+        const response = await portalClient.requestAccountDeletionCode(locale);
+        setClosureEmail(response.data.email);
+        setClosureCode('');
+        setClosureStep('code');
+      } else {
+        await portalClient.confirmAccountDeletion(closureCode.trim());
+        publishPortalNotificationCount(0);
+        await logout();
+        router.replace('/portal/login');
+      }
+    } catch (error) {
+      const key = error instanceof ApiError
+        && error.errorCode === 'service.portal_account_closure_unavailable'
+        ? 'portal.account.closure_unavailable'
+        : error instanceof ApiError && error.errorCode === 'service.portal_account_deletion_code_pending'
+          ? 'portal.account.closure_code_pending'
+        : error instanceof ApiError && error.errorCode === 'auth.account_deletion_code_invalid'
+          ? 'portal.account.closure_code_invalid'
+          : 'portal.account.closure_failed';
+      setClosureError(formatPortalWriteErrorMessage(error, t, t(key)));
+    } finally {
+      setClosureBusy(false);
+    }
+  };
 
   const qqProvider = useMemo(
     () => providers.find((provider) => provider.provider === 'qq') || null,
@@ -123,6 +178,8 @@ function AccountPageContent() {
   };
 
   const handleUnbindQq = async () => {
+    if (unbindPendingRef.current) return;
+    unbindPendingRef.current = true;
     setStatus('unbinding');
     setMessage('');
     try {
@@ -134,10 +191,20 @@ function AccountPageContent() {
             : provider
         )
       );
-      setMessage(t('portal.account.qq_unbound', undefined, 'QQ quick login has been unbound. Sign in again.'));
-      setStatus('idle');
-      window.location.assign('/portal/login?reason=qq_unbound');
+      // The successful unbind already revoked the server session. Portal's
+      // provider survives client navigation: retire its in-flight reads before
+      // login can observe it. Auth data lives in that provider, not the static
+      // route payload; refreshing alongside replace would race the transition.
+      // Commit the cleared view with the destination, so a slow route does
+      // not paint the protected-page session-error state between the two.
+      // clearSession retires pending request refs synchronously in this scope.
+      startTransition(() => {
+        clearSession();
+        publishPortalNotificationCount(0);
+        router.replace('/portal/login?reason=qq_unbound');
+      });
     } catch (error) {
+      unbindPendingRef.current = false;
       setStatus('error');
       setMessage(
         formatPortalErrorMessage(
@@ -245,19 +312,25 @@ function AccountPageContent() {
     );
   }
 
+  const showPrimaryIdentityBadge = Boolean(qqProvider?.bound);
+
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.account.settings_eyebrow', undefined, 'Account settings')}
-        title={t('portal.account.title', undefined, 'Contact')}
-        description={t(
-          'portal.account.description',
-          undefined,
-          'Manage the email used for verification codes and optional quick login.'
-        )}
+        title={t('portal.account.title', undefined, 'Account')}
         currentPage="account"
+        actionsPlacement="title-end"
+        titleAccessory={(
+          <PortalInfoHint
+            detail={t(
+              'portal.account.description',
+              undefined,
+              'Manage sign-in methods, contact email, and payment history. Package changes live on the Package page.'
+            )}
+          />
+        )}
         actions={
-          <Link href="/portal/audit" className="btn btn-secondary btn-sm">
+          <Link href="/portal/audit" className="btn btn-secondary btn-sm" data-portal-account-deeplink="audit">
             {t('portal.audit.nav_label', undefined, 'Recent activity')}
           </Link>
         }
@@ -276,71 +349,74 @@ function AccountPageContent() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
-        <PortalSection className="space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.login_methods_label', undefined, 'Login')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.login_methods_title', undefined, 'Login methods')}
-              </h2>
-            </div>
-          </div>
+      <PortalSection className="space-y-4" data-portal-account="login-security">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+            {t('portal.account.login_security_title', undefined, 'Sign-in and security')}
+          </h2>
+          <PortalInfoHint
+            detail={t(
+              'portal.account.email_login_desc',
+              undefined,
+              'Sign in with a verification code sent to the contact email shown on this page.'
+            )}
+          />
+        </div>
 
-          <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.email_login_title', undefined, 'Email verification code')}
-                  </h3>
-                  <PortalStatusBadge
-                    label={t('portal.account.primary_identity', undefined, 'Primary identity')}
-                    status="active"
-                  />
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {t(
-                    'portal.account.email_login_desc',
-                    undefined,
-                    'Sign in with a verification code sent to the contact email shown on this page.'
-                  )}
-                </p>
+        <div
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          data-portal-account="contact-info"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-slate-950 dark:text-white">
+              {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
+            </p>
+            {showPrimaryIdentityBadge ? (
+              <div className="mt-1.5">
+                <PortalStatusBadge
+                  force
+                  label={t('portal.account.primary_identity', undefined, 'Primary identity')}
+                  status="active"
+                />
               </div>
-            </div>
-          </PortalCard>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm shrink-0"
+            onClick={() => setShowEmailChange(true)}
+          >
+            {contactEmail
+              ? t('portal.account.contact_change_title', undefined, 'Change email')
+              : t('portal.account.contact_add_title', undefined, 'Add email')}
+          </button>
+        </div>
 
           {providerState === 'loading' ? (
-            <p role="status" className="text-sm text-slate-500">{t('common.loading')}</p>
+            <PortalLoadingState message={t('common.loading')} compact />
           ) : providerState === 'error' ? (
-            <div className="space-y-3" role="alert">
-              <p className="text-sm text-rose-700 dark:text-rose-300">{providerError}</p>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadProviders()}>{t('common.retry')}</button>
-            </div>
+            <PortalErrorState
+              title={t('error.failed_load', {}, 'Failed to load')}
+              description={providerError}
+              retryLabel={t('common.retry')}
+              onRetry={() => void loadProviders()}
+            />
           ) : !qqProvider?.configured && !qqProvider?.bound ? (
-            <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-950 dark:text-white">
-                    {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {t('portal.account.qq_unavailable_short', undefined, 'QQ quick login is not available in the current environment.')}
-                  </span>
-                </span>
-                <span aria-hidden="true" className="text-slate-400">⌄</span>
-              </summary>
-              <div className="mt-4 border-t border-slate-200/80 pt-4 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                <p className="font-semibold text-slate-950 dark:text-white">
-                  {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
-                </p>
-                <p className="mt-1">
-                  {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
-                </p>
-              </div>
-            </details>
+            <div
+              className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35"
+              data-portal-account="other-login-unavailable"
+            >
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {t(
+                  'portal.account.qq_unavailable_short',
+                  undefined,
+                  'QQ quick login is not available in the current environment.'
+                )}
+              </p>
+            </div>
           ) : (
           <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -350,6 +426,7 @@ function AccountPageContent() {
                     {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
                   </h3>
                   <PortalStatusBadge
+                    force
                     label={
                       qqProvider?.bound
                         ? t('portal.account.bound', undefined, 'Bound')
@@ -363,15 +440,17 @@ function AccountPageContent() {
                       status="warning"
                     />
                   ) : null}
+                  <PortalInfoHint
+                    detail={
+                      qqProvider?.bound
+                        ? t('portal.account.qq_bound_desc', undefined, 'You can use the bound QQ account for quick Portal login.')
+                        : t('portal.account.qq_unbound_desc', undefined, 'After binding, QQ can be used for quick login. Email remains the primary account.')
+                    }
+                  />
                 </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {qqProvider?.bound
-                    ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
-                    : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
-                </p>
                 {qqProvider?.bound && qqProvider.binding?.display_name ? (
                   <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                    {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
+                    {t('portal.account.qq_bound_as', undefined, 'Bound account')}: {qqProvider.binding.display_name}
                   </p>
                 ) : null}
                 {!qqProvider?.configured ? (
@@ -415,52 +494,55 @@ function AccountPageContent() {
             </div>
           </PortalCard>
           )}
-        </PortalSection>
+        <PortalTotpSettings />
+        <PortalSessions />
+        <PortalRevokeSessions />
+        <PortalDataExport />
+      </PortalSection>
 
-        <div data-portal-account="contact-info">
-          <PortalSection className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.contact_label', undefined, 'Contact')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('portal.account.contact_title', undefined, 'Contact information')}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t(
-                  'portal.account.contact_desc',
-                  undefined,
-                  'This is the information used for login codes, service notices, and support follow-up.'
-                )}
-              </p>
-            </div>
-
-            <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
-              <p className="text-base font-semibold text-slate-950 dark:text-white">
-                {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
-              </p>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {contactEmail
-                  ? t(
-                      'portal.account.contact_change_desc',
-                      undefined,
-                      'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
-                    )
-                  : t(
-                      'portal.account.contact_add_desc',
-                      undefined,
-                      'Add and verify an email login before removing another sign-in method.'
-                    )}
-              </p>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowEmailChange(true)}>
-                {contactEmail
-                  ? t('portal.account.contact_change_title', undefined, 'Change email')
-                  : t('portal.account.contact_add_title', undefined, 'Add email')}
-              </button>
-            </PortalCard>
-          </PortalSection>
-        </div>
+      <div className="space-y-3" data-portal-account="payment-orders-section">
+        <PortalAccountCommercePanels surface="account" />
       </div>
+
+      <PortalSection className="space-y-3" data-portal-account="closure">
+        <h2 className="text-base font-semibold text-slate-950 dark:text-white">{t('portal.account.closure_title')}</h2>
+        <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.closure_impact')}</p>
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('portal.account.closure_eligibility')}</p>
+        <button type="button" className="btn btn-secondary btn-sm text-rose-700 dark:text-rose-300" onClick={() => setShowClosure(true)}>
+          {t('portal.account.closure_start')}
+        </button>
+      </PortalSection>
+
+      <Modal
+        isOpen={showClosure}
+        onClose={closeClosureDialog}
+        closeLabel={t('common.close')}
+        title={t(closureStep === 'review' ? 'portal.account.closure_review' : 'portal.account.closure_verify')}
+        description={t('portal.account.closure_impact')}
+      >
+        <div className="space-y-4" data-portal-account="closure-dialog">
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.closure_eligibility')}</p>
+          {closureStep === 'code' ? (
+            <>
+              <p className="text-sm" role="status">{t('portal.account.closure_sent', { email: closureEmail })}</p>
+              <label className="grid gap-2 text-sm font-medium">
+                {t('portal.account.closure_code')}
+                <input className="input" inputMode="numeric" autoComplete="one-time-code" value={closureCode} maxLength={6} onChange={(event) => setClosureCode(event.target.value.replace(/\D/g, ''))} />
+              </label>
+              <button type="button" className="text-sm text-blue-700 hover:underline dark:text-blue-300" disabled={closureBusy} onClick={() => void handleClosure(true)}>
+                {t('portal.account.closure_restart')}
+              </button>
+            </>
+          ) : null}
+          {closureError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{closureError}</p> : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="btn btn-secondary" disabled={closureBusy} onClick={closeClosureDialog}>{t('common.cancel')}</button>
+            <button type="button" className="btn bg-rose-700 text-white hover:bg-rose-800 disabled:opacity-50" disabled={closureBusy || (closureStep === 'code' && closureCode.length !== 6)} onClick={() => void handleClosure()}>
+              {closureBusy ? t('common.loading') : t(closureStep === 'review' ? 'portal.account.closure_send' : 'portal.account.closure_confirm')}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showEmailChange}

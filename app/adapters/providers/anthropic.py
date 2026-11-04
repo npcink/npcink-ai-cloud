@@ -298,6 +298,10 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
             "output_text": output_text,
             "messages": [{"role": "assistant", "content": output_text}],
             "model_id": response_json.get("model", request.model_id),
+            "requested_model_id": request.model_id,
+            "reported_model_id": response_json.get("model")
+            if isinstance(response_json.get("model"), str)
+            else None,
         }
         normalized_usage = normalize_anthropic_usage(usage)
         cost_estimate = self._estimate_cost_details(

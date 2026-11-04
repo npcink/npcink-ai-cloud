@@ -58,11 +58,61 @@ seventh acceptance condition.
 4. Merge security patches before routine version updates when both are queued.
 5. For runtime or lockfile changes, deploy the merged `master` revision to M4
    and run the relevant runtime smoke checks.
-6. Confirm default-branch alerts resolve after GitHub refreshes the dependency
-   graph.
+6. Read default-branch alerts again after GitHub refreshes the dependency graph;
+   record state, resolved version, manifest and scope. The same alert may remain
+   open while moving to another installed version. A merged PR is not evidence
+   that its alert closed. When the published range and version-specific
+   mechanism disagree, preserve a bounded reproducer and consumer API evidence,
+   report the unresolved alert, and seek upstream range clarification through
+   an authorized channel. If the evidence proves that the installed version
+   does not contain the published mechanism, an authorized maintainer may
+   dismiss the alert as `inaccurate`; record the exact API state, reason,
+   version, mechanism and probe. This closes the false match only. It does not
+   make the package generally safe, and it does not authorize a package-manager
+   audit ignore. Do not force an incompatible global override solely to obtain
+   a green scan.
 
 Do not deploy production merely because a Dependabot PR merged. Production
 promotion remains governed by `docs/cloud-production-release-policy-v1.md`.
+
+## Coupled packages and inherited failures
+
+Review the resolved consumers together: React and React DOM need matching
+renderer versions; Vitest and its coverage provider need compatible exact
+peers. A frozen install and ordinary test run can both pass without exercising
+the coverage plugin. Run the actual coverage path when that peer changes, and
+check installed container versions after the dependency-aware M4 deployment.
+
+For a transitive security override across major versions, scope the override
+to the actual parent, inspect removed APIs against that parent's calls, and
+exercise the consumer as well as the advisory counterexample. Resolve the
+test dependency through the parent so an unrelated safe copy cannot hide the
+old version. Record any remaining audit findings without suppressing them;
+remove the override once the parent admits a fixed compatible version and
+the consumer regression still passes. See the [minimatch #123 record](history/engineering/2026/minimatch-alert-123-remediation-2026-11-01.md).
+
+Serialize updates that overlap a manifest or lockfile. Refresh each on current
+master and inspect its final diff so it preserves previously integrated source
+and dependencies. For major updates, check the release's runtime floors,
+removed APIs/options and changed assertion/mock behavior against actual usage.
+Do not change tests merely to make a new runner green.
+
+When full CI exposes an application or test-contract regression inherited from
+master, preserve and reproduce the failure before classifying it. Repair source
+or test files in a separate focused human PR, then refresh the dependency PR on
+that merged fix. Do not skip the failed check, weaken the assertion, or put
+application/test source into the trusted-bot lane. A test-only correction can
+retain an exact dictionary assertion while adding newly contracted fields.
+If a failure depends on first import or environment initialization, reproduce
+the exact test in a fresh process and its file in isolation; a prior full-suite
+pass may only reflect cached modules. Keep the original failure evidence and
+security assertion when correcting fixture setup order.
+
+Editing a PR body can retrigger its required contract check. Re-read checks for
+the current head and body before merging; an earlier green result is not a
+reason to bypass a newly expected check. Aggregate merged dependencies into one
+clean-master M4 acceptance checkpoint when their independent candidate evidence
+is already complete and no changed risk requires another broad run.
 
 ## Verification
 

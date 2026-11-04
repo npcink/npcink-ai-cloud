@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 import unicodedata
 from collections import Counter
@@ -20,6 +21,7 @@ from app.adapters.providers.base import (
 from app.core.config import Settings
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 from app.domain.runtime.errors import RuntimeExecutionContractError
+from app.domain.runtime.provider_execution import ProviderOutputDecision
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_CONTRACTS,
     SITE_KNOWLEDGE_SEARCH_ABILITY,
@@ -39,6 +41,12 @@ from app.domain.wordpress_ai_connector.generation_context import (
     generation_context_policy,
     render_generation_context,
     select_generation_context_post_ids,
+)
+from app.domain.wordpress_ai_connector.grounded_context import (
+    build_evidence_pack,
+    normalize_grounded_output,
+    render_evidence_pack,
+    requires_evidence,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
     resolve_wordpress_ai_connector_profile_spec,
@@ -561,6 +569,12 @@ class WordPressOperationRuntime:
         reference = self._dict_or_empty(scene_request.get("site_knowledge_reference"))
         task = str(operation_contract.get("task") or "").strip()
         task_contract = self._dict_or_empty(scene_request.get("task_contract"))
+        if requires_evidence(task_contract):
+            return self._apply_factual_evidence(
+                site_id=site_id, run_id=run_id, session=session,
+                scene_request=scene_request, provider_input=provider_input,
+                embedding_usage_callback=embedding_usage_callback,
+            )
         expected_mode = resolve_site_knowledge_reference_mode(
             task=task,
             task_contract=task_contract,
@@ -708,6 +722,103 @@ class WordPressOperationRuntime:
         next_input["metadata"] = metadata
         return next_input
 
+    def _apply_factual_evidence(
+        self, *, site_id: str, run_id: str, session: Session,
+        scene_request: dict[str, Any], provider_input: dict[str, Any],
+        embedding_usage_callback: EmbeddingUsageCallback,
+    ) -> dict[str, Any]:
+        reference = self._dict_or_empty(scene_request.get("site_knowledge_reference"))
+        if reference.get("enabled") is not True or reference.get("mode") != "site_factual_evidence":
+            raise RuntimeExecutionContractError(
+                "grounded_answer.reference_required", "Factual evidence must be enabled"
+            )
+        try:
+            result = SiteKnowledgeService(
+                session, settings=self.settings, providers=self.providers,
+                embedding_usage_callback=embedding_usage_callback,
+            ).execute(
+                site_id=site_id, run_id=run_id,
+                ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,
+                contract_version=SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
+                input_payload={
+                    "query": str(scene_request.get("prompt") or "")[:1200],
+                    "intent": "writing_context", "max_results": 6,
+                    "write_posture": "suggestion_only",
+                    "result_granularity": "chunk",
+                    "filters": {"post_types": ["post", "page"], "status": ["publish"],
+                                "source_types": ["post", "page"]},
+                    "evidence_policy": {"min_score": 0.35, "required_sources": 1,
+                                        "no_hit_policy": "abstain"},
+                },
+            )
+            post_ids = [
+                item["post_id"] for item in result.get("results", []) if isinstance(item, dict)
+            ]
+            metadata = SiteKnowledgeRepository(session).grounding_metadata_for_post_ids(
+                site_id=site_id, post_ids=post_ids,
+            )
+        except Exception as error:
+            raise RuntimeExecutionContractError(
+                "grounded_answer.retrieval_failed", "Site evidence retrieval failed"
+            ) from error
+        pack = build_evidence_pack(result, metadata)
+        return {
+            **provider_input,
+            "input": render_evidence_pack(pack) + "\n\n" + str(provider_input.get("input") or ""),
+            "_grounded_context": pack,
+        }
+
+    def prepare_provider_output(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+        grounded_context: dict[str, Any] | None = None,
+    ) -> ProviderOutputDecision:
+        """Judge WordPress output without mutating run state or persisting diagnostics."""
+        normalization_input = {**input_payload}
+        normalization_input.pop("_grounded_context", None)
+        if grounded_context is not None:
+            normalization_input["_grounded_context"] = grounded_context
+        normalized_output = self.normalize_provider_output(
+            provider_output,
+            input_payload=normalization_input,
+        )
+        title_quality_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_title_quality_reasons = self.blocking_title_quality_reasons(title_quality_reasons)
+        if blocking_title_quality_reasons or self.is_empty_text_output(
+            input_payload=input_payload,
+            provider_output=normalized_output,
+        ):
+            quality_reason = self.output_quality_reason(
+                input_payload=input_payload,
+                provider_output=provider_output,
+            )
+            error_message = (
+                "provider returned the existing title instead of a new suggestion"
+                if "title_unchanged" in blocking_title_quality_reasons
+                else "provider returned no usable WordPress AI connector text"
+            )
+            return ProviderOutputDecision(
+                accepted=False,
+                output=normalized_output,
+                error_code="provider.output_quality_rejected",
+                error_message=error_message,
+                usage_context={"output_quality_reason": quality_reason},
+            )
+        return ProviderOutputDecision(
+            accepted=True,
+            output=normalized_output,
+            usage_context=(
+                {"title_quality_reasons": list(title_quality_reasons)}
+                if title_quality_reasons
+                else {}
+            ),
+        )
+
     def normalize_provider_output(
         self,
         output: dict[str, Any],
@@ -723,6 +834,11 @@ class WordPressOperationRuntime:
             if isinstance(item, str) and str(item).strip()
         }
         output_text = self._extract_provider_output_text(output)
+        pack = input_payload.get("_grounded_context")
+        if isinstance(pack, dict):
+            schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+            normalized_json = self._normalize_json_schema_output(output_text, output_schema=schema)
+            return normalize_grounded_output(output, normalized_json, pack)
         if task == "alt_text_suggest":
             return self._normalize_alt_text_provider_output(
                 output_text=output_text,
@@ -818,6 +934,13 @@ class WordPressOperationRuntime:
                 task=task,
             )
 
+        if title_output_schema:
+            properties = self._dict_or_empty(title_output_schema.get("properties"))
+            title_schema = self._dict_or_empty(properties.get("title"))
+            if not normalized_text or not self._json_value_matches_schema(
+                normalized_text, title_schema,
+            ):
+                return {}
         if not normalized_text and not strips_reasoning_noise:
             return output
         if self._transformation_quality_reason(
@@ -1056,6 +1179,10 @@ class WordPressOperationRuntime:
         if not isinstance(value, dict):
             return ""
         title = value.get("title")
+        # Title-only projection: validate the Ability-owned property, without
+        # requiring unrelated root fields omitted by the Provider projection.
+        if not WordPressOperationRuntime._json_value_matches_schema(title, title_schema):
+            return ""
         return title.strip() if isinstance(title, str) else ""
 
     def is_empty_text_output(
@@ -1461,10 +1588,18 @@ class WordPressOperationRuntime:
         for candidate in candidates:
             try:
                 parsed = json.loads(candidate)
-            except json.JSONDecodeError:
+                # Python accepts NaN/Infinity and overflowed exponents when
+                # decoding. Reject them anywhere, including open object fields.
+                normalized = json.dumps(
+                    parsed,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+            except ValueError:
                 continue
             if WordPressOperationRuntime._json_value_matches_schema(parsed, output_schema):
-                return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+                return normalized
         return ""
 
     @staticmethod
@@ -1515,10 +1650,26 @@ class WordPressOperationRuntime:
                 return False
             enum = schema.get("enum")
             return not isinstance(enum, list) or value in enum
-        if schema_type == "integer":
-            return isinstance(value, int) and not isinstance(value, bool)
-        if schema_type == "number":
-            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if schema_type in {"integer", "number"}:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False
+            if schema_type == "integer" and not isinstance(value, int):
+                return False
+            if isinstance(value, float) and not math.isfinite(value):
+                return False
+            for keyword in ("minimum", "maximum"):
+                if keyword not in schema:
+                    continue
+                bound = schema[keyword]
+                if isinstance(bound, bool) or not isinstance(bound, (int, float)):
+                    return False
+                if isinstance(bound, float) and not math.isfinite(bound):
+                    return False
+                if keyword == "minimum" and value < bound:
+                    return False
+                if keyword == "maximum" and value > bound:
+                    return False
+            return True
         if schema_type == "boolean":
             return isinstance(value, bool)
         enum = schema.get("enum")

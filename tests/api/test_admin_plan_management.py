@@ -90,6 +90,7 @@ def test_admin_plan_management_is_structured_and_preserves_hidden_policy(
     update_response = client.patch(
         f"/internal/service/admin/plans/{plan_id}",
         json={
+            "revision": detail["revision"],
             "monthly_included_points": 900,
             "site_limit": 4,
             "max_vector_documents": 1200,
@@ -163,3 +164,70 @@ def test_admin_plan_management_is_structured_and_preserves_hidden_policy(
         headers=build_internal_headers(idempotency_key="admin-plan-raw-override-rejected"),
     )
     assert rejected_raw_override.status_code == 422
+
+
+def test_revision_is_required_bound_to_target_and_checked_after_existing_auth(tmp_path: Path):
+    from tests.domain.test_admin_plan_concurrency import PARAMETERS, seed_plan
+
+    database_url, client = _build_client(tmp_path)
+    service = seed_plan(database_url)
+    path = "/internal/service/admin/plans/pro"
+    detail = client.get(path, headers=build_internal_headers()).json()["data"]
+    body = {**PARAMETERS, "revision": detail["revision"], "monthly_included_points": 20000}
+    assert client.patch(path, json=body).status_code == 401
+    missing = client.patch(
+        path, json=PARAMETERS, headers=build_internal_headers(idempotency_key="missing-revision")
+    )
+    assert missing.status_code == 422
+    first = client.patch(
+        path, json=body, headers=build_internal_headers(idempotency_key="first-save")
+    )
+    assert first.status_code == 200, first.text
+    current = service.get_admin_plan("pro")
+    replay = client.patch(
+        path, json=body, headers=build_internal_headers(idempotency_key="first-save")
+    )
+    assert replay.status_code == 409
+    assert replay.json()["error_code"] == "auth.replay_blocked"
+    changed_body = {**body, "revision": current["revision"], "sales_price_cny": 88}
+    key_conflict = client.patch(
+        path, json=changed_body, headers=build_internal_headers(idempotency_key="first-save")
+    )
+    assert key_conflict.status_code == 409
+    assert key_conflict.json()["error_code"] == "auth.replay_blocked"
+    stale = client.patch(
+        path,
+        json={**body, "sales_price_cny": 88},
+        headers=build_internal_headers(idempotency_key="stale-save"),
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error_code"] == "service.admin_plan_revision_conflict"
+    assert service.get_admin_plan("pro") == current
+    service.upsert_plan(plan_id="plus", name="Plus", metadata_json={"tier_id": "plus"})
+    service.publish_plan_version(plan_id="plus", plan_version_id="plus_v1", version_label="v1")
+    wrong_target = client.patch(
+        "/internal/service/admin/plans/plus",
+        json=changed_body,
+        headers=build_internal_headers(idempotency_key="wrong-target"),
+    )
+    assert wrong_target.status_code == 409
+    assert wrong_target.json()["error_code"] == "service.admin_plan_revision_conflict"
+    assert service.get_admin_plan("pro") == current
+
+
+def test_existing_version_can_still_move_between_plans(tmp_path: Path):
+    database_url, client = _build_client(tmp_path)
+    for plan_id in ["plan_move_a", "plan_move_b"]:
+        assert client.post(
+            "/internal/service/plans", json={"plan_id": plan_id, "name": plan_id},
+            headers=build_internal_headers(idempotency_key=f"move-create-{plan_id}"),
+        ).status_code == 200
+        response = client.post(
+            f"/internal/service/plans/{plan_id}/versions",
+            json={"plan_version_id": "move_same_version", "version_label": "v1"},
+            headers=build_internal_headers(idempotency_key=f"move-publish-{plan_id}"),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["plan_id"] == plan_id
+    with get_session(database_url) as session:
+        assert session.get(PlanVersion, "move_same_version").plan_id == "plan_move_b"

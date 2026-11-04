@@ -7,8 +7,11 @@ from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import CatalogInstance, HealthSnapshot
 from app.core.services import ReadyReport
+from app.domain.observability.heartbeat import (
+    build_worker_heartbeat_summary,
+    expected_worker_ids,
+)
 from app.domain.runtime.service import RuntimeService
-from app.workers.heartbeat import build_worker_heartbeat_summary, expected_worker_ids
 from app.workers.ops_cadence import build_cadence_summary
 
 STRICT_CADENCE_TASK_IDS = (

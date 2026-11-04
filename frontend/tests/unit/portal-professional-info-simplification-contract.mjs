@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 
 const root = process.cwd();
 const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.tsx'), 'utf8');
-const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
+// Spec: customer usage = package page site list -> PortalSiteUsageDialog (trend / AI credit records).
+const usageSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteUsageDialog.tsx'), 'utf8');
 const creditTrendSource = readFileSync(resolve(root, 'src/components/portal/PortalCreditTrendPanel.tsx'), 'utf8');
 const aiInsightsPagePath = resolve(root, 'src/app/portal/ai-insights/page.tsx');
 const monitoringPagePath = resolve(root, 'src/app/portal/monitoring/page.tsx');
@@ -38,8 +39,19 @@ assert.doesNotMatch(
 );
 assert.match(
   usageSource,
-  /overview_title[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*credit_events_title/,
-  'Portal usage should lead with current-period totals and task tabs before their panels'
+  /credit_events_summary[\s\S]*site-dialog-range[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*embedded/,
+  'Site usage Modal should lead with one summary + shared time range row, then trend / records tabs embedding the trend panel'
+);
+assert.doesNotMatch(usageSource, /overview_title|<h2\b/, 'Site usage Modal must not repeat a period summary or a heading the active tab already names');
+assert.match(
+  creditTrendSource,
+  /\{embedded \? null : \([\s\S]*?<h2/,
+  'embedded trend panel must drop its own heading'
+);
+assert.match(
+  usageSource,
+  /<PortalInfoHint[\s\S]*?label=\{t\('portal\.usage\.primary_trend_title'[\s\S]*?data-portal-usage="trend-help"/,
+  'embedded trend description must fold into the dialog summary info hint (quiet)'
 );
 assert.match(
   creditTrendSource,
@@ -78,8 +90,16 @@ assert.match(
 );
 assert.doesNotMatch(
   siteKnowledgeSource,
-  /AnalyticsLineChart|AnalyticsBarChart|p95|top1|embedding_provider|embedding_model|embedding_dimensions|vector_backend|current_chunk_count|indexed_chunks_total|\.timeline|\.intents/,
+  /AnalyticsLineChart|AnalyticsBarChart|top1|current_chunk_count|indexed_chunks_total|\.timeline|\.intents/,
   'Portal site knowledge must not expose vector internals or operator performance diagnostics'
+);
+// Backend latency/configuration fields may select bounded customer guidance;
+// they must not become raw labels/values on the customer surface. The rendered
+// local-knowledge guidance tests also verify that backend identifiers stay hidden.
+assert.doesNotMatch(
+  siteKnowledgeSource,
+  /(?:>\s*|portal\.vector_obs\.)(?:P95|p95_latency|embedding_provider|embedding_model|embedding_dimensions|vector_backend)\b|\{\s*(?:totals|snapshot)\??\.(?:p95_search_latency_ms|embedding_provider|embedding_model|embedding_dimensions|vector_backend)\s*\}/,
+  'Portal knowledge guidance must not render raw vector configuration or latency fields'
 );
 assert.match(
   pluginMonitoringSource,
@@ -107,7 +127,13 @@ assert.doesNotMatch(
   /usage\.tokens_month|usage\.requests_month|site_record_runtime_label|site_record_runtime_title|resolveCustomerPackageDisplay|common\.package|packageLabel/,
   'Portal site record must not default to runtime, token, request, or package terminology'
 );
-assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=[\s\S]*contextPanel=/);
+assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=/);
+assert.match(siteRecordSource, /PortalBreadcrumb/, 'Site detail must keep the service / my sites breadcrumb');
+assert.doesNotMatch(
+  siteRecordSource,
+  /contextPanel=/,
+  'Site detail must not reserve a header contextPanel aside'
+);
 assert.match(
   siteRecordSource,
   /siteConnectionStatusLabel = site\.status === 'active'[\s\S]*portal\.sites\.table_ready[\s\S]*status=\{site\.status === 'active' \? 'active' : 'warning'\}/,
@@ -115,8 +141,13 @@ assert.match(
 );
 assert.match(
   siteServiceStatusSource,
-  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
-  'Portal service status should use a compact semantic table'
+  /portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
+  'Portal service status should keep service operation, recorded errors, and quota pressure evidence'
+);
+assert.doesNotMatch(
+  siteServiceStatusSource,
+  /<table[\s\S]*portal\.monitoring\.service_operation/,
+  'Portal service status must not restore the old semantic table chrome'
 );
 assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
@@ -126,18 +157,23 @@ assert.doesNotMatch(
 );
 assert.match(
   siteRecordSource,
-  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel[\s\S]*<details>[\s\S]*portal\.site_other_actions/,
-  'Portal site record should keep service and knowledge summaries visible while placing destructive actions in low-frequency disclosure'
+  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel/,
+  'Portal site record should keep service and knowledge summaries visible'
+);
+assert.match(
+  siteRecordSource,
+  /portal\.site_other_actions[\s\S]*PortalRowActions|PortalRowActions[\s\S]*portal\.site_other_actions/,
+  'Destructive and secondary site actions stay in the header overflow menu'
+);
+assert.doesNotMatch(
+  siteRecordSource,
+  /<details>[\s\S]*portal\.site_other_actions/,
+  'Site other-actions must not restore a page-body details disclosure'
 );
 assert.match(
   siteRecordSource,
   /site\.status === 'inactive'[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*WordPress plugin/,
   'An inactive site must direct customers to reconnect from WordPress before escalating to support'
-);
-assert.match(
-  siteServiceStatusSource,
-  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
-  'Portal service status should use a compact semantic table'
 );
 assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
@@ -151,7 +187,9 @@ assert.doesNotMatch(
   /site\.site_id\.toLowerCase\(\)\.includes\(query\)|account_id[^;]+includes\(query\)/,
   'Portal site search must not encourage internal site or account ID lookup'
 );
-assert.match(sitesSource, /portal\.sites\.table_status[\s\S]*portal\.sites\.table_ready/);
+assert.match(sitesSource, /portal\.sites\.table_status/);
+assert.match(sitesSource, /portal\.sites\.table_ready/);
+assert.match(sitesSource, /PortalStatusInline|PortalRowActions/);
 assert.match(i18nSource, /'portal\.sites\.table_status': '接入状态'[\s\S]*'portal\.sites\.table_ready': '已接入'/);
 assert.doesNotMatch(
   sitesSource,
@@ -170,13 +208,18 @@ assert.doesNotMatch(
 );
 assert.match(
   sitesSource,
-  /addonConnectMode && showConnectModal[\s\S]*PortalSiteConnectPanel/,
+  /if \(addonConnectMode\)[\s\S]*PortalSiteConnectPanel/,
   'Portal site connection panel should only open from the WordPress addon return flow'
 );
 assert.match(
   sitesSource,
-  /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc/,
-  'Portal site list should explain that new site connections start from the WordPress addon'
+  /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc|data-portal-sites="connect-guide"/,
+  'Portal sites empty and connect states must keep the WordPress-first connection hint'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /portal\.home\.connection_step_open|connection_step_plugin|connection_step_confirm/,
+  'Portal sites must not restore the multi-step connection wizard copy'
 );
 assert.doesNotMatch(
   sitesSource,
@@ -221,28 +264,28 @@ assert.doesNotMatch(
 );
 assert.match(
   auditSource,
-  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAuditBundle\(\{\s*limit: AUDIT_FETCH_LIMIT,\s*siteId: requestSiteFilterId \|\| undefined,?\s*\}\)/,
   'Portal recent activity must use the account projection with an optional site query filter'
 );
 assert.match(
   auditSource,
-  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
-  'Portal recent activity must offer all-sites and single-site scopes'
+  /<select[\s\S]*value=\{siteFilterId\}[\s\S]*data-portal-audit="site-filter"[\s\S]*portal\.all_sites_option[\s\S]*<\/select>/,
+  'Portal recent activity must offer all-sites and single-site scopes through its table filter'
 );
 assert.match(
   auditSource,
-  /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setVisibleLimit\(10\)/,
+  /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setPage\(0\)/,
   'Portal recent activity must clear records and paging when the site filter changes'
 );
 assert.match(
   auditSource,
-  /portalClient\.getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
-  'Portal recent activity must use the account-level audit bundle with the requested page size and optional site filter'
+  /const AUDIT_FETCH_LIMIT = 200;[\s\S]*portalClient\.getAuditBundle\(\{\s*limit: AUDIT_FETCH_LIMIT,\s*siteId: requestSiteFilterId \|\| undefined,?\s*\}\)/,
+  'Portal recent activity must bound the account-level audit fetch and retain the optional site filter'
 );
 assert.match(
   auditSource,
-  /loadActivity\(10\)/,
-  'Portal recent activity must keep the initial account-level page bounded to 10 records'
+  /const AUDIT_PAGE_SIZE = 10;[\s\S]*auditEvents\.slice\(pageStartIndex, pageStartIndex \+ AUDIT_PAGE_SIZE\)/,
+  'Portal recent activity must display at most 10 records per page'
 );
 assert.match(
   auditSource,
@@ -273,8 +316,8 @@ assert.match(
 );
 assert.match(
   auditSource,
-  /data-portal-support-deeplink="audit"/,
-  'Portal recent activity must stay available only as a support deep link'
+  /data-portal-account-deeplink="audit"/,
+  'Portal recent activity must stay available as an account deep link'
 );
 
 for (const expectedCopy of [

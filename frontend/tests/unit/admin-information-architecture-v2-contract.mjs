@@ -36,7 +36,8 @@ function routeForPage(path) {
 }
 
 const actualRoutes = listPageFiles(adminRoot).map(routeForPage).sort();
-assert.equal(actualRoutes.length, 26, 'admin route inventory must be reviewed when its size changes');
+assert.equal(actualRoutes.length, 28, 'admin route inventory must be reviewed when its size changes');
+assert.ok(actualRoutes.includes('/admin/customer-notifications'), 'the reviewed manual service-notice route must remain inventoried');
 
 for (const route of actualRoutes) {
   assert.ok(

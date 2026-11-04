@@ -4,22 +4,26 @@ import { useCallback, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
   type CreateAccountFormErrors,
+  type CreateAccountFormValues,
   validateCreateAccountForm,
 } from './create-account-form-model';
 
 type CreateAccountFormProps = {
   actionError: string;
   errors: CreateAccountFormErrors;
+  values: CreateAccountFormValues;
+  setField: <K extends keyof CreateAccountFormValues>(key: K, value: CreateAccountFormValues[K]) => void;
+  locked: boolean;
 };
 
 export function CreateAccountForm({
   actionError,
-  errors,
+  errors, values, setField, locked,
 }: CreateAccountFormProps) {
   const { t } = useLocale();
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <fieldset disabled={locked} className="grid gap-4 md:grid-cols-2">
       <div className="text-sm">
         <label
           htmlFor="create-account-name"
@@ -30,6 +34,8 @@ export function CreateAccountForm({
         <input
           id="create-account-name"
           name="name"
+          value={values.name}
+          onChange={event => setField('name', event.target.value)}
           type="text"
           placeholder={t(
             'admin.accounts.customer_name_placeholder',
@@ -65,6 +71,8 @@ export function CreateAccountForm({
         <input
           id="create-account-primary-email"
           name="primary_email"
+          value={values.primary_email}
+          onChange={event => setField('primary_email', event.target.value)}
           type="email"
           autoComplete="email"
           placeholder="owner@example.com"
@@ -105,6 +113,8 @@ export function CreateAccountForm({
         </span>
         <input
           name="operator_display_name"
+          value={values.operator_display_name}
+          onChange={event => setField('operator_display_name', event.target.value)}
           type="text"
           placeholder={t(
             'admin.accounts.operator_display_name_placeholder',
@@ -121,6 +131,8 @@ export function CreateAccountForm({
         </span>
         <input
           name="operator_note"
+          value={values.operator_note}
+          onChange={event => setField('operator_note', event.target.value)}
           type="text"
           placeholder={t(
             'admin.accounts.operator_note_placeholder',
@@ -132,7 +144,7 @@ export function CreateAccountForm({
       </label>
 
       <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
-        <input type="checkbox" name="bind_default_free" defaultChecked />
+        <input type="checkbox" name="bind_default_free" checked={values.bind_default_free} onChange={event => setField('bind_default_free', event.target.checked)} />
         <span>
           {t(
             'admin.accounts.bind_default_free_label',
@@ -150,7 +162,7 @@ export function CreateAccountForm({
           {actionError}
         </p>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
 

@@ -43,7 +43,12 @@ or capacity.
 
 ## 3. First deployment
 
-Use the governed deployment path from the approved release commit:
+Use the governed deployment path from the approved release commit.
+
+One-time on the trusted workstation (keeps the same `source` command working
+without committing the host): copy `deploy/workspace-target.env.example` to
+`.deploy-secrets/workspace-target.env.sh`, set real SSH/domain values, and
+leave that file gitignored. See `deploy/WORKSPACE_TARGET.md`.
 
 ```bash
 source deploy/workspace-target.env.sh

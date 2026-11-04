@@ -1,5 +1,7 @@
 'use client';
 
+import { isTopmostDialog, registerDialog } from '@/lib/dialog-layer';
+
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -63,12 +65,14 @@ export function AdminWorkbenchDialog({
 
   useEffect(() => {
     if (!open) return;
+    const unregisterDialog = registerDialog(dialogRef.current);
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmostDialog(dialogRef.current)) return;
       if (event.key === 'Escape' && !savingRef.current) {
         event.preventDefault();
         onCloseRef.current();
@@ -94,6 +98,7 @@ export function AdminWorkbenchDialog({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => {
+      unregisterDialog();
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;

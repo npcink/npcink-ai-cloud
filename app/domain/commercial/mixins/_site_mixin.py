@@ -11,6 +11,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,
     validate_runtime_callback_target,
@@ -50,7 +53,7 @@ from app.core.secrets import (
     encrypt_runtime_terminal_callback_secret,
     encrypt_site_api_signing_secret,
 )
-from app.core.security import build_secret_hash
+from app.core.security import build_secret_hash, derive_stable_secret_digest
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.customer_api_keys import (
     DEFAULT_PORTAL_RUNTIME_SCOPES,
@@ -82,6 +85,14 @@ from app.domain.service_settings import resolve_site_relink_policy
 
 WORDPRESS_ADDON_CONNECTION_PROVIDER = "wordpress_addon_connection"
 WORDPRESS_ADDON_CONNECTION_TTL_SECONDS = 10 * 60
+
+
+def _site_operation_datetime(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else None
+    except ValueError:
+        return None
 
 
 def _assert_portal_addon_connection_access(
@@ -124,7 +135,7 @@ def _hash_addon_connection_value(value: str, *, prefix: str) -> str:
             "service.wordpress_addon_connection_value_required",
             "wordpress addon connection value is required",
         )
-    return build_secret_hash(f"{WORDPRESS_ADDON_CONNECTION_PROVIDER}:{prefix}:{normalized}")
+    return derive_stable_secret_digest(f"{WORDPRESS_ADDON_CONNECTION_PROVIDER}:{prefix}:{normalized}")
 
 
 def _normalize_addon_return_url(value: str) -> str:
@@ -1035,6 +1046,93 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def update_portal_site_profile(
+        self,
+        site_id: str,
+        *,
+        principal_id: str,
+        name: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        """Rename an owned portal site (display name only)."""
+        resolved_name = str(name or "").strip()
+        if not resolved_name:
+            raise CommercialValidationError(
+                "service.portal_site_name_required",
+                "site name is required",
+            )
+        if len(resolved_name) > 191:
+            raise CommercialValidationError(
+                "service.portal_site_name_too_long",
+                "site name must be at most 191 characters",
+            )
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            access_row = repository.get_portal_site_access(
+                principal_id=principal_id,
+                site_id=site_id,
+            )
+            if access_row is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            access_site, account, identity, membership, site_binding = access_row
+            if (
+                account is None
+                or str(account.status or "") != ACCOUNT_STATUS_ACTIVE
+                or identity is None
+                or str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE
+                or membership is None
+                or str(membership.status or "")
+                != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or USER_ALLOWED_ACTION_PROVISION_SITES
+                not in {
+                    str(action).strip()
+                    for action in (membership.allowed_actions_json or [])
+                    if str(action).strip()
+                }
+                or site_binding is None
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_site_access_required",
+                    "portal site access is required",
+                )
+            site = repository.get_site_for_update(site_id)
+            if site is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            if str(site.status or "") == SITE_STATUS_ARCHIVED:
+                raise CommercialPermissionError(
+                    "service.portal_site_removed",
+                    "removed sites must reconnect before they can be managed",
+                )
+            previous_name = str(site.name or "")
+            if previous_name == resolved_name:
+                noop: dict[str, object] = {"site": self._serialize_site(site)}
+                return noop
+            site.name = resolved_name
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="site.rename",
+                outcome="succeeded",
+                account_id=str(access_site.account_id or site.account_id or ""),
+                site_id=site.site_id,
+                scope_kind="site",
+                scope_id=site.site_id,
+                payload_json={
+                    **self._serialize_site(site),
+                    "previous_name": previous_name,
+                },
+            )
+            session.flush()
+            result: dict[str, object] = {"site": self._serialize_site(site)}
+            session.commit()
+            return result
+
     def remove_portal_site(
         self,
         site_id: str,
@@ -1228,6 +1326,64 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 },
             )
             session.commit()
+            return result
+
+    def confirm_admin_site_operation(
+        self, *, site_id: str, operation_id: str, action: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # Do not call get_admin_site: its commercial projections can reconcile billing.
+        result: dict[str, object] = {
+            "site_id": site_id, "operation_id": operation_id, "action": action,
+            "state": "unconfirmed", "site": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            site = session.get(Site, site_id)
+            if site is None:
+                return result
+            if action == "activate":
+                if site.status == SITE_STATUS_ACTIVE:
+                    result.update(state="confirmed", site=self._serialize_site(site))
+                return result
+            if action not in {"set", "clear", "reset"}:
+                return result
+            events = CommercialServiceAuditRepository(session).find_site_cooldown_events(
+                site_id=site_id, operation_id=operation_id,
+                actor_kind=audit_context.actor_kind, actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json or {}
+            if not isinstance(payload, dict):
+                return result
+            resolved = _site_operation_datetime(str(payload.get("relink_cooldown_until") or ""))
+            released = _site_operation_datetime(str(payload.get("ownership_released_at") or ""))
+            if (
+                payload.get("site_id") != site_id or payload.get("action") != action
+                or payload.get("status") != SITE_STATUS_ARCHIVED
+                or site.status != SITE_STATUS_ARCHIVED or resolved is None or released is None
+                or _as_utc(site.relink_cooldown_until) != _as_utc(resolved)
+                or _as_utc(site.ownership_released_at) != _as_utc(released)
+                or event.account_id != site.account_id
+            ):
+                return result
+            policy = resolve_site_relink_policy(self.database_url)
+            result.update(
+                state="confirmed", site=self._serialize_site(site),
+                site_relink_policy={
+                    "enabled": bool(policy.get("enabled", True)),
+                    "default_cooldown_days": int(policy.get("cooldown_days") or 90),
+                    "ownership_released_at": self._serialize_datetime(site.ownership_released_at),
+                    "cooldown_until": self._serialize_datetime(site.relink_cooldown_until),
+                    "cross_account_relink_ready": bool(
+                        policy.get("enabled", True) and resolved.astimezone(UTC) <= self.now_factory()
+                    ),
+                },
+                receipt={"site_id": site_id, "operation_id": operation_id,
+                         "action": action, "audit_event_id": event.id,
+                         "resolved_cooldown_until": self._serialize_datetime(resolved)},
+            )
             return result
 
     def update_site_runtime_callbacks(

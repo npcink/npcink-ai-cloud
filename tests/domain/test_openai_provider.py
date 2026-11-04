@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -315,6 +316,64 @@ def test_openai_adapter_classifies_qwen_vl_catalog_models_as_vision() -> None:
     assert model.feature == "vision"
     assert model.instances[0].endpoint_variant == "chat_completions"
     assert model.instances[0].capability_tags[0] == "vision"
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_ollama_native_catalog_route_requires_operator_evidence_and_survives_refresh(
+    declared: bool,
+) -> None:
+    override = {"endpoint_variant": "ollama_chat"}
+    if declared:
+        override.update(source="m4_preview_operator_config", revision="native-chat-v1")
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_metadata_overrides={"qwen3.5:9b": override},
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={
+            "data": [{"id": "qwen3.5:9b", "endpoint_variant": "ollama_chat"}],
+        })),
+    )
+    for _ in range(2):
+        model = adapter.fetch_catalog().models[0]
+        assert model.instances[0].endpoint_variant == (
+            "ollama_chat" if declared else "chat_completions"
+        )
+
+
+@pytest.mark.parametrize("response_format,expected", [
+    ({"type": "json_object"}, "json"),
+    ({"type": "json_schema", "json_schema": {"schema": {"type": "object"}}},
+     {"type": "object"}),
+])
+def test_ollama_native_text_disables_thinking_and_preserves_structured_output(
+    response_format: dict[str, object], expected: object,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        payload = json.loads(request.content)
+        assert payload["think"] is False
+        assert payload["format"] == expected
+        assert payload["options"]["num_predict"] == 512
+        assert "reasoning_effort" not in payload
+        return httpx.Response(200, json={
+            "model": "qwen3.5:9b", "done": True, "done_reason": "stop",
+            "message": {"role": "assistant", "content": '{"title":"clear"}'},
+            "prompt_eval_count": 20, "eval_count": 8,
+        })
+    adapter = OpenAIProviderAdapter(
+        base_url="http://ollama.example/v1", api_key="test-api-key",
+        default_reasoning_effort="none", transport=httpx.MockTransport(handler),
+    )
+    result = adapter.execute(ProviderExecutionRequest(
+        run_id="native-text", site_id="local", ability_name="rewrite",
+        profile_id="wp-ai.editorial", execution_kind="text", model_id="qwen3.5:9b",
+        instance_id="local-qwen", endpoint_variant="ollama_chat", trace_id="native-text",
+        input_payload={"messages": [{"role": "user", "content": "Rewrite clearly"}],
+                       "params": {"max_tokens": 512, "response_format": response_format}},
+        policy={}, timeout_ms=60000,
+    ))
+    assert result.output["output_text"] == '{"title":"clear"}'
+    assert result.tokens_in == 20 and result.tokens_out == 8
+    assert result.finish_reason == "stop"
 
 
 def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
@@ -730,6 +789,55 @@ def test_openai_adapter_request_extra_overrides_provider_default_reasoning_effor
     )
 
 
+@pytest.mark.parametrize(
+    "model_id", ["gpt-6.1-sol", "gpt-6.1-sol-2026-10-29", "mqzj/gpt-6.1-sol"],
+)
+@pytest.mark.parametrize(
+    "default_effort,expected", [("none", "low"), ("high", "high"), (None, None)],
+)
+def test_gpt61_sol_uses_supported_connection_reasoning_default(
+    model_id: str, default_effort: str | None, expected: str | None,
+) -> None:
+    adapter = OpenAIProviderAdapter(
+        default_reasoning_effort=default_effort, model_namespace_prefix="mqzj",
+    )
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id=model_id,
+        input_payload={"messages": [{"role": "user", "content": "Answer from evidence"}]},
+    ))
+    assert payload.get("reasoning_effort") == expected
+
+
+@pytest.mark.parametrize("explicit", [
+    {"extra": {"reasoning_effort": "none"}},
+    {"extra": {"reasoning_effort": "high"}},
+    {"extra": {"reasoning": {"effort": "medium"}}},
+    {"thinking": {"budget": "medium"}},
+])
+def test_gpt61_sol_preserves_explicit_reasoning_choices(explicit: dict[str, Any]) -> None:
+    adapter = OpenAIProviderAdapter(default_reasoning_effort="none")
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id="gpt-6.1-sol",
+        input_payload={"messages": [{"role": "user", "content": "Answer"}], "params": explicit},
+    ))
+    extra = explicit.get("extra", {})
+    if "reasoning_effort" in extra:
+        assert payload["reasoning_effort"] == extra["reasoning_effort"]
+    else:
+        assert "reasoning_effort" not in payload
+        assert payload["reasoning"]["effort"] == "medium"
+
+
+@pytest.mark.parametrize("model_id", ["gpt-5.5", "gpt-6-sol", "gpt-6.1-sol-custom"])
+def test_gpt61_sol_default_does_not_change_other_models(model_id: str) -> None:
+    adapter = OpenAIProviderAdapter(default_reasoning_effort="none")
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="text", endpoint_variant="chat_completions", model_id=model_id,
+        input_payload={"messages": [{"role": "user", "content": "Answer"}]},
+    ))
+    assert payload["reasoning_effort"] == "none"
+
+
 def test_openai_adapter_rejects_unknown_default_reasoning_effort() -> None:
     with pytest.raises(ValueError, match="default_reasoning_effort"):
         OpenAIProviderAdapter(default_reasoning_effort="disabled")
@@ -831,6 +939,27 @@ def test_openai_adapter_executes_chat_completions_over_http() -> None:
     assert result.tokens_in == 10
     assert result.tokens_out == 5
     assert result.cost == 0.000012
+
+
+@pytest.mark.parametrize("body", [b"[]", b"null", b"<html>upstream error</html>"])
+def test_openai_adapter_classifies_malformed_text_success_responses(body: bytes) -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=body)),
+    )
+
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="chat_completions",
+                model_id="gpt-4.1-mini",
+                input_payload={"messages": [{"role": "user", "content": "hello"}]},
+            )
+        )
+
+    assert error.value.error_code == "provider.output_contract_invalid"
+    assert error.value.message == "provider response must be a JSON object"
 
 
 def test_openai_adapter_estimates_deepseek_cache_aware_pricing() -> None:
@@ -1319,6 +1448,37 @@ def test_openai_adapter_executes_embeddings_over_http() -> None:
     assert result.tokens_out == 0
 
 
+@pytest.mark.parametrize("image", [False, True])
+@pytest.mark.parametrize("local_preview", [False, True])
+def test_ollama_embeddings_use_native_multimodal_transport_and_usage(
+    image: bool, local_preview: bool,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/embed"
+        payload = json.loads(request.content)
+        assert payload["input"] == ({"image": "encoded-image"} if image else "hello")
+        assert payload["truncate"] is False
+        assert payload["keep_alive"] == ("10m" if local_preview else "2m")
+        assert payload["options"]["num_ctx"] == 8192
+        return httpx.Response(200, json={
+            "model": "local-vl", "embeddings": [[0.1, 0.2]], "prompt_eval_count": 7,
+        })
+
+    adapter = OpenAIProviderAdapter(
+        base_url="http://ollama.example/v1", api_key="test",
+        transport=httpx.MockTransport(handler),
+    )
+    if local_preview:
+        adapter.provider_id = "ollama-m4-embedding"
+    result = adapter.execute(_build_request(
+        execution_kind="embedding", endpoint_variant="ollama_embeddings", model_id="local-vl",
+        input_payload={"image_base64": "encoded-image"} if image else {"text": "hello"},
+    ))
+    assert result.output["embedding"] == [0.1, 0.2]
+    assert result.tokens_in == 7
+    assert result.tokens_out == 0
+
+
 def test_openai_adapter_executes_image_generation_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/images/generations")
@@ -1574,6 +1734,73 @@ def test_openai_adapter_never_exposes_vision_error_bodies(
     assert error.value.message == openai_provider.VISION_PROVIDER_ERROR_MESSAGE
     assert error.value.retryable is expected_retryable
     assert leaked_marker not in repr(error.value.args)
+
+
+def test_one_supplier_applies_each_image_models_wire_format_without_retry() -> None:
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append(payload)
+        model = payload["model"]
+        expected = {"native-image": None, "url-image": "url", "b64-image": "b64_json"}
+        assert payload.get("response_format") == expected.get(model, "b64_json")
+        if payload.get("response_format") == "url":
+            data = {"url": "https://images.example.test/result.png"}
+        else:
+            data = {"b64_json": base64.b64encode(b"image").decode("ascii")}
+        return httpx.Response(200, json={"data": [data]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-key",
+        model_namespace_prefix="gateway",
+        image_response_format="b64_json",
+        image_output_hosts=["images.example.test"],
+        model_metadata_overrides={
+            "native-image": {
+                "image_response_format": "provider_default",
+                "source": "provider docs",
+                "revision": "v1",
+            },
+            "gateway/url-image": {
+                "image_response_format": "url", "source": "provider docs", "revision": "v1",
+            },
+            "b64-image": {
+                "image_response_format": "b64_json", "source": "provider docs", "revision": "v1",
+            },
+        },
+        transport=httpx.MockTransport(handler),
+    )
+    for model in ["native-image", "url-image", "b64-image", "fallback-image"]:
+        result = adapter.execute(_build_request(
+            execution_kind="image_generation", endpoint_variant="image_generations",
+            model_id=f"gateway/{model}",
+            input_payload={"prompt": "test", "extra": {"response_format": "untrusted"}},
+        ))
+        assert len(result.media_candidates) == 1
+        assert "b64_json" not in result.output and "url" not in result.output
+        if model == "url-image":
+            assert result.media_candidates[0].source_url == "https://images.example.test/result.png"
+        else:
+            assert result.media_candidates[0].content_bytes == b"image"
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("override", [
+    {"image_response_format": "url"},
+    {"image_response_format": "invalid", "source": "docs", "revision": "v1"},
+])
+def test_image_format_override_requires_valid_policy_and_evidence(override: dict) -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="test-key", model_metadata_overrides={"image-model": override}
+    )
+    _, payload = adapter._build_http_request(_build_request(
+        execution_kind="image_generation",
+        endpoint_variant="image_generations",
+        model_id="image-model",
+        input_payload={"prompt": "test"},
+    ))
+    assert "response_format" not in payload
 
 
 def test_openai_adapter_strictly_decodes_provider_base64_without_serializing_it() -> None:

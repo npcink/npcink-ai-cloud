@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
+
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_access_repository import (
     CommercialAccessRepository,
+)
+from app.adapters.repositories.commercial_notification_repository import (
+    CommercialNotificationRepository,
 )
 from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
@@ -30,6 +37,7 @@ from app.core.models import (
     SUPPORT_REQUEST_STATUS_IN_PROGRESS,
     SUPPORT_REQUEST_STATUS_OPEN,
     SUPPORT_REQUEST_STATUS_RESOLVED,
+    ServiceAuditEvent,
     SupportRequest,
     SupportRequestAttachment,
     SupportRequestFeedback,
@@ -42,6 +50,16 @@ from app.domain.commercial.errors import (
     CommercialValidationError,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+from app.domain.commercial.support_operations import (
+    EVENTS,
+    find_support_events,
+    lock_support_write,
+    matching_support_event,
+    operation_digest,
+    replay_event,
+    support_operation_conflict,
+    support_receipt,
+)
 
 SUPPORT_REQUEST_STATUSES = {
     SUPPORT_REQUEST_STATUS_OPEN,
@@ -75,6 +93,14 @@ SUPPORT_REQUEST_ATTACHMENT_CONTENT_TYPES = {
 }
 SUPPORT_REQUEST_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 SUPPORT_REQUEST_ATTACHMENT_MAX_COUNT = 10
+
+
+def _is_customer_attachment_draft(attachment: SupportRequestAttachment) -> bool:
+    # Operator request-level attachments predate message linking and remain readable.
+    return (
+        attachment.uploader_kind == SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+        and not str(attachment.message_id or "").strip()
+    )
 
 
 def _normalize_support_status(value: str, *, allow_empty: bool = False) -> str:
@@ -469,11 +495,149 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "attachments": [
                     self._serialize_support_request_attachment(attachment)
                     for attachment in attachments
+                    if not _is_customer_attachment_draft(attachment)
                 ],
                 "feedback": self._serialize_support_request_feedback(feedback)
                 if feedback is not None
                 else None,
             }
+
+    def _support_operation_result(
+        self,
+        session: Session,
+        request: SupportRequest,
+        event: ServiceAuditEvent,
+        action: str,
+        digest: str,
+    ) -> dict[str, object] | None:
+        """Verify durable children, not just an audit row or the current value."""
+        repository = CommercialSupportRepository(session)
+        payload = event.payload_json or {}
+        result: dict[str, object] = {
+            "request": self._serialize_support_request(request),
+            "operation_receipt": support_receipt(event, action),
+            "replayed": True,
+        }
+        values: dict[str, object]
+        if (event.account_id != request.account_id
+                or (event.site_id or "") != (request.site_id or "")):
+            return None
+        if action == "message":
+            message = repository.get_support_request_message(str(payload.get("message_id") or ""))
+            if (
+                message is None
+                or message.request_id != request.request_id
+                or message.account_id != request.account_id
+                or message.author_kind != "operator"
+                or (message.site_id or "") != (request.site_id or "")
+                or message.visibility != payload.get("visibility")
+            ):
+                return None
+            values = {"body": message.body, "visibility": message.visibility}
+            result["message"] = self._serialize_support_request_message(message)
+        elif action == "attachment":
+            attachment = repository.get_support_request_attachment(
+                str(payload.get("attachment_id") or "")
+            )
+            if (
+                attachment is None
+                or attachment.request_id != request.request_id
+                or attachment.account_id != request.account_id
+                or attachment.uploader_kind != "operator"
+                or (attachment.site_id or "") != (request.site_id or "")
+                or attachment.visibility != payload.get("visibility")
+                or attachment.byte_size != len(attachment.content_bytes)
+            ):
+                return None
+            values = {
+                "filename": attachment.filename,
+                "content_type": attachment.content_type,
+                "visibility": attachment.visibility,
+                "message_id": attachment.message_id or "",
+                "content_sha256": hashlib.sha256(bytes(attachment.content_bytes)).hexdigest(),
+            }
+            if attachment.message_id:
+                linked = repository.get_support_request_message(attachment.message_id)
+                if (
+                    linked is None
+                    or linked.request_id != request.request_id
+                    or linked.account_id != request.account_id
+                    or (linked.site_id or "") != (request.site_id or "")
+                    or linked.visibility != attachment.visibility
+                ):
+                    return None
+            result["attachment"] = self._serialize_support_request_attachment(attachment)
+        else:
+            submitted_status = payload.get("operation_status")
+            if (
+                not isinstance(submitted_status, str)
+                or submitted_status not in SUPPORT_REQUEST_STATUSES | {""}
+                or (submitted_status and submitted_status != payload.get("status"))
+            ):
+                return None
+            note_body = ""
+            if payload.get("message_id"):
+                note = repository.get_support_request_message(str(payload["message_id"]))
+                if (
+                    note is None
+                    or note.request_id != request.request_id
+                    or note.account_id != request.account_id
+                    or (note.site_id or "") != (request.site_id or "")
+                    or note.author_kind != "operator"
+                    or note.visibility != "internal"
+                ):
+                    return None
+                note_body = note.body
+            values = {"status": submitted_status, "admin_note": note_body}
+            # This is a historical successful transition, not a promise that
+            # another operator has not changed the current state afterwards.
+        return result if operation_digest(action, values) == digest else None
+
+    def confirm_admin_support_operation(
+        self,
+        *,
+        request_id: str,
+        operation_id: str,
+        action: str,
+        digest: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        response: dict[str, object] = {
+            "request_id": request_id,
+            "operation_id": operation_id,
+            "action": action,
+            "digest": digest,
+            "state": "unconfirmed",
+            "result": None,
+        }
+        if action not in EVENTS:
+            return response
+        # GET auth is retained, but neither this transaction nor its callbacks
+        # record audit, repair evidence, send mail or perform any other writes.
+        context = ServiceAuditContext(
+            trace_id=audit_context.trace_id,
+            idempotency_key=operation_id,
+            method="GET",
+            path=audit_context.path,
+            actor_kind=audit_context.actor_kind,
+            actor_ref=audit_context.actor_ref,
+        )
+        with get_session(self.database_url) as session:
+            repository = CommercialSupportRepository(session)
+            request = repository.get_support_request(request_id)
+            events = find_support_events(session, context)
+            if (
+                request is None
+                or len(events) != 1
+                or not matching_support_event(
+                    events[0], request_id=request_id, action=action, digest=digest, context=context
+                )
+            ):
+                return response
+            result = self._support_operation_result(session, request, events[0], action, digest)
+            if result is not None:
+                response.update(state="confirmed", result=result)
+        return response
 
     def create_portal_support_request_message(
         self,
@@ -481,6 +645,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         principal_id: str,
         request_id: str,
         body: str,
+        attachment_ids: list[str] | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         normalized_principal_id = str(principal_id or "").strip()
@@ -489,6 +654,20 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             raise CommercialValidationError(
                 "service.support_request_message_required",
                 "support request message is required",
+            )
+        # Preserve order while de-duplicating composer draft ids.
+        normalized_attachment_ids: list[str] = []
+        seen_attachment_ids: set[str] = set()
+        for raw_attachment_id in list(attachment_ids or []):
+            attachment_id = str(raw_attachment_id or "").strip()
+            if not attachment_id or attachment_id in seen_attachment_ids:
+                continue
+            seen_attachment_ids.add(attachment_id)
+            normalized_attachment_ids.append(attachment_id)
+        if len(normalized_attachment_ids) > SUPPORT_REQUEST_ATTACHMENT_MAX_COUNT:
+            raise CommercialValidationError(
+                "service.support_request_attachment_limit_reached",
+                "support request attachment limit reached",
             )
         now = self.now_factory()
         with get_session(self.database_url) as session:
@@ -523,9 +702,34 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "portal_reply"},
                 activity_at=now,
             )
+            linked_attachments: list[SupportRequestAttachment] = []
+            for attachment_id in normalized_attachment_ids:
+                attachment = repository.get_support_request_attachment(attachment_id)
+                if (
+                    attachment is None
+                    or attachment.request_id != request.request_id
+                    or attachment.visibility != SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                    or attachment.uploader_kind != SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+                ):
+                    raise CommercialNotFoundError(
+                        "service.support_request_attachment_not_found",
+                        "support request attachment was not found",
+                    )
+                existing_message_id = str(attachment.message_id or "").strip()
+                if existing_message_id and existing_message_id != str(message.message_id):
+                    raise CommercialValidationError(
+                        "service.support_request_attachment_already_linked",
+                        "support request attachment is already linked to a message",
+                    )
+                attachment.message_id = str(message.message_id)
+                linked_attachments.append(attachment)
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
                 "message": self._serialize_portal_support_request_message(message),
+                "attachments": [
+                    self._serialize_portal_support_request_attachment(attachment)
+                    for attachment in linked_attachments
+                ],
             }
             audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
@@ -543,6 +747,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "author_kind": str(message.author_kind),
                     "visibility": str(message.visibility),
                     "status": str(request.status or ""),
+                    "attachment_ids": [
+                        str(attachment.attachment_id) for attachment in linked_attachments
+                    ],
                     "created_at": self._serialize_datetime(now),
                 },
             )
@@ -564,15 +771,31 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "service.support_request_message_required",
                 "support request message is required",
             )
+        values: dict[str, object] = {"body": normalized_body, "visibility": normalized_visibility}
+        digest = operation_digest("message", values)
         now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialSupportRepository(session)
-            request = repository.get_support_request(str(request_id or "").strip())
+            request = lock_support_write(session, str(request_id or "").strip(), audit_context)
             if request is None:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            previous = replay_event(
+                session,
+                request_id=str(request.request_id),
+                action="message",
+                digest=digest,
+                context=audit_context,
+            )
+            if previous is not None:
+                recovered = self._support_operation_result(
+                    session, request, previous, "message", digest
+                )
+                if recovered is None:
+                    raise support_operation_conflict()
+                return recovered
             if normalized_visibility == SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC and (
                 str(request.status or "") == SUPPORT_REQUEST_STATUS_OPEN
             ):
@@ -590,12 +813,32 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "admin_reply"},
                 activity_at=now,
             )
+            if (
+                normalized_visibility == SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                and request.account_id
+            ):
+                try:
+                    CommercialNotificationRepository(session).create_notification(
+                        notification_id=f"pnotif_support_{message.message_id}",
+                        account_id=request.account_id,
+                        principal_id=request.principal_id,
+                        event_type="support_request_replied",
+                        title=request.title,
+                        body=normalized_body[:800],
+                        link_href=f"/portal/support/{request.request_id}",
+                    )
+                except SQLAlchemyError as error:
+                    # The outer session rolls back the reply and audit as well.
+                    raise CommercialValidationError(
+                        "service.support_reply_notification_failed",
+                        "Support reply could not be saved; retry the operation.",
+                    ) from error
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
             }
             audit_repository = CommercialServiceAuditRepository(session)
-            self._record_service_audit_in_session(
+            event = self._record_service_audit_in_session(
                 repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.message_created",
@@ -606,6 +849,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 scope_id=str(request.request_id),
                 payload_json={
                     "request_id": str(request.request_id),
+                    "operation_digest": digest,
                     "message_id": str(message.message_id),
                     "author_kind": str(message.author_kind),
                     "visibility": str(message.visibility),
@@ -613,6 +857,8 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "created_at": self._serialize_datetime(now),
                 },
             )
+            if event is not None:
+                payload["operation_receipt"] = support_receipt(event, "message")
             session.commit()
         return payload
 
@@ -725,15 +971,37 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_content_type = _normalize_support_attachment_content_type(content_type)
         content = _decode_support_attachment_content(content_base64)
         normalized_message_id = str(message_id or "").strip()
+        values: dict[str, object] = {
+            "filename": normalized_filename,
+            "content_type": normalized_content_type,
+            "visibility": normalized_visibility,
+            "message_id": normalized_message_id,
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        digest = operation_digest("attachment", values)
         now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialSupportRepository(session)
-            request = repository.get_support_request(str(request_id or "").strip())
+            request = lock_support_write(session, str(request_id or "").strip(), audit_context)
             if request is None:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            previous = replay_event(
+                session,
+                request_id=str(request.request_id),
+                action="attachment",
+                digest=digest,
+                context=audit_context,
+            )
+            if previous is not None:
+                recovered = self._support_operation_result(
+                    session, request, previous, "attachment", digest
+                )
+                if recovered is None:
+                    raise support_operation_conflict()
+                return recovered
             if (
                 repository.count_support_request_attachments(
                     request_id=str(request.request_id or "")
@@ -744,6 +1012,18 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "service.support_request_attachment_limit_reached",
                     "support request attachment limit reached",
                 )
+            if normalized_message_id:
+                linked = repository.get_support_request_message(normalized_message_id)
+                if (
+                    linked is None
+                    or linked.request_id != request.request_id
+                    or linked.account_id != request.account_id
+                    or (linked.site_id or "") != (request.site_id or "")
+                    or linked.visibility != normalized_visibility
+                ):
+                    raise CommercialNotFoundError(
+                        "service.support_request_message_not_found", "support message was not found"
+                    )
             attachment = repository.create_support_request_attachment(
                 attachment_id=f"sra_{uuid4().hex}",
                 request=request,
@@ -763,7 +1043,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "attachment": self._serialize_support_request_attachment(attachment),
             }
             audit_repository = CommercialServiceAuditRepository(session)
-            self._record_service_audit_in_session(
+            event = self._record_service_audit_in_session(
                 repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.attachment_created",
@@ -774,6 +1054,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 scope_id=str(request.request_id),
                 payload_json={
                     "request_id": str(request.request_id),
+                    "operation_digest": digest,
                     "attachment_id": str(attachment.attachment_id),
                     "visibility": str(attachment.visibility),
                     "byte_size": int(attachment.byte_size or 0),
@@ -781,6 +1062,8 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "created_at": self._serialize_datetime(now),
                 },
             )
+            if event is not None:
+                payload["operation_receipt"] = support_receipt(event, "attachment")
             session.commit()
         return payload
 
@@ -822,6 +1105,69 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 )
             }
 
+    def delete_portal_support_request_attachment(
+        self,
+        *,
+        principal_id: str,
+        request_id: str,
+        attachment_id: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        normalized_principal_id = str(principal_id or "").strip()
+        now = self.now_factory()
+        with get_session(self.database_url) as session:
+            repository = CommercialSupportRepository(session)
+            request = repository.get_support_request(str(request_id or "").strip())
+            attachment = repository.get_support_request_attachment(
+                str(attachment_id or "").strip()
+            )
+            if (
+                request is None
+                or attachment is None
+                or attachment.request_id != request.request_id
+                or request.principal_id != normalized_principal_id
+                or attachment.visibility != SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC
+                or attachment.uploader_kind != SUPPORT_REQUEST_ATTACHMENT_UPLOADER_CUSTOMER
+            ):
+                raise CommercialNotFoundError(
+                    "service.support_request_attachment_not_found",
+                    "support request attachment was not found",
+                )
+            access_repository = CommercialAccessRepository(session)
+            self._assert_portal_account_access_in_session(
+                repository=access_repository,
+                principal_id=normalized_principal_id,
+                account_id=str(request.account_id or ""),
+            )
+            attachment_payload = self._serialize_portal_support_request_attachment(attachment)
+            attachment_byte_size = int(attachment.byte_size or 0)
+            repository.delete_support_request_attachment(attachment, activity_at=now)
+            payload: dict[str, object] = {
+                "request": self._serialize_portal_support_request(request),
+                "attachment": attachment_payload,
+            }
+            audit_repository = CommercialServiceAuditRepository(session)
+            self._record_service_audit_in_session(
+                repository=audit_repository,
+                audit_context=audit_context,
+                event_kind="support_request.attachment_deleted",
+                outcome="succeeded",
+                account_id=str(request.account_id or ""),
+                site_id=str(request.site_id or ""),
+                scope_kind="support_request",
+                scope_id=str(request.request_id),
+                payload_json={
+                    "request_id": str(request.request_id),
+                    "attachment_id": str(attachment_payload.get("attachment_id") or ""),
+                    "visibility": str(attachment_payload.get("visibility") or ""),
+                    "byte_size": attachment_byte_size,
+                    "content_type": str(attachment_payload.get("content_type") or ""),
+                    "deleted_at": self._serialize_datetime(now),
+                },
+            )
+            session.commit()
+        return payload
+
     def get_admin_support_request_attachment(
         self,
         *,
@@ -834,7 +1180,12 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
             )
-            if request is None or attachment is None or attachment.request_id != request.request_id:
+            if (
+                request is None
+                or attachment is None
+                or attachment.request_id != request.request_id
+                or _is_customer_attachment_draft(attachment)
+            ):
                 raise CommercialNotFoundError(
                     "service.support_request_attachment_not_found",
                     "support request attachment was not found",
@@ -941,15 +1292,33 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         normalized_status = _normalize_support_status(status, allow_empty=True)
         normalized_note = _trim_support_text(admin_note, max_length=2000)
+        values: dict[str, object] = {"status": normalized_status, "admin_note": normalized_note}
+        digest = operation_digest("status", values)
         now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialSupportRepository(session)
-            request = repository.get_support_request(str(request_id or "").strip())
+            request = lock_support_write(session, str(request_id or "").strip(), audit_context)
             if request is None:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            previous = replay_event(
+                session,
+                request_id=str(request.request_id),
+                action="status",
+                digest=digest,
+                context=audit_context,
+            )
+            if previous is not None:
+                recovered = self._support_operation_result(
+                    session, request, previous, "status", digest
+                )
+                if recovered is None:
+                    raise support_operation_conflict()
+                replayed_request = cast(dict[str, object], recovered["request"])
+                replayed_request["operation_receipt"] = recovered["operation_receipt"]
+                return replayed_request
             previous_status = str(request.status or "")
             if normalized_status:
                 request.status = normalized_status
@@ -969,9 +1338,10 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     SUPPORT_REQUEST_STATUS_CLOSED,
                 }:
                     repository.restore_support_request_waiting_state(request)
+            note_message = None
             if normalized_note:
                 request.admin_note = normalized_note
-                repository.create_support_request_message(
+                note_message = repository.create_support_request_message(
                     message_id=f"srm_{uuid4().hex}",
                     request=request,
                     author_kind=SUPPORT_REQUEST_MESSAGE_AUTHOR_OPERATOR,
@@ -985,7 +1355,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             session.flush()
             payload = self._serialize_support_request(request)
             audit_repository = CommercialServiceAuditRepository(session)
-            self._record_service_audit_in_session(
+            event = self._record_service_audit_in_session(
                 repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.updated",
@@ -996,11 +1366,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 scope_id=str(request.request_id),
                 payload_json={
                     "request_id": str(request.request_id),
+                    "operation_digest": digest,
                     "previous_status": previous_status,
                     "status": str(request.status or ""),
                     "has_admin_note": bool(request.admin_note),
+                    "operation_status": normalized_status,
+                    "message_id": note_message.message_id if note_message is not None else None,
                 },
             )
+            if event is not None:
+                payload["operation_receipt"] = support_receipt(event, "status")
             session.commit()
         return payload
 

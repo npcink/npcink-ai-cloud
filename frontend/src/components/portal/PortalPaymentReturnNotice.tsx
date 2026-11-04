@@ -151,7 +151,7 @@ export function PortalPaymentReturnNotice({
       if (canceled) return;
       const status = normalizePaymentText(nextOrder?.status);
       if (isPaidPaymentStatus(status) || isClosedPaymentStatus(status)) {
-        window.history.replaceState(window.history.state, '', '/portal/billing');
+        window.history.replaceState(window.history.state, '', '/portal/account#payment-orders');
         await reconcile();
         if (canceled) return;
         return;
@@ -188,7 +188,7 @@ export function PortalPaymentReturnNotice({
     const nextOrder = await loadOrder();
     const nextStatus = normalizePaymentText(nextOrder?.status);
     if (isPaidPaymentStatus(nextStatus) || isClosedPaymentStatus(nextStatus)) {
-      window.history.replaceState(window.history.state, '', '/portal/billing');
+      window.history.replaceState(window.history.state, '', '/portal/account#payment-orders');
     }
     await reconcile();
   };

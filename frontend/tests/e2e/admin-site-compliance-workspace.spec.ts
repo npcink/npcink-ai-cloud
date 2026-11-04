@@ -212,3 +212,67 @@ test('site compliance section selector and tables remain mobile safe', async ({ 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   expect(await page.locator('[data-ui="site-compliance-active-panel"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(720);
 });
+
+test('compliance draft survives locale switches and browser back cancellation', async ({ page }) => {
+  await installSiteComplianceHarness(page);
+  await page.goto('/admin/service-settings');
+  await page.locator('a[href="/admin/site-compliance"]').first().click();
+  await expect(page).toHaveURL(/\/admin\/site-compliance$/);
+  await page.getByRole('button', { name: /退款说明|Refund disclosure/ }).click();
+  const refund = page.getByLabel(/退款申请窗口|Refund window/);
+  await refund.fill('31');
+  await page.getByRole('button', { name: /语言|Language/ }).click();
+  await page.getByRole('option', { name: /English/ }).click();
+  await expect(refund).toHaveValue('31');
+  await page.evaluate(() => window.history.back());
+  const confirmation = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
+  await expect(confirmation).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/site-compliance$/);
+  await confirmation.getByRole('button', { name: /Keep editing|继续编辑/ }).click();
+  await expect(refund).toHaveValue('31');
+  await page.evaluate(() => window.history.back());
+  await confirmation.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
+  await expect(page).toHaveURL(/\/admin\/service-settings/);
+  await page.evaluate(() => window.history.forward());
+  await expect(page).toHaveURL(/\/admin\/site-compliance$/);
+  await page.getByRole('button', { name: /退款说明|Refund disclosure/ }).click();
+  await expect(page.getByLabel(/退款申请窗口|Refund window/)).toHaveValue('14');
+});
+
+test('compliance locks pending save and fences successful publish when readback fails', async ({ page }) => {
+  const harness = await installSiteComplianceHarness(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  let writes = 0;
+  let failReads = false;
+  await page.route('**/api/admin/site-compliance**', async (route) => {
+    if (route.request().method() === 'PUT') {
+      writes += 1;
+      await pending;
+    }
+    if (route.request().method() === 'GET' && failReads) {
+      await route.fulfill({ status: 503, json: { message: 'read unavailable' } }); return;
+    }
+    await route.fallback();
+  });
+  await page.goto('/admin/site-compliance');
+  await page.getByRole('button', { name: /退款说明|Refund disclosure/ }).click();
+  await page.getByLabel(/退款申请窗口|Refund window/).fill('32');
+  await page.getByRole('button', { name: /保存草稿|Save draft/ }).click();
+  await expect.poll(() => writes).toBe(1);
+  await expect(page.getByLabel(/退款申请窗口|Refund window/)).toBeDisabled();
+  await expect(page.getByRole('button', { name: /发布检查|Publish checks/ })).toBeDisabled();
+  release();
+  await expect(page.getByLabel(/退款申请窗口|Refund window/)).toBeEnabled();
+  await page.getByRole('button', { name: /发布检查|Publish checks/ }).click();
+  failReads = true;
+  await page.getByRole('button', { name: /发布到公开页面|Publish$/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /确认发布|Publish version/ }).click();
+  await expect(page.getByText(/写入已成功|Write succeeded/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /发布到公开页面|Publish$/ })).toBeDisabled();
+  expect(harness.getPublishCount()).toBe(1);
+  failReads = false;
+  await page.getByRole('button', { name: /重新加载|Reload/ }).click();
+  await expect(page.getByText(/写入已成功|Write succeeded/)).toHaveCount(0);
+  expect(harness.getPublishCount()).toBe(1);
+});

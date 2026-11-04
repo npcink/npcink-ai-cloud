@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,137 @@ BASELINE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BASELINE)
 REPOSITORY = "npcink/npcink-ai-cloud"
 REVISION = "a" * 40
+
+
+@pytest.fixture(autouse=True)
+def isolated_recovery_receipt(tmp_path, monkeypatch):
+    monkeypatch.setattr(BASELINE, "RECOVERY_FILE", tmp_path / "missing-recovery.json")
+
+
+def _recovery(tmp_path, **overrides):
+    now = datetime.now(UTC)
+    receipt = {
+        "schema": "npcink.production_baseline_recovery.v1",
+        "repository": REPOSITORY,
+        "installed_sha": "b" * 40,
+        "installed_tree": "c" * 40,
+        "manifest_sha256": "d" * 64,
+        "observation_sha256": "e" * 64,
+        "workflow_run_id": 11,
+        "workflow_run_attempt": 1,
+        "workflow_updated_at": "2026-10-17T00:00:00Z",
+        "observed_at_utc": now.isoformat(),
+        "expires_at_utc": (now + timedelta(days=1)).isoformat(),
+        **overrides,
+    }
+    path = tmp_path / "recovery.json"
+    path.write_text(json.dumps(receipt))
+    return path
+
+
+def _expired_artifact_api(path):
+    value = _api(missing=True)(path)
+    if "/workflows/deploy-production.yml/" in path:
+        data = json.loads(value)
+        for run in data["workflow_runs"]:
+            run["run_attempt"] = 1
+            run["updated_at"] += "T00:00:00Z"
+        return json.dumps(data).encode()
+    return value
+
+
+def test_reviewed_host_observation_recovers_exact_successful_attempt(tmp_path):
+    assert (
+        BASELINE.resolve_baseline(
+            REPOSITORY, _expired_artifact_api, recovery_path=_recovery(tmp_path)
+        )
+        == "b" * 40
+    )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"repository": "other/repo"},
+        {"installed_sha": REVISION},
+        {"workflow_run_id": 10},
+        {"workflow_run_attempt": 2},
+        {"workflow_run_attempt": None},
+        {"workflow_updated_at": "2026-10-18T00:00:00Z"},
+        {"manifest_sha256": "invalid"},
+        {"observed_at_utc": "2026-01-01T00:00:00Z"},
+        {"observed_at_utc": "2099-01-01T00:00:00Z"},
+        {"expires_at_utc": "2026-01-01T00:00:00Z"},
+        {"expires_at_utc": "2099-01-01T00:00:00Z"},
+        {"observed_at_utc": "2026-11-03T00:00:00"},
+        {"observed_at_utc": "invalid"},
+    ],
+)
+def test_recovery_rejects_stale_or_mismatched_observations(tmp_path, override):
+    with pytest.raises(ValueError, match="baseline recovery"):
+        BASELINE.resolve_baseline(
+            REPOSITORY, _expired_artifact_api, recovery_path=_recovery(tmp_path, **override)
+        )
+
+
+@pytest.mark.parametrize("conclusion", [None, "failure", "cancelled"])
+def test_recovery_never_hides_a_newer_unproven_deployment(tmp_path, conclusion):
+    def api(path):
+        value = _expired_artifact_api(path)
+        if "/workflows/deploy-production.yml/" in path:
+            data = json.loads(value)
+            data["workflow_runs"][0]["conclusion"] = conclusion
+            return json.dumps(data).encode()
+        return value
+
+    with pytest.raises(ValueError, match="later deployment attempt"):
+        BASELINE.resolve_baseline(REPOSITORY, api, recovery_path=_recovery(tmp_path))
+
+
+def test_recovery_cannot_override_a_malformed_retained_runtime_receipt(tmp_path):
+    original = _api(_receipt(status="failure"))
+
+    def api(path):
+        if "/workflows/deploy-production.yml/" in path:
+            return _expired_artifact_api(path)
+        if "/runs/11/artifacts" in path:
+            return json.dumps(
+                {
+                    "artifacts": [
+                        {
+                            "id": 20,
+                            "name": "production-deploy-timing-11-" + "b" * 40,
+                            "expired": False,
+                            "size_in_bytes": 1000,
+                        }
+                    ]
+                }
+            ).encode()
+        return original(path)
+
+    with pytest.raises(ValueError, match="does not bind"):
+        BASELINE.resolve_baseline(REPOSITORY, api, recovery_path=_recovery(tmp_path))
+
+
+def test_recovery_cannot_override_a_retained_plan_for_another_repository(tmp_path):
+    original = _api()
+
+    def api(path):
+        if "/workflows/deploy-production.yml/" in path:
+            return _expired_artifact_api(path)
+        payload = original(path)
+        if path.endswith("/artifacts/21/zip"):
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                plan = json.loads(archive.read("production-release-plan.json"))
+            plan["repository"] = "other/repo"
+            replacement = io.BytesIO()
+            with zipfile.ZipFile(replacement, "w") as archive:
+                archive.writestr("production-release-plan.json", json.dumps(plan))
+            return replacement.getvalue()
+        return payload
+
+    with pytest.raises(ValueError, match="retained production release plan identity"):
+        BASELINE.resolve_baseline(REPOSITORY, api, recovery_path=_recovery(tmp_path))
 
 
 def _receipt(**overrides):

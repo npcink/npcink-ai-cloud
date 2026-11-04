@@ -5,6 +5,8 @@ import { frontendRoot } from './_paths.mjs';
 
 const root = frontendRoot;
 const accountsSource = readFileSync(resolve(root, 'src/app/admin/accounts/page.tsx'), 'utf8');
+const accountCreationSource = readFileSync(resolve(root, 'src/features/admin/accounts/account-create-confirmation.ts'), 'utf8');
+const createAccountFormSource = readFileSync(resolve(root, 'src/features/admin/accounts/CreateAccountForm.tsx'), 'utf8');
 const subscriptionsSource = readFileSync(resolve(root, 'src/app/admin/subscriptions/page.tsx'), 'utf8');
 const plansSource = readFileSync(resolve(root, 'src/app/admin/plans/page.tsx'), 'utf8');
 const planManagementSource = readFileSync(resolve(root, 'src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
@@ -60,19 +62,29 @@ assert.doesNotMatch(
 
 assert.match(
   accountsSource,
-  /const \[loadError, setLoadError\][\s\S]*const \[actionError, setActionError\]/,
+  /const \[loadError, setLoadError\][\s\S]*const creation = useAccountCreation\(/,
   'Account loading failures and account mutation failures must remain separate states'
+);
+assert.match(
+  accountCreationSource,
+  /const \[error, setError\] = useState\(/,
+  'The customer creation hook must own its mutation failure state independently of directory loading'
 );
 
 assert.match(
   accountsSource,
-  /setActionError\([\s\S]*role="alert"/,
+  /CreateAccountForm[\s\S]*actionError=\{creation\.error\}/,
+  'Account mutation failures must reach the existing creation form'
+);
+assert.match(
+  createAccountFormSource,
+  /actionError \?[\s\S]*role="alert"[\s\S]*\{actionError\}/,
   'Account mutation failures must stay visible inside the working surface'
 );
 
 assert.doesNotMatch(
-  accountsSource,
-  /setActionError\([\s\S]*window\.location\.reload\(\)/,
+  [accountsSource, accountCreationSource].join('\n'),
+  /window\.location\.reload\(\)/,
   'Account mutation failures must not force a full-page reload recovery path'
 );
 

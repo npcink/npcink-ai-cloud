@@ -17,7 +17,24 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   const detailTabs = page.getByRole('tab');
   await expect(detailTabs).toHaveCount(6);
   await expect(page.getByRole('tab', { name: /^Overview|^概况|^概況/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toBeVisible();
+  const overview = page.locator('[data-ui="account-overview-posture"]');
+  await expect(overview).toBeVisible();
+  await expect(overview).toContainText(/Package|套餐|方案/i);
+  await expect(overview).toContainText(/Coverage|覆盖|覆蓋/i);
+  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toHaveCount(0);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/admin-hierarchy-customer-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('tab', { name: /^Access|^访问|^存取/i }).click();
+  await page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i }).click();
+  const suspendDialog = page.getByRole('dialog');
+  await expect(suspendDialog).toContainText(/Confirm account suspension|确认暂停账户/i);
+  await suspendDialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
+  await expect(suspendDialog).toHaveCount(0);
+
   await expect(page.getByText(/More account actions|更多账户操作|更多帳戶操作/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Manage package|管理套餐|管理方案/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Back to customers|Back to accounts|返回客户列表|返回客戶列表/i })).toHaveAttribute('href', '/admin/accounts');
@@ -44,7 +61,11 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await expect(page.locator('[data-ui="account-package-collapsed"]')).toContainText(/Free/i);
 
   await page.getByRole('tab', { name: /Audit|审计|稽核/i }).click();
-  await expect(page.getByText('account.subscription.change')).toBeVisible();
+  const packageReceipt = page.locator('[data-ui="admin-mutation-receipt"]').filter({ hasText: 'account.subscription.change' });
+  await expect(packageReceipt.getByText('account.subscription.change', { exact: true })).toBeHidden();
+  await packageReceipt.locator('summary').click();
+  await expect(packageReceipt.getByText('account.subscription.change', { exact: true })).toBeVisible();
+  await packageReceipt.locator('summary').click();
 
   await page.getByRole('tab', { name: /Credits and usage|积分与用量|積分與用量/i }).click();
   await expect(page.locator('[data-ui="account-credit-usage-summary"]')).toBeVisible();
@@ -62,7 +83,7 @@ test('customer detail v2 keeps governed commercial and audited credit operations
       element.style.display = 'none';
     });
   }
-  await expect(page).toHaveScreenshot(
+  await expect.soft(page).toHaveScreenshot(
     'admin-customer-detail-credits-pc.png',
     { animations: 'disabled' }
   );
@@ -91,7 +112,10 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.getByRole('tab', { name: /Audit|审计|稽核/i }).click();
-  await expect(page.getByText('account.credit.adjustment')).toBeVisible();
+  const creditReceipt = page.locator('[data-ui="admin-mutation-receipt"]').filter({ hasText: 'account.credit.adjustment' });
+  await expect(creditReceipt.getByText('account.credit.adjustment', { exact: true })).toBeHidden();
+  await creditReceipt.locator('summary').click();
+  await expect(creditReceipt.getByText('account.credit.adjustment', { exact: true })).toBeVisible();
 });
 
 test('customer and Site details preserve one filtered Accounts return context across refresh and browser history', async ({ page }) => {
@@ -247,8 +271,8 @@ test('customer credit evidence fails closed and keeps bounded retry', async ({ p
 
 test('customer detail operator profile keeps the draft when the bounded save fails', async ({ page }) => {
   await installAdminMocks(page);
-  await page.route('**/api/admin/accounts', async (route) => {
-    if (route.request().method() !== 'POST') {
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async (route) => {
+    if (route.request().method() !== 'PATCH') {
       await route.fallback();
       return;
     }
@@ -258,7 +282,7 @@ test('customer detail operator profile keeps the draft when the bounded save fai
       body: JSON.stringify(
         buildAdminApiErrorEnvelope(
           'operator profile rejected',
-          'admin.operator_profile_rejected'
+          'service.validation_error'
         )
       ),
     });
@@ -285,8 +309,8 @@ test('customer detail operator profile keeps the draft when the bounded save fai
 test('customer detail operator profile preserves the save payload and success receipt', async ({ page }) => {
   await installAdminMocks(page);
   let savedPayload: Record<string, unknown> | null = null;
-  await page.route('**/api/admin/accounts', async (route) => {
-    if (route.request().method() !== 'POST') {
+  await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async (route) => {
+    if (route.request().method() !== 'PATCH') {
       await route.fallback();
       return;
     }
@@ -315,14 +339,8 @@ test('customer detail operator profile preserves the save payload and success re
   await expect(
     page.getByRole('heading', { name: 'Updated customer' }).first()
   ).toBeVisible();
-  expect(savedPayload).toMatchObject({
-    account_id: LONG_ACCOUNT_ID,
-    name: 'MVP Account',
-    status: 'active',
-    bind_default_free: false,
-    metadata: {
-      operator_display_name: 'Updated customer',
-      operator_note: 'Updated detail note',
-    },
+  expect(savedPayload).toEqual({
+    operator_display_name: 'Updated customer',
+    operator_note: 'Updated detail note',
   });
 });

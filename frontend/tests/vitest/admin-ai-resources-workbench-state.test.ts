@@ -67,10 +67,38 @@ const staleWorkbench: ProviderWorkbenchState = {
   modelReferencePage: 4,
   confirmingClearModels: true,
   confirmingModelBatch: '',
-  customModelInput: 'claude-opus-4',
 };
 
 describe('AI resources provider workbench state', () => {
+  it('acknowledges server-saved image delivery without discarding concurrent drafts', () => {
+    const opened = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, {
+      type: 'open_edit', form: editedForm, catalogPreview, referenceProviderId: 'anthropic',
+    });
+    const saved = {
+      type: 'apply_saved_image_delivery' as const, connectionId: editedForm.connectionId,
+      imageResponseFormat: 'url', imageOutputHosts: 'images.example.com',
+    };
+    const clean = providerWorkbenchReducer(opened, saved);
+    expect(hasProviderWorkbenchDraftChanges(clean)).toBe(false);
+    expect(clean.providerConnectionForm.imageOutputHosts).toBe('images.example.com');
+    const draft = providerWorkbenchReducer(opened, {
+      type: 'patch_form', patch: { displayName: 'New name', imageOutputHosts: 'draft.example.com' },
+    });
+    const retained = providerWorkbenchReducer(draft, saved);
+    expect(retained.providerConnectionForm).toMatchObject({
+      displayName: 'New name', imageOutputHosts: 'draft.example.com', imageResponseFormat: 'url',
+    });
+    expect(retained.initialProviderConnectionForm.imageOutputHosts).toBe('images.example.com');
+    expect(hasProviderWorkbenchDraftChanges(retained)).toBe(true);
+    expect(providerWorkbenchReducer(opened, { ...saved, connectionId: 'other' })).toBe(opened);
+  });
+
+  it('tracks only connection and selection changes as drafts', () => {
+    expect(hasProviderWorkbenchDraftChanges(INITIAL_PROVIDER_WORKBENCH_STATE)).toBe(false);
+    const state = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, { type: 'set_model_ids', modelIds: 'account-model' });
+    expect(hasProviderWorkbenchDraftChanges(state)).toBe(true);
+  });
+
   it('rejects incomplete provider deletion preflight responses', () => {
     const valid = {
       surface: 'admin_provider_connection_delete_preflight',
@@ -131,11 +159,19 @@ describe('AI resources provider workbench state', () => {
       modelReferenceFeatureFilter: 'all',
       modelReferenceVisibilityFilter: 'all',
       modelReferenceIntelligenceFilter: 'all',
-      modelReferenceShowDeprecated: true,
+      modelReferenceShowDeprecated: false,
       modelReferencePage: 1,
       confirmingClearModels: false,
-      customModelInput: '',
     });
+  });
+
+  it('keeps the list preference outside saved supplier drafts and preserves it when opening another supplier', () => {
+    const preferred = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, { type: 'set_show_deprecated', show: true });
+    expect(hasProviderWorkbenchDraftChanges(preferred)).toBe(false);
+    const opened = providerWorkbenchReducer(preferred, { type: 'open_create', referenceProviderId: 'openai' });
+    expect(opened.modelReferenceShowDeprecated).toBe(true);
+    const edited = providerWorkbenchReducer(opened, { type: 'open_edit', form: editedForm, catalogPreview, referenceProviderId: 'openai' });
+    expect(edited.modelReferenceShowDeprecated).toBe(true);
   });
 
   it('opens an edit workflow with one consistent form, preview, and reference owner', () => {
@@ -154,7 +190,7 @@ describe('AI resources provider workbench state', () => {
       initialProviderConnectionForm: editedForm,
       providerCatalogPreview: catalogPreview,
       modelReferenceProviderId: 'anthropic',
-      modelReferenceShowDeprecated: true,
+      modelReferenceShowDeprecated: false,
       modelReferencePage: 1,
     });
   });
@@ -271,9 +307,8 @@ describe('AI resources provider workbench state', () => {
     expect(state.modelReferenceFeatureFilter).toBe('all');
     expect(state.modelReferenceVisibilityFilter).toBe('all');
     expect(state.modelReferenceIntelligenceFilter).toBe('all');
-    expect(state.modelReferenceShowDeprecated).toBe(true);
+    expect(state.modelReferenceShowDeprecated).toBe(false);
     expect(state.confirmingClearModels).toBe(false);
-    expect(state.customModelInput).toBe('');
     expect(state.modelReferencePage).toBe(1);
   });
 

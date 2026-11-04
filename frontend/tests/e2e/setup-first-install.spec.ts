@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test, captureIsolatedCheckpoint } from './helpers/isolated-channel-fixture';
 
 function envelope(data: unknown) {
   return {
@@ -15,7 +16,7 @@ test.skip(
   'first-install flow requires the dedicated pending-installation Playwright lane',
 );
 
-test('first install keeps secrets in memory and reveals the admin key once', async ({ page }) => {
+test('first install keeps secrets in memory and reveals the admin key once', async ({ page }, testInfo) => {
   const adminKey = 'nca_admin_setup_e2e_only';
   const setupCode = 'nca_setup_setup_e2e_only';
   const databasePassword = 'database-password-e2e-only';
@@ -105,6 +106,7 @@ test('first install keeps secrets in memory and reveals the admin key once', asy
   await expect(page.getByRole('heading', { name: /安装 Cloud|Set up Cloud/i })).toBeVisible();
   await expect(page.getByRole('list', { name: /安装进度|Installation progress/i })).toBeVisible();
 
+  await captureIsolatedCheckpoint(page, testInfo, 'pending-install-start');
   await page.getByLabel(/安装码|Setup code/i).fill(setupCode);
   await page.getByRole('button', { name: /验证安装码|Verify setup code/i }).click();
 
@@ -168,4 +170,5 @@ test('first install keeps secrets in memory and reveals the admin key once', asy
   }));
   expect(storageAfterInstall.local).not.toContain(adminKey);
   expect(storageAfterInstall.session).not.toContain(adminKey);
+  await captureIsolatedCheckpoint(page, testInfo, 'pending-install-key-once');
 });

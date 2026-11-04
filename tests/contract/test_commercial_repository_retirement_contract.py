@@ -211,13 +211,30 @@ def test_support_mixin_uses_explicit_support_access_and_audit_repositories() -> 
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and ast.unparse(node.func) in expected_repositories
     ]
-    assert constructions.count("CommercialSupportRepository") == 13
-    assert constructions.count("CommercialAccessRepository") == 6
-    assert constructions.count("CommercialServiceAuditRepository") == 7
+    # Durable result reconstruction and read-only confirmation each add one
+    # explicit support repository; neither path may return to the facade.
+    assert constructions.count("CommercialSupportRepository") == 16
+    assert constructions.count("CommercialAccessRepository") == 7
+    assert constructions.count("CommercialServiceAuditRepository") == 8
     assert not any(
         isinstance(node, ast.Name) and node.id == "CommercialRepository"
         for node in ast.walk(tree)
     )
+
+    confirmation_methods = {"_support_operation_result", "confirm_admin_support_operation"}
+    methods = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name in confirmation_methods
+    }
+    assert methods.keys() == confirmation_methods
+    for method in methods.values():
+        assert sum(
+            isinstance(node, ast.Call)
+            and ast.unparse(node.func) == "CommercialSupportRepository"
+            for node in ast.walk(method)
+        ) == 1
 
 
 def test_admin_identity_flows_use_explicit_domain_repositories() -> None:
@@ -419,4 +436,6 @@ def test_subscription_commerce_mixin_uses_lifecycle_transaction_repository() -> 
         if isinstance(node, ast.Call)
         and ast.unparse(node.func) == "CommercialSubscriptionLifecycleRepository"
     ]
-    assert len(constructions) == 7
+    # Sales availability adds one bounded lifecycle transaction; it must not
+    # reintroduce the retired broad CommercialRepository facade.
+    assert len(constructions) == 8

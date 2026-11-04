@@ -40,6 +40,8 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_web_routes.py",
     ),
     "app/api/routes/catalog.py": ("tests/api/test_catalog_routes.py",),
+    "app/api/routes/admin_model_tests.py": ("tests/api/test_admin_model_tests.py",),
+    "app/api/routes/commercial_payments_admin.py": ("tests/api/test_admin_payment_refunds.py",),
     "app/api/routes/commercial_subscriptions_admin.py": (
         "tests/api/test_service_routes.py",
     ),
@@ -47,6 +49,7 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_customer_journey_routes.py",
     ),
     "app/api/routes/entitlements.py": ("tests/api/test_entitlement_routes.py",),
+    "app/api/routes/economics_admin.py": ("tests/api/test_economics_admin_routes.py",),
     "app/api/routes/health.py": ("tests/api/test_health.py",),
     "app/api/routes/internal.py": (
         "tests/api/test_internal_alpha_onboarding_flow.py",
@@ -67,6 +70,9 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_portal_idempotency.py",
         "tests/api/test_portal_routes.py",
     ),
+    "app/api/routes/portal_data_export.py": ("tests/api/test_portal_data_export.py",),
+    "app/api/routes/portal_sessions.py": ("tests/api/test_portal_sessions_routes.py",),
+    "app/api/routes/portal_totp.py": ("tests/api/test_portal_totp.py",),
     "app/api/routes/runs.py": (
         "tests/api/test_runtime_execute.py",
         "tests/api/test_runtime_payload_bounds.py",
@@ -126,6 +132,7 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
                 "tests/api/test_",
                 "tests/domain/test_",
                 "tests/core/test_",
+                "tests/workers/test_",
                 "tests/dev/test_",
             )
         ):
@@ -133,6 +140,12 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
                 selected.add(candidate)
             continue
         if path.startswith("tests/contract/test_"):
+            continue
+        if path.startswith("app/core/") and path.endswith(".py"):
+            selected.update(_expand_specs(("tests/core/test_*.py", "tests/workers/test_*.py")))
+            continue
+        if path.startswith("app/workers/") and path.endswith(".py"):
+            selected.update(_expand_specs(("tests/workers/test_*.py",)))
             continue
         if path in ALL_API_PATHS | FULL_BACKEND_API_PATHS:
             selected.update(_all_api_tests())

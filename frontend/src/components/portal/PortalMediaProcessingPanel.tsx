@@ -12,6 +12,7 @@ import { AnalyticsBarChart, AnalyticsLineChart } from '@/components/ui/EChartsWr
 import { useLocale } from '@/contexts/LocaleContext';
 import type { PortalMediaObservabilitySummary } from '@/lib/portal-client';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
 type PortalMediaProcessingPanelProps = {
   summary: PortalMediaObservabilitySummary | null;
@@ -95,9 +96,7 @@ export function PortalMediaProcessingPanel({
       </div>
 
       {isLoading ? (
-        <PortalCard className="text-sm text-slate-600 dark:text-slate-300">
-          {t('common.loading')}
-        </PortalCard>
+        <PortalLoadingState message={t('common.loading')} compact />
       ) : error ? (
         <PortalCard className="border-red-200 bg-red-50/70 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200">
           {error}

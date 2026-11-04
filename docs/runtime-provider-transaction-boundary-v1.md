@@ -41,11 +41,30 @@ For every actual adapter call:
 claim/reconciliation semantics are otherwise unchanged. Stateless helper use
 without a Session does not create a transaction.
 
+When claiming legacy media-derivative work, saturated sites are excluded in SQL
+before choosing the oldest queued row. A prefix longer than 50 blocked media
+runs cannot hide runnable text work; the queued-to-running update still checks
+status and worker eligibility atomically. Paused media entrypoints stay paused.
+
 No pool tuning, migrations, new queues or runtime API fields are introduced.
 WordPress retains local ability, workflow, approval and final-write ownership;
 Cloud remains hosted runtime and accounting evidence only.
 
 ## Durability and failures
+
+For standard hosted execution, request identity v2 hashes the normalized client
+input, policy and execution controls (storage, TTL, timeout, retry, task backend,
+callback and canonical run ID). Current routing revision, candidate health and
+prices are execution evidence and do not change that identity. Replay checks the
+active site and connector binding before looking up the durable run, and returns
+it before resolving current routes or admitting another debit.
+
+Legacy standard runs can be verified with their saved route snapshot and current
+profile defaults plus their persisted execution contract, then upgraded to v2 on
+replay. If defaults changed or the old row lacks the evidence needed to prove a
+match (including a supplied legacy callback URL), fail with the existing 409;
+do not create another run or silently accept different controls. Specialized
+nonstandard runtime paths retain their existing identity contracts.
 
 An in-flight idempotent replay can observe the admitted `running` run. It reuses
 the run and does not issue another Provider call, acceptance meter or debit.
@@ -61,11 +80,23 @@ the dispatch checkpoint does not fabricate a terminal result or callback.
 An unexpected exception or process loss after dispatch may leave a durable
 `running` run and conservative spend reservation. Completion and upstream cost
 are then uncertain. Do not automatically replay that run or manufacture usage
-or callback evidence. Existing runtime diagnostics and the operator's
-`mark_stale_running_failed` recovery require evidence and a reason. A transaction
-rollback after dispatch cannot undo the committed admission or earlier attempt
-evidence. This is an intentional checkpoint boundary, not an all-or-nothing
-transaction spanning an external Provider.
+evidence or a successful result. Inline runs have two time-based fallbacks, and
+neither claims a Provider outcome:
+
+- the 180 s inline lease stops admission from counting the row, so an orphan
+  cannot hold a site's whole concurrency budget;
+- after a per-run grace derived from the configured Provider budget and never
+  shorter than 30 minutes, the runtime queue worker applies a bounded auto-fail
+  (`runtime.stale_running_auto_failed`) under a row lock. The worker rechecks
+  status, execution pattern and age before writing. It records a normal failed
+  terminal state and schedules the normal terminal callback for that failure; it
+  creates no Provider-call evidence, usage meter, credit, or result.
+
+Existing runtime diagnostics and the operator's `mark_stale_running_failed`
+recovery still cover runs inside the grace window and require evidence and a
+reason. A transaction rollback after dispatch cannot undo the committed
+admission or earlier attempt evidence. This is an intentional checkpoint
+boundary, not an all-or-nothing transaction spanning an external Provider.
 
 ## Verification and operation
 
@@ -92,3 +123,7 @@ Rollback is a reviewed revert of the focused implementation commit followed by
 normal M4 acceptance. There is no schema or secret rollback. Do not delete or
 replay runs/claims already checkpointed by this revision. Production deployment
 requires its separate authorization.
+
+## Other budgeted dispatches and cost evidence
+
+Admin exact-model diagnostics, explicit capability probes and the retained Advisor dispatch also commit spend claims before Provider I/O. They do not enable paused entrypoints. Unknown or partial-rate costs keep the conservative reservation; a zero placeholder without pricing evidence must not release it. Complete-rate or provider-reported zero remains a known zero. Health projections retain legacy numeric totals and add cost completeness flags rather than invent historical prices.

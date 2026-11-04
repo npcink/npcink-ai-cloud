@@ -2614,10 +2614,33 @@ base_cache_dir="${cache_dir}/base-images"
 mkdir -p "${base_cache_dir}/layers"
 package_proxy_url=""
 
+# Upstream registries are slow/unreachable from M4 without the VPN. Route the
+# package proxy's upstream fetches through the VPN HTTP proxy when it is up;
+# fall back to direct fetches otherwise. Set to "off" to force direct.
+m4_upstream_proxy_setting="${NPCINK_CLOUD_M4_UPSTREAM_PROXY:-auto}"
+m4_upstream_proxy_default="http://127.0.0.1:7890"
+
+resolve_upstream_proxy() {
+	local candidate="${m4_upstream_proxy_setting}"
+	case "${candidate}" in
+		off|none|direct|"") return 0 ;;
+		auto) candidate="${m4_upstream_proxy_default}" ;;
+	esac
+	if curl -fsS -o /dev/null --max-time 5 -x "${candidate}" https://pypi.org/simple/ >/dev/null 2>&1; then
+		printf '%s\n' "${candidate}"
+	else
+		echo "[m4-preview] upstream proxy ${candidate} unreachable; package proxy fetches upstream directly" >&2
+	fi
+}
+
 start_package_proxy() {
 	package_proxy_ready="${cache_dir}/package-proxy-${run_id}.port"
 	rm -f "${package_proxy_ready}"
+	local upstream_proxy
+	upstream_proxy="$(resolve_upstream_proxy)"
+	[ -z "${upstream_proxy}" ] || echo "[m4-preview] package proxy upstream via ${upstream_proxy}"
 	python3 scripts/m4-package-proxy.py \
+		--upstream-proxy "${upstream_proxy}" \
 		--bind 127.0.0.1 \
 		--port "${package_proxy_port}" \
 		--cache-dir "${package_proxy_cache_dir}" \
@@ -2785,11 +2808,11 @@ prefetch_base_image() {
 # BEGIN M4 runtime image build recipe
 prefetch_python_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72' \
+		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2' \
 		"${python_base_image}" \
 		python \
-		'sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72' \
-		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72"
+		'sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2' \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2"
 }
 
 prefetch_runtime_base_images() {
@@ -2812,13 +2835,13 @@ build_runtime_image() {
 			;;
 	esac
 	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS builder' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS runtime' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2 AS builder' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2 AS runtime' Dockerfile
 	echo '[m4-preview] using verified M4-local base aliases; pinned source digests remain unchanged'
 	tail -n +2 Dockerfile |
 		sed \
 			-e "s#ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500#${uv_base_image}#" \
-			-e "s#python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72#${python_base_image}#" \
+			-e "s#python:3.14-alpine@sha256:eb2c62658b8d51bff0acc408504b76521d02030de56a8a3c1e830083e89b89d2#${python_base_image}#" \
 			-e 's#--timeout 60#--timeout 300#' |
 		docker build \
 			--pull=false \
@@ -2836,11 +2859,11 @@ build_runtime_image() {
 # BEGIN M4 frontend image build recipe
 prefetch_frontend_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402' \
+		'm.daocloud.io/docker.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914' \
 		"${node_base_image}" \
 		node \
-		'sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402' \
-		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402"
+		'sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914' \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914"
 }
 
 build_frontend_image() {
@@ -2930,6 +2953,50 @@ refresh_frontend_dependency_volume() {
 	echo '[m4-preview] frontend dependency volume is ready for image copy-up'
 }
 
+# BEGIN inline run drain before API recreate
+# Inline runs execute inside the API request. Recreating the API mid-call used to
+# orphan them in `running` with no provider evidence (2026-10-21: two orphans,
+# each holding a max_active_runs=1 slot until the 180 s admission lease).
+# Wait, capped, until no inline run started within the in-flight window is still
+# running.
+inline_drain_timeout_seconds="${NPCINK_CLOUD_M4_INLINE_DRAIN_TIMEOUT_SECONDS:-90}"
+inline_inflight_window_seconds="${NPCINK_CLOUD_M4_INLINE_INFLIGHT_WINDOW_SECONDS:-60}"
+
+count_inflight_inline_runs() {
+	"${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1' <<SQL 2>/dev/null
+select count(*) from run_records
+where status = 'running'
+  and execution_pattern = 'inline'
+  and processing_started_at > now() - interval '${inline_inflight_window_seconds} seconds';
+SQL
+}
+
+drain_inline_runs_before_api_recreate() {
+	local waited=0 inflight
+	while :; do
+		if ! inflight="$(count_inflight_inline_runs)" || ! [[ "${inflight}" =~ ^[0-9]+$ ]]; then
+			echo '[m4-preview] inline drain: run_records is not readable; recreating without drain' >&2
+			return 0
+		fi
+		if [ "${inflight}" = "0" ]; then
+			echo "[m4-preview] inline drain: no inline run in flight (waited ${waited}s)"
+			return 0
+		fi
+		if [ "${waited}" -ge "${inline_drain_timeout_seconds}" ]; then
+			echo "[m4-preview] inline drain: ${inflight} inline run(s) still in flight after ${waited}s; recreating anyway (graceful shutdown still applies)" >&2
+			return 0
+		fi
+		echo "[m4-preview] inline drain: waiting for ${inflight} in-flight inline run(s) (${waited}/${inline_drain_timeout_seconds}s)"
+		sleep 3
+		waited=$((waited + 3))
+	done
+}
+
+prepare_api_recreate() {
+	drain_inline_runs_before_api_recreate
+}
+# END inline run drain before API recreate
+
 if [ "${mode}" = "prepare" ]; then
 	echo "[m4-preview] prepare complete: images and Compose config are ready; no containers were changed"
 	stack_touched=0
@@ -2943,6 +3010,7 @@ elif [ "${mode}" = "deploy" ]; then
 	else
 		echo '[m4-preview] migration source is unchanged; Alembic upgrade skipped'
 	fi
+	prepare_api_recreate
 	"${compose[@]}" up -d --no-build --pull never \
 		postgres redis api worker callback-worker ops-worker
 	if [ "${worker_restart_required}" = "1" ]; then
@@ -2972,6 +3040,7 @@ else
 	# environment values, so the API must be recreated even when its image is
 	# unchanged. Uvicorn source reload cannot refresh a container environment.
 	stack_touched=1
+	prepare_api_recreate
 	"${compose[@]}" up -d --no-build --pull never --force-recreate api
 	if [ "${frontend_recreate_required}" = "1" ]; then
 		stack_touched=1
@@ -3318,9 +3387,31 @@ import sys
 
 import pytest
 
+portal_pg_targets = (
+    "tests/integration/test_portal_postgres_acceptance.py",
+    "tests/integration/test_portal_self_service_postgres.py",
+    "tests/integration/test_admin_economics_postgres.py",
+)
+explicit_portal_pg = any(
+    argument.split("::", 1)[0] == target
+    or argument.split("::", 1)[0].endswith("/" + target)
+    for argument in sys.argv[1:]
+    if not argument.startswith("-")
+    for target in portal_pg_targets
+)
+portal_pg_url = os.environ.get("NPCINK_CLOUD_DATABASE_URL", "")
+portal_environment = os.environ.get("NPCINK_CLOUD_ENVIRONMENT", "")
 for key in tuple(os.environ):
     if key.startswith("NPCINK_CLOUD_"):
         os.environ.pop(key, None)
+os.environ.pop("NPCINK_TEST_PORTAL_POSTGRES_URL", None)
+os.environ.pop("NPCINK_TEST_PORTAL_ENVIRONMENT", None)
+if explicit_portal_pg:
+    if not portal_pg_url or not portal_environment:
+        print("Explicit Portal PostgreSQL targets require a database URL and runtime environment", file=sys.stderr)
+        raise SystemExit(64)
+    os.environ["NPCINK_TEST_PORTAL_POSTGRES_URL"] = portal_pg_url
+    os.environ["NPCINK_TEST_PORTAL_ENVIRONMENT"] = portal_environment
 
 raise SystemExit(pytest.main(sys.argv[1:]))
 '

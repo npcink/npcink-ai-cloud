@@ -522,3 +522,26 @@ def _parse_envelope(
     ):
         return None
     return key_id, fernet_token
+
+
+PORTAL_TOTP_SEED_PURPOSE = "portal_totp_seed"
+
+
+def encrypt_portal_totp_seed(seed: bytes, *, settings: Settings) -> str:
+    if not seed:
+        raise RuntimeError("Portal TOTP seed is missing")
+    return encrypt_runtime_data_plaintext(seed, purpose=PORTAL_TOTP_SEED_PURPOSE, settings=settings)
+
+
+def decrypt_portal_totp_seed(ciphertext: str | None, *, settings: Settings) -> bytes:
+    if not ciphertext:
+        raise RuntimeError("Portal TOTP seed is unavailable")
+    seed = decrypt_runtime_data_plaintext(
+        ciphertext,
+        purpose=PORTAL_TOTP_SEED_PURPOSE,
+        settings=settings,
+        error_message="Portal TOTP seed is unavailable",
+    )
+    if not seed:
+        raise RuntimeError("Portal TOTP seed is unavailable")
+    return seed

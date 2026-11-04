@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
+from app.adapters.repositories.credit_pack_catalog_repository import (
+    catalog_revision,
+    replace_catalog,
+)
 from app.core.db import get_session
 from app.core.models import (
     CREDIT_LEDGER_EVENT_ADJUSTMENT,
@@ -41,6 +49,7 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialServiceError,
     CommercialValidationError,
+    PaymentGatewayRefundRejectedError,
 )
 from app.domain.commercial.mixins._audit_mixin import (
     CommercialServiceAuditMixin,
@@ -49,6 +58,7 @@ from app.domain.commercial.mixins._audit_mixin import (
 from app.domain.commercial.payment_gateways import (
     PaymentGatewayCloseRequest,
     PaymentGatewayOrderRequest,
+    PaymentGatewayRefundQueryRequest,
     PaymentGatewayRefundRequest,
     get_payment_gateway_provider,
     normalize_payment_gateway_provider,
@@ -60,6 +70,11 @@ SERVICE_SETTING_CREDIT_PACK_CATALOG = "commercial_credit_pack_catalog"
 SERVICE_SETTING_KIND_COMMERCIAL = "commercial"
 PAYMENT_ORDER_PENDING_TTL = timedelta(minutes=30)
 PAYMENT_ORDER_PORTAL_CANCELED_VISIBILITY = timedelta(days=7)
+PAYMENT_REFUND_RECONCILIATION_METADATA_KEY = "refund_reconciliation"
+PAYMENT_REFUND_RECONCILIATION_BASE_DELAY = timedelta(minutes=5)
+PAYMENT_REFUND_RECONCILIATION_MAX_DELAY = timedelta(hours=6)
+PAYMENT_REFUND_RECONCILIATION_BATCH_SIZE = 25
+PAYMENT_REFUND_RECONCILIATION_MAX_ATTEMPTS = 5
 PAYMENT_ORDER_STATUS_GROUPS: dict[str, tuple[str, ...] | None] = {
     "all": None,
     "pending": (PAYMENT_ORDER_STATUS_PENDING,),
@@ -77,12 +92,13 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 include_inactive=False,
             )
         return {
+            "commercial_available": not service.settings.commercial_emergency_stop,
             "catalog_version": CREDIT_PACK_CATALOG_VERSION,
             "period_policy": CREDIT_PACK_PERIOD_POLICY,
             "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
             "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
             "grant_event_type": CREDIT_LEDGER_EVENT_GRANT,
-            "items": items,
+            "items": [] if service.settings.commercial_emergency_stop else items,
         }
 
     def get_admin_credit_pack_catalog(self) -> dict[str, object]:
@@ -93,7 +109,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 session,
                 include_inactive=True,
             )
-            return {
+            result = {
                 "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
                 "catalog_version": CREDIT_PACK_CATALOG_VERSION,
                 "period_policy": CREDIT_PACK_PERIOD_POLICY,
@@ -102,13 +118,20 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "grant_event_type": CREDIT_LEDGER_EVENT_GRANT,
                 "items": items,
                 "configured": row is not None,
+                "revision": catalog_revision(row),
                 "updated_at": service._serialize_datetime(getattr(row, "updated_at", None)),
             }
+            metadata = row.metadata_json if row is not None else None
+            operation = metadata.get("catalog_operation") if isinstance(metadata, dict) else None
+            if isinstance(operation, dict):
+                result["catalog_operation"] = operation
+            return result
 
     def update_admin_credit_pack_catalog(
         self,
         *,
         items: list[dict[str, object]],
+        expected_revision: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -132,39 +155,46 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             seen_pack_ids.add(pack_id)
         with get_session(service.database_url) as session:
             repository = CommercialRepository(session)
-            row = session.get(ServiceSetting, SERVICE_SETTING_CREDIT_PACK_CATALOG)
-            if row is None:
-                row = ServiceSetting(
-                    setting_id=SERVICE_SETTING_CREDIT_PACK_CATALOG,
-                    setting_kind=SERVICE_SETTING_KIND_COMMERCIAL,
-                    enabled=True,
-                    config_json={},
-                    secret_ciphertext_json={},
-                    status="ready",
-                    last_tested_at=None,
-                    last_error_code=None,
-                    last_error_message=None,
-                    metadata_json={},
+            if not expected_revision:
+                raise CommercialConflictError(
+                    "service.credit_pack_catalog_revision_required",
+                    "reload the catalog before saving; expected_revision is required",
                 )
-                session.add(row)
-            row.setting_kind = SERVICE_SETTING_KIND_COMMERCIAL
-            row.enabled = True
-            row.config_json = {
-                "catalog_version": CREDIT_PACK_CATALOG_VERSION,
-                "period_policy": CREDIT_PACK_PERIOD_POLICY,
-                "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
-                "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
+            revision = uuid4().hex
+            catalog_operation = {
+                "expected_revision": expected_revision,
                 "items": normalized_items,
             }
-            row.status = "ready"
-            row.last_error_code = None
-            row.last_error_message = None
-            row.metadata_json = {
-                "source": "admin_credit_pack_catalog",
-                "updated_by": audit_context.actor_ref if audit_context is not None else "",
-            }
-            row.updated_at = now
-            session.flush()
+            replaced = replace_catalog(
+                session,
+                expected_revision=expected_revision,
+                values={
+                    "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
+                    "enabled": True,
+                    "config_json": {
+                        "catalog_version": CREDIT_PACK_CATALOG_VERSION,
+                        "revision": revision,
+                        "period_policy": CREDIT_PACK_PERIOD_POLICY,
+                        "expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
+                        "default_validity_days": DEFAULT_CREDIT_PACK_VALIDITY_DAYS,
+                        "items": normalized_items,
+                    },
+                    "status": "ready",
+                    "last_error_code": None,
+                    "last_error_message": None,
+                    "metadata_json": {
+                        "source": "admin_credit_pack_catalog",
+                        "updated_by": audit_context.actor_ref if audit_context else "",
+                        "catalog_operation": catalog_operation,
+                    },
+                    "updated_at": now,
+                },
+            )
+            if not replaced:
+                raise CommercialConflictError(
+                    "service.credit_pack_catalog_revision_conflict",
+                    "the catalog changed; reload and review the latest catalog before saving",
+                )
             result = {
                 "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
                 "catalog_version": CREDIT_PACK_CATALOG_VERSION,
@@ -177,8 +207,10 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     include_inactive=True,
                 ),
                 "configured": True,
+                "revision": revision,
                 "updated_at": service._serialize_datetime(now),
             }
+            result["catalog_operation"] = catalog_operation
             service._record_service_audit_in_session(
                 repository=repository,
                 audit_context=audit_context,
@@ -189,6 +221,58 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 payload_json=result,
             )
             session.commit()
+            return result
+
+    def confirm_admin_credit_pack_catalog(
+        self, *, operation_id: str, expected_revision: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # This dedicated chain performs SELECTs only. Do not use a customer or
+        # ledger projection here: GET alone does not establish absence of writes.
+        service = cast(Any, self)
+        result: dict[str, object] = {
+            "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
+            "operation_id": operation_id, "expected_revision": expected_revision,
+            "state": "unconfirmed", "current": None, "receipt": None,
+        }
+        with get_session(service.database_url) as session:
+            events = CommercialServiceAuditRepository(session).find_credit_pack_catalog_events(
+                operation_id=operation_id, actor_kind=audit_context.actor_kind,
+                actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json
+            if not isinstance(payload, dict):
+                return result
+            operation = payload.get("catalog_operation")
+            row = session.get(ServiceSetting, SERVICE_SETTING_CREDIT_PACK_CATALOG)
+            config = row.config_json if row is not None else None
+            if (
+                not isinstance(operation, dict) or not isinstance(config, dict)
+                or operation.get("expected_revision") != expected_revision
+                or not isinstance(operation.get("items"), list)
+                or operation["items"] != config.get("items")
+                or payload.get("setting_id") != SERVICE_SETTING_CREDIT_PACK_CATALOG
+                or not isinstance(payload.get("revision"), str)
+                or payload["revision"] == expected_revision
+                or payload["revision"] != catalog_revision(row)
+                or payload.get("items") != config.get("items")
+            ):
+                return result
+            result.update(
+                state="confirmed", current=payload,
+                receipt={"operation_id": operation_id,
+                         "setting_id": SERVICE_SETTING_CREDIT_PACK_CATALOG,
+                         "expected_revision": expected_revision,
+                         "revision": payload["revision"], "items": operation["items"],
+                         "actor_kind": event.actor_kind, "actor_ref": event.actor_ref,
+                         "method": event.method, "path": event.path,
+                         "event_kind": event.event_kind, "outcome": event.outcome,
+                         "scope_kind": event.scope_kind, "scope_id": event.scope_id,
+                         "audit_event_id": event.id},
+            )
             return result
 
     def _effective_credit_pack_items_from_session(
@@ -535,6 +619,62 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def _assert_commercial_order_replay(
+        self,
+        *,
+        repository: Any,
+        order: PaymentOrder,
+        account_id: str,
+        site_id: str | None,
+        provider: str,
+        purchase_kind: str,
+        item_id: str,
+        audit_context: ServiceAuditContext | None,
+    ) -> None:
+        metadata = order.metadata_json if isinstance(order.metadata_json, dict) else {}
+        pack = metadata.get("credit_pack")
+        stored_item = (
+            (pack.get("pack_id") if isinstance(pack, dict) else None)
+            if purchase_kind == "credit_pack"
+            else metadata.get("offer_id")
+        )
+        matches = (
+            order.account_id == account_id
+            and str(order.site_id or "") == str(site_id or "").strip()
+            and order.provider == provider
+            and metadata.get("purchase_kind") == purchase_kind
+            and stored_item == item_id
+        )
+        if audit_context is not None and audit_context.request_fingerprint:
+            stored_fingerprint = metadata.get("portal_request_fingerprint")
+            if stored_fingerprint:
+                matches = matches and stored_fingerprint == audit_context.request_fingerprint
+            else:
+                # Legacy orders predate durable fingerprints. Require the original
+                # route as well as the semantic order scope before safe replay.
+                events = repository.list_service_audit_events(
+                    idempotency_key=audit_context.idempotency_key,
+                    scope_id=(
+                        metadata.get("subscription_order_id")
+                        if purchase_kind == "subscription_plan"
+                        else order.order_id
+                    ),
+                    outcome="succeeded",
+                    limit=1,
+                )
+                event = events[0] if events else None
+                matches = (
+                    matches
+                    and event is not None
+                    and event.path == audit_context.path
+                    and event.method == audit_context.method
+                )
+        if not matches:
+            raise CommercialConflictError(
+                "portal.idempotency_conflict",
+                "Idempotency-Key was already used for a different order request",
+            )
+
     def create_credit_pack_payment_order(
         self,
         *,
@@ -543,6 +683,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         provider: str = "alipay",
         site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
+        new_order_guard: Callable[[], None] | None = None,
+        replay_only: bool = False,
     ) -> dict[str, object]:
         service = cast(Any, self)
         normalized_provider = self._normalize_payment_provider(provider)
@@ -553,7 +695,25 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             if idempotency_key:
                 existing = repository.get_payment_order_by_idempotency_key(idempotency_key)
                 if existing is not None:
+                    service._assert_commercial_order_replay(
+                        repository=repository,
+                        order=existing,
+                        account_id=account_id,
+                        site_id=site_id,
+                        provider=normalized_provider,
+                        purchase_kind="credit_pack",
+                        item_id=pack_id,
+                        audit_context=audit_context,
+                    )
                     return self._serialize_credit_pack_payment_order(existing)
+            if replay_only:
+                raise CommercialConflictError(
+                    "portal.idempotency_indeterminate",
+                    "The original Portal request requires reconciliation",
+                )
+            self._assert_commercial_sales_available()
+            if new_order_guard is not None:
+                new_order_guard()
             if repository.get_account(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -599,6 +759,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "credit_expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
                 "grant_policy": "payment_success_grants_paid_credit_until_expiry",
             }
+            if audit_context is not None and audit_context.request_fingerprint:
+                metadata["portal_request_fingerprint"] = audit_context.request_fingerprint
             gateway = get_payment_gateway_provider(
                 normalized_provider,
                 config=self._payment_gateway_runtime_config(normalized_provider),
@@ -1069,9 +1231,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
         except CommercialServiceError as error:
             status = (
-                PAYMENT_REFUND_STATUS_UNKNOWN
-                if "status_unknown" in error.error_code
-                else PAYMENT_REFUND_STATUS_FAILED
+                PAYMENT_REFUND_STATUS_FAILED
+                if isinstance(error, PaymentGatewayRefundRejectedError)
+                else PAYMENT_REFUND_STATUS_UNKNOWN
             )
             self._record_payment_refund_gateway_outcome(
                 refund_id=refund_id,
@@ -1136,8 +1298,14 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
     ) -> None:
         service = cast(Any, self)
         with get_session(service.database_url) as session:
-            refund = CommercialRepository(session).get_payment_refund(refund_id)
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund(refund_id)
             if refund is None:
+                return
+            repository.get_payment_order_for_update(refund.order_id)
+            session.refresh(refund)
+            # A callback/reconciliation may have confirmed success during HTTP IO.
+            if refund.status == PAYMENT_REFUND_STATUS_SUCCEEDED:
                 return
             refund.status = status
             if status == PAYMENT_REFUND_STATUS_FAILED:
@@ -1178,6 +1346,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_order_not_found",
                     f"payment order '{refund.order_id}' was not found",
                 )
+            session.refresh(refund)
             event = self._record_payment_event_once(
                 repository=repository,
                 provider=refund.provider,
@@ -1213,8 +1382,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             return self._serialize_payment_refund(refund)
 
     def reconcile_payment_refund(self, *, refund_id: str) -> dict[str, object]:
-        refund = self.get_payment_refund(refund_id=refund_id)
-        status = str(refund.get("status") or "")
+        result = self._reconcile_payment_refund_once(refund_id=refund_id)
+        refund = result["refund"]
+        status = str(refund.get("status") or "") if isinstance(refund, dict) else ""
         return {
             "refund": refund,
             "reconciliation": {
@@ -1222,14 +1392,282 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     PAYMENT_REFUND_STATUS_REQUESTED,
                     PAYMENT_REFUND_STATUS_UNKNOWN,
                 },
-                "stable_external_refund_no": str(refund.get("external_refund_no") or ""),
-                "next_action": (
-                    "query_provider_or_replay_refund_callback"
-                    if status in {PAYMENT_REFUND_STATUS_REQUESTED, PAYMENT_REFUND_STATUS_UNKNOWN}
-                    else "none"
-                ),
+                "stable_external_refund_no": str(
+                    refund.get("external_refund_no") or ""
+                ) if isinstance(refund, dict) else "",
+                "next_action": str(result.get("next_action") or "none"),
+                "outcome": str(result.get("outcome") or ""),
             },
         }
+
+    def reconcile_payment_refunds(
+        self,
+        *,
+        limit: int = PAYMENT_REFUND_RECONCILIATION_BATCH_SIZE,
+    ) -> dict[str, object]:
+        service = cast(Any, self)
+        bounded_limit = max(1, min(int(limit), 100))
+        with get_session(service.database_url) as session:
+            refunds = CommercialRepository(session).list_payment_refunds_for_reconciliation(
+                limit=bounded_limit,
+                now=service.now_factory(),
+                max_attempts=service.settings.payment_refund_reconciliation_max_attempts,
+            )
+            refund_ids = [refund.refund_id for refund in refunds]
+        results: list[dict[str, object]] = []
+        for refund_id in refund_ids:
+            try:
+                result = self._reconcile_payment_refund_once(refund_id=refund_id)
+            except CommercialServiceError as error:
+                results.append(
+                    {
+                        "refund_id": refund_id,
+                        "outcome": "error",
+                        "error_code": error.error_code,
+                    }
+                )
+            except Exception:
+                results.append(
+                    {
+                        "refund_id": refund_id,
+                        "outcome": "error",
+                        "error_code": "service.payment_refund_query_failed",
+                    }
+                )
+            else:
+                refund_payload = result.get("refund")
+                results.append(
+                    {
+                        "refund_id": refund_id,
+                        "outcome": result.get("outcome", "unknown"),
+                        "status": (
+                            str(refund_payload.get("status") or "")
+                            if isinstance(refund_payload, dict)
+                            else ""
+                        ),
+                    }
+                )
+        return {
+            "scanned": len(refund_ids),
+            "succeeded": sum(1 for item in results if item["outcome"] == "succeeded"),
+            "unknown": sum(1 for item in results if item["outcome"] == "unknown"),
+            "skipped": sum(1 for item in results if item["outcome"] == "skipped"),
+            "errors": sum(1 for item in results if item["outcome"] == "error"),
+            "items": results,
+        }
+
+    def _reconcile_payment_refund_once(self, *, refund_id: str) -> dict[str, object]:
+        service = cast(Any, self)
+        now = service.now_factory()
+        max_attempts = int(
+            getattr(service.settings, "payment_refund_reconciliation_max_attempts", None)
+            or PAYMENT_REFUND_RECONCILIATION_MAX_ATTEMPTS
+        )
+        with get_session(service.database_url) as session:
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund_for_update(refund_id)
+            if refund is None:
+                raise CommercialNotFoundError(
+                    "service.payment_refund_not_found",
+                    f"payment refund '{refund_id}' was not found",
+                )
+            if refund.status not in {
+                PAYMENT_REFUND_STATUS_REQUESTED,
+                PAYMENT_REFUND_STATUS_UNKNOWN,
+            }:
+                return {
+                    "refund": self._serialize_payment_refund(refund),
+                    "outcome": "skipped",
+                    "next_action": "none",
+                }
+            metadata = dict(refund.metadata_json or {})
+            state = metadata.get(PAYMENT_REFUND_RECONCILIATION_METADATA_KEY)
+            reconciliation = dict(state) if isinstance(state, dict) else {}
+            next_attempt_at = self._normalize_payment_order_datetime(
+                self._parse_payment_refund_reconciliation_time(
+                    reconciliation.get("next_attempt_at")
+                )
+            )
+            lease_expires_at = self._normalize_payment_order_datetime(
+                self._parse_payment_refund_reconciliation_time(
+                    reconciliation.get("lease_expires_at")
+                )
+            )
+            if next_attempt_at is not None and now < next_attempt_at:
+                return {
+                    "refund": self._serialize_payment_refund(refund),
+                    "outcome": "skipped",
+                    "next_action": "wait_until_scheduled",
+                }
+            if lease_expires_at is not None and now < lease_expires_at:
+                return {
+                    "refund": self._serialize_payment_refund(refund),
+                    "outcome": "skipped",
+                    "next_action": "wait_for_existing_query",
+                }
+            attempts = int(reconciliation.get("attempts") or 0)
+            if attempts >= max_attempts:
+                reconciliation["exhausted"] = True
+                metadata[PAYMENT_REFUND_RECONCILIATION_METADATA_KEY] = reconciliation
+                refund.metadata_json = metadata
+                session.commit()
+                return {
+                    "refund": self._serialize_payment_refund(refund),
+                    "outcome": "skipped",
+                    "next_action": "manual_review",
+                }
+            attempts += 1
+            reconciliation.update(
+                {
+                    "attempts": attempts,
+                    "last_attempt_at": service._serialize_datetime(now),
+                    "lease_expires_at": service._serialize_datetime(
+                        now + timedelta(minutes=10)
+                    ),
+                    "next_attempt_at": "",
+                }
+            )
+            metadata[PAYMENT_REFUND_RECONCILIATION_METADATA_KEY] = reconciliation
+            refund.metadata_json = metadata
+            order = repository.get_payment_order(refund.order_id)
+            if order is None:
+                raise CommercialNotFoundError(
+                    "service.payment_order_not_found",
+                    f"payment order '{refund.order_id}' was not found",
+                )
+            request = PaymentGatewayRefundQueryRequest(
+                provider=refund.provider,
+                refund_id=refund.external_refund_no or refund.refund_id,
+                order_id=order.external_order_no or order.order_id,
+                amount=float(refund.amount),
+                currency=refund.currency,
+                metadata=metadata,
+            )
+            session.commit()
+
+        try:
+            gateway = get_payment_gateway_provider(
+                request.provider,
+                config=self._payment_gateway_runtime_config(request.provider),
+            )
+            query = gateway.query_refund(request)
+        except CommercialServiceError as error:
+            return self._record_payment_refund_query_unknown(
+                refund_id=refund_id,
+                error_code=error.error_code,
+                now=now,
+                max_attempts=max_attempts,
+            )
+        except Exception:
+            return self._record_payment_refund_query_unknown(
+                refund_id=refund_id,
+                error_code="service.payment_refund_query_failed",
+                now=now,
+                max_attempts=max_attempts,
+            )
+        if query.status != "succeeded":
+            return self._record_payment_refund_query_unknown(
+                refund_id=refund_id,
+                error_code="service.payment_refund_query_status_unknown",
+                now=now,
+                max_attempts=max_attempts,
+            )
+        if (
+            query.provider != request.provider
+            or query.external_refund_no != request.refund_id
+            or query.amount is None
+            or round(float(query.amount), 6) != round(float(request.amount), 6)
+        ):
+            return self._record_payment_refund_query_unknown(
+                refund_id=refund_id,
+                error_code="service.payment_refund_query_amount_mismatch",
+                now=now,
+                max_attempts=max_attempts,
+            )
+        result = self.mark_payment_refund_succeeded(
+            refund_id=refund_id,
+            provider_refund_no=query.provider_refund_no,
+            provider_event_id=f"{query.provider}:refund-query:{refund_id}:{query.provider_refund_no}",
+            succeeded_at=now,
+            raw_event=query.provider_payload,
+            audit_context=ServiceAuditContext(
+                trace_id=f"refund-query:{refund_id}",
+                idempotency_key=f"refund-query:{query.provider}:{refund_id}:{query.provider_refund_no}",
+                method="POST",
+                path="/internal/workers/payment-refund-reconciliation",
+                actor_kind="system_worker",
+                actor_ref="payment_refund_reconciliation",
+            ),
+        )
+        return {"refund": result["refund"], "outcome": "succeeded", "next_action": "none"}
+
+    def _record_payment_refund_query_unknown(
+        self,
+        *,
+        refund_id: str,
+        error_code: str,
+        now: datetime,
+        max_attempts: int,
+    ) -> dict[str, object]:
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund_for_update(refund_id)
+            if refund is None:
+                raise CommercialNotFoundError(
+                    "service.payment_refund_not_found",
+                    f"payment refund '{refund_id}' was not found",
+                )
+            if refund.status == PAYMENT_REFUND_STATUS_SUCCEEDED:
+                return {
+                    "refund": self._serialize_payment_refund(refund),
+                    "outcome": "succeeded",
+                    "next_action": "none",
+                }
+            metadata = dict(refund.metadata_json or {})
+            raw_reconciliation = metadata.get(PAYMENT_REFUND_RECONCILIATION_METADATA_KEY)
+            reconciliation = (
+                dict(raw_reconciliation) if isinstance(raw_reconciliation, dict) else {}
+            )
+            attempts = int(reconciliation.get("attempts") or 0)
+            if attempts >= max_attempts:
+                next_attempt_at = None
+                reconciliation["exhausted"] = True
+            else:
+                delay = min(
+                    PAYMENT_REFUND_RECONCILIATION_MAX_DELAY,
+                    PAYMENT_REFUND_RECONCILIATION_BASE_DELAY * (2 ** max(0, attempts - 1)),
+                )
+                next_attempt_at = now + delay
+            reconciliation.update(
+                {
+                    "last_error_code": error_code,
+                    "last_error_at": service._serialize_datetime(now),
+                    "lease_expires_at": "",
+                    "next_attempt_at": service._serialize_datetime(next_attempt_at),
+                }
+            )
+            metadata[PAYMENT_REFUND_RECONCILIATION_METADATA_KEY] = reconciliation
+            refund.status = PAYMENT_REFUND_STATUS_UNKNOWN
+            refund.metadata_json = metadata
+            session.commit()
+            serialized = self._serialize_payment_refund(refund)
+        return {
+            "refund": serialized,
+            "outcome": "unknown",
+            "next_action": "manual_review" if next_attempt_at is None else "retry_scheduled",
+        }
+
+    @staticmethod
+    def _parse_payment_refund_reconciliation_time(value: object) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
     def process_payment_gateway_refund_callback(
         self,
@@ -1609,7 +2047,8 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "credit pack payment order metadata is invalid",
             )
         ai_credits = float(cast(int, pack["ai_credits"]))
-        if refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED:
+        newly_succeeded = refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED
+        if newly_succeeded:
             refund.status = PAYMENT_REFUND_STATUS_SUCCEEDED
             refund.provider_refund_no = (
                 str(provider_refund_no or "").strip() or refund.provider_refund_no
@@ -1656,10 +2095,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             },
             created_at=refund.succeeded_at or succeeded_at,
         )
-        repository.refund_paid_credit_grant(
-            payment_order_id=order.order_id,
-            ai_credits=refunded_ai_credits,
-        )
+        if newly_succeeded:
+            repository.refund_paid_credit_grant(
+                payment_order_id=order.order_id,
+                ai_credits=refunded_ai_credits,
+            )
         payload = {
             "order": self._serialize_credit_pack_payment_order(order),
             "refund": self._serialize_payment_refund(refund),

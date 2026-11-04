@@ -1,5 +1,6 @@
+import { readAdminAuditEvidence } from './evidence';
 import { createApiClient } from '@/lib/api-client';
-import type { AdminAuditListPayload, AdminAuditQueryData } from './types';
+import type { AdminAuditQueryData } from './types';
 
 const adminAuditClient = createApiClient({
   cache: 'default',
@@ -11,10 +12,10 @@ export async function fetchAdminAuditEvents(
   signal: AbortSignal
 ): Promise<AdminAuditQueryData> {
   const data = (
-    await adminAuditClient.request<AdminAuditListPayload>(
+    await adminAuditClient.request<unknown>(
       `/api/admin/audit-events?${requestKey}`,
       { cache: 'no-store', signal }
     )
   ).data;
-  return { ...data, requestKey, loadedAt: Date.now() };
+  return { ...readAdminAuditEvidence(data, requestKey), requestKey, loadedAt: Date.now() };
 }

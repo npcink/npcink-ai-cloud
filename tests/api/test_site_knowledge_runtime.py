@@ -347,6 +347,186 @@ def _status_payload() -> dict[str, object]:
     }
 
 
+def test_typed_delete_and_fresh_status_through_signed_runtime(tmp_path: Path) -> None:
+    """Real ingress, queue, worker, replay and SQL; no external provider calls."""
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_comments_enabled": True}
+    )
+    worker = RuntimeService(
+        database_url, settings=settings, providers={}, runtime_queue=runtime_queue
+    )
+    sync = _sync_payload()
+    sync["input"]["documents"][0]["post_type"] = "page"
+    sync["input"]["comments"] = [
+        {
+            "comment_id": 987,
+            "post_id": 123,
+            "comment_status": "approved",
+            "content_excerpt": "Public associated comment evidence",
+            "content_hash": "comment-987",
+        }
+    ]
+    _execute(client, sync, idempotency_key="typed-initial-sync")
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+
+    def presence(key: str, *, site_id: str = "site_alpha", key_id: str = "key_default"):
+        payload = _status_payload()
+        payload["input"]["source_items"] = [
+            {"source_type": "page", "source_id": 123},
+            {"source_type": "post", "source_id": 123},
+            {"source_type": "comment", "source_id": 987},
+        ]
+        response = _execute(client, payload, idempotency_key=key, site_id=site_id, key_id=key_id)
+        assert response["status_code"] == 200
+        return response["json"]["data"]["result"]["source_presence"]
+
+    before = presence("typed-status-before")
+    assert before["storage_scope"] == "relational_index" and before["requested_count"] == 3
+    assert before["items"][0]["public_document_present"]
+    assert before["items"][0]["associated_comment_document_count"] == 1
+    assert before["items"][1]["document_present"] is False
+    beta = presence("typed-beta-status", site_id="site_beta", key_id="key_beta")
+    assert not any(item["document_present"] for item in beta["items"])
+
+    deletion = _sync_payload()
+    deletion["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "delete",
+        "source_items": [{"source_type": "page", "source_id": 123}],
+        "operation_source": "admin_selected_delete",
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+    d0 = _execute(client, deletion, idempotency_key="typed-D0")["json"]["data"]
+    assert d0["idempotent_replay"] is False
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    after = presence("typed-status-after")
+    assert all(
+        not item["document_present"] and item["stored_chunk_count"] == 0 for item in after["items"]
+    )
+    assert after["items"][0]["associated_comment_stored_chunk_count"] == 0
+
+    # A later, already-dispatched producer can rebuild the same source. The
+    # existing replay contract requires a distinct compensation attempt key.
+    _execute(client, sync, idempotency_key="typed-old-writer-finishes")
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    assert presence("typed-reinserted")["items"][0]["public_document_present"]
+    replay_d0 = _execute(
+        client, deletion, idempotency_key="typed-D0", nonce="typed-D0-replay-nonce"
+    )["json"]["data"]
+    assert replay_d0["run_id"] == d0["run_id"] and replay_d0["idempotent_replay"] is True
+    assert worker.process_next_queued_run(timeout_seconds=0) is None
+    assert presence("typed-after-d0-replay")["items"][0]["document_present"]
+    c1 = _execute(client, deletion, idempotency_key="typed-C1")["json"]["data"]
+    assert c1["run_id"] != d0["run_id"] and c1["idempotent_replay"] is False
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    final = presence("typed-after-c1")
+    assert final["items"][0]["document_present"] is False
+    assert final["items"][0]["stored_chunk_count"] == 0
+    assert final["items"][0]["associated_comment_document_count"] == 0
+    assert final["items"][0]["associated_comment_stored_chunk_count"] == 0
+    replay_c1 = _execute(
+        client, deletion, idempotency_key="typed-C1", nonce="typed-C1-replay-nonce"
+    )["json"]["data"]
+    assert replay_c1["run_id"] == c1["run_id"] and replay_c1["idempotent_replay"] is True
+    assert worker.process_next_queued_run(timeout_seconds=0) is None
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(ProviderCallRecord))) == []
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
+
+
+@pytest.mark.parametrize(
+    "bad_input",
+    [
+        {"source_items": []},
+        {"source_items": [{"source_type": "post", "source_id": True}]},
+        {"source_items": [{"source_type": "text", "source_id": 123}]},
+        {"source_items": [{"source_type": "page", "source_id": 123}], "post_ids": []},
+    ],
+)
+def test_typed_invalid_delete_is_rejected_at_ingress_without_queue_or_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_input: dict[str, object]
+) -> None:
+    database_url, settings, queue, client = _build_client(tmp_path)
+    calls = []
+    for name in ("delete_site_index", "delete_post_indexes", "delete_source_index"):
+        monkeypatch.setattr(SiteKnowledgeRepository, name, lambda *a, **k: calls.append(a))
+    payload = _sync_payload()
+    payload["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "delete",
+        "write_posture": "suggestion_only",
+        **bad_input,
+    }
+    result = _execute(client, payload, idempotency_key="typed-invalid")
+    assert result["status_code"] == 400
+    assert result["json"]["error_code"] in {
+        "site_knowledge.source_items_invalid",
+        "site_knowledge.source_selector_conflict",
+    }
+    assert calls == []
+    assert (
+        RuntimeService(
+            database_url, settings=settings, providers={}, runtime_queue=queue
+        ).process_next_queued_run(timeout_seconds=0)
+        is None
+    )
+
+
+@pytest.mark.parametrize("failure_stage", ["delete", "probe"])
+def test_typed_delete_worker_failure_is_failed_not_completed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_stage: str
+) -> None:
+    from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
+
+    database_url, settings, queue, client = _build_client(tmp_path)
+    worker = RuntimeService(database_url, settings=settings, providers={}, runtime_queue=queue)
+    _execute(client, _sync_payload(), idempotency_key="typed-failure-seed")
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    calls = []
+
+    class FailingBackend:
+        def has_source_index(self, *args):
+            calls.append("probe")
+            if failure_stage == "probe":
+                raise SiteKnowledgeBackendError("site_knowledge.zilliz_probe_failed", "synthetic")
+            return False
+
+        def delete_source_index(self, *args):
+            calls.append("delete")
+            raise SiteKnowledgeBackendError("site_knowledge.zilliz_delete_failed", "synthetic")
+
+    monkeypatch.setattr(
+        "app.domain.site_knowledge.service.build_vector_backend", lambda settings: FailingBackend()
+    )
+    payload = _sync_payload()
+    payload["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "delete",
+        "source_items": [{"source_type": "post", "source_id": 123}],
+        "write_posture": "suggestion_only",
+    }
+    queued = _execute(client, payload, idempotency_key="typed-failure-delete")["json"]["data"]
+    processed = worker.process_next_queued_run(timeout_seconds=0)
+    assert processed["run_id"] == queued["run_id"] and processed["status"] == "failed"
+    failed = worker.get_run(queued["run_id"], site_id="site_alpha")
+    assert failed["status"] == "failed"
+    assert failed["error_code"] == f"site_knowledge.zilliz_{failure_stage}_failed"
+    if failure_stage == "delete":
+        assert calls == ["probe", "delete"]
+        assert worker.get_run_result(queued["run_id"], site_id="site_alpha")["status"] == "failed"
+    else:
+        from app.domain.runtime.errors import RuntimeResultNotReadyError
+
+        assert calls == ["probe"]
+        with pytest.raises(RuntimeResultNotReadyError):
+            worker.get_run_result(queued["run_id"], site_id="site_alpha")
+    with get_session(database_url) as session:
+        assert SiteKnowledgeRepository(session).source_presence(
+            site_id="site_alpha", source_items=[("post", 123)]
+        )[0]["document_present"]
+
+
 def test_site_knowledge_search_input_helpers_bound_user_controlled_lists() -> None:
     assert (
         _normalize_search_query("  AI   摘要  " + ("x" * 900))
@@ -733,7 +913,11 @@ def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> No
 
 
 def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     sync_result = _execute(client, _sync_payload(), idempotency_key="sync-then-search")
     run_id = sync_result["json"]["data"]["run_id"]
 
@@ -770,7 +954,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     worker = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     )
     processed = worker.process_next_queued_run(timeout_seconds=0)
@@ -783,7 +967,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     worker_result = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
     ).get_run_result(run_id, site_id="site_alpha")
     assert worker_result["result"]["contract_version"] == "site_knowledge_sync.v1"
     assert worker_result["result"]["ownership"]["index_lifecycle_owner"] == "cloud_service"
@@ -811,7 +995,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     search_result = _execute(
         client,
         _search_payload(
-            "semantic search internal links",
+            "Cloud managed site knowledge",
             source_passages=[
                 "Editors use Cloud managed site knowledge before applying reviewed links."
             ],
@@ -928,7 +1112,11 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
 def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
     tmp_path: Path,
 ) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     payload = _sync_payload()
     sync_input = payload["input"]
     assert isinstance(sync_input, dict)
@@ -960,7 +1148,7 @@ def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
     worker = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     )
     assert worker.process_next_queued_run(timeout_seconds=0) is not None
@@ -1309,12 +1497,16 @@ def test_search_intents_return_product_workflow_metadata(tmp_path: Path) -> None
 def test_search_intents_support_copilot_duplicate_and_cluster_workflows(
     tmp_path: Path,
 ) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     _execute(client, _sync_payload(), idempotency_key="high-value-workflows-sync")
     RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     ).process_next_queued_run(timeout_seconds=0)
 
@@ -2059,7 +2251,7 @@ def test_site_knowledge_quota_settings_validate_positive_values(tmp_path: Path) 
         )
 
 
-def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None:
+def test_targeted_refresh_preserves_missing_public_document(tmp_path: Path) -> None:
     database_url, settings, runtime_queue, client = _build_client(tmp_path)
 
     initial_result = _execute(client, _sync_payload(), idempotency_key="targeted-prune-initial")
@@ -2096,10 +2288,10 @@ def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None
         providers={},
     ).get_run_result(refresh_result["json"]["data"]["run_id"], site_id="site_alpha")
 
-    assert worker_result["result"]["sync"]["deleted_entries"] > 0
+    assert worker_result["result"]["sync"]["deleted_entries"] == 0
     assert worker_result["result"]["sync"]["indexed_documents"] == 0
     with get_session(database_url) as session:
-        assert list(session.query(SiteKnowledgeChunk).all()) == []
+        assert {chunk.post_id for chunk in session.query(SiteKnowledgeChunk).all()} == {123}
 
 
 def test_comments_are_opt_in_and_source_filtered(tmp_path: Path) -> None:
@@ -2395,3 +2587,24 @@ def test_sync_uses_cloud_managed_siliconflow_embedding_provider(tmp_path: Path) 
         chunk = session.query(SiteKnowledgeChunk).one()
     assert chunk.embedding_model == "siliconflow:BAAI/bge-m3"
     assert chunk.embedding_json == [0.25] * 1024
+
+
+@pytest.mark.parametrize("intent", ["related_content", "internal_links"])
+def test_recommendations_abstain_healthy_without_task_evidence(tmp_path: Path, intent: str) -> None:
+    database_url, settings, queue, client = _build_client(tmp_path)
+    _execute(client, _sync_payload(), idempotency_key="abstention-sync")
+    RuntimeService(
+        database_url, settings=settings, providers={}, runtime_queue=queue
+    ).process_next_queued_run(timeout_seconds=0)
+    response = _execute(
+        client,
+        _search_payload("夏日奶茶限时促销", intent=intent),
+        idempotency_key="abstention-search",
+    )
+    assert response["status_code"] == 200
+    result = response["json"]["data"]["result"]
+    assert result["status"] == "ready"
+    assert result["results"] == []
+    assert result["result_grouping"]["ranking_version"] == intent + ".v2"
+    assert result["result_grouping"]["recommendation_quality"]["abstained"] is True
+    assert result["direct_wordpress_write"] is False

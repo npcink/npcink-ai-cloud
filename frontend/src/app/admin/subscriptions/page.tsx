@@ -1,8 +1,11 @@
 'use client';
 
-import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FormEvent, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
+import { readSubscriptionQueue, subscriptionSnapshotCost, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -14,6 +17,8 @@ import {
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
+import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHint';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
@@ -24,6 +29,7 @@ import {
   buildAdminDetailHref,
   buildAdminQueueReturnTo,
 } from '@/lib/admin-return-context';
+import { useAdminQueueKeyboard } from '@/features/admin/useAdminQueueKeyboard';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 interface Subscription {
@@ -42,7 +48,7 @@ interface Subscription {
   current_period_start: string;
   current_period_end: string;
   billing_summary?: {
-    total_cost: number;
+    total_cost: number | null;
     latest_snapshot_id?: string;
   };
   billing_snapshot_status?: {
@@ -58,64 +64,13 @@ interface Subscription {
   };
 }
 
-interface SubscriptionApiItem {
-  subscription?: {
-    subscription_id?: string;
-    account_id?: string;
-    status?: string;
-    plan_id?: string;
-    plan_version_id?: string;
-    current_period_start_at?: string;
-    current_period_end_at?: string;
-  };
-  account?: {
-    account_id?: string;
-    name?: string;
-  };
-  covered_sites?: Array<{
-    site_id?: string;
-    name?: string;
-  }>;
-  coverage?: {
-    site_count?: number;
-    package_alias?: string;
-  };
-  expiry?: {
-    current_period_end_at?: string;
-  };
-  latest_billing_snapshots?: Array<{
-    totals?: {
-      cost?: number;
-    };
-    snapshot_id?: string;
-  }>;
-  billing_snapshot_status?: {
-    status?: string;
-    summary?: string;
-    fresh_site_count?: number;
-    stale_site_count?: number;
-    missing_site_count?: number;
-  };
-  operator_risk?: {
-    level?: string;
-    reason_code?: string;
-  };
-}
-
-interface SubscriptionsPayload {
-  items?: SubscriptionApiItem[];
-  total?: number;
-  summary?: Partial<Record<RiskLevel, number>>;
-}
-
 type QueueSort = 'priority' | 'expiry' | 'customer';
 type RiskLevel = 'critical' | 'warning' | 'monitor' | 'stable';
 type RiskFilter = 'needs_action' | 'all' | RiskLevel;
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const ALLOWED_STATUSES = new Set(['', 'past_due', 'expired', 'trialing', 'active', 'suspended', 'canceled']);
 const ALLOWED_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
-const ALLOWED_RISK_LEVELS = new Set<RiskLevel>(['critical', 'warning', 'monitor', 'stable']);
 const ALLOWED_RISK_FILTERS = new Set<RiskFilter>(['needs_action', 'all', 'critical', 'warning', 'monitor', 'stable']);
 const subscriptionsClient = createApiClient({ idempotencyPrefix: 'admin_subscriptions' });
 
@@ -126,49 +81,44 @@ function daysUntil(raw?: string): number | null {
   return Math.ceil(ms / 86400000);
 }
 
-function normalizeSubscription(item: SubscriptionApiItem): Subscription {
-  const subscription = item.subscription || {};
-  const account = item.account || {};
-  const sites = Array.isArray(item.covered_sites) ? item.covered_sites : [];
-  const snapshots = Array.isArray(item.latest_billing_snapshots) ? item.latest_billing_snapshots : [];
+function normalizeSubscription(item: SubscriptionQueueItem): Subscription {
+  const subscription = item.subscription;
+  const account = item.account;
+  const sites = item.covered_sites;
+  const snapshots = item.latest_billing_snapshots;
 
   return {
-    subscription_id: subscription.subscription_id || '',
-    account_id: subscription.account_id || account.account_id || '',
-    account_name: account.name || '',
-    site_count: Number(item.coverage?.site_count || sites.length || 0),
+    subscription_id: subscription.subscription_id,
+    account_id: subscription.account_id,
+    account_name: account ? customerLabel(account, '') : '',
+    site_count: item.coverage.site_count,
     covered_sites: sites
       .map((site) => ({
-        site_id: String(site.site_id || ''),
-        name: String(site.name || site.site_id || ''),
-      }))
-      .filter((site) => site.site_id),
-    status: subscription.status || 'unknown',
-    plan_id: subscription.plan_id || '',
-    plan_version_id: subscription.plan_version_id || '',
-    package_alias: item.coverage?.package_alias || '',
+        site_id: site.site_id,
+        name: site.name || site.site_id,
+      })),
+    status: subscription.status,
+    plan_id: subscription.plan_id,
+    plan_version_id: subscription.plan_version_id,
+    package_alias: item.coverage.package_alias,
     current_period_start: subscription.current_period_start_at || '',
-    current_period_end: subscription.current_period_end_at || item.expiry?.current_period_end_at || '',
+    current_period_end: subscription.current_period_end_at || '',
     billing_summary: {
-      total_cost: snapshots.reduce((sum, snapshot) => sum + Number(snapshot.totals?.cost || 0), 0),
+      total_cost: subscriptionSnapshotCost(item),
       latest_snapshot_id: snapshots[0]?.snapshot_id,
     },
     billing_snapshot_status: {
-      status: item.billing_snapshot_status?.status || 'unknown',
-      summary: item.billing_snapshot_status?.summary || '',
-      fresh_site_count: Number(item.billing_snapshot_status?.fresh_site_count || 0),
-      stale_site_count: Number(item.billing_snapshot_status?.stale_site_count || 0),
-      missing_site_count: Number(item.billing_snapshot_status?.missing_site_count || 0),
+      status: item.billing_snapshot_status.status,
+      summary: item.billing_snapshot_status.summary,
+      fresh_site_count: item.billing_snapshot_status.fresh_site_count,
+      stale_site_count: item.billing_snapshot_status.stale_site_count,
+      missing_site_count: item.billing_snapshot_status.missing_site_count,
     },
     operator_risk: {
-      level: normalizeRiskLevel(item.operator_risk?.level),
-      reason_code: item.operator_risk?.reason_code || 'snapshot_unknown',
+      level: item.operator_risk.level,
+      reason_code: item.operator_risk.reason_code,
     },
   };
-}
-
-function normalizeRiskLevel(value?: string): RiskLevel {
-  return value && ALLOWED_RISK_LEVELS.has(value as RiskLevel) ? (value as RiskLevel) : 'monitor';
 }
 
 function normalizeRiskFilter(value: string | null): RiskFilter {
@@ -219,7 +169,8 @@ function SubscriptionsContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const appliedStatus = normalizeStatus(searchParams.get('status'));
+  const appliedStatusGroup = searchParams.get('status_group') === 'active' ? 'active' : '';
+  const appliedStatus = appliedStatusGroup ? '' : normalizeStatus(searchParams.get('status'));
   const appliedAccountId = searchParams.get('account_id') || '';
   const appliedCustomer = searchParams.get('customer') || '';
   const appliedPlanId = searchParams.get('plan_id') || '';
@@ -241,6 +192,7 @@ function SubscriptionsContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [draftFilters, setDraftFilters] = useState({
     customer: appliedCustomer || appliedAccountId,
     plan_id: appliedPlanId,
@@ -254,6 +206,7 @@ function SubscriptionsContent() {
 
   const requestKey = useMemo(() => {
     const params = new URLSearchParams();
+    if (appliedStatusGroup) params.set('status_group', appliedStatusGroup);
     if (appliedStatus) params.set('status', appliedStatus);
     if (appliedAccountId) params.set('account_id', appliedAccountId);
     if (appliedCustomer) params.set('customer', appliedCustomer);
@@ -264,7 +217,10 @@ function SubscriptionsContent() {
     params.set('limit', String(PAGE_SIZE));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, offset, sort]);
+  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, appliedStatusGroup, offset, sort]);
+
+  const currentRequestKeyRef = useRef(requestKey);
+  useLayoutEffect(() => { currentRequestKeyRef.current = requestKey; }, [requestKey]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
@@ -291,28 +247,27 @@ function SubscriptionsContent() {
     else setIsLoading(true);
 
     try {
-      const payload = (await subscriptionsClient.request<SubscriptionsPayload>(
+      const payload = (await subscriptionsClient.request<unknown>(
         `/api/admin/subscriptions?${requestKey}`
       )).data;
-      const nextItems = (payload.items || []).map(normalizeSubscription);
-      const nextTotal = Number(payload.total ?? nextItems.length);
-      const nextSummary = {
-        critical: Number(payload.summary?.critical || 0),
-        warning: Number(payload.summary?.warning || 0),
-        monitor: Number(payload.summary?.monitor || 0),
-        stable: Number(payload.summary?.stable || 0),
-      };
-      if (mountedRef.current && requestSequenceRef.current === sequence) {
+      const validated = readSubscriptionQueue(payload, requestKey);
+      const nextItems = validated.items.map(normalizeSubscription);
+      const nextTotal = validated.total;
+      const nextSummary = validated.summary;
+      if (mountedRef.current && currentRequestKeyRef.current === requestKey && requestSequenceRef.current === sequence) {
         setSubscriptions(nextItems);
         setTotal(nextTotal);
         setSummary(nextSummary);
         setLoadedAt(new Date());
+        setLoadedRequestKey(requestKey);
         hasLoadedRef.current = true;
         setHasLoaded(true);
       }
     } catch (err) {
-      if (mountedRef.current && requestSequenceRef.current === sequence) {
-        setError(resolveUiErrorMessage(err, t('error.failed_load')));
+      if (mountedRef.current && currentRequestKeyRef.current === requestKey && requestSequenceRef.current === sequence) {
+        setError(err instanceof SubscriptionEvidenceError
+          ? t('admin.subscriptions.evidence_invalid', {}, 'Subscription evidence is incomplete or does not match this request. Retry the read.')
+          : resolveUiErrorMessage(err, t('error.failed_load')));
       }
     } finally {
       if (requestSequenceRef.current === sequence) {
@@ -374,6 +329,30 @@ function SubscriptionsContent() {
       },
     });
 
+  const { keyboardFocus, inspect } = useAdminQueueKeyboard({
+    itemIds: queuedSubscriptions.map((subscription) => subscription.subscription_id),
+    focusedId: focusedSubscriptionId,
+    onFocus: (subscriptionId) => updateQueueUrl({ focus: subscriptionId }),
+    onOpen: (subscriptionId) => router.push(subscriptionDetailHref(subscriptionId)),
+    onClose: () => updateQueueUrl({ focus: null }),
+  });
+
+  // Retained rows, summary and total belong to the last successful request.
+  const loadedOffset = normalizeOffset(new URLSearchParams(loadedRequestKey).get('offset'));
+  const loadedQuery = new URLSearchParams(loadedRequestKey);
+  const requestedQuery = new URLSearchParams(requestKey);
+  loadedQuery.delete('offset');
+  requestedQuery.delete('offset');
+  const isRetainingDifferentQuery = hasLoaded && loadedQuery.toString() !== requestedQuery.toString();
+  const isOutOfRangePage = hasLoaded && total > 0 && loadedOffset >= total && !queuedSubscriptions.length;
+  const changePage = (nextOffset: number) => {
+    if (isRetainingDifferentQuery) return;
+    if (nextOffset === offset) {
+      updateQueueUrl({ focus: null });
+      void loadSubscriptions(true);
+    } else updateQueueUrl({ offset: String(nextOffset), focus: null });
+  };
+
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     updateQueueUrl({
@@ -390,6 +369,7 @@ function SubscriptionsContent() {
     setDraftFilters({ customer: '', plan_id: '', expires_before: '' });
     updateQueueUrl({
       status: null,
+      status_group: null,
       risk: null,
       account_id: null,
       customer: null,
@@ -433,9 +413,9 @@ function SubscriptionsContent() {
     past_due: t('admin.subscriptions.reason_past_due', {}, 'Billing follow-up is already active and may affect service continuity.'),
     expired: t('admin.subscriptions.reason_expired', {}, 'The subscription has ended and needs a renewal or closure decision.'),
     suspended: t('admin.subscriptions.reason_suspended', {}, 'Service is suspended and requires an explicit operator decision.'),
-    snapshot_stale: t('admin.subscriptions.reason_snapshot_stale', {}, 'This period billing statistics need refresh before the account is treated as reconciled.'),
-    snapshot_missing: t('admin.subscriptions.reason_snapshot_missing', {}, 'This period billing statistics are missing for at least one covered site.'),
-    expiring: t('admin.subscriptions.reason_expiring', {}, 'Current period ends soon, so renewal or follow-up should happen before support load increases.'),
+    snapshot_stale: t('admin.subscriptions.reason_snapshot_stale', {}, 'Usage statistics need refresh; this does not establish payment failure or blocked access.'),
+    snapshot_missing: t('admin.subscriptions.reason_snapshot_missing', {}, 'A current site is missing usage statistics; this does not establish payment failure.'),
+    expiring: t('admin.subscriptions.reason_expiring', {}, 'The service period ends soon. Check next-period coverage; this reminder alone does not establish a payment obligation.'),
     trialing: t('admin.subscriptions.reason_trialing', {}, 'Trial coverage is still active and should be checked before converting or ending.'),
     canceled: t('admin.subscriptions.reason_canceled', {}, 'The subscription is canceled and should remain visible until its service posture is closed.'),
     snapshot_unknown: t('admin.subscriptions.reason_snapshot_unknown', {}, 'Billing statistics are not yet classifiable, so the subscription needs monitoring.'),
@@ -445,7 +425,6 @@ function SubscriptionsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.subscriptions.workspace_eyebrow', {}, 'Subscription operations')}
         title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}
         description={t(
           'admin.subscriptions.workspace_desc',
@@ -508,76 +487,80 @@ function SubscriptionsContent() {
       ) : null}
 
       <>
-        <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <BackofficeSectionPanel className="overflow-hidden !p-0">
+          <div className="space-y-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
-                  {t('admin.subscriptions.queue_list_title', {}, 'Customers needing service follow-up')}
+                <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
+                  {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
                 </h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+                <AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}>
+                  <p>
                   {t(
                     'admin.subscriptions.queue_list_desc_v2',
                     {},
                     'Filters, risk classification, and sorting are applied across all matching subscriptions by the service API.'
                   )}
+                  </p>
+                  <div className="mt-2"><AdminQueueKeyboardHint /></div>
+                </AdminHelpTip>
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
+                  {t(
+                    'admin.subscriptions.result_count',
+                    { visible: formatInteger(queuedSubscriptions.length), total: formatInteger(total) },
+                    `${formatInteger(queuedSubscriptions.length)} on this page · ${formatInteger(total)} total`
+                  )}
                 </p>
               </div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">
-                {t(
-                  'admin.subscriptions.result_count',
-                  { visible: formatInteger(queuedSubscriptions.length), total: formatInteger(total) },
-                  `${formatInteger(queuedSubscriptions.length)} on this page · ${formatInteger(total)} total`
-                )}
-              </p>
             </div>
 
+            <div data-ui="subscription-enumerated-filters" className="space-y-2">
+              <div role="group" aria-label={t('admin.subscriptions.risk_filter_label')} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.risk_filter_label')}</span>
+                {riskFilters.map((risk) => (
+                  <BackofficeFilterPill
+                    key={risk}
+                    active={appliedRisk === risk}
+                    aria-pressed={appliedRisk === risk}
+                    onClick={() => updateQueueUrl({ risk, offset: null, focus: null })}
+                  >
+                    {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
+                  </BackofficeFilterPill>
+                ))}
+              </div>
+              <div role="group" aria-label={t('admin.subscriptions.status_filter_label')} className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.status_filter_label')}</span>
+                <BackofficeFilterPill
+                  active={appliedStatusGroup === 'active'}
+                  aria-pressed={appliedStatusGroup === 'active'}
+                  onClick={() => updateQueueUrl({ status_group: 'active', status: null, offset: null, focus: null })}
+                >
+                  {t('admin.subscriptions.active_status_group')}
+                </BackofficeFilterPill>
+                {statusFilters.map((status) => (
+                  <BackofficeFilterPill
+                    key={status || 'all'}
+                    active={!appliedStatusGroup && appliedStatus === status}
+                    aria-pressed={!appliedStatusGroup && appliedStatus === status}
+                    onClick={() => updateQueueUrl({ status: status || null, status_group: null, offset: null, focus: null })}
+                  >
+                    {status ? t(`status.${status}`, undefined, status) : t('admin.subscriptions.all_statuses')}
+                  </BackofficeFilterPill>
+                ))}
+                {appliedStatus && !statusFilters.includes(appliedStatus) ? (
+                  <BackofficeStatusBadge status={appliedStatus} label={t(`status.${appliedStatus}`, undefined, appliedStatus)} />
+                ) : null}
+              </div>
+            </div>
+            {appliedStatusGroup ? <p className="px-1 text-xs text-slate-600 dark:text-slate-300" data-ui="subscription-status-group-scope">{t('admin.subscriptions.active_status_group_scope')}</p> : null}
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}
-              className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(7.5rem,0.72fr)_minmax(7.5rem,0.72fr)_minmax(8rem,0.95fr)_minmax(7.5rem,0.82fr)_minmax(8.5rem,0.88fr)_minmax(8rem,0.78fr)_auto]"
+              className="grid gap-x-3 gap-y-2 md:grid-cols-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.9fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_auto]"
             >
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.risk_filter_label', {}, 'Follow-up state')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedRisk}
-                  onChange={(event) => updateQueueUrl({
-                    risk: normalizeRiskFilter(event.target.value),
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {riskFilters.map((risk) => (
-                    <option key={risk} value={risk}>
-                      {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.status_filter_label', {}, 'Subscription status')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={appliedStatus}
-                  onChange={(event) => updateQueueUrl({
-                    status: normalizeStatus(event.target.value) || null,
-                    offset: null,
-                    focus: null,
-                  })}
-                >
-                  {statusFilters.map((status) => (
-                    <option key={status || 'all'} value={status}>
-                      {status ? t(`status.${status}`, undefined, status) : t('common.all', {}, 'All')}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
+              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
                   {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
                 </span>
@@ -589,7 +572,7 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
+              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
                   {t('common.plan', {}, 'Package')}
                 </span>
@@ -601,7 +584,7 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, plan_id: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
+              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
                   {t('admin.expires_before')}
                 </span>
@@ -612,22 +595,22 @@ function SubscriptionsContent() {
                   onChange={(event) => setDraftFilters((current) => ({ ...current, expires_before: event.target.value }))}
                 />
               </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
+              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
                   {t('admin.subscriptions.sort_label', {}, 'Sort')}
                 </span>
                 <select
                   className="input w-full"
                   value={sort}
-                  onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), focus: null })}
+                  onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), offset: null, focus: null })}
                 >
                   <option value="priority">{t('admin.subscriptions.sort_priority', {}, 'Highest risk')}</option>
                   <option value="expiry">{t('admin.subscriptions.sort_expiry', {}, 'Ending soon')}</option>
                   <option value="customer">{t('admin.subscriptions.sort_customer', {}, 'Customer name')}</option>
                 </select>
               </label>
-              <div className="flex items-end gap-2 md:col-span-2 xl:col-span-1">
-                <button type="submit" className="btn btn-primary flex-1 2xl:flex-none">
+              <div className="flex items-end justify-end gap-2 md:col-span-2 xl:col-span-1">
+                <button type="submit" className="btn btn-primary whitespace-nowrap">
                   {t('admin.subscriptions.apply_filters', {}, 'Apply')}
                 </button>
                 <span
@@ -688,7 +671,7 @@ function SubscriptionsContent() {
                     role="listitem"
                     data-ui="subscription-queue-item"
                     className={cn(
-                      'grid gap-4 border-b border-slate-200/80 px-5 py-5 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(10rem,0.85fr)_minmax(13rem,1.15fr)] md:items-center md:px-6',
+                      'grid gap-3 border-b border-slate-200/80 px-4 py-3 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(10rem,0.85fr)_minmax(13rem,1.15fr)] md:items-center',
                       riskLevel === 'stable'
                         ? '2xl:grid-cols-[minmax(14rem,1.4fr)_minmax(9rem,0.8fr)_auto]'
                         : '2xl:grid-cols-[minmax(11rem,1fr)_minmax(13rem,1.35fr)_minmax(9rem,0.8fr)_auto]',
@@ -697,12 +680,13 @@ function SubscriptionsContent() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate font-semibold text-slate-950 dark:text-white">
+                        <h3 className="break-words font-semibold text-slate-950 dark:text-white [overflow-wrap:anywhere]">
                           {customerLabel}
                         </h3>
                         <BackofficeStatusBadge
                           status={subscription.status}
                           label={t(`status.${subscription.status}`, undefined, subscription.status)}
+                          className="normal-case tracking-normal whitespace-nowrap"
                         />
                       </div>
                       <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{packageLabel}</p>
@@ -710,25 +694,27 @@ function SubscriptionsContent() {
 
                     <div className={riskLevel === 'stable' ? 'hidden' : 'min-w-0'}>
                       <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(riskLevel))}>
-                        {t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
+                        {subscription.operator_risk.reason_code.startsWith('snapshot_')
+                          ? t('admin.customer_ops.statistics_maintenance', {}, 'Statistics maintenance')
+                          : t(`admin.subscriptions.risk_${riskLevel}`, undefined, riskLevel)}
                       </span>
                       <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{riskReason}</p>
                     </div>
 
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-600 dark:text-slate-300 lg:grid-cols-1">
+                    <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                       <div className="flex justify-between gap-3">
-                        <dt>{t('common.sites', {}, 'Sites')}</dt>
+                        <dt className="shrink-0">{t('common.sites', {}, 'Sites')}</dt>
                         <dd className="font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(subscription.site_count)}</dd>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <dt>{t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot')}</dt>
-                        <dd className="font-semibold text-slate-950 dark:text-white">
+                        <dt className="shrink-0">{t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics')}</dt>
+                        <dd className="text-right font-semibold text-slate-950 dark:text-white">
                           {t(`status.${snapshotStatus}`, undefined, snapshotStatus)}
                         </dd>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <dt>{t('admin.billing_period')}</dt>
-                        <dd className="font-semibold text-slate-950 dark:text-white">
+                        <dt className="shrink-0">{t('admin.billing_period')}</dt>
+                        <dd className="text-right font-semibold tabular-nums text-slate-950 dark:text-white">
                           {remaining === null
                             ? t('common.unknown', {}, 'Unknown')
                             : remaining >= 0
@@ -744,11 +730,11 @@ function SubscriptionsContent() {
                         className="btn btn-secondary btn-sm"
                         aria-pressed={isSelected}
                         aria-controls="subscription-inspector"
-                        onClick={() => updateQueueUrl({ focus: subscription.subscription_id })}
+                        onClick={() => inspect(subscription.subscription_id)}
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>
-                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-primary btn-sm whitespace-nowrap">
+                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-secondary btn-sm whitespace-nowrap">
                         {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                       </Link>
                     </div>
@@ -759,10 +745,10 @@ function SubscriptionsContent() {
           ) : (
             <BackofficeEmptyState
               className="m-5 md:m-6"
-              title={appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
+              title={total > 0 ? t('empty.no_data_title') : appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
                 ? t('admin.subscriptions.no_follow_up_title', {}, 'No subscriptions need follow-up')
                 : t('admin.subscriptions.no_match_title', {}, 'No subscriptions match these filters')}
-              description={t(
+              description={total > 0 ? t('empty.no_data_desc') : t(
                 appliedRisk === 'needs_action' && !appliedStatus && !appliedAccountId && !appliedPlanId && !appliedExpiresBefore
                   ? 'admin.subscriptions.no_follow_up_desc'
                   : 'admin.subscriptions.no_match_desc',
@@ -771,7 +757,19 @@ function SubscriptionsContent() {
                   ? 'Critical, warning, and monitoring queues are currently empty. Choose All to inspect normal subscriptions.'
                   : 'Clear or adjust the current status, customer, package, and expiry filters. No subscription record has been changed.'
               )}
-              action={hasFilters ? (
+              action={isOutOfRangePage ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing || isRetainingDifferentQuery}
+                  onClick={() => changePage(Math.min(
+                    Math.max(0, loadedOffset - PAGE_SIZE),
+                    Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE
+                  ))}
+                >
+                  {t('common.previous')}
+                </button>
+              ) : hasFilters ? (
                 <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
                   {t('common.clear_filters', {}, 'Clear filters')}
                 </button>
@@ -779,17 +777,27 @@ function SubscriptionsContent() {
             />
           )}
 
-          <ListPagination
-            offset={offset}
-            limit={PAGE_SIZE}
-            total={total}
-            isLoading={isRefreshing}
-            onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })}
-          />
+          {queuedSubscriptions.length && (total > PAGE_SIZE || loadedOffset > 0) ? (
+            <ListPagination
+              offset={loadedOffset}
+              limit={PAGE_SIZE}
+              total={total}
+              isLoading={isRefreshing || isRetainingDifferentQuery}
+              onOffsetChange={changePage}
+            />
+          ) : hasLoaded ? (
+            <p data-ui="subscription-queue-range" className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              {t('common.pagination_summary', {
+                start: queuedSubscriptions.length ? String(loadedOffset + 1) : '0',
+                end: queuedSubscriptions.length ? String(Math.min(loadedOffset + queuedSubscriptions.length, total)) : '0',
+                total: String(total),
+              })}
+            </p>
+          ) : null}
         </BackofficeSectionPanel>
 
         <AdminInspectorDrawer
-          open={Boolean(selectedSubscription)}
+          open={Boolean(selectedSubscription) && !keyboardFocus}
           title={t('admin.subscriptions.inspector_title', {}, 'Current subscription focus')}
           titleId="subscription-inspector-title"
           eyebrow={t('admin.subscriptions.inspector_eyebrow', {}, 'Inspector')}
@@ -844,10 +852,10 @@ function SubscriptionsContent() {
                   {[
                     [t('common.subscription', {}, 'Subscription'), t(`status.${selectedSubscription.status}`, undefined, selectedSubscription.status)],
                     [t('common.sites', {}, 'Sites'), formatInteger(selectedSubscription.site_count)],
-                    [t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot'), t(`status.${selectedSubscription.billing_snapshot_status?.status || 'unknown'}`, undefined, selectedSubscription.billing_snapshot_status?.status || 'unknown')],
+                    [t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics'), t(`status.${selectedSubscription.billing_snapshot_status?.status || 'unknown'}`, undefined, selectedSubscription.billing_snapshot_status?.status || 'unknown')],
                     [t('admin.period_start'), formatDate(selectedSubscription.current_period_start)],
                     [t('admin.period_end'), formatDate(selectedSubscription.current_period_end)],
-                    [t('admin.usage_cost'), formatAdminCurrency(selectedSubscription.billing_summary?.total_cost || 0)],
+                    [t('admin.usage_cost'), selectedSubscription.billing_summary?.total_cost == null ? t('common.unknown') : formatAdminCurrency(selectedSubscription.billing_summary.total_cost)],
                   ].map(([label, value]) => (
                     <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800">
                       <dt>{label}</dt>

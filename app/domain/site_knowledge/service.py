@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from app.domain.agent_workflow_metadata import (
     SITE_KNOWLEDGE_SUGGESTION_AGENT_ID,
     get_agent_handoff_metadata,
 )
+from app.domain.site_knowledge.anchor_context import source_prose_for_anchor
 from app.domain.site_knowledge.backends import (
     SiteKnowledgeBackendError,
     SiteKnowledgeVectorBackend,
@@ -42,9 +44,11 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     coerce_positive_int,
+    normalize_source_items,
     normalize_source_passages,
     validate_site_knowledge_runtime_contract,
 )
+from app.domain.site_knowledge.delivery_evidence import normalize_delivery_evidence
 from app.domain.site_knowledge.embedding import (
     cosine_similarity,
     embed_text_deterministic,
@@ -64,12 +68,16 @@ from app.domain.site_knowledge.media_search_quality import (
     rank_media_search_results,
 )
 from app.domain.site_knowledge.recommendation_quality import (
-    apply_recommendation_quality_controls,
+    apply_recommendation_quality_controls_v2,
 )
 from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
+)
 
 if TYPE_CHECKING:
     from app.core.models import RunRecord
@@ -169,6 +177,10 @@ class SiteKnowledgeService:
             model_id=self.embedding_model,
         )
         self.embedding_dimensions = int(self.settings.site_knowledge_embedding_dimensions)
+        self.local_multimodal_embedding = (
+            self.embedding_provider_id == SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID
+            and self.embedding_model == SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID
+        )
 
     def execute(
         self,
@@ -208,6 +220,28 @@ class SiteKnowledgeService:
                 "site_knowledge.invalid_sync_mode",
                 "site knowledge sync_mode must be refresh, rebuild, or delete",
             )
+        source_items = normalize_source_items(
+            input_payload, ability_name=SITE_KNOWLEDGE_SYNC_ABILITY
+        )
+        if source_items is not None:
+            # Preflight the entire selection before any SQL/vector deletion.
+            for source_type, source_id in source_items:
+                if source_type in ("post", "page") and (
+                    ("page" if source_type == "post" else "post", source_id) in source_items
+                    or self.repository.has_other_post_root(
+                        site_id=site_id, source_type=source_type, source_id=source_id
+                    )
+                    or (
+                        self.vector_backend is not None
+                        and self.vector_backend.has_source_index(
+                            site_id, "page" if source_type == "post" else "post", source_id
+                        )
+                    )
+                ):
+                    raise SiteKnowledgeContractViolation(
+                        "site_knowledge.source_identity_conflict",
+                        "post/page identity conflicts with another stored or selected root",
+                    )
         maintenance = validate_maintenance_batch(
             session=self.repository.session,
             site_id=site_id,
@@ -221,6 +255,32 @@ class SiteKnowledgeService:
         comments = comments if isinstance(comments, list) else []
         media_items = input_payload.get("media_items")
         media_items = media_items if isinstance(media_items, list) else []
+        withdrawn_post_ids = _refresh_withdrawal_ids(input_payload, "withdrawn_post_ids", sync_mode)
+        withdrawn_comment_ids = _refresh_withdrawal_ids(
+            input_payload, "withdrawn_comment_ids", sync_mode
+        )
+        delivered_post_ids = {
+            _coerce_int(item.get("post_id"), default=0)
+            for item in documents
+            if isinstance(item, dict)
+        }
+        delivered_comment_ids = {
+            _coerce_int(item.get("comment_id"), default=0)
+            for item in comments
+            if isinstance(item, dict)
+        }
+        comment_parent_ids = {
+            _coerce_int(item.get("post_id"), default=0)
+            for item in comments
+            if isinstance(item, dict)
+        }
+        if set(withdrawn_post_ids) & (delivered_post_ids | comment_parent_ids) or (
+            set(withdrawn_comment_ids) & delivered_comment_ids
+        ):
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.conflicting_withdrawal",
+                "a source cannot be delivered and withdrawn in the same refresh",
+            )
         incremental_media_refresh = _is_complete_media_refresh(
             sync_mode=sync_mode,
             post_ids=post_ids,
@@ -246,16 +306,37 @@ class SiteKnowledgeService:
                 sync_mode=sync_mode,
                 total_documents=total_documents,
             )
-            if self.vector_backend is not None:
+            if source_items is not None:
+                for source_type, source_id in source_items:
+                    related = (
+                        self.repository.associated_comment_ids(
+                            site_id=site_id, parent_post_id=source_id
+                        ) if source_type in ("post", "page") else []
+                    )
+                    identities = [(source_type, source_id)]
+                    identities.extend(("comment", item) for item in related)
+                    for identity_type, identity_id in identities:
+                        if self.vector_backend is not None:
+                            self.vector_backend.delete_source_index(
+                                site_id, identity_type, identity_id
+                            )
+                        deleted_entries += self.repository.delete_source_index(
+                            site_id=site_id, source_type=identity_type, source_id=identity_id
+                        )
+                    if self.vector_backend is not None and source_type in ("post", "page"):
+                        # Exact parent/type filter also reaches vector-only comments.
+                        self.vector_backend.delete_associated_comment_indexes(site_id, source_id)
+            elif self.vector_backend is not None:
                 if post_ids:
                     self.vector_backend.delete_post_indexes(site_id, post_ids)
                 else:
                     self.vector_backend.delete_site_index(site_id)
-            deleted_entries = (
-                self.repository.delete_post_indexes(site_id, post_ids)
-                if post_ids
-                else self.repository.delete_site_index(site_id)
-            )
+            if source_items is None:
+                deleted_entries = (
+                    self.repository.delete_post_indexes(site_id, post_ids)
+                    if post_ids
+                    else self.repository.delete_site_index(site_id)
+                )
             self._emit_sync_progress(
                 status="completed",
                 stage="completed",
@@ -285,6 +366,19 @@ class SiteKnowledgeService:
                 ),
             )
 
+        # These IDs are explicit signed source-withdrawal evidence, never inferred
+        # from an empty/partial collection. They use the existing deletion scope.
+        if withdrawn_post_ids:
+            if self.vector_backend is not None:
+                self.vector_backend.delete_post_indexes(site_id, withdrawn_post_ids)
+            deleted_entries += self.repository.delete_post_indexes(site_id, withdrawn_post_ids)
+        for comment_id in withdrawn_comment_ids:
+            if self.vector_backend is not None:
+                self.vector_backend.delete_source_index(site_id, "comment", comment_id)
+            deleted_entries += self.repository.delete_source_index(
+                site_id=site_id, source_type="comment", source_id=comment_id
+            )
+
         if sync_mode == "rebuild":
             self._emit_sync_progress(
                 status="running",
@@ -303,17 +397,8 @@ class SiteKnowledgeService:
                 if post_ids
                 else self.repository.delete_site_index(site_id)
             )
-        elif sync_mode == "refresh" and post_ids and not incremental_media_refresh:
-            self._emit_sync_progress(
-                status="running",
-                stage="cleaning",
-                message="Clearing selected old index entries before refreshing.",
-                sync_mode=sync_mode,
-                total_documents=total_documents,
-            )
-            if self.vector_backend is not None:
-                self.vector_backend.delete_post_indexes(site_id, post_ids)
-            deleted_entries = self.repository.delete_post_indexes(site_id, post_ids)
+        # Refresh replaces only delivered, prepared sources. Omitted IDs are not
+        # withdrawal evidence; explicit delete and full-manifest pruning own removal.
 
         accepted_documents = 0
         indexed_documents = 0
@@ -412,6 +497,10 @@ class SiteKnowledgeService:
                     source_id=source_id,
                 )
                 == str(normalized["content_hash"])
+                and self.repository.list_embedding_models(
+                    site_id, source_types=[source_type], source_id=source_id,
+                    embedding_input="image_pixels.v1" if self.local_multimodal_embedding else None,
+                ) == [self.embedding_space_id]
             ):
                 accepted_documents += 1
                 unchanged_documents += 1
@@ -489,21 +578,15 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
-            if incremental_media_refresh and source_type == "media" and existing_document:
-                if self.vector_backend is not None:
-                    self.vector_backend.delete_source_index(site_id, source_type, source_id)
-                deleted_entries += self.repository.delete_source_index(
-                    site_id=site_id,
-                    source_type=source_type,
-                    source_id=source_id,
-                )
             if allowed_chunks < MAX_CHUNKS_PER_DOCUMENT and _chunks_include_limit_truncation(
                 chunks
             ):
                 quota_limited = True
-            document_truncated = bool(
-                normalized.get("content_truncated")
-            ) or _chunks_include_limit_truncation(chunks)
+            document_truncated = (
+                bool(normalized.get("content_truncated"))
+                or bool(normalized.get("delivery_truncated"))
+                or _chunks_include_limit_truncation(chunks)
+            )
             if document_truncated:
                 truncated_documents += 1
             self._emit_sync_progress(
@@ -552,16 +635,15 @@ class SiteKnowledgeService:
                     source_type=source_type,
                     source_id=source_id,
                 )
-                if (
-                    not existing_document
-                    and account_media_image_count >= account_media_image_limit
-                ):
+                if not existing_document and account_media_image_count >= account_media_image_limit:
                     accepted_documents -= 1
                     skipped_documents += 1
                     skipped_due_to_quota += 1
                     quota_limited = True
                     processed_documents += 1
                     continue
+            # Preparation and quota checks must finish before replacing this source.
+            # SQL upsert replaces its chunks without deleting its document row.
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -602,6 +684,8 @@ class SiteKnowledgeService:
                 run_id=run_id,
                 metadata={
                     "content_truncated": bool(normalized.get("content_truncated")),
+                    "delivery_evidence": normalized.get("delivery_evidence"),
+                    "delivery_truncated": normalized.get("delivery_truncated"),
                     "chunk_limit_truncated": _chunks_include_limit_truncation(chunks),
                     "truncated": document_truncated,
                     "source_content_chars": _coerce_int(
@@ -750,6 +834,9 @@ class SiteKnowledgeService:
         )
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
+        source_items = normalize_source_items(
+            input_payload, ability_name=SITE_KNOWLEDGE_STATUS_ABILITY
+        )
         include_coverage = bool(input_payload.get("include_coverage"))
         requested_post_ids = _coerce_post_ids(input_payload.get("post_ids"))[
             :MAX_SITE_KNOWLEDGE_STATUS_POST_IDS
@@ -823,7 +910,7 @@ class SiteKnowledgeService:
             active_run=active_run,
         )
 
-        return {
+        result = {
             "artifact_type": "site_knowledge_status",
             "composition_role": "site_knowledge_status",
             "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_STATUS_ABILITY],
@@ -844,6 +931,18 @@ class SiteKnowledgeService:
             "write_posture": "suggestion_only",
             "direct_wordpress_write": False,
         }
+        if source_items is not None:
+            observed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            result["source_presence"] = {
+                "status": "complete",
+                "storage_scope": "relational_index",
+                "observed_at": observed_at,
+                "requested_count": len(source_items),
+                "items": self.repository.source_presence(
+                    site_id=site_id, source_items=source_items
+                ),
+            }
+        return result
 
     def search(
         self,
@@ -1046,6 +1145,8 @@ class SiteKnowledgeService:
             max_results=max_results,
             result_granularity=result_granularity,
         )
+        result_grouping["candidate_window_limit"] = MAX_FALLBACK_SEARCH_CHUNKS
+        result_grouping["candidate_window_limited"] = len(scored) >= MAX_FALLBACK_SEARCH_CHUNKS
         workflow_support = _workflow_support_for_intent(intent)
         evidence_gate = _evidence_gate(results, evidence_policy)
 
@@ -1080,6 +1181,28 @@ class SiteKnowledgeService:
         ability_name: str,
         max_chunks: int | None = None,
     ) -> list[dict[str, object]]:
+        if max_chunks is not None and max_chunks <= 0:
+            return []
+        if self.local_multimodal_embedding and document.get("source_type") == "media":
+            from app.domain.site_knowledge.media_embedding import load_media_embedding_image
+
+            image = load_media_embedding_image(
+                document, session=self.repository.session, settings=self.settings, site_id=site_id
+            )
+            return [{
+                "chunk_index": 0,
+                "chunk_text": str(document.get("content_excerpt") or document.get("title") or ""),
+                "embedding": self._embed_text_with_provider(
+                    "", site_id=site_id, run_id=run_id, ability_name=ability_name,
+                    image_base64=image,
+                ),
+                "embedding_model": self.embedding_space_id,
+                "metadata": {
+                    "source": "wordpress_public_image",
+                    "content_hash": str(document.get("content_hash") or ""),
+                    "embedding_input": "image_pixels.v1",
+                },
+            }]
         source_text = "\n\n".join(
             part
             for part in (
@@ -1163,6 +1286,7 @@ class SiteKnowledgeService:
         site_id: str,
         run_id: str,
         ability_name: str,
+        image_base64: str = "",
     ) -> list[float]:
         provider = self.providers.get(self.embedding_provider_id)
         if provider is None:
@@ -1181,9 +1305,11 @@ class SiteKnowledgeService:
             execution_kind="embedding",
             model_id=model_id,
             instance_id=f"{self.embedding_provider_id}-site-knowledge-embedding",
-            endpoint_variant="embeddings",
+            endpoint_variant=(
+                "ollama_embeddings" if self.local_multimodal_embedding else "embeddings"
+            ),
             trace_id=run_id,
-            input_payload={"text": text},
+            input_payload={"image_base64": image_base64} if image_base64 else {"text": text},
             policy={"storage_mode": "result_only"},
             timeout_ms=max(1, int(self._embedding_timeout_seconds() * 1000)),
         )
@@ -1224,7 +1350,7 @@ class SiteKnowledgeService:
             self.budget_guard.reconcile(
                 session=self.repository.session,
                 claim_ids=budget_claim_ids,
-                actual_cost_usd=result.cost,
+                actual_cost_usd=result.budget_cost_usd(),
             )
         self._record_embedding_usage(provider_request, provider_result=result)
 
@@ -1234,11 +1360,20 @@ class SiteKnowledgeService:
                 "site_knowledge.embedding_invalid",
                 "site knowledge embedding provider returned an invalid embedding",
             )
-        vector = [float(value) for value in embedding]
+        try:
+            vector = [float(value) for value in embedding]
+        except (TypeError, ValueError, OverflowError) as error:
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.embedding_invalid", "Embedding must contain numeric values"
+            ) from error
         if len(vector) != self.embedding_dimensions:
             raise SiteKnowledgeBackendError(
                 "site_knowledge.embedding_dimension_mismatch",
                 "site knowledge embedding dimensions do not match configuration",
+            )
+        if not all(math.isfinite(value) for value in vector) or not any(vector):
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.embedding_invalid", "Embedding must be finite and nonzero"
             )
         return vector
 
@@ -1259,6 +1394,8 @@ class SiteKnowledgeService:
         )
 
     def _embedding_timeout_seconds(self) -> float:
+        if self.local_multimodal_embedding:
+            return float(self.settings.ollama_timeout_seconds)
         if self.embedding_provider_id == "siliconflow":
             return float(self.settings.siliconflow_timeout_seconds)
         if self.embedding_provider_id == "openai":
@@ -1287,14 +1424,15 @@ class SiteKnowledgeService:
         candidate_count = len(reranked)
         collapsed_count = 0
         duplicate_media_count = 0
-        recommendation_quality = {
+        recommendation_quality: dict[str, object] = {
             "document_duplicates_collapsed": 0,
             "weak_candidates_suppressed": 0,
             "strong_or_review_candidates": 0,
         }
         if intent in {"internal_links", "related_content"}:
-            reranked, recommendation_quality = apply_recommendation_quality_controls(
+            reranked, recommendation_quality = apply_recommendation_quality_controls_v2(
                 reranked,
+                query=query,
                 max_results=max_results,
             )
         if result_granularity == "document":
@@ -1317,6 +1455,10 @@ class SiteKnowledgeService:
                 "duplicate_media_collapsed": duplicate_media_count,
                 "recommendation_quality": recommendation_quality,
                 "ranking_strategy": _ranking_strategy_for_intent(intent),
+                **(
+                    {"ranking_version": f"{intent}.v2"}
+                    if intent in {"internal_links", "related_content"} else {}
+                ),
             },
         )
 
@@ -1706,6 +1848,9 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         remove_markup_noise=True,
     )
     indexed_content_chars = len(content_excerpt)
+    delivery_evidence = normalize_delivery_evidence(
+        document.get("delivery_evidence"), document.get("content_excerpt", "")
+    )
     taxonomies = _normalize_public_taxonomies(document.get("taxonomies"))
     content_hash = str(document.get("content_hash") or "").strip()
     if not content_hash:
@@ -1729,6 +1874,10 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         "source_content_chars": source_content_chars,
         "indexed_content_chars": indexed_content_chars,
         "content_truncated": source_content_chars > indexed_content_chars,
+        "delivery_evidence": delivery_evidence,
+        "delivery_truncated": (
+            delivery_evidence["truncated"] if delivery_evidence is not None else None
+        ),
         "taxonomies": taxonomies,
         "content_hash": content_hash[:128],
     }
@@ -1826,6 +1975,7 @@ def _normalize_public_media(document: dict[str, Any]) -> dict[str, object] | Non
         "taxonomies": {"category": [], "post_tag": []},
         "content_hash": content_hash,
         "media_fingerprint": media_fingerprint,
+        "source_artifact_id": str(document.get("source_artifact_id") or "")[:36],
         "visual_evidence": visual_evidence,
     }
 
@@ -1888,6 +2038,27 @@ def _serialize_media_evidence_document(document: Any) -> dict[str, object]:
     }
 
 
+def _refresh_withdrawal_ids(
+    payload: dict[str, Any],
+    field: str,
+    sync_mode: str,
+) -> list[int]:
+    if field not in payload:
+        return []
+    value = payload[field]
+    if (
+        sync_mode != "refresh"
+        or not isinstance(value, list)
+        or len(value) > MAX_SYNC_POST_IDS
+        or any(type(item) is not int or item <= 0 for item in value)
+    ):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.invalid_refresh_withdrawal",
+            "refresh withdrawals must be bounded positive integer source IDs",
+        )
+    return list(dict.fromkeys(value))
+
+
 def _is_complete_media_refresh(
     *,
     sync_mode: str,
@@ -1904,7 +2075,7 @@ def _is_complete_media_refresh(
         if isinstance(item, dict)
     }
     attachment_ids.discard(0)
-    return bool(attachment_ids) and attachment_ids == set(post_ids)
+    return bool(attachment_ids) and (not post_ids or attachment_ids == set(post_ids))
 
 
 def _filter_media_text_list(value: Any, *, max_items: int, max_chars: int) -> list[str]:
@@ -2816,10 +2987,13 @@ def _attach_source_anchor_evidence(
 ) -> list[dict[str, object]]:
     if intent != "internal_links" or not source_passages:
         return results
+    source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
     source_prefixes = _anchor_source_prefixes(source_passages)
     projected: list[dict[str, object]] = []
     for item in results:
         result = dict(item)
+        result.pop("anchor_evidence", None)
+        result.pop("anchor_or_context", None)
         anchor_evidence = _source_anchor_evidence(
             source_passages,
             title=str(result.get("title") or ""),
@@ -2840,6 +3014,29 @@ def _source_anchor_evidence(
     chunk_text: str,
     source_prefixes: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
+    if source_prefixes is None:
+        source_passages = [source_prose_for_anchor(passage) for passage in source_passages]
+    # A short uppercase identifier explicitly leading a descriptive title can
+    # be more useful than a longer shared platform name. This remains literal
+    # evidence, not a claim that two documents describe the same resource.
+    subject = re.match(r"^([A-Z][A-Z0-9]{3,4})\s+[–—-]\s+\S", title.strip())
+    if subject and subject[1].lower() not in (
+        GENERIC_INTERNAL_LINK_ANCHORS | {"demo", "docs", "code", "guide", "theme"}
+    ):
+        pattern = re.compile(
+            r"(?<![A-Za-z0-9_])" + re.escape(subject[1]) + r"(?![A-Za-z0-9_])",
+            re.IGNORECASE | re.ASCII,
+        )
+        for passage_index, passage in enumerate(source_passages):
+            match = pattern.search(passage)
+            if match:
+                return {
+                    "anchor_or_context": match[0],
+                    "basis": "exact_source_target_phrase",
+                    "source_passage_index": passage_index,
+                    "target_field": "title",
+                    "exact_source_passage_match": True,
+                }
     candidates: list[tuple[int, int, int, str, str]] = []
     normalized_title = _normalize_anchor_comparison(title)
     if source_prefixes is None:

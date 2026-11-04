@@ -19,9 +19,7 @@ from types import ModuleType
 from typing import Any
 
 SCHEMA = "npcink.production_promotion_preflight.v1"
-ACTIVE_DEPLOY_STATUSES = frozenset(
-    {"queued", "in_progress", "waiting", "requested", "pending"}
-)
+ACTIVE_DEPLOY_STATUSES = frozenset({"queued", "in_progress", "waiting", "requested", "pending"})
 REQUEST_ID_PATTERN = re.compile(r"^preflight-[0-9a-f]{12}$")
 
 
@@ -135,9 +133,7 @@ def _require_candidate_mergeable(
     except subprocess.CalledProcessError as exc:
         detail = (exc.stdout or "").splitlines()
         conflict_count = sum(
-            1
-            for line in detail
-            if line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+            1 for line in detail if line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
         )
         suffix = f" ({conflict_count} conflict markers)" if conflict_count else ""
         raise PromotionPreflightError(
@@ -180,9 +176,7 @@ def _require_deploy_secret_metadata(preflight: ModuleType, repo: str) -> None:
         )
     except preflight.PreflightError as exc:
         raise PromotionPreflightError(str(exc)) from exc
-    missing = sorted(
-        preflight.DEPLOY_REQUIRED_SECRETS - (repository_names | environment_names)
-    )
+    missing = sorted(preflight.DEPLOY_REQUIRED_SECRETS - (repository_names | environment_names))
     if missing:
         raise PromotionPreflightError("required deployment secret metadata is incomplete")
 
@@ -217,9 +211,7 @@ def _require_remote_refs_current(
         candidate.branch,
     )
     if remote_candidate_sha != candidate.candidate_sha:
-        raise PromotionPreflightError(
-            "candidate SHA does not match the current GitHub branch"
-        )
+        raise PromotionPreflightError("candidate SHA does not match the current GitHub branch")
     return production_sha
 
 
@@ -239,8 +231,7 @@ def _require_no_active_deploy(preflight: ModuleType, repo: str) -> None:
         active.update(_active_deploy_ids(payload))
     if active:
         raise PromotionPreflightError(
-            "Deploy Production is already active: "
-            + ", ".join(map(str, sorted(active)))
+            "Deploy Production is already active: " + ", ".join(map(str, sorted(active)))
         )
 
 
@@ -315,10 +306,13 @@ def _require_bootstrap_certificate_log(root: Path, repo: str, run_id: int) -> No
         ["gh", "run", "view", str(run_id), "--repo", repo, "--log"],
         cwd=root,
     )
-    if re.search(
-        r"\[certificate-preflight:(?:ok|warn)\] readiness receipt ",
-        log,
-    ) is None:
+    if (
+        re.search(
+            r"\[certificate-preflight:(?:ok|warn)\] readiness receipt ",
+            log,
+        )
+        is None
+    ):
         raise PromotionPreflightError(
             "bootstrap maintenance run lacks certificate readiness evidence"
         )
@@ -405,6 +399,8 @@ def render_text(result: dict[str, Any]) -> str:
         "deploy_secrets_ready",
         "active_deploy_run_ids",
     )
+    if "certificate_evidence_state" in result:
+        keys += ("certificate_evidence_state",)
     return "\n".join(
         f"{key}="
         + (
@@ -427,6 +423,11 @@ def main() -> int:
     parser.add_argument("--wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=10)
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument(
+        "--certificate-maintenance-exception",
+        action="store_true",
+        help="Use only the operator-approved, expiring 2026-11-04 exception",
+    )
     argv = sys.argv[1:]
     if argv[:1] == ["--"]:
         argv = argv[1:]
@@ -468,14 +469,25 @@ def main() -> int:
         _require_no_active_deploy(preflight, args.repo)
         release_action = _release_action(candidate.predicted_lane)
         certificate_run_id: int | None = None
-        if release_action != "no_deploy":
+        maintenance_evidence = None
+        if args.certificate_maintenance_exception:
+            maintenance_evidence = _run_json(
+                [
+                    python_bin,
+                    "deploy/certificate-maintenance-exception.py",
+                    "--phase",
+                    "promotion",
+                    "--sha",
+                    candidate.candidate_sha,
+                ],
+                cwd=root,
+            )
+        if release_action != "no_deploy" and not args.certificate_maintenance_exception:
             supports_request_id = _production_workflow_supports_request_id(
                 root,
                 args.repo,
             )
-            request_id = (
-                f"preflight-{uuid.uuid4().hex[:12]}" if supports_request_id else None
-            )
+            request_id = f"preflight-{uuid.uuid4().hex[:12]}" if supports_request_id else None
             baseline_run_ids = {
                 run["databaseId"]
                 for run in _certificate_runs(root, args.repo)
@@ -491,10 +503,7 @@ def main() -> int:
                 wait_seconds=args.wait_seconds,
                 poll_seconds=args.poll_seconds,
             )
-        if (
-            _resolve_remote_branch_sha(preflight, args.repo, "production")
-            != production_sha
-        ):
+        if _resolve_remote_branch_sha(preflight, args.repo, "production") != production_sha:
             raise PromotionPreflightError(
                 "production SHA changed during the certificate readiness check"
             )
@@ -523,6 +532,9 @@ def main() -> int:
             "active_deploy_run_ids": [],
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
+        if maintenance_evidence is not None:
+            result["certificate_evidence_state"] = "maintenance_exception"
+            result["certificate_maintenance_evidence"] = maintenance_evidence
     except (OSError, PromotionPreflightError) as exc:
         print(f"[fail] {exc}", file=sys.stderr)
         return 1
