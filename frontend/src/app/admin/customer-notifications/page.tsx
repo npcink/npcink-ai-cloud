@@ -14,6 +14,8 @@ import { useAdminNavigationGuard } from '@/hooks/useAdminNavigationGuard';
 import { createApiClient } from '@/lib/api-client';
 import { formatDate } from '@/lib/utils';
 import { useNotices } from '@/features/admin/customer-notifications/use-notices';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
+import { shortIdentity } from '@/lib/identity-display';
 import { links } from '@/features/admin/customer-notifications/contracts';
 
 const client = createApiClient();
@@ -25,10 +27,11 @@ const accountsSchema = z.object({
         name: z.string(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       }),
+      primary_identity: z.object({ email: z.string().optional() }).nullish(),
     }),
   ),
 });
-type AccountOption = { id: string; name: string };
+type AccountOption = { id: string; name: string; email: string };
 
 function NoticeWorkspace({ accountId }: { accountId: string }) {
   const c = useNotices(accountId),
@@ -36,6 +39,12 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
     router = useRouter();
   const [query, setQuery] = useState(accountId),
     [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [knownAccounts, setKnownAccounts] = useState<Record<string, AccountOption>>({});
+  const accountCache = useRef<Record<string, AccountOption>>({});
+  const rememberAccounts = (options: AccountOption[]) => {
+    accountCache.current = { ...accountCache.current, ...Object.fromEntries(options.map(item => [item.id, item])) };
+    setKnownAccounts(accountCache.current);
+  };
   const [accountError, setAccountError] = useState(false),
     [searchBusy, setSearchBusy] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false),
@@ -74,6 +83,30 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
     if (accountId || v.title || v.body || c.draft?.pending) setComposeOpen(true);
   }, [accountId, v, c.draft?.pending]);
 
+  // Resolve only a bounded visible selection. This cache is display-only; the
+  // immutable preview still owns the recipient identity used for sending.
+  const selectedKey = JSON.stringify(v?.account_ids || []);
+  useEffect(() => {
+    const ids = (JSON.parse(selectedKey) as string[]).slice(0, 20);
+    const controller = new AbortController();
+    void (async () => {
+      for (const id of ids) {
+        if (accountCache.current[id]) continue;
+        try {
+          const raw = (await client.request<unknown>(`/api/admin/accounts/${encodeURIComponent(id)}`, { signal: controller.signal })).data;
+          const item = accountsSchema.shape.items.element.parse(raw);
+          if (item.account.account_id !== id) continue;
+          const option = { id, name: customerLabel(item.account, ''), email: item.primary_identity?.email || '' };
+          if (!controller.signal.aborted) rememberAccounts([option]);
+        } catch { /* Unverified identities retain an explicit, distinguishable fallback. */ }
+        if (controller.signal.aborted) return;
+      }
+    })();
+    return () => controller.abort();
+  }, [selectedKey]);
+  const accountLabel = (id: string, option?: AccountOption) =>
+    `${option?.name || option?.email || t('admin.notices.customer_unverified')} · ${shortIdentity(id)}`;
+
   const openCompose = () => {
     userClosedCompose.current = false;
     if (dirty) setConfirmNew(true);
@@ -99,16 +132,12 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
           )
         ).data,
       );
-      if (version === searchVersion.current)
-        setAccounts(
-          result.items.map((item) => ({
-            id: item.account.account_id,
-            name:
-              typeof item.account.metadata?.operator_display_name === 'string'
-                ? item.account.metadata.operator_display_name || item.account.name
-                : item.account.name,
-          })),
-        );
+      if (version === searchVersion.current) {
+        const options = result.items.map(item => ({ id: item.account.account_id,
+          name: customerLabel(item.account, ''), email: item.primary_identity?.email || '' }));
+        setAccounts(options);
+        rememberAccounts(options);
+      }
     } catch {
       if (version === searchVersion.current) setAccountError(true);
     } finally {
@@ -320,7 +349,7 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
                           className="flex items-center justify-between gap-3 py-2 text-sm"
                         >
                           <span className="break-all">
-                            {account.name} · {account.id}
+                            {accountLabel(account.id, account)}
                           </span>
                           <button
                             type="button"
@@ -342,11 +371,11 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
                   <ul className="flex flex-wrap gap-2">
                     {v.account_ids.map((id) => (
                       <li key={id} className="flex items-center gap-2 text-sm">
-                        <span>{accounts.find((account) => account.id === id)?.name || id}</span>
+                        <span className="break-all">{accountLabel(id, knownAccounts[id])}</span>
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
-                          aria-label={`${t('admin.notices.remove')} ${id}`}
+                          aria-label={`${t('admin.notices.remove')} ${accountLabel(id, knownAccounts[id])}`}
                           onClick={() =>
                             c.edit({ account_ids: v.account_ids.filter((value) => value !== id) })
                           }
@@ -356,6 +385,9 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
                       </li>
                     ))}
                   </ul>
+                  {v.account_ids.length ? <BackofficeDisclosure summary={t('admin.notices.customer_identifiers')}>
+                    {v.account_ids.map(id => <p key={id} className="select-text break-all text-xs">{accountLabel(id, knownAccounts[id])}: {id}</p>)}
+                  </BackofficeDisclosure> : null}
                 </div>
               ) : null}
             </div>

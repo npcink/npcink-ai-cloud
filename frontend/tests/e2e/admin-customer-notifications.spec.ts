@@ -219,7 +219,7 @@ test('customer detail shortcut and recipient search preserve explicit scope', as
   await page.getByRole('link', { name: 'Send notice', exact: true }).click();
   await expect(page.getByLabel('Recipients', { exact: true })).toHaveValue('selected');
   await expect(
-    page.getByRole('button', { name: 'Remove acct_mvp_enterprise_primary' }),
+    page.getByRole('button', { name: /^Remove .*acct_mvp_ent…_primary$/ }),
   ).toBeVisible();
   await page.getByLabel('Find customers by name or email').fill('Enterprise');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -489,4 +489,33 @@ test('Chinese notice detail stays readable with long identities, selection and s
   await expect(detail.getByText('unknown_identity', { exact: true })).toBeVisible();
   expect(writes).toBe(0);
   expect(evidence.consoleErrors).toEqual([]);
+});
+
+test('selected customer labels survive searches and draft reload without trusting mismatched identities', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en'));
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  let mismatch = false;
+  await page.route('**/api/admin/accounts/acct_readable', route => route.fulfill({
+    json: buildAdminApiEnvelope({ account: { account_id: mismatch ? 'acct_other' : 'acct_readable', name: mismatch ? 'Wrong customer' : 'Editorial team', metadata: {} }, primary_identity: { email: 'editor@example.test' } }),
+  }));
+  await page.route('**/api/admin/accounts?*', route => route.fulfill({
+    json: buildAdminApiEnvelope({ items: [{ account: { account_id: 'acct_other', name: 'Another customer' } }] }),
+  }));
+  await page.goto(`${path}?account=acct_readable`);
+  const remove = page.getByRole('button', { name: 'Remove Editorial team · acct_readable', exact: true });
+  await expect(remove).toBeVisible();
+  await page.getByLabel('Find customers by name or email').fill('Another');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText('Another customer · acct_other', { exact: true })).toBeVisible();
+  await expect(remove).toBeVisible();
+  await page.getByLabel('Title', { exact: true }).fill('Retained draft');
+  await page.reload();
+  await expect(remove).toBeVisible();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Retained draft');
+  await page.screenshot({ path: testInfo.outputPath('selected-customer-readable-1440.png'), fullPage: true });
+  mismatch = true;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Remove Customer name unverified · acct_readable', exact: true })).toBeVisible();
+  await expect(page.getByText('Wrong customer', { exact: true })).toHaveCount(0);
 });

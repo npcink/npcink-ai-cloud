@@ -2,6 +2,7 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { shortIdentity } from '@/lib/identity-display';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { readSubscriptionQueue, subscriptionSnapshotCost, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -768,6 +769,7 @@ function SubscriptionsContent() {
                           className="normal-case tracking-normal whitespace-nowrap"
                         />
                       </div>
+                      <p className="mt-1 break-all text-xs text-slate-500">{t('admin.account_id')}: {shortIdentity(subscription.account_id)}</p>
                       <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{packageLabel}</p>
                     </div>
 
