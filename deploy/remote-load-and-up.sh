@@ -588,6 +588,18 @@ PY
 }
 
 verify_certificate_renewal_readiness() {
+	# Only an explicit, protected, single-use claim for this exact release can
+	# select the reviewed 2026-11-04 maintenance lane. All other releases use
+	# the ordinary complete renewal receipt, including after this lane expires.
+	local maintenance_helper="${ROOT_DIR}/deploy/certificate-maintenance-exception.py"
+	if [ -f "${maintenance_helper}" ]; then
+		local maintenance_selection
+		maintenance_selection="$("${RELEASE_TOOL_PYTHON}" "${maintenance_helper}" --phase selected --root "${ROOT_DIR}")" || return 1
+		if [ "${maintenance_selection}" = "selected" ]; then
+			"${RELEASE_TOOL_PYTHON}" "${maintenance_helper}" --phase consume --root "${ROOT_DIR}"
+			return
+		fi
+	fi
 	local certificate_path="${NPCINK_CLOUD_CERTIFICATE_RENEWAL_CERT_PATH:-}"
 	local evidence_path="${NPCINK_CLOUD_CERTIFICATE_RENEWAL_EVIDENCE_PATH:-}"
 	local timer_name="${NPCINK_CLOUD_CERTIFICATE_RENEWAL_TIMER:-}"

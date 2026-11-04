@@ -81,9 +81,7 @@ def _run_resolver(
             f"remote_dir=$(cd {shlex.quote(str(managed_root))} && pwd -P)",
             'current_release=""',
             "guard() {",
-            textwrap.indent(
-                _deploy_resolver_script() if deploy else _resolver_script(), "  "
-            ),
+            textwrap.indent(_deploy_resolver_script() if deploy else _resolver_script(), "  "),
             "}",
             "guard",
             "printf 'receipt-check\\n'",
@@ -185,3 +183,65 @@ def test_boolean_readiness_timestamp_fails_closed(
     result = _run_receipt_validator(tmp_path, workflow, generated_at_epoch)
     assert result.returncode != 0
     assert "readiness timestamp is invalid" in result.stderr
+
+
+def test_deploy_requires_explicit_exact_maintenance_sentence(tmp_path):
+    source = DEPLOY_WORKFLOW.read_text()
+    start = source.index('          if [ -n "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" ]; then')
+    end = source.index('          [[ "${EXPECTED_PRODUCTION_SHA}"', start)
+    script = textwrap.dedent(source[start:end])
+    for value, success in [
+        ("", True),
+        ("yes", False),
+        ("Defer the renewal dry run for the approved 2026-11-04 release.", True),
+    ]:
+        result = subprocess.run(
+            ["bash", "-ec", script],
+            capture_output=True,
+            env={**os.environ, "CERTIFICATE_MAINTENANCE_CONFIRMATION": value},
+        )
+        assert (result.returncode == 0) is success
+    assert "action == 'runtime' && inputs.certificate_maintenance_confirmation == ''" in source
+    assert "action == 'runtime' && inputs.certificate_maintenance_confirmation != ''" in source
+
+
+@pytest.mark.parametrize(
+    "selection,expected",
+    [("selected", "consume"), ("not_selected", "normal"), ("broken", "failed")],
+)
+def test_loader_selection_and_failure_are_closed(tmp_path, selection, expected):
+    loader = (ROOT / "deploy/remote-load-and-up.sh").read_text()
+    start = loader.index("verify_certificate_renewal_readiness() {")
+    end = loader.index("\nassert_retired_bundle_services_absent()", start)
+    function = loader[start:end]
+    helper = tmp_path / "deploy/certificate-maintenance-exception.py"
+    helper.parent.mkdir()
+    helper.touch()
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            function,
+            'ROOT_DIR="$1"',
+            "RELEASE_TOOL_PYTHON=fake_python",
+            "fake_python() {",
+            ' if [[ "$*" == *"--phase selected"* ]]; then',
+            '   [ "$SELECTION" != broken ] || return 2',
+            '   echo "$SELECTION"',
+            " else echo consume; fi",
+            "}",
+            # Ordinary lane fails without required receipt configuration.
+            "if verify_certificate_renewal_readiness; then :; else echo failed; fi",
+        ]
+    )
+    result = subprocess.run(
+        ["bash", "-c", script, "bash", str(tmp_path)],
+        env={**os.environ, "SELECTION": selection},
+        text=True,
+        capture_output=True,
+    )
+    if expected == "normal":
+        assert "requires NPCINK_CLOUD_CERTIFICATE_RENEWAL_CERT_PATH" in result.stderr
+    else:
+        assert expected in result.stdout
+    if expected != "consume":
+        assert "consume" not in result.stdout

@@ -48,6 +48,11 @@ rechecks all of those bindings plus the timer/service/ExecStart chain and hook
 digest, directly executes the hook, and repeats the live certificate proof.
 Evidence never contains certificate bytes, keys, tokens, command output, or
 other secret material.
+
+The root-only inspect-maintenance mode runs the live timer, TLS, binding and
+hook/reload checks without a renewal dry run or reading/writing a readiness
+receipt. Its JSON explicitly records renewal_dry_run_passed=false. Only the
+separate, expiring maintenance authorization can admit that inspection.
 EOF
 }
 
@@ -577,9 +582,9 @@ PY
 
 MODE="${1:-}"
 case "${MODE}" in
-	generate|verify) shift ;;
+	generate|verify|inspect-maintenance) shift ;;
 	-h|--help|"") usage; exit 0 ;;
-	*) fail "mode must be generate or verify" ;;
+	*) fail "mode must be generate, verify or inspect-maintenance" ;;
 esac
 
 DOMAIN=""
@@ -656,7 +661,7 @@ if [ "${MODE}" = "generate" ]; then
 	# previously passing receipt available to verify.
 	GENERATION_IN_PROGRESS=1
 	invalidate_existing_evidence
-else
+elif [ "${MODE}" = "verify" ]; then
 	assert_safe_evidence_file "${EVIDENCE_PATH}"
 fi
 
@@ -688,6 +693,56 @@ NGINX_SSL_CERTIFICATE_KEY_PATH=""
 NGINX_TLS_BINDING_SHA256=""
 assert_safe_deploy_hook
 CURRENT_DEPLOY_HOOK_SHA256="$(deploy_hook_sha256)"
+
+if [ "${MODE}" = "inspect-maintenance" ]; then
+	assert_timer_ready >/dev/null
+	resolve_timer_execution_chain
+	refresh_tls_binding_state
+	BEFORE_FINGERPRINT="$(assert_certificate_and_served_leaf_ready)"
+	BEFORE_BINDING="${NGINX_TLS_BINDING_SHA256}"
+	BEFORE_CERTIFICATE="${CERTIFICATE_REAL_PATH}"
+	BEFORE_KEY="${PRIVATE_KEY_REAL_PATH}"
+	"${RELEASE_TOOL_PYTHON}" - "${DOMAIN}" <<'PYCHAIN' ||
+import subprocess
+import sys
+
+try:
+    subprocess.run(
+        ["openssl", "s_client", "-connect", "127.0.0.1:443", "-servername", sys.argv[1],
+         "-verify_hostname", sys.argv[1], "-verify_return_error"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=20, check=True,
+    )
+except (OSError, subprocess.SubprocessError):
+    raise SystemExit(1) from None
+PYCHAIN
+		fail "served certificate chain or hostname verification failed"
+	execute_deploy_hook_and_prove_reload
+	refresh_tls_binding_state
+	AFTER_FINGERPRINT="$(assert_certificate_and_served_leaf_ready)"
+	[ "${BEFORE_FINGERPRINT}" = "${AFTER_FINGERPRINT}" ] && \
+		[ "${BEFORE_BINDING}" = "${NGINX_TLS_BINDING_SHA256}" ] && \
+		[ "${BEFORE_CERTIFICATE}" = "${CERTIFICATE_REAL_PATH}" ] && \
+		[ "${BEFORE_KEY}" = "${PRIVATE_KEY_REAL_PATH}" ] && \
+		[ "${CURRENT_DEPLOY_HOOK_SHA256}" = "$(deploy_hook_sha256)" ] ||
+		fail "TLS binding or hook changed during maintenance inspection"
+	"${RELEASE_TOOL_PYTHON}" - "${AFTER_FINGERPRINT}" \
+		"${NGINX_TLS_BINDING_SHA256}" "${CURRENT_DEPLOY_HOOK_SHA256}" \
+		"${RENEWAL_EXEC_START_SHA256}" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "status": "maintenance_live_checks_passed",
+    "renewal_dry_run_passed": False,
+    "certificate_leaf_sha256": sys.argv[1],
+    "nginx_binding_sha256": sys.argv[2],
+    "deploy_hook_sha256": sys.argv[3],
+    "renewal_exec_start_sha256": sys.argv[4],
+}))
+PY
+	exit 0
+fi
 
 if [ "${MODE}" = "verify" ]; then
 	CURRENT_NEXT_RUN="$(assert_timer_ready)"

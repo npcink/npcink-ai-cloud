@@ -262,6 +262,13 @@ production host. A stale local or GitHub branch, unknown changed path, missing
 deployment secret name, concurrent deployment, failed certificate check, or
 unbound workflow result blocks promotion.
 
+The operator-approved [2026-11-04 single-release maintenance exception](certificate-maintenance-exception-2026-11-04.md)
+may explicitly defer only the dry run, until 2026-11-05 04:00 UTC. It uses separate
+`maintenance_exception` evidence, a frozen application scope and a SHA/tree/run-bound
+single-use claim. All live TLS, timer and hook checks remain mandatory. Ordinary
+readiness remains the default; no failed or unexecuted dry run is labeled passed.
+Final Deploy authorization and all other gates remain required.
+
 The resulting `npcink.production_promotion_preflight.v1` receipt is planning
 evidence only. Protected production-PR checks, the exact production-push plan,
 manual deployment authorization, and post-deploy verification remain required.
