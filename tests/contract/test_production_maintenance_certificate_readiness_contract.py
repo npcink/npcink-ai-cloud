@@ -193,7 +193,8 @@ def test_deploy_requires_explicit_exact_maintenance_sentence(tmp_path):
     for value, success in [
         ("", True),
         ("yes", False),
-        ("Defer the renewal dry run for the approved 2026-11-04 release.", True),
+        ("Defer the renewal dry run for the approved 2026-11-04 release.", False),
+        ("Defer the renewal dry run for the approved 2026-11-04 retention release.", True),
     ]:
         result = subprocess.run(
             ["bash", "-ec", script],
