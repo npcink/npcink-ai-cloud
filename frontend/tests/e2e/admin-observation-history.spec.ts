@@ -101,9 +101,10 @@ test('plugin retained records show readable source and site with complete labele
   await expect(table).toContainText('编辑站点');
   await expect(table).toContainText('Npcink Cloud Addon');
   await expect(table).toContainText('插件 · __proto__');
-  await expect(table.getByText('site_readable', { exact: true })).toBeHidden();
-  await table.getByText('插件状态同步', { exact: true }).click();
-  await expect(table.getByText('site_readable', { exact: true })).toBeVisible();
+  const namedRow = table.locator('tbody tr').filter({ hasText: 'Npcink Cloud Addon' });
+  await expect(namedRow.getByText('site_readable', { exact: true })).toBeHidden();
+  await namedRow.getByText('插件状态同步', { exact: true }).click();
+  await expect(namedRow.getByText('site_readable', { exact: true })).toBeVisible();
   await expect(table).toContainText('运行编号');
   await expect(table).toContainText('run_exact');
   await expect(table).toContainText('错误码');
