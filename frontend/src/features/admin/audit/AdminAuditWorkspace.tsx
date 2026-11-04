@@ -1,4 +1,5 @@
 'use client';
+import { auditActorLabel, auditEventLabel, auditOutcomeLabel, auditScopeLabel } from '@/lib/admin-audit-display';
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -56,24 +57,11 @@ function positiveInteger(value: string | null, fallback = 0): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function humanizeAuditToken(value: string): string {
-  return value
-    .replaceAll('.', ' ')
-    .replaceAll('_', ' ')
-    .replaceAll('-', ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
 
 function identifier(value: string | undefined, fallback: string): string {
   return value?.trim() || fallback;
 }
 
-
-function auditScope(event: AdminAuditEvent, fallback: string): string {
-  const kind = identifier(event.scope_kind, 'scope');
-  const id = identifier(event.scope_id, fallback);
-  return `${kind}: ${id}`;
-}
 
 export function AdminAuditWorkspace() {
   const { t } = useLocale();
@@ -317,7 +305,7 @@ export function AdminAuditWorkspace() {
                   <option value="succeeded">{t('common.succeeded', {}, 'Succeeded')}</option>
                   <option value="success">{t('common.success', {}, 'Success')}</option>
                   <option value="error">{t('common.error', {}, 'Error')}</option>
-                  <option value="failed">{t('common.failed', {}, 'Failed')}</option>
+                  <option value="failed">{t('status.failed')}</option>
                   <option value="partial">{t('admin.audit_workspace.outcome_partial')}</option>
                   {searchParams.get('outcome') && !['succeeded', 'success', 'error', 'blocked', 'failed', 'partial'].includes(searchParams.get('outcome') || '') ? <option value={searchParams.get('outcome') || ''}>{searchParams.get('outcome')}</option> : null}
                   <option value="blocked">{t('common.blocked', {}, 'Blocked')}</option>
@@ -433,10 +421,10 @@ export function AdminAuditWorkspace() {
                 return (
                   <tr key={eventId || `${item.event_kind}-${item.created_at}`} aria-selected={selected} className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}>
                     <td className="px-3 py-2.5 align-top text-xs text-slate-500 dark:text-slate-400">{item.created_at ? formatDate(item.created_at) : notAvailable}</td>
-                    <td className="px-3 py-2.5 align-top"><p className="truncate font-semibold text-slate-950 dark:text-white">{humanizeAuditToken(identifier(item.event_kind, notAvailable))}</p><p className="mt-1 font-mono text-[0.68rem] text-slate-500 dark:text-slate-400">#{eventId || notAvailable}</p></td>
-                    <td className="px-3 py-2.5 align-top"><BackofficeStatusBadge label={humanizeAuditToken(identifier(item.outcome, notAvailable))} status={routineSuccess ? 'read_only' : identifier(item.outcome, 'unknown')} /></td>
-                    <td className="px-3 py-2.5 align-top"><p className="truncate font-mono text-xs text-slate-700 dark:text-slate-200">{auditScope(item, notAvailable)}</p></td>
-                    <td className="px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300">{identifier(item.actor_ref, humanizeAuditToken(identifier(item.actor_kind, notAvailable)))}</td>
+                    <td className="px-3 py-2.5 align-top"><p className="truncate font-semibold text-slate-950 dark:text-white">{auditEventLabel(item.event_kind, t)}</p><p className="mt-1 font-mono text-[0.68rem] text-slate-500 dark:text-slate-400">#{eventId || notAvailable}</p></td>
+                    <td className="px-3 py-2.5 align-top"><BackofficeStatusBadge label={auditOutcomeLabel(item.outcome, t)} status={routineSuccess ? 'read_only' : identifier(item.outcome, 'unknown')} /></td>
+                    <td className="px-3 py-2.5 align-top"><p className="truncate font-mono text-xs text-slate-700 dark:text-slate-200">{auditScopeLabel(item.scope_kind, item.scope_id, t)}</p></td>
+                    <td className="px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300">{auditActorLabel(item.actor_kind, item.actor_ref, t)}</td>
                     <td className="px-3 py-2.5 text-right align-top">
                       <button
                         type="button"
@@ -500,20 +488,20 @@ export function AdminAuditWorkspace() {
 
       <AdminInspectorDrawer
         open={Boolean(selectedEvent)}
-        title={selectedEvent ? humanizeAuditToken(identifier(selectedEvent.event_kind, notAvailable)) : t('admin.audit_workspace.event_detail', {}, 'Audit event detail')}
+        title={selectedEvent ? auditEventLabel(selectedEvent.event_kind, t) : t('admin.audit_workspace.event_detail', {}, 'Audit event detail')}
         titleId="admin-audit-event-title"
         eyebrow={selectedEvent ? `#${selectedEvent.event_id}` : undefined}
         description={t('admin.audit_workspace.detail_description', {}, 'Bounded service-plane metadata for support and operation verification.')}
         closeLabel={t('common.close', {}, 'Close')}
-        headerAccessory={selectedEvent ? <BackofficeStatusBadge label={humanizeAuditToken(identifier(selectedEvent.outcome, notAvailable))} status={identifier(selectedEvent.outcome, 'unknown')} /> : undefined}
+        headerAccessory={selectedEvent ? <BackofficeStatusBadge label={auditOutcomeLabel(selectedEvent.outcome, t)} status={identifier(selectedEvent.outcome, 'unknown')} /> : undefined}
         onClose={closeInspector}
       >
         {selectedEvent ? (
           <div className="space-y-5">
             <dl className="grid gap-4 text-sm">
               {[
-                [t('admin.audit_workspace.scope', {}, 'Scope'), auditScope(selectedEvent, notAvailable)],
-                [t('admin.audit_workspace.actor', {}, 'Operator'), identifier(selectedEvent.actor_ref, humanizeAuditToken(identifier(selectedEvent.actor_kind, notAvailable)))],
+                [t('admin.audit_workspace.scope', {}, 'Scope'), auditScopeLabel(selectedEvent.scope_kind, selectedEvent.scope_id, t)],
+                [t('admin.audit_workspace.actor', {}, 'Operator'), auditActorLabel(selectedEvent.actor_kind, selectedEvent.actor_ref, t)],
                 [t('admin.audit_workspace.time', {}, 'Time'), selectedEvent.created_at ? formatDate(selectedEvent.created_at) : notAvailable],
                 [t('admin.audit_workspace.site_id', {}, 'Site ID'), identifier(selectedEvent.site_id, notAvailable)],
                 [t('admin.audit_workspace.account_id', {}, 'Account ID'), identifier(selectedEvent.account_id, notAvailable)],
@@ -525,6 +513,12 @@ export function AdminAuditWorkspace() {
               <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">{t('admin.audit_workspace.technical_detail', {}, 'Technical detail')}</summary>
               <dl className="mt-4 grid gap-4 text-sm">
                 {[
+                  [t('admin.audit_workspace.scope_kind'), selectedEvent.scope_kind],
+                  [t('admin.audit_workspace.scope_id'), selectedEvent.scope_id],
+                  [t('admin.readability.event_code'), selectedEvent.event_kind],
+                  [t('admin.readability.result_code'), selectedEvent.outcome],
+                  [t('admin.readability.actor_kind'), selectedEvent.actor_kind],
+                  [t('admin.audit_workspace.actor_ref'), selectedEvent.actor_ref],
                   [t('admin.audit_workspace.request_path', {}, 'Request path'), [selectedEvent.method, selectedEvent.path].filter(Boolean).join(' ') || notAvailable],
                   [t('audit.trace_id', {}, 'Record number'), identifier(selectedEvent.trace_id, notAvailable)],
                   [t('admin.audit_workspace.idempotency_key', {}, 'Idempotency key'), identifier(selectedEvent.idempotency_key, notAvailable)],

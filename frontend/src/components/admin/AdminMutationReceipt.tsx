@@ -173,11 +173,14 @@ export function AdminMutationReceipt({
         <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
           <p className="font-semibold">{title || t('admin.receipt_latest', {}, 'Latest operation')}</p>
           <p className="break-words">{receipt.effective_summary}</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <span className="break-all">{receipt.event_kind}</span>
-            <span>{receipt.outcome}</span>
-            <BackofficeIdentifier value={receipt.scope_id} className="inline text-xs text-slate-600 dark:text-slate-300" />
-          </div>
+          <dl className="grid gap-2 select-text">
+            {[
+              [t('admin.readability.event_code'), receipt.event_kind],
+              [t('admin.readability.result_code'), receipt.outcome],
+              [t('admin.audit_workspace.scope_kind'), receipt.scope_kind],
+              [t('admin.audit_workspace.scope_id'), receipt.scope_id],
+            ].map(([label, value]) => <div key={label}><dt className="font-medium">{label}</dt><dd><BackofficeIdentifier value={value} full className="select-text break-all text-xs" /></dd></div>)}
+          </dl>
           {receipt.audit_state === 'persisted' ? (
             <p>{t('admin.receipt_audit_persisted', {}, 'Change record saved')}</p>
           ) : null}

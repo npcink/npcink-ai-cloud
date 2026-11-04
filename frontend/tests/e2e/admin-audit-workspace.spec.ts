@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { buildAuditMetadata } from '../fixtures/admin-audit-metadata';
+import serializers from '../fixtures/admin-diagnostic-serializers.json' with { type: 'json' };
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -61,7 +62,7 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   await expect(queryEvidence).toContainText(/Evidence generated|证据生成时间/i);
   await expect(queryEvidence).toContainText(/1 records returned|返回 1 条记录/i);
   await expect(queryEvidence).toContainText(/Query duration:\s+4\.3 ms|查询耗时:\s+4\.3 ms/i);
-  await expect(directory).toContainText(/Subscription Bind|Subscription bind|订阅/i);
+  await expect(directory).toContainText(/Link subscription|订阅/i);
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toContainText('audit-bind-101');
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).not.toContainText(/payload_json|secret/i);
@@ -78,7 +79,7 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   await expect(page).toHaveURL(/idempotency_key=audit-rebuild-102/);
   await expect(page.locator('[data-ui="admin-audit-active-filters"]')).toContainText('audit-rebuild-102');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
-  await expect(directory).toContainText(/Billing Snapshot Rebuild|Billing snapshot rebuild|账单/i);
+  await expect(directory).toContainText(/Refresh billing statistics|计费用量/i);
 
   await directory.getByRole('button', { name: /Inspect|查看/i }).click();
   await expect(page).toHaveURL(/focus=102/);
@@ -498,4 +499,34 @@ test('audit Quiet PC workspace keeps filters outside table scrolling in both lan
       { id: 'dialog-focus-recovery', status: 'pass', evidence: 'opened exact row drawer, closed with Escape and observed Inspect focus restoration' },
       { id: 'context-stability', status: 'pass', evidence: 'table scroll does not move filter form, URL filters retained' },
     ], interactionResults: [{ id: 'PC-localization-and-scrolling', status: 'pass', evidence: '1280/1440 × en/zh-CN × light/dark,10 rows, no page horizontal overflow, filters outside independent scroll' }] });
+});
+
+test('Chinese audit labels distinguish known roles and keep exact raw evidence on demand', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  await page.route('**/api/admin/audit-events?*', route => route.fulfill({ json: buildAdminApiEnvelope({
+    ...serializers.audit, ...buildAuditMetadata(new URL(route.request().url()).searchParams),
+    items: [
+      { event_id: 201, event_kind: 'customer_notification.sent', outcome: 'succeeded', actor_kind: 'platform_admin', actor_ref: 'platform:internal_root', scope_kind: 'account', scope_id: 'acct_a', account_id: 'acct_a', created_at: '2026-11-04T01:00:00Z' },
+      { event_id: 202, event_kind: 'worker.heartbeat', outcome: 'succeeded', actor_kind: 'system_worker', actor_ref: 'ops_cadence', scope_kind: 'worker', scope_id: 'ops_cadence', created_at: '2026-11-04T01:00:00Z' },
+      { event_id: 203, event_kind: 'future.event', outcome: 'future-result', actor_kind: 'unverified', actor_ref: 'unknown-source', scope_kind: 'site', scope_id: 'site_a', site_id: 'site_a', created_at: '2026-11-04T01:00:00Z' },
+    ].map(row => ({ ...serializers.audit.items[0], account_id: '', site_id: '', idempotency_key: '', ...row })), total: 3, pagination: { limit: 10, offset: 0, total: 3, has_more: false, next_offset: null, last_offset: 0, is_out_of_range: false },
+    diagnostics: { returned_count: 3, query_duration_ms: 1 },
+  }) }));
+  await page.goto('/admin/audit');
+  const table = page.locator(directorySelector);
+  await expect(table).toContainText('发送客户通知');
+  await expect(table).toContainText('后台任务心跳');
+  await expect(table).toContainText('系统任务 · 定时维护任务');
+  await expect(table).toContainText('成功');
+  await expect(table).toContainText('future.event');
+  await expect(table.locator('tbody tr').last()).not.toContainText('平台管理员');
+  await table.getByRole('button', { name: '查看证据', exact: true }).first().click();
+  const drawer = page.locator('[data-ui="admin-inspector-drawer"]');
+  await drawer.getByText('技术详情', { exact: true }).click();
+  await expect(drawer).toContainText('事件代码');
+  await expect(drawer).toContainText('customer_notification.sent');
+  await expect(drawer).toContainText('platform:internal_root');
+  await page.screenshot({ path: testInfo.outputPath('audit-readable-evidence-1440.png'), fullPage: true });
 });
