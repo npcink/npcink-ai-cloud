@@ -1,30 +1,38 @@
-# Single release certificate maintenance exception — 2026-11-04
+# Retention release certificate maintenance exception — 2026-11-04
 
 Status: operator-approved bounded release-tooling contract. This does not authorize
-Deploy Production. The final exact production SHA still requires operator approval.
+Deploy Production. The operator separately requested deploying the retention release;
+workflow authorization must still bind the final exact production SHA.
 
 ## Scope and deadline
 
 The operator approved deferring only the renewal dry run during the official
 [Let’s Encrypt maintenance](https://letsencrypt.status.io/pages/maintenance/55957a99e800baa4470002da/6ae128f23dbbeb05d762175d).
 Incident `6ae128f23dbbeb05d762175d` must remain active in the official status API;
-its planned window is 2026-11-03 16:00–2026-11-04 21:00 UTC. If staging has
-recovered, use normal renewal readiness. The exception expires at **2026-11-05
-04:00 UTC / 12:00 Asia/Shanghai**, including in-flight consumption.
+its planned window is 2026-11-03 16:00–2026-11-04 21:00 UTC. The operator
+explicitly approved deferring this retention release's dry run after actual
+renewal attempts [41792025557](https://github.com/npcink/npcink-ai-cloud/actions/runs/41792025557)
+and [41792460224](https://github.com/npcink/npcink-ai-cloud/actions/runs/41792460224)
+failed with CA-side DNS validation errors. The directory returning HTTP 200
+does not prove challenge recovery. Ended official maintenance still requires
+normal readiness; there is no automatic fallback to this exception.
+The exception expires at **2026-11-05 04:00 UTC / 12:00 Asia/Shanghai**,
+including in-flight consumption.
 
-The application tree is frozen at `a1e38cf4303256370e13dd694294231f601e0aa1`.
+The application tree is frozen at `ca3b476683e9a31b50bb18820a27b56b9039dc2f`.
 Only the exact release-tooling, test and documentation paths in
 `deploy/certificate-maintenance-exception.py:ALLOWED` may differ. The production
-installation must still be `b8cc6049da7d1c33cbfffc9f8e5521f332a1adb5`.
-No application feature, production configuration or WordPress authority changes
-are admitted through this exception.
+installation must still be `9a5bf35240b5702ab853fedc0f126baa7f003360`.
+The frozen source already contains reviewed retention rules #1368 and compatibility
+record #1369. No further application, Compose, migration or WordPress authority
+changes are admitted through this exception.
 
 ## Explicit selection and independent evidence
 
 Promotion preflight requires `--certificate-maintenance-exception` plus the exact
 `NPCINK_CLOUD_CERTIFICATE_MAINTENANCE_APPROVAL` sentence:
 
-`Defer the renewal dry run for the approved 2026-11-04 release.`
+`Defer the renewal dry run for the approved 2026-11-04 retention release.`
 
 Deploy Production separately requires the same sentence in optional input
 `certificate_maintenance_confirmation`, in addition to ordinary exact-SHA
@@ -45,6 +53,16 @@ Evidence is explicitly `maintenance_exception`, with
 ordinary `status=passed` readiness receipt. Valid current TLS and timer/hook proof
 **do not prove renewal challenges can complete**.
 
+## Prior consumed exception
+
+The earlier application release used schema `npcink.certificate_maintenance_exception.v1`
+and `maintenance-20261104-deployment.json`; its claim was consumed by run
+41766124689 for installed revision `9a5bf352`. Preserve that record unchanged.
+This separately authorized retention release uses schema
+`npcink.retention_certificate_maintenance_exception.v1` and distinct claim
+`maintenance-retention-20261104-deployment.json`. Neither the old approval sentence
+nor its consumed claim authorizes this attempt.
+
 ## One attempt and failure semantics
 
 Promotion only inspects. The explicitly selected deployment creates an exclusive
@@ -64,7 +82,9 @@ new authorization.
 All other release gates remain mandatory: reviewed master source, production PR,
 exact production CI/CodeQL, scanned SHA-bound v2 bundle, database and operational
 preflight, matched backup/recovery evidence and final Deploy authorization.
-Migrations 0088–0092 and session/TOTP rollback constraints remain unchanged.
+This release adds no migrations. Immediate application rollback uses the current
+0092-compatible installed `9a5bf352` bundle, with the existing session/TOTP
+constraints preserved.
 
 After staging recovers, perform the normal authorized certificate-readiness refresh
 and record its actual result separately as deferred proof completed or still

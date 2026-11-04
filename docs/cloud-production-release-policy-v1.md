@@ -263,9 +263,10 @@ deployment secret name, concurrent deployment, failed certificate check, or
 unbound workflow result blocks promotion.
 
 The operator-approved [2026-11-04 single-release maintenance exception](certificate-maintenance-exception-2026-11-04.md)
-may explicitly defer only the dry run, until 2026-11-05 04:00 UTC. It uses separate
-`maintenance_exception` evidence, a frozen application scope and a SHA/tree/run-bound
-single-use claim. All live TLS, timer and hook checks remain mandatory. Ordinary
+now covers the separately operator-approved retention release after the initial
+application-release claim was consumed. It may explicitly defer only the dry run,
+until 2026-11-05 04:00 UTC. It uses a distinct single-use claim, frozen retention
+source, and `maintenance_exception` evidence binding the exact SHA/tree/run. All live TLS, timer and hook checks remain mandatory. Ordinary
 readiness remains the default; no failed or unexecuted dry run is labeled passed.
 Final Deploy authorization and all other gates remain required.
 
