@@ -17,6 +17,10 @@ on:
         required: true
         default: false
         type: boolean
+      certificate_maintenance_confirmation:
+        description: "Only the approved 2026-11-04 release: Defer the renewal dry run for the approved 2026-11-04 release."
+        required: false
+        type: string
       finalized_runtime_network_repair:
         description: "Repair missing finalized active-release runtime-network state before ordinary deployment"
         required: true
@@ -63,12 +67,16 @@ jobs:
 
       - name: Validate operator confirmation
         env:
+          CERTIFICATE_MAINTENANCE_CONFIRMATION: ${{ inputs.certificate_maintenance_confirmation }}
           EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}
           OPERATOR_CONFIRMATION: ${{ inputs.confirmation }}
           FINALIZED_RUNTIME_NETWORK_REPAIR: ${{ inputs.finalized_runtime_network_repair }}
           FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          if [ -n "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" ]; then
+            test "${CERTIFICATE_MAINTENANCE_CONFIRMATION}" = "Defer the renewal dry run for the approved 2026-11-04 release."
+          fi
           [[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]
           test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"
           test "${OPERATOR_CONFIRMATION}" = "Approved for production validation by operator."
@@ -80,6 +88,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Wait for successful CI and CodeQL for this production commit
         id: production_ci
@@ -201,8 +211,37 @@ jobs:
           fi
           ssh-keygen -F "${known_host_lookup}" -f ~/.ssh/known_hosts >/dev/null
 
+      - name: Claim single maintenance deployment attempt
+        if: steps.release_plan.outputs.action == 'runtime' && inputs.certificate_maintenance_confirmation != ''
+        env:
+          NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE: /home/runner/.ssh/npcink_prod_deploy_key
+          NPCINK_CLOUD_CERTIFICATE_MAINTENANCE_APPROVAL: ${{ inputs.certificate_maintenance_confirmation }}
+        run: |
+          set -euo pipefail
+          python3 deploy/certificate-maintenance-exception.py --phase deploy \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" \
+            > "${RUNNER_TEMP}/certificate-maintenance-exception.json"
+          {
+            echo "## Certificate evidence: maintenance_exception"
+            echo "Renewal dry run DEFERRED, not passed. This attempt is single use."
+            cat "${RUNNER_TEMP}/certificate-maintenance-exception.json"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload maintenance exception evidence
+        if: steps.release_plan.outputs.action == 'runtime' && inputs.certificate_maintenance_confirmation != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: certificate-maintenance-exception-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/certificate-maintenance-exception.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Preflight certificate readiness receipt
-        if: steps.release_plan.outputs.action == 'runtime'
+        if: steps.release_plan.outputs.action == 'runtime' && inputs.certificate_maintenance_confirmation == ''
         env:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}

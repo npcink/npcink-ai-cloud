@@ -1428,4 +1428,13 @@ reject_marker ".github/workflows/deploy-production.yml" "workflow_run:"
 reject_marker ".github/workflows/deploy-production.yml" "push:"
 require_marker ".github/workflows/deploy-production.yml" "github.ref == 'refs/heads/production'"
 
+# The reviewed one-shot exception cannot replace the ordinary readiness lane.
+require_file "docs/certificate-maintenance-exception-2026-11-04.md"
+require_marker "deploy/certificate-maintenance-exception.py" 'EXPIRES = 1793851200'
+require_marker "deploy/certificate-maintenance-exception.py" 'os.O_CREAT | os.O_EXCL'
+require_marker "deploy/certificate-maintenance-exception.py" 'consumed_before_image_mutation'
+require_marker ".github/workflows/deploy-production.yml" 'certificate_maintenance_confirmation'
+require_marker "deploy/remote-load-and-up.sh" '--phase consume'
+require_marker "deploy/certificate-renewal-readiness.sh" '"renewal_dry_run_passed": False'
+
 echo "[ok] Lightweight release policy gate passed"
