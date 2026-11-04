@@ -8,7 +8,7 @@ const time = z.string().refine(v => Number.isFinite(Date.parse(v)));
 export const supportPriority = z.enum(['low', 'normal', 'high', 'critical', 'urgent']);
 export const supportStatus = z.enum(['open', 'in_progress', 'resolved', 'closed']);
 const visibility = z.enum(['public', 'internal']);
-const ticket = z.object({ request_id: id, account_id: id, site_id: z.string(), principal_id: z.string(), email: z.string(),
+const ticket = z.object({ request_id: id, account_id: id, account_name: z.string().optional(), site_name: z.string().optional(), site_url: z.string().optional(), site_id: z.string(), principal_id: z.string(), email: z.string(),
   topic: z.string().min(1), title: z.string(), description: z.string(), status: supportStatus,
   priority: supportPriority, admin_note: z.string(), created_at: time, updated_at: time });
 const message = z.object({ message_id: id, request_id: id, account_id: id, site_id: z.string(),

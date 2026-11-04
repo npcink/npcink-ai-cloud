@@ -11,6 +11,7 @@ import { AdminQueueKeyboardHint } from '@/components/admin/AdminQueueKeyboardHin
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { SupportRequestEditor } from './SupportRequestEditor';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
+import { supportCustomerLabel, supportSiteLabel } from './display';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -272,7 +273,7 @@ export function SupportRequestsWorkspace() {
 
       {directory?.issues?.length ? <div role="alert" data-ui="support-directory-issues" className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-200">
         <p>{t('admin.support_drafts.directory_issues', { count: String(directory.issues.length) })}</p>
-        <p>{directory.issues.join(', ')}</p>
+        <details><summary className="cursor-pointer">{t('admin.readability.invalid_records')}</summary><p className="select-text break-all text-xs">{directory.issues.join(', ')}</p></details>
         <button type="button" className="btn btn-secondary btn-sm" disabled={isRefreshing} onClick={() => void directoryQuery.refetch()}>{t('common.retry')}</button>
       </div> : null}
       {loadError && !displayScope.isRetainedScope ? <p role="status" className="text-sm">{t('admin.support_drafts.directory_blocked')}</p> : null}
@@ -385,8 +386,8 @@ export function SupportRequestsWorkspace() {
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
-                      <BackofficeIdentifier value={item.account_id} className="block text-xs" />
-                      <p className="mt-1 truncate">{item.site_id || t('common.not_available', {}, 'N/A')}</p>
+                      <p className="break-words">{supportCustomerLabel(item, t('admin.accounts.unnamed_customer'))}</p>
+                      <p className="mt-1 truncate">{item.site_id ? supportSiteLabel(item, t('admin.readability.unnamed_site')) : t('portal.support_request_no_site')}</p>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
                       {item.updated_at ? formatDate(item.updated_at) : t('common.unknown', {}, 'Unknown')}
@@ -455,13 +456,19 @@ export function SupportRequestsWorkspace() {
             </section>
             <dl className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-x-4 gap-y-2 border-y border-slate-200 py-4 text-sm dark:border-slate-800">
               <dt className="text-slate-500 dark:text-slate-400">{t('common.email', {}, 'Email')}</dt><dd className="truncate text-right text-slate-950 dark:text-white">{selectedRequest.email}</dd>
-              <dt className="text-slate-500 dark:text-slate-400">{t('admin.account_id', {}, 'Account ID')}</dt><dd className="truncate text-right"><Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(selectedRequest.account_id)}`}>{selectedRequest.account_id}</Link></dd>
-              <dt className="text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id ? <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(selectedRequest.site_id)}`}>{selectedRequest.site_id}</Link> : t('common.not_available', {}, 'N/A')}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.account')}</dt><dd className="truncate text-right"><Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(selectedRequest.account_id)}`}>{supportCustomerLabel(selectedRequest, t('admin.accounts.unnamed_customer'))}</Link></dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id ? <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(selectedRequest.site_id)}`}>{supportSiteLabel(selectedRequest, t('admin.readability.unnamed_site'))}</Link> : t('common.not_available', {}, 'N/A')}</dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('common.status')}</dt><dd className="text-right"><BackofficeStatusBadge status={statusTone(selectedRequest.status)} label={t(`admin.support_status_${selectedRequest.status}`, {}, selectedRequest.status)} /></dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</dt><dd className="text-right text-slate-950 dark:text-white">{t(`portal.support_topic_${selectedRequest.topic}`, {}, selectedRequest.topic)}</dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}</dt><dd className="text-right text-slate-950 dark:text-white">{selectedRequest.updated_at ? formatDate(selectedRequest.updated_at) : t('common.unknown', {}, 'Unknown')}</dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.support_requests_first_response', {}, 'First response')}</dt><dd className="text-right text-slate-950 dark:text-white">{selectedRequest.first_operator_response_at ? formatDate(selectedRequest.first_operator_response_at) : t('admin.support_requests_not_responded', {}, 'Not responded')}</dd>
             </dl>
+            <details className="text-xs"><summary className="cursor-pointer">{t('admin.notices.evidence')}</summary>
+              <dl className="mt-2 space-y-2 select-text break-all">
+                <div><dt>{t('admin.account_id')}</dt><dd>{selectedRequest.account_id}</dd></div>
+                <div><dt>{t('admin.audit_workspace.site_id')}</dt><dd>{selectedRequest.site_id || '—'}</dd></div>
+              </dl>
+            </details>
             <section aria-labelledby="support-request-internal-handling-title">
               <h3 id="support-request-internal-handling-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_internal_handling_title', {}, 'Internal handling')}</h3>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRequest.admin_note || t('admin.support_requests_no_internal_note', {}, 'No internal handling note yet.')}</p>

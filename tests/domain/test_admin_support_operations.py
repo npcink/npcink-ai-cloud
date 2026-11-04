@@ -347,3 +347,59 @@ def test_directory_fixture_is_the_real_serializer_with_nullable_dates(support_db
         ).read_text()
     )
     assert CommercialService(support_db).list_admin_support_requests(limit=10, offset=0) == expected
+
+
+def test_admin_support_read_names_are_batched_and_do_not_leak_after_site_transfer(support_db):
+    from app.core.models import Account, Site
+
+    with get_session(support_db) as session:
+        account = session.get(Account, "acct_reply")
+        account.metadata_json = {"operator_display_name": "Internal customer label"}
+        session.add(Account(account_id="acct_other", name="Other customer", status="active"))
+        session.add(Site(
+            site_id="site_reply", account_id="acct_reply", name="Customer blog",
+            site_url="https://reply.example.test", status="active",
+        ))
+        session.flush()
+        session.get(SupportRequest, "sr_reply").site_id = "site_reply"
+        for index in range(5):
+            session.add(SupportRequest(
+                request_id=f"sr_display_{index}", account_id="acct_reply", site_id="site_reply",
+                email="reply@example.com", title="Other ticket", description="Display projection",
+            ))
+        session.commit()
+
+    service = CommercialService(support_db)
+    queries = []
+
+    def record(_conn, _cursor, statement, _params, _context, _many):
+        queries.append(statement)
+
+    engine = get_engine(support_db)
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        rows = service.list_admin_support_requests()["items"]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert len(rows) == 6
+    assert all(row["account_name"] == "Internal customer label" for row in rows)
+    assert all(row["site_name"] == "Customer blog" for row in rows)
+    assert sum("FROM accounts" in query for query in queries) == 1
+    assert sum("FROM sites" in query for query in queries) == 1
+    detail = service.get_admin_support_request(request_id="sr_reply")["request"]
+    assert detail["site_url"] == "https://reply.example.test"
+    portal = service.get_portal_support_request(
+        principal_id="prn_reply", account_id="acct_reply", request_id="sr_reply",
+    )
+    assert "Internal customer label" not in str(portal)
+    assert "account_name" not in portal["request"]
+
+    with get_session(support_db) as session:
+        site = session.get(Site, "site_reply")
+        site.account_id = "acct_other"
+        site.name = "New owner's private name"
+        site.site_url = "https://new-owner.example.test"
+        session.commit()
+    transferred = service.get_admin_support_request(request_id="sr_reply")["request"]
+    assert transferred["site_name"] == transferred["site_url"] == ""
+    assert transferred["site_id"] == "site_reply"

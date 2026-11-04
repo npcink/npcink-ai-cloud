@@ -12,6 +12,9 @@ export type SupportRequestWaitingOn = 'operator' | 'customer' | 'none';
 export type SupportRequest = {
   request_id: string;
   account_id: string;
+  account_name?: string;
+  site_name?: string;
+  site_url?: string;
   site_id?: string;
   principal_id?: string;
   email: string;
