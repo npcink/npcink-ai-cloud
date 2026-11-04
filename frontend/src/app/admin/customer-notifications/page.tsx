@@ -134,6 +134,10 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
         {t(detail.status === 'preview' ? 'admin.notices.preview_title' : 'admin.notices.result')}
       </h2>
       <h3 className="break-words text-lg font-semibold" data-ui="notice-subject">{detail.title}</h3>
+      <p className="text-sm text-slate-600 dark:text-slate-300" data-ui="notice-sender">
+        {t('admin.notices.sender')}: {t(detail.actor_kind === 'platform_admin'
+          ? 'portal.role_platform_admin' : 'admin.notices.sender_unknown')}
+      </p>
       <dl className="flex flex-wrap gap-x-6 gap-y-2 border-y border-slate-200 py-3 text-sm dark:border-slate-800" data-ui="notice-result-metrics">
         {[
           ['admin.notices.accounts_count', detail.target_count],
@@ -174,22 +178,21 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
         <table className="w-full table-fixed text-left text-sm">
           <thead>
             <tr>
-              <th className="w-[40%] py-1.5 pr-2 font-medium">{t('common.account')}</th>
+              <th className="w-[40%] py-1.5 pr-2 font-medium">{t('admin.notices.customer')}</th>
               <th className="w-[35%] py-1.5 pr-2 font-medium">{t('admin.notices.recipient')}</th>
               <th className="w-[25%] py-1.5 font-medium">{t('common.status')}</th>
             </tr>
           </thead>
           <tbody>
-            {detail.recipients.map((item) => (
+            {detail.recipients.map((item, index) => (
               <tr
                 className="border-t border-slate-100 dark:border-slate-800"
                 key={item.account_id}
               >
                 <td className="max-w-xs break-words py-2 pr-2">
-                  {item.account_name}
-                  {item.account_name !== item.account_id ? (
-                    <span className="block break-all text-xs text-slate-500 dark:text-slate-400">{item.account_id}</span>
-                  ) : null}
+                  {item.account_name.trim() && item.account_name !== item.account_id
+                    ? item.account_name
+                    : t('admin.notices.unnamed_customer', { number: String(index + 1) })}
                 </td>
                 <td className="break-all py-2 pr-2">{item.email || '—'}</td>
                 <td className="py-2">
@@ -213,7 +216,8 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
         <dl className="grid gap-3 text-xs sm:grid-cols-2">
           {[
             ['admin.notices.batch_id', detail.dispatch_id],
-            ['admin.notices.sender', detail.actor_ref],
+            ['admin.notices.sender_ref', detail.actor_ref],
+            ['admin.notices.sender_kind', detail.actor_kind],
             ['admin.notices.created_at', formatDate(detail.created_at)],
             ...(detail.sent_at ? [['admin.notices.sent_at', formatDate(detail.sent_at)]] : []),
           ].map(([label, value]) => (
@@ -223,6 +227,20 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
             </div>
           ))}
         </dl>
+        <div className="max-h-72 space-y-3 overflow-auto text-xs" data-ui="notice-recipient-identifiers">
+          <h4 className="font-medium">{t('admin.notices.customer_identifiers')}</h4>
+          {detail.recipients.map((item, index) => (
+            <dl key={item.account_id} className="space-y-1">
+              <dt className="break-words text-slate-500 dark:text-slate-400">
+                {index + 1}. {item.account_name.trim() && item.account_name !== item.account_id
+                  ? item.account_name
+                  : t('admin.notices.unnamed_customer', { number: String(index + 1) })}
+                {item.email ? ` · ${item.email}` : ''}
+              </dt>
+              <dd className="select-text break-all">{item.account_id}</dd>
+            </dl>
+          ))}
+        </div>
         <p className="text-xs text-slate-600 dark:text-slate-300">{t('admin.notices.transaction_scope')}</p>
       </BackofficeDisclosure>
     </div>

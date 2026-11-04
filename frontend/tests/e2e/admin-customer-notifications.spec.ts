@@ -435,8 +435,11 @@ test('Chinese notice detail stays readable with long identities, selection and s
   await expect(row).toHaveAttribute('aria-pressed', 'true');
   await expect(detail.getByRole('heading', { name: '服务维护通知' })).toBeVisible();
   await expect(detail.locator('[data-ui="notice-result-metrics"]')).not.toContainText('可发送');
-  await expect(detail.getByRole('cell', { name: accountId, exact: true })).toHaveCount(1);
-  await expect(detail.getByText(accountId, { exact: true })).toHaveCount(1);
+  await expect(detail.locator('[data-ui="notice-sender"]')).toHaveText('发送人: 平台管理员');
+  await expect(detail.getByRole('cell', { name: '未命名客户 1', exact: true })).toBeVisible();
+  await expect(detail.getByRole('cell', { name: 'long-recipient-address-for-layout@example.test', exact: true })).toBeVisible();
+  await expect(detail.getByText(accountId, { exact: true })).toBeHidden();
+  await expect(detail.getByText(notice.actor_ref, { exact: true })).toBeHidden();
   await expect(detail.getByText('没有唯一有效负责人', { exact: true })).toBeVisible();
   await expect(history.getByRole('button', { name: '上一页', exact: true })).toHaveCount(0);
   await expect(history.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0);
@@ -452,7 +455,13 @@ test('Chinese notice detail stays readable with long identities, selection and s
   await detail.getByText('操作详情', { exact: true }).click();
   await expect(detail.getByText('创建时间', { exact: true })).toBeVisible();
   await expect(detail.getByText('发送时间', { exact: true })).toBeVisible();
+  await expect(detail.getByText('通知编号', { exact: true })).toBeVisible();
   await expect(detail.getByText(notice.dispatch_id, { exact: true })).toBeVisible();
+  await expect(detail.getByText('发送人标识', { exact: true })).toBeVisible();
+  await expect(detail.getByText(notice.actor_ref, { exact: true })).toBeVisible();
+  await expect(detail.getByText(accountId, { exact: true })).toBeVisible();
+  await expect(detail.getByText('acct_long_customer', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('notices-identity-details.png'), fullPage: true });
   await detail.getByText('操作详情', { exact: true }).click();
   for (const width of [1280, 1056]) {
     await page.setViewportSize({ width, height: 800 });
@@ -472,6 +481,12 @@ test('Chinese notice detail stays readable with long identities, selection and s
   await history.getByRole('button', { name: '上一页', exact: true }).click();
   await expect(history.getByRole('button', { name: /服务维护通知/ })).toBeVisible();
   expect(offsets).toContain(20);
+  notice.actor_kind = 'unknown_identity';
+  await page.reload();
+  await history.getByRole('button', { name: /服务维护通知/ }).click();
+  await expect(detail.locator('[data-ui="notice-sender"]')).toHaveText('发送人: 身份类型待确认');
+  await detail.getByText('操作详情', { exact: true }).click();
+  await expect(detail.getByText('unknown_identity', { exact: true })).toBeVisible();
   expect(writes).toBe(0);
   expect(evidence.consoleErrors).toEqual([]);
 });
