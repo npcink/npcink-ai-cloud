@@ -248,7 +248,17 @@ test('editorial quality detail remains available on the dedicated statistics vie
   await expect(qualityPanel).toContainText(/Exact adoption|精确采纳率/i);
   await expect(qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]')).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
+  let releaseTask!: () => void;
+  const taskPending = new Promise<void>(resolve => { releaseTask = resolve; });
+  await page.route('**/api/admin/editor-assist-quality?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('task_key') === 'content_summary') await taskPending;
+    await route.fallback();
+  });
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
+  await expect(qualityPanel.locator('[data-ui="editor-assist-quality-export"]')).toBeDisabled();
+  await expect(page).toHaveURL(/task=content_summary/);
+  releaseTask();
+  await expect(qualityPanel.locator('[data-ui="editor-assist-quality-export"]')).toBeEnabled();
   const qualityReference = qualityPanel.locator('[data-ui="editor-quality-reference"]');
   await expect(qualityReference).not.toHaveAttribute('open', '');
   await qualityReference.locator('summary').press('Enter');

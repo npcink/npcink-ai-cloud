@@ -162,6 +162,15 @@ export function EditorAssistQualityPanel({
   const [loading, setLoading] = useState(true);
   const requestSequenceRef = useRef(0);
 
+  // Invalidate old evidence before a deferred URL navigation commits new props.
+  const changeScope = (navigate: () => void) => {
+    requestSequenceRef.current += 1;
+    setData(null);
+    setExportData(null);
+    setLoading(true);
+    navigate();
+  };
+
   const loadQuality = useCallback(async () => {
     const sequence = ++requestSequenceRef.current;
     setLoading(true);
@@ -266,8 +275,8 @@ export function EditorAssistQualityPanel({
       <div className="border-t border-slate-200 dark:border-slate-800">
         <div data-ui="editor-quality-scope" className="flex flex-wrap items-center gap-2 px-5 py-3 text-xs text-slate-600 dark:text-slate-300 md:px-6">
           <span>{t('admin.editor_quality.current_scope', {}, 'Current scope')}: {windowHours / 24} {t('admin.editor_quality.days', {}, 'days')} · {siteId || t('admin.editor_quality.all_sites', {}, 'All sites')} · {t(TASK_OPTIONS.find(option => option.value === taskKey)?.labelKey || 'admin.editor_quality.task_all', {}, taskKey || 'All tasks')}</span>
-          {siteId ? <button type="button" className="underline underline-offset-4" onClick={onClearSite}>{t('admin.editor_quality.clear_site', {}, 'Clear site filter')}</button> : null}
-          {taskKey ? <button type="button" className="underline underline-offset-4" onClick={() => onTaskKeyChange('')}>{t('admin.editor_quality.clear_task', {}, 'Clear task filter')}</button> : null}
+          {siteId ? <button type="button" className="underline underline-offset-4" onClick={() => changeScope(onClearSite)}>{t('admin.editor_quality.clear_site', {}, 'Clear site filter')}</button> : null}
+          {taskKey ? <button type="button" className="underline underline-offset-4" onClick={() => changeScope(() => onTaskKeyChange(''))}>{t('admin.editor_quality.clear_task', {}, 'Clear task filter')}</button> : null}
         </div>
         <p data-ui="editor-quality-sample-limit" className="px-5 pb-3 text-sm font-medium text-slate-700 dark:text-slate-200 md:px-6">
           {t('admin.editor_quality.description', {}, 'Silent WordPress adoption signals. Low-volume results validate instrumentation only.')}
@@ -305,7 +314,7 @@ export function EditorAssistQualityPanel({
               <select
                 className="min-w-32 cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 value={taskKey}
-                onChange={(event) => onTaskKeyChange(event.target.value)}
+                onChange={(event) => { const value = event.target.value; changeScope(() => onTaskKeyChange(value)); }}
               >
                 {TASK_OPTIONS.map((option) => (
                   <option key={option.value || 'all'} value={option.value}>
