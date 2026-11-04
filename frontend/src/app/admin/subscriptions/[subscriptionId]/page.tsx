@@ -627,13 +627,17 @@ function SubscriptionDetailView({ subscriptionId }: { subscriptionId: string }) 
               {t('portal.support_information', {}, 'Support information')}
             </h2>
             <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400">
-              <BackofficeIdentifier value={normalized.subscriptionId} full />
-              {normalized.accountId ? <BackofficeIdentifier value={normalized.accountId} full /> : null}
-              {normalized.planId ? <BackofficeIdentifier value={normalized.planId} full /> : null}
-              {normalized.planVersionId ? <BackofficeIdentifier value={normalized.planVersionId} full /> : null}
-              {normalized.relatedSites.map((site) => (
-                <BackofficeIdentifier key={site.siteId} value={site.siteId} full />
-              ))}
+              <dl className="space-y-3">
+                {[
+                  [t('admin.audit_workspace.subscription_id'), normalized.subscriptionId],
+                  [t('admin.account_id'), normalized.accountId],
+                  [t('admin.plans.package_id_label'), normalized.planId],
+                  [t('admin.audit_workspace.plan_version_id'), normalized.planVersionId],
+                  ...normalized.relatedSites.map(site => [t('admin.audit_workspace.site_id'), site.siteId]),
+                ].filter(([, value]) => value).map(([label, value], index) => <div key={`${label}:${index}`}>
+                  <dt>{label}</dt><dd className="select-text break-all"><BackofficeIdentifier value={value} full /></dd>
+                </div>)}
+              </dl>
             </div>
           </section>
         </div>

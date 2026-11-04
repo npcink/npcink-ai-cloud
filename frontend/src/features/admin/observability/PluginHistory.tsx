@@ -1,4 +1,5 @@
 'use client';
+import { siteIdentity } from '@/lib/identity-display';
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -8,7 +9,7 @@ import { createApiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
 
 const client = createApiClient({ idempotencyPrefix: 'plugin_history' });
-type Item = { id?: number; event_id?: string; site_id: string; plugin_slug: string; event_kind: string; received_at: string; events?: number; failed?: number; status?: string; error_code?: string | null; run_id?: string | null };
+type Item = { id?: number; event_id?: string; site_id: string; site_name?: string; site_url?: string; plugin_slug: string; event_kind: string; received_at: string; events?: number; failed?: number; status?: string; error_code?: string | null; run_id?: string | null };
 type Snapshot = { at: string; id: number };
 type History = { items: Item[]; page: number; pages: number; total: number; totals: { events: number; succeeded: number; failed: number }; snapshot: Snapshot };
 
@@ -55,6 +56,11 @@ export function PluginHistory({ hours, site, recordScope, problem, plugin = '' }
     'addon.media_recognition.failed': c('媒体识别失败', 'Media recognition failed'),
     runtime_request: c('运行请求', 'Runtime request'),
   };
+  const siteLabel = (item: Pick<Item, 'site_id' | 'site_name' | 'site_url'>) => item.site_id
+    ? siteIdentity(item.site_name, item.site_url, item.site_id, c('未命名站点', 'Unnamed site'))
+    : c('未关联站点', 'Unassigned site');
+  const pluginLabel = (slug: string) => ({ 'magick-ai': 'Magick AI', 'npcink-ai': 'Npcink AI',
+    'npcink-ai-cloud-addon': 'Npcink AI Cloud Addon', 'npcink-cloud-addon': 'Npcink Cloud Addon', 'npcink-abilities-toolkit': 'Npcink Abilities Toolkit' }[slug] || `${c('插件', 'Plugin')} · ${slug || c('来源待确认', 'Source unconfirmed')}`);
   const statusName = (value?: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[value || ''] || c('其他状态', 'Other status'));
   const groups = filters.view === 'groups';
   return <AdminDataTableFrame title={problem ? c('此问题的留存记录', 'Retained records for this problem') : c('插件事件', 'Plugin events')} dataUi="usage-recent-activity" bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
@@ -70,14 +76,21 @@ export function PluginHistory({ hours, site, recordScope, problem, plugin = '' }
       {result && result.pages > 1 ? <div className="flex gap-3"><button disabled={loading || result.page <= 1} onClick={() => setFilters(value => ({ ...value, page: result.page - 1 }))}>{c('上一页', 'Previous')}</button><button disabled={loading || result.page >= result.pages} onClick={() => setFilters(value => ({ ...value, page: result.page + 1 }))}>{c('下一页', 'Next')}</button></div> : null}
       <p className="w-full text-slate-500">{c('所选时段的已留存上报，每页 20 项；未上报或已清理的数据不在范围内。', 'Retained reports in this period, 20 per page; unreported or purged data is excluded.')} {result ? `${c('快照', 'Snapshot')}: ${formatDateTime(result.snapshot.at, locale)}` : ''}</p>
     </div>}>
-    {problem ? <p className="break-all px-3 py-2 text-xs">{site || c('未关联站点', 'Unassigned site')} · {problem.plugin} · {problem.event} · {problem.error || c('未提供错误码', 'No error code provided')}</p> : null}
-    {filters.group ? <p className="px-3 py-2 text-sm">{names[filters.group.event_kind] || filters.group.event_kind} · {filters.group.site_id}</p> : null}
+    {problem ? <p className="break-all px-3 py-2 text-xs">{siteLabel(result?.items.find(item => item.site_id === site) || { site_id: site })} · {pluginLabel(problem.plugin)} · {problem.event} · {problem.error || c('未提供错误码', 'No error code provided')}</p> : null}
+    {filters.group ? <p className="px-3 py-2 text-sm">{names[filters.group.event_kind] || filters.group.event_kind} · {siteLabel(filters.group)}</p> : null}
     {failed ? <p role="alert" className="px-3 py-4">{c('记录加载失败，请重试。', 'History could not be loaded.')} <button className="btn btn-secondary btn-sm" onClick={() => setRetry(value => value + 1)}>{c('重试', 'Retry')}</button></p> : loading ? <p role="status" className="px-3 py-4">{c('正在加载记录…', 'Loading records…')}</p> : <table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900"><tr>{[c('时间', 'Time'), groups ? c('次数 / 失败', 'Events / failed') : c('状态', 'Status'), c('事件', 'Event'), c('来源 / 站点', 'Source / site'), c('查看', 'Inspect')].map(label => <th className="whitespace-nowrap px-3 py-2" key={label}>{label}</th>)}</tr></thead><tbody>
       {result?.items.map(item => <tr key={item.id ?? JSON.stringify([item.site_id, item.plugin_slug, item.event_kind])} className="border-t border-slate-200 dark:border-slate-800">
         <td className="px-3 py-2 text-xs">{formatDateTime(item.received_at, locale)}</td>
-        <td className="whitespace-nowrap px-3 py-2">{groups ? `${item.events} / ${item.failed}` : statusName(item.status)}</td>
-        <td className="px-3 py-2"><details><summary className="cursor-pointer">{names[item.event_kind] || `${c('其他事件', 'Other event')} · ${item.event_kind}`}</summary><code className="break-all text-xs text-slate-500">{item.event_kind}</code>{item.run_id ? <p className="break-all text-xs text-slate-500">{item.run_id}</p> : null}{item.error_code ? <p className="break-all text-xs text-slate-500">{item.error_code}</p> : null}{item.event_id ? <p className="break-all text-xs text-slate-500">{item.event_id}</p> : null}</details></td>
-        <td className="break-all px-3 py-2 text-xs">{item.plugin_slug}<br />{item.site_id}</td>
+        <td className="px-3 py-2"><span className="whitespace-nowrap">{groups ? `${item.events} / ${item.failed}` : statusName(item.status)}</span>{item.error_code ? <p className="mt-1 break-all text-xs text-slate-600 dark:text-slate-300">{c('错误码', 'Error code')}: {item.error_code}</p> : null}</td>
+        <td className="px-3 py-2"><details><summary className="cursor-pointer">{names[item.event_kind] || `${c('其他事件', 'Other event')} · ${item.event_kind}`}</summary><dl className="select-text space-y-1 break-all text-xs text-slate-500">
+          <div><dt>{c('事件代码', 'Event code')}</dt><dd>{item.event_kind}</dd></div>
+          <div><dt>{c('插件标识', 'Plugin identifier')}</dt><dd>{item.plugin_slug || '—'}</dd></div>
+          <div><dt>{c('站点编号', 'Site ID')}</dt><dd>{item.site_id || '—'}</dd></div>
+          {item.run_id ? <div><dt>{c('运行编号', 'Run ID')}</dt><dd>{item.run_id}</dd></div> : null}
+          {item.error_code ? <div><dt>{c('错误码', 'Error code')}</dt><dd>{item.error_code}</dd></div> : null}
+          {item.event_id ? <div><dt>{c('事件编号', 'Event ID')}</dt><dd>{item.event_id}</dd></div> : null}
+        </dl></details></td>
+        <td className="break-all px-3 py-2 text-xs">{pluginLabel(item.plugin_slug)}<br />{siteLabel(item)}</td>
         <td className="whitespace-nowrap px-3 py-2">{groups ? <button className="text-blue-700 underline dark:text-blue-400" onClick={() => change({ view: 'events', group: item })}>{c('查看记录', 'View records')}</button> : item.run_id ? <Link className="text-blue-700 underline dark:text-blue-400" href={`/admin/troubleshooting?window=${hours}&site=${encodeURIComponent(item.site_id)}&run_id=${encodeURIComponent(item.run_id)}&from=usage-statistics`}>{c('查看此运行', 'Inspect this run')}</Link> : <span className="text-xs text-slate-500">{c('未关联', 'Unlinked')}</span>}</td>
       </tr>)}
       {!result?.items.length ? <tr><td className="px-3 py-4" colSpan={5}>{c('所选范围暂无记录。', 'No records in this scope.')}</td></tr> : null}

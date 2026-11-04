@@ -611,7 +611,7 @@ test('optional mobile authentication visual observation', async ({ page }, testI
 });
 
 for (const [variant, addonAccounts] of [
-  ['single', [{ account_id: 'acct_one', name: '', site_count: 2 }]],
+  ['single', [{ account_id: 'acct_one', name: 'acct_one', site_count: 2 }]],
   ['multi', [
     { account_id: 'acct_a', name: '个人账号', site_count: 1 },
     { account_id: 'acct_b', name: '公司团队', site_count: 4 },
@@ -695,3 +695,17 @@ for (const locale of ['zh-CN', 'en'] as const) {
     await testInfo.attach('explicit-code-requests', { body: JSON.stringify({ requests, timings }), contentType: 'application/json' });
   });
 }
+
+test('addon bind distinguishes duplicate readable account names with short references', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [
+    { account_id: 'acct_first', name: '同名账户', site_count: 1 },
+    { account_id: 'acct_second', name: '同名账户', site_count: 2 },
+  ] });
+  await page.goto(`/portal?${new URLSearchParams({ connect: 'wordpress-addon', site_url: 'https://demo.example.com', site_name: 'Demo Site', return_url: 'https://demo.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth', state: 'addon-state-001' })}`);
+  const card = page.locator('[data-portal-bind="card"]');
+  await expect(card).toContainText('同名账户 · acct_first');
+  await expect(card).toContainText('同名账户 · acct_second');
+  await expect(page.getByRole('button', { name: '完成绑定', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('portal-duplicate-account-1440.png'), fullPage: true });
+});
