@@ -1373,3 +1373,10 @@ master，不以整个旧分支覆盖新基线。M4 同步走现有串行候选�
 该目录 report.md 记录后续 M4 candidate 实际读取；local、candidate、CI、merged、
 accepted、production、human 分开，不以此条代替未执行的验证。
 回退为还原本次页面、翻译与测试，无数据库变更。
+
+本条后续验证：M4 candidate `7013fb8c`（clean）同步成功，`/api/health`
+前后端版本一致；部署后定向浏览器7项通过（47.4s，合成 API）。另只读打开
+原「测试通知」验证发送人「平台管理员」、未命名客户及邮箱常显，完整通知/
+客户编号及 `platform:internal_root` 位于操作详情。代理目检1280×720真实页面
+`identity/m4-live-notice.png`，展开证据为`identity/m4-live-details.png`。
+未发送真实通知；CI、合并、M4 accepted、生产及人工验收仍未由候选验证代替。
