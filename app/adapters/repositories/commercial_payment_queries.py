@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.models import (
     PAYMENT_ORDER_STATUS_CANCELED,
     PAYMENT_ORDER_STATUS_PENDING,
+    PAYMENT_REFUND_STATUS_REQUESTED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     PaymentEvent,
     PaymentOrder,
     PaymentRefund,
@@ -157,6 +159,34 @@ class CommercialPaymentQueries:
                 select(PaymentRefund)
                 .where(PaymentRefund.order_id == order_id)
                 .order_by(PaymentRefund.created_at.desc(), PaymentRefund.refund_id.desc())
+            )
+        )
+
+    def list_payment_refunds_for_reconciliation(
+        self,
+        *,
+        limit: int = 25,
+        now: datetime,
+        max_attempts: int,
+    ) -> list[PaymentRefund]:
+        bounded_limit = max(1, min(int(limit), 100))
+        state = PaymentRefund.metadata_json["refund_reconciliation"]
+        now_text = now.astimezone(UTC).isoformat()
+        next_attempt = state["next_attempt_at"].as_string()
+        lease = state["lease_expires_at"].as_string()
+        return list(
+            self.session.scalars(
+                select(PaymentRefund)
+                .where(
+                    PaymentRefund.status.in_(
+                        (PAYMENT_REFUND_STATUS_REQUESTED, PAYMENT_REFUND_STATUS_UNKNOWN)
+                    ),
+                    func.coalesce(state["attempts"].as_integer(), 0) < max_attempts,
+                    or_(next_attempt.is_(None), next_attempt == "", next_attempt <= now_text),
+                    or_(lease.is_(None), lease == "", lease <= now_text),
+                )
+                .order_by(PaymentRefund.requested_at.asc(), PaymentRefund.refund_id.asc())
+                .limit(bounded_limit)
             )
         )
 

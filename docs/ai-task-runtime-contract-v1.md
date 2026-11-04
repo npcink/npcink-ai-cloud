@@ -1,7 +1,7 @@
 # AI Task Runtime Contract v1
 
 Status: active; aligned with the P1 connector reset.
-Updated: 2026-07-14.
+Updated: 2026-10-20.
 
 ## Decision
 
@@ -97,6 +97,39 @@ write controls.
 Cloud returns `cloud_connector_result.v1` suggestion evidence. It never treats
 runtime success as approval or applies the result to WordPress.
 
+## Result Usage Projection
+
+`cloud_connector_result.v1` may carry a top-level `usage` object that is a
+**sibling of `output`** (never nested under `output`):
+
+```json
+{
+  "contract_version": "cloud_connector_result.v1",
+  "output": { "output_text": "…" },
+  "usage": {
+    "tokens_in": 24,
+    "tokens_out": 8,
+    "total_tokens": 32
+  }
+}
+```
+
+Rules:
+
+- Source of truth is provider-call evidence (`tokens_in` / `tokens_out` on
+  recorded provider calls), not raw provider `output.usage`.
+- Aggregation sums **all** provider calls for the run (primary text/vision plus
+  any side calls that recorded evidence), not the primary call alone.
+- When at least one provider-call row exists, Cloud includes `usage` with
+  nonnegative integers even if both totals are zero. When no provider-call
+  evidence exists, `usage` is omitted.
+- `usage` stays outside `output` so `no_store` omission of durable `output`
+  content does not drop loggable token totals on the execute response or on the
+  durable envelope.
+- `cost` is not projected onto the WordPress suggestion envelope.
+- Addon mapping for AI request logs: `usage.tokens_in` → `tokens_input`,
+  `usage.tokens_out` → `tokens_output`.
+
 ## Title Generation Quality Floor
 
 For `title_generation`, Cloud applies a small deterministic output floor after
@@ -126,3 +159,25 @@ Changing or removing `ai_task_contract.v1` requires one coordinated update to
 the local producer, `wordpress_operation.v1` validation, Cloud runtime tests,
 and the consuming addon. Rollback restores that coordinated version; it must
 not restore the superseded connector envelope or introduce dual reads.
+
+
+### Bounded schema validation for connector results
+
+The title-only Provider projection retains the Ability-owned `title` property.
+Cloud validates its existing string type, enum and min/max length constraints
+on the raw title value and again on the normalized text returned for review.
+Trimming or Markdown cleanup must not return a value outside those constraints.
+Other root fields are not added to this title-only projection as new required
+Provider output; the original Ability schema is preserved unchanged.
+
+The existing JSON-object matcher checks numeric `minimum`/`maximum` bounds
+recursively for number/integer fields (including comment-analysis scores).
+Booleans do not count as numbers. Non-finite floats and non-JSON numeric tokens,
+including exponent overflow in open fields, are rejected; arbitrary-precision
+integers do not require conversion to float.
+
+These are bounded connector-side checks, not a full JSON Schema implementation
+or verified Provider-native constrained generation. `pattern`, combinators such
+as `oneOf`, and other unimplemented schema keywords are not new guarantees.
+The existing transport format-hint compatibility retry, runtime retry/fallback,
+usage accounting and WordPress review/write ownership remain unchanged.

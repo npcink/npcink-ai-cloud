@@ -1,5 +1,6 @@
 'use client';
 
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
@@ -31,12 +32,12 @@ const adminOverviewClient = createApiClient({ idempotencyPrefix: 'admin_overview
 interface AdminOverview {
   generatedAt: string;
   totals: {
-    accounts: number;
-    sites: number;
-    sitesActive: number;
-    subscriptions: number;
-    subscriptionsActive: number;
-    siteKeysActive: number;
+    accounts: number | null;
+    sites: number | null;
+    sitesActive: number | null;
+    subscriptions: number | null;
+    subscriptionsActive: number | null;
+    siteKeysActive: number | null;
   };
   expiringSubscriptions: {
     in7Days: number;
@@ -66,10 +67,10 @@ interface AdminOverview {
   };
   recentUsage: {
     windowDays: number;
-    runs: number;
-    providerCalls: number;
-    tokensTotal: number;
-    cost: number;
+    runs: number | null;
+    providerCalls: number | null;
+    tokensTotal: number | null;
+    cost: number | null;
   };
   planDistribution: Array<{
     planId: string;
@@ -91,6 +92,9 @@ interface AdminOverview {
     generatedAt: string;
   };
   runtimeTelemetry: {
+    generatedAt: string;
+    siteId: string;
+    recentMinutes: number | null;
     status: string;
     summary: string;
     alertCount: number;
@@ -128,6 +132,14 @@ interface AdminOverview {
     followUpFocus: 'runtime' | 'commercial';
     watchItems: OperatorWatchItemProjection[];
   };
+}
+
+function overviewNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function formatOverviewMetric(value: number | null): string {
+  return value === null ? '—' : formatInteger(value);
 }
 
 function normalizeOverview(raw: any): AdminOverview {
@@ -173,12 +185,12 @@ function normalizeOverview(raw: any): AdminOverview {
   return {
     generatedAt: String(raw?.generated_at ?? ''),
     totals: {
-      accounts: Number(counts.accounts_total ?? 0),
-      sites: Number(counts.sites_total ?? 0),
-      sitesActive: Number(counts.sites_active ?? 0),
-      subscriptions: Number(counts.subscriptions_total ?? 0),
-      subscriptionsActive: Number(counts.subscriptions_active ?? 0),
-      siteKeysActive: Number(counts.site_keys_active ?? 0),
+      accounts: overviewNumber(counts.accounts_total),
+      sites: overviewNumber(counts.sites_total),
+      sitesActive: overviewNumber(counts.sites_active),
+      subscriptions: overviewNumber(counts.subscriptions_total),
+      subscriptionsActive: overviewNumber(counts.subscriptions_active),
+      siteKeysActive: overviewNumber(counts.site_keys_active),
     },
     expiringSubscriptions: {
       in7Days: Number(expiring.within_7_days ?? 0),
@@ -214,10 +226,10 @@ function normalizeOverview(raw: any): AdminOverview {
     },
     recentUsage: {
       windowDays: Number(recentUsage.window_days ?? 7),
-      runs: Number(totals.runs ?? 0),
-      providerCalls: Number(totals.provider_calls ?? 0),
-      tokensTotal: Number(totals.tokens_total ?? 0),
-      cost: Number(totals.cost ?? 0),
+      runs: overviewNumber(totals.runs),
+      providerCalls: overviewNumber(totals.provider_calls),
+      tokensTotal: overviewNumber(totals.tokens_total),
+      cost: overviewNumber(totals.cost),
     },
     planDistribution: Array.isArray(raw?.plan_distribution)
       ? raw.plan_distribution.map((item: any) => ({
@@ -245,6 +257,9 @@ function normalizeOverview(raw: any): AdminOverview {
       generatedAt: String(operationalReadiness.generated_at ?? ''),
     },
     runtimeTelemetry: {
+      generatedAt: typeof runtimeTelemetry.generated_at === 'string' ? runtimeTelemetry.generated_at : '',
+      siteId: typeof runtimeTelemetry.filters?.site_id === 'string' ? runtimeTelemetry.filters.site_id.trim() : '',
+      recentMinutes: overviewNumber(runtimeTelemetry.filters?.recent_minutes),
       status: String(runtimeTelemetryAlertSummary.status ?? 'inactive'),
       summary: String(runtimeTelemetryAlertSummary.summary ?? ''),
       alertCount: Number(runtimeTelemetryAlertSummary.alert_count ?? 0),
@@ -352,6 +367,16 @@ function buildAdminLookupHref(path: string, query: string): string {
   return `${path}?${params.toString()}`;
 }
 
+function overviewActionHref(scope: string, diagnosticHref?: string): string {
+  if (scope === 'runtime.provider_budget') {
+    return '/admin/service-settings?tab=provider-budget';
+  }
+  if (scope.startsWith('commercial.')) {
+    return '/admin/coverage';
+  }
+  return diagnosticHref || '/admin/troubleshooting';
+}
+
 function overviewRuntimeAlertTitle(
   alert: AdminOverview['runtimeTelemetry']['alerts'][number] | undefined,
   t: (key: string, vars?: Record<string, string>, fallback?: string) => string
@@ -383,6 +408,8 @@ function overviewRuntimeAlertSummary(
 function AdminOverviewContent() {
   const { t } = useLocale();
   const router = useRouter();
+  const translationRef = useRef(t);
+  useEffect(() => { translationRef.current = t; }, [t]);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const runtimeEvidenceRef = useFragmentDisclosure('runtime-attention', Boolean(overview));
@@ -409,7 +436,7 @@ function AdminOverviewContent() {
       }
     } catch (err) {
       if (sequence === requestSequenceRef.current) {
-        setError(resolveUiErrorMessage(err, t('error.failed_load')));
+        setError(resolveUiErrorMessage(err, translationRef.current('error.failed_load')));
       }
     } finally {
       globalThis.clearTimeout(timeout);
@@ -418,7 +445,7 @@ function AdminOverviewContent() {
         setIsLoading(false);
       }
     }
-  }, [t]);
+  }, []);
 
   useEffect(() => {
     void loadOverview();
@@ -506,8 +533,9 @@ function AdminOverviewContent() {
           };
         case 'runtime_telemetry': {
           const alertCode = String(item.detailArgs.alert_code ?? '');
-          const alert = overview.runtimeTelemetry.alerts.find((candidate) => candidate.code === alertCode)
-            ?? overview.runtimeTelemetry.alerts[0];
+          const alert = alertCode
+            ? overview.runtimeTelemetry.alerts.find((candidate) => candidate.code === alertCode)
+            : overview.runtimeTelemetry.alerts[0];
           return {
             title:
               overviewRuntimeAlertTitle(alert, t) ||
@@ -610,22 +638,22 @@ function AdminOverviewContent() {
   const primaryMetrics = [
     {
       label: t('admin.active_sites'),
-      value: formatInteger(overview.totals.sitesActive),
+      value: formatOverviewMetric(overview.totals.sitesActive),
       detail: t('admin.home_metric_sites', {}, 'Sites currently provisioned for service.'),
     },
     {
       label: t('admin.active_subscriptions'),
-      value: formatInteger(overview.totals.subscriptionsActive),
+      value: formatOverviewMetric(overview.totals.subscriptionsActive),
       detail: t('admin.home_metric_subscriptions', {}, 'Subscriptions currently contributing to access.'),
     },
     {
       label: t('admin.home_evidence_provider_calls', {}, 'Provider calls'),
-      value: formatInteger(overview.recentUsage.providerCalls),
+      value: formatOverviewMetric(overview.recentUsage.providerCalls),
       detail: t('admin.home_evidence_provider_calls_desc', {}, 'Observed provider-call records in the same window.'),
     },
     {
       label: t('admin.home_runtime_runs', {}, 'Runtime runs'),
-      value: formatInteger(overview.recentUsage.runs),
+      value: formatOverviewMetric(overview.recentUsage.runs),
       detail: t('admin.home_metric_runtime_runs', {}, 'Hosted runtime executions in the current evidence window.'),
     },
   ];
@@ -653,8 +681,33 @@ function AdminOverviewContent() {
         ? `/admin/sites/${item.siteId}`
         : '/admin/subscriptions',
   }));
-  const attentionNotes = operatorWatchItems.slice(0, 2);
-  const primaryActionHref = overview.operatorProjection.primaryAction.href;
+  const runtimeDiagnosticHref = (code: unknown) => {
+    const telemetry = overview.runtimeTelemetry;
+    const hours = telemetry.recentMinutes == null ? '' : String(telemetry.recentMinutes / 60);
+    const params = new URLSearchParams({ window: String(normalizeObservationWindow(hours, 336)) });
+    if (telemetry.siteId) params.set('site', telemetry.siteId);
+    const generated = Date.parse(telemetry.generatedAt);
+    const start = generated - (telemetry.recentMinutes ?? 0) * 60_000;
+    // Preserve the source start when overview uses a shorter period than diagnostics.
+    // The destination reads fresh evidence; it does not replay the overview snapshot.
+    if (telemetry.recentMinutes && Number.isFinite(generated) && Number.isFinite(start) && Math.abs(start) <= 8.64e15) params.set('since', new Date(start).toISOString());
+    if (typeof code === 'string' && code.trim()) params.set('focus', code.trim());
+    return `/admin/troubleshooting?${params}`;
+  };
+  const actionItems = operatorWatchItems.map((item, index) => {
+    const source = overview.operatorProjection.watchItems[index];
+    return { ...item, href: overviewActionHref(item.scope, source?.code === 'runtime_telemetry' ? runtimeDiagnosticHref(source.detailArgs.alert_code) : undefined) };
+  });
+  const severityLabel = (severity: 'watch' | 'warn' | 'action-needed') =>
+    severity === 'action-needed'
+      ? t('admin.severity_action_needed', {}, 'Action needed')
+      : severity === 'warn'
+        ? t('admin.severity_warn', {}, 'Warn')
+        : t('admin.severity_watch', {}, 'Watch');
+  const primaryRuntimeItem = overview.operatorProjection.watchItems.find(item => item.code === 'runtime_telemetry');
+  const primaryActionHref = overview.operatorProjection.primaryAction.kind === 'runtime_telemetry' && primaryRuntimeItem
+    ? runtimeDiagnosticHref(primaryRuntimeItem.detailArgs.alert_code)
+    : overview.operatorProjection.primaryAction.href;
   const primaryActionLabel =
     overview.operatorProjection.primaryAction.kind === 'readiness'
       ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
@@ -695,17 +748,17 @@ function AdminOverviewContent() {
   const evidenceWindowMetrics = [
     {
       label: t('admin.home_evidence_runs', {}, 'Runs'),
-      value: formatInteger(overview.recentUsage.runs),
+      value: formatOverviewMetric(overview.recentUsage.runs),
       detail: t('admin.home_evidence_runs_desc', {}, 'Hosted executions in the current overview window.'),
     },
     {
       label: t('admin.home_evidence_provider_calls', {}, 'Provider calls'),
-      value: formatInteger(overview.recentUsage.providerCalls),
+      value: formatOverviewMetric(overview.recentUsage.providerCalls),
       detail: t('admin.home_evidence_provider_calls_desc', {}, 'Observed provider-call records in the same window.'),
     },
     {
       label: t('admin.home_evidence_cost', {}, 'Cost'),
-      value: formatAdminCurrency(overview.recentUsage.cost),
+      value: overview.recentUsage.cost === null ? '—' : formatAdminCurrency(overview.recentUsage.cost),
       detail: t('admin.home_evidence_cost_desc', {}, 'Internal estimated cost, not a customer wallet balance.'),
       size: 'compact' as const,
     },
@@ -755,7 +808,7 @@ function AdminOverviewContent() {
     },
     {
       label: t('admin.home_commercial_revenue', {}, 'Usage window cost'),
-      value: formatAdminCurrency(overview.recentUsage.cost),
+      value: overview.recentUsage.cost === null ? '—' : formatAdminCurrency(overview.recentUsage.cost),
       detail: t('admin.home_commercial_revenue_detail', {}, 'Current usage window cost estimate.'),
     },
   ];
@@ -780,9 +833,8 @@ function AdminOverviewContent() {
   return (
     <AdminWorkspacePage>
       <BackofficePageHeader
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.home_title', {}, 'Platform state comes first')}
-        description={platformConclusion}
+        secondaryAction={<button type="button" className="btn btn-secondary" disabled={isLoading} onClick={() => void loadOverview()}>{t('common.refresh')}</button>}
         primaryAction={(
           <Link href={primaryActionHref} className="btn btn-primary">
             {primaryActionLabel}
@@ -799,132 +851,122 @@ function AdminOverviewContent() {
           </span>
         )}
       />
-      <BackofficeSectionPanel className="space-y-3" data-ui="admin-overview-attention">
-        <div className="space-y-3">
-          {attentionNotes.length > 0 ? (
-            attentionNotes.map((item) => (
-              <BackofficeStackCard key={`${item.scope}-${item.title}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.reason}</p>
-                  </div>
+      <p role="status" data-ui="admin-overview-conclusion" className="text-sm text-slate-700 dark:text-slate-200">{platformConclusion}</p>
+      {error ? <BackofficeDiagnosticNotice message={`${t('admin.overview_stale_notice', {}, 'Refresh failed. Showing the previous snapshot.')} ${error}`} retryLabel={t('common.retry')} onRetry={() => void loadOverview()} /> : null}
+      {Object.values(overview.totals).some((value) => value === null) || Object.values(overview.recentUsage).some((value) => value === null) ? <p role="status">{t('admin.overview_metrics_unknown', {}, 'Some metrics are unavailable; — means unknown.')}</p> : null}
+      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-attention">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+              {t('admin.home_actions_title', {}, 'Todo and exceptions')}
+            </h2>
+          </div>
+          <span
+            data-ui="admin-overview-action-count"
+            className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-950/45 dark:text-slate-300"
+          >
+            {actionItems.length > 0
+              ? t('admin.home_actions_count', { count: formatInteger(actionItems.length) }, `${formatInteger(actionItems.length)} open`)
+              : t('admin.home_actions_clear_badge', {}, 'Clear')}
+          </span>
+        </div>
+
+        {actionItems.length > 0 ? (
+          <div className="space-y-2" data-ui="admin-overview-action-list">
+            {actionItems.map((item) => (
+              <div
+                key={`${item.scope}-${item.title}`}
+                data-ui="admin-overview-action"
+                className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex min-w-0 items-start gap-3">
                   <span
                     className={cn(
-                      'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em]',
+                      'mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em]',
                       operatorSeverityClasses(item.severity)
                     )}
                   >
-                    {item.value}
+                    {severityLabel(item.severity)}
                   </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.reason}</p>
+                  </div>
                 </div>
-              </BackofficeStackCard>
-            ))
-          ) : (
-            <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
-              {t('admin.home_attention_clear', {}, 'No immediate watch items are rising from the current overview payload.')}
-            </BackofficeStackCard>
-          )}
+                <div className="flex shrink-0 items-center justify-between gap-3 md:justify-end">
+                  <span className="text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{item.value}</span>
+                  <Link href={item.href} className="btn btn-secondary btn-sm whitespace-nowrap">
+                    {item.scope.startsWith('commercial.') ? t('admin.home_open_service_status', {}, 'Open service status') : t('admin.home_action_open', {}, 'Handle')} →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
+            {t('admin.home_attention_clear', {}, 'No immediate items need follow-up.')}
+          </BackofficeStackCard>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-3 dark:border-slate-800/70" data-ui="admin-overview-destinations">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+            {t('admin.home_quick_destinations_label', {}, 'Go to queue')}
+          </span>
+          {quickLinks.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              data-ui="admin-overview-destination"
+              title={item.detail}
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+            >
+              {item.label} →
+            </Link>
+          ))}
         </div>
       </BackofficeSectionPanel>
 
-      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-destinations">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.home_quick_actions_eyebrow', {}, 'Operator console')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.home_quick_actions_title', {}, 'Handle queues first')}
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                  {t(
-                    'admin.home_quick_actions_desc',
-                    {},
-                    'These entries only open existing Cloud service-plane detail surfaces. They do not edit WordPress, prompts, routers, abilities, or workflows.'
-                  )}
-                </p>
-              </div>
+      <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-support-lookup">
+        <div data-admin-support-lookup>
+          <div className="grid gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+                {t('admin.home_support_lookup_title', {}, 'Find the customer record first')}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {t(
+                  'admin.home_support_lookup_desc',
+                  {},
+                  'Search by email, customer, site, or domain.'
+                )}
+              </p>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {quickLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  data-ui="admin-overview-destination"
-                  className="group block rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 text-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/70 hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/45 dark:hover:border-blue-900/70 dark:hover:bg-blue-950/25"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-950 dark:text-white">{item.label}</p>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {item.detail}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600 dark:text-slate-500 dark:group-hover:text-blue-300">
-                      →
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-            <BackofficeStackCard className="mt-4 bg-white/80 dark:bg-slate-950/45" data-admin-support-lookup>
-              <div className="grid gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('admin.home_support_lookup_eyebrow', {}, 'Support lookup')}
-                  </p>
-                  <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-                    {t('admin.home_support_lookup_title', {}, 'Find the customer record first')}
-                  </h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {t(
-                      'admin.home_support_lookup_desc',
-                      {},
-                      'Search by email, customer, site, or domain. Start from the customer or Portal user record, then open service status only when coverage needs follow-up.'
-                    )}
-                  </p>
-                </div>
-                <form
-                  className="flex w-full flex-col gap-2 sm:flex-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    router.push(supportLookupAccountHref);
-                  }}
-                >
-                  <label className="sr-only" htmlFor="admin-support-lookup-query">
-                    {t('admin.home_support_lookup_label', {}, 'Support lookup query')}
-                  </label>
-                  <input
-                    id="admin-support-lookup-query"
-                    type="search"
-                    value={supportQuery}
-                    onChange={(event) => setSupportQuery(event.target.value)}
-                    placeholder={t('admin.home_support_lookup_placeholder', {}, 'Email, customer, site, or domain')}
-                    className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
-                  />
-                  <div className="flex shrink-0 gap-2">
-                    <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
-                      {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
-                    </Link>
-                  </div>
-                </form>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <Link
-                  href="/admin/coverage"
-                  className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-                >
-                  {t('admin.home_support_lookup_coverage', {}, 'Open service status')}
-                </Link>
-                <Link
-                  href="/admin/troubleshooting"
-                  className="rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-800 dark:text-slate-300 dark:hover:border-blue-900 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-                >
-                  {t('admin.home_support_lookup_diagnostics', {}, 'Open diagnostics')}
+            <form
+              className="flex w-full flex-col gap-2 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                router.push(supportLookupAccountHref);
+              }}
+            >
+              <label className="sr-only" htmlFor="admin-support-lookup-query">
+                {t('admin.home_support_lookup_label', {}, 'Support lookup query')}
+              </label>
+              <input
+                id="admin-support-lookup-query"
+                type="search"
+                value={supportQuery}
+                onChange={(event) => setSupportQuery(event.target.value)}
+                placeholder={t('admin.home_support_lookup_placeholder', {}, 'Email, customer, site, or domain')}
+                className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
+              />
+              <div className="flex shrink-0 gap-2">
+                <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
+                  {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
                 </Link>
               </div>
-            </BackofficeStackCard>
+            </form>
+          </div>
+        </div>
       </BackofficeSectionPanel>
 
       <details ref={runtimeEvidenceRef} className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
@@ -1021,7 +1063,7 @@ function AdminOverviewContent() {
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  {t('admin.home_secondary_sites_empty', {}, 'No site-level anomalies in the current overview payload.')}
+                  {t('admin.home_secondary_sites_empty', {}, 'No site anomalies need follow-up.')}
                 </p>
               )}
             </BackofficeStackCard>
@@ -1039,7 +1081,7 @@ function AdminOverviewContent() {
               </h2>
             </div>
             <Link href="/admin/coverage" className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
-              {t('admin.nav_coverage', {}, 'Service status')} →
+              {t('admin.workspace_tab_service_status', {}, 'Service status')} →
             </Link>
           </div>
           <BackofficeMetricStrip items={commercialPanelMetrics} columnsClassName="xl:grid-cols-1" />
@@ -1102,6 +1144,7 @@ function AdminOverviewContent() {
           </Link>
         </div>
         <BackofficeMetricStrip items={runtimeTelemetryMetrics} columnsClassName="md:grid-cols-3" />
+        {overview.runtimeTelemetry.alerts.length > 0 ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.home_diagnostic_scope_note')}</p> : null}
         {overview.runtimeTelemetry.alerts.length > 0 ? (
           <div className="grid gap-3 xl:grid-cols-2">
             {overview.runtimeTelemetry.alerts.slice(0, 2).map((alert) => (
@@ -1114,6 +1157,7 @@ function AdminOverviewContent() {
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                       {overviewRuntimeAlertSummary(alert, t)}
                     </p>
+                    <Link data-ui="overview-runtime-issue-link" href={runtimeDiagnosticHref(alert.code)} className="mt-2 inline-block text-sm font-medium text-blue-700 underline dark:text-blue-300">{t('admin.home_open_diagnostic_issue')}</Link>
                     {alert.capabilities.length > 0 ? (
                       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                         {alert.capabilities.slice(0, 3).join(', ')}

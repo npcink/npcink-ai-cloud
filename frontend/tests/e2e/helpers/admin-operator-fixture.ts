@@ -1,3 +1,8 @@
+import { buildRuntimeTelemetryFixture } from './runtime-telemetry-fixture';
+import { buildAuditMetadata } from '../../fixtures/admin-audit-metadata';
+import { subscriptionFixture, subscriptionQueueFixture } from '../../fixtures/admin-subscriptions';
+import { canonicalTier } from '../../fixtures/admin-plan-parameters';
+import { ledgerSummaryFixture } from '../../fixtures/admin-account-evidence';
 import type { Page, Route } from '@playwright/test';
 
 type AccountFixtureItem = {
@@ -63,6 +68,46 @@ export function buildAdminApiErrorEnvelope(
 }
 
 async function fulfillJson(route: Route, data: unknown) {
+  // Keep synthetic plan fixtures aligned with fields always emitted by the
+  // real serializer. Fault-injection routes bypass this normal-fixture helper.
+  const pathname = new URL(route.request().url()).pathname;
+  if (pathname === '/api/admin/plans' || /^\/api\/admin\/plans\/[^/]+$/.test(pathname)) {
+    type Fixture = { tier_templates?: Record<string, unknown>[]; tier_summary?: Record<string, unknown>;
+      plan?: Record<string, unknown>; latest_version?: Record<string, unknown>; sales_offer?: unknown; items?: Fixture[] };
+    const value = data as Fixture;
+    const normalizeSummary = (raw: Record<string, unknown>) => {
+      const actual = canonicalTier(String(raw.tier_id));
+      const summary = { ...actual, ...raw };
+      const shell = (raw.canonical_shell || {}) as Record<string, Record<string, unknown>>;
+      summary.budgets_template = { ...actual.budgets_template, ...(raw.budgets_template as object) };
+      summary.concurrency_template = { ...actual.concurrency_template, ...(raw.concurrency_template as object) };
+      summary.policy_baseline = { ...actual.policy_baseline, ...(raw.policy_baseline as object) };
+      summary.canonical_shell = {
+        entitlements: { ...actual.canonical_shell.entitlements, ...shell.entitlements },
+        budgets: { ...summary.budgets_template, ...shell.budgets },
+        concurrency: { ...summary.concurrency_template, ...shell.concurrency },
+        policy: { ...actual.canonical_shell.policy, ...shell.policy },
+        metadata: { ...actual.canonical_shell.metadata, ...shell.metadata },
+      };
+      return summary;
+    };
+    value.tier_templates = value.tier_templates?.map(normalizeSummary);
+    for (const item of value.items || [value]) {
+      if (!item.plan) continue;
+      if (item.tier_summary) item.tier_summary = normalizeSummary(item.tier_summary);
+      if (item.latest_version) {
+        const version = item.latest_version;
+        version.plan_id ??= item.plan.plan_id;
+        version.budgets = { max_ai_credits_per_period: item.tier_summary?.monthly_included_points ?? 0,
+          max_runs_per_period: 0, max_tokens_per_period: 0, max_cost_cny_per_period: 0, ...(version.budgets as object) };
+        version.concurrency = { max_active_runs: 0, ...(version.concurrency as object) };
+        const policy = (version.policy || {}) as Record<string, unknown>;
+        version.policy = { ...policy, subscription: { grace_period_days: 0, ...(policy.subscription as object) } };
+        version.metadata ??= {};
+      }
+    }
+    if (!value.items) value.sales_offer ??= null;
+  }
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -76,12 +121,26 @@ export async function installAdminMocks(
     auditEvents?: number;
     auditFailureController?: { enabled: boolean };
     quotaNeedsAttention?: boolean;
+    accountSites?: unknown;
+    accountSitesController?: { value: unknown };
+    quotaPayload?: unknown;
+    quotaPayloadController?: { value: unknown };
+    ledgerPayload?: unknown;
+    ledgerPayloadController?: { value: unknown };
+    sitePayloadController?: { value: unknown };
     allowedEmptyAdminRequests?: readonly string[];
     unhandledAdminRequests?: string[];
   } = {}
 ) {
   const auditEvents = options.auditEvents ?? 4;
   const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
+  const accountSites = options.accountSites;
+  const accountSitesController = options.accountSitesController;
+  const quotaPayload = options.quotaPayload;
+  const quotaPayloadController = options.quotaPayloadController;
+  const ledgerPayload = options.ledgerPayload;
+  const ledgerPayloadController = options.ledgerPayloadController;
+  const sitePayloadController = options.sitePayloadController;
   let primaryAccountSubscription = {
     subscription_id: 'sub_mvp',
     status: 'past_due',
@@ -180,12 +239,18 @@ export async function installAdminMocks(
       principal_id: 'platform:operator-e2e',
       identity_type: 'platform_admin',
       role: 'platform_admin',
+      capabilities: { can_manage_accounts: true },
     });
   });
 
   await page.route('**/api/admin/**', async (route) => {
     const url = new URL(route.request().url());
     const { pathname, searchParams } = url;
+
+    if (pathname === '/api/admin/customer-notifications' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], total_count: 0, limit: 20, offset: Number(searchParams.get('offset') || 0) });
+      return;
+    }
 
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/subscription` && route.request().method() === 'POST') {
       const payload = route.request().postDataJSON() as Record<string, unknown>;
@@ -249,9 +314,12 @@ export async function installAdminMocks(
         account_id: LONG_ACCOUNT_ID,
         entry: {
           event_type: String(payload.event_type || 'grant'),
-          credit_delta: Number(payload.credit_delta || 0),
-          reason: String(payload.reason || ''),
-          note: String(payload.note || ''),
+          ledger_entry_id: 'cle_adjustment_fixture',
+          account_id: LONG_ACCOUNT_ID,
+          source_type: 'operator_credit_adjustment',
+          source_id: `account_credit_adjustment:${LONG_ACCOUNT_ID}:${route.request().headers()['idempotency-key']}`,
+          ai_credit_delta: Number(payload.ai_credit_delta || 0),
+          metadata: { reason: String(payload.reason || ''), note: String(payload.note || '') },
         },
         receipt: {
           event_kind: 'account.credit.adjustment',
@@ -357,6 +425,7 @@ export async function installAdminMocks(
       }
       const auditItems = [
         {
+          key_id: '', plan_id: '', plan_version_id: '',
           event_id: 101,
           account_id: LONG_ACCOUNT_ID,
           site_id: 'site_mvp',
@@ -374,6 +443,7 @@ export async function installAdminMocks(
           created_at: '2026-04-08T09:45:00Z',
         },
         {
+          key_id: '', plan_id: '', plan_version_id: '',
           event_id: 102,
           account_id: LONG_ACCOUNT_ID,
           site_id: 'site_mvp',
@@ -411,6 +481,7 @@ export async function installAdminMocks(
         ? Math.floor((filteredItems.length - 1) / limit) * limit
         : 0;
       await fulfillJson(route, {
+        ...buildAuditMetadata(searchParams),
         total: filteredItems.length,
         items,
         generated_at: '2026-04-08T10:00:00Z',
@@ -428,6 +499,11 @@ export async function installAdminMocks(
           is_out_of_range: offset > 0 && offset >= filteredItems.length,
         },
       });
+      return;
+    }
+
+    if (pathname === '/api/admin/economics/usage-by-family' || pathname === '/api/admin/economics/revenue') {
+      await fulfillJson(route, pathname.endsWith('/usage-by-family') ? { families: {} } : { net_revenue_cny: 0, active_paid_accounts: 0, trialing_accounts: 0, subscription_revenue_cny: 0, credit_pack_revenue_cny: 0, refunds_cny: 0, account_counts_scope: 'current_snapshot' });
       return;
     }
 
@@ -620,6 +696,11 @@ export async function installAdminMocks(
         totals: {
           session_total: 65,
           resolved_session_total: 60,
+          pending_session_total: 5,
+          repeated_session_total: 18,
+          exact_saved_session_total: 27,
+          unmatched_saved_session_total: 21,
+          expired_without_save_session_total: 12,
           repeat_session_rate: 0.2769,
           exact_saved_rate: 0.45,
           unmatched_saved_rate: 0.35,
@@ -627,14 +708,17 @@ export async function installAdminMocks(
           sample_stage: 'observation',
         },
         trend: [
-          { label: '2026-04-02', session_total: 8, repeat_session_rate: 0.25, exact_saved_rate: 0.5 },
-          { label: '2026-04-03', session_total: 9, repeat_session_rate: 0.22, exact_saved_rate: 0.44 },
-          { label: '2026-04-04', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
-          { label: '2026-04-05', session_total: 7, repeat_session_rate: 0.29, exact_saved_rate: 0.43 },
-          { label: '2026-04-06', session_total: 11, repeat_session_rate: 0.27, exact_saved_rate: 0.45 },
-          { label: '2026-04-07', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.5 },
-          { label: '2026-04-08', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
-        ],
+          [2, 8, 8, 2, 4], [3, 9, 9, 2, 4], [4, 10, 10, 3, 4],
+          [5, 7, 7, 2, 3], [6, 11, 11, 3, 5], [7, 10, 10, 3, 5], [8, 10, 5, 3, 2],
+        ].map(([day, total, resolved, repeated, exact]) => ({
+          label: `2026-04-${String(day).padStart(2, '0')}`,
+          start_at: `2026-04-${String(day).padStart(2, '0')}T00:00:00Z`,
+          end_at: `2026-04-${String(day + 1).padStart(2, '0')}T00:00:00Z`,
+          session_total: total, resolved_session_total: resolved,
+          pending_session_total: total - resolved,
+          repeated_session_total: repeated, exact_saved_session_total: exact,
+          repeat_session_rate: repeated / total, exact_saved_rate: exact / resolved,
+        })),
         issue_candidates: [
           {
             code: 'editor_assist.repeat_pressure',
@@ -658,7 +742,7 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/runtime-telemetry') {
-      await fulfillJson(route, {
+      await fulfillJson(route, buildRuntimeTelemetryFixture({
         generated_at: '2026-04-08T10:00:00Z',
         usage_statistics: {
           runs: 6,
@@ -852,7 +936,7 @@ export async function installAdminMocks(
           direct_wordpress_write: false,
           contains_prompt_or_result_payloads: false,
         },
-      });
+      }, searchParams));
       return;
     }
 
@@ -906,14 +990,14 @@ export async function installAdminMocks(
           action_href:
             reasonCode === 'subscription_lifecycle_risk' && subscriptionId
               ? `/admin/subscriptions/${subscriptionId}`
-              : `/admin/accounts/${item.account.account_id}#coverage-actions`,
+              : `/admin/accounts/${item.account.account_id}${isUncovered ? '#coverage-actions' : ''}`,
           evidence: {
             site_count: item.site_count,
             active_site_count: item.site_count,
             active_key_site_count: isUncovered ? 0 : item.site_count,
             missing_key_site_count: isUncovered ? item.site_count : 0,
             subscription_status: isPrimary ? primaryAccountSubscription.status : subscriptionId ? 'active' : 'missing',
-            current_period_end_at: item.nearest_expiry_at || '',
+            current_period_end_at: item.nearest_expiry_at || null,
             days_until_end: isPrimary ? 6 : null,
             billing_snapshot_status: {
               status: isUncovered ? 'missing' : 'fresh',
@@ -996,7 +1080,7 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/subscriptions') {
-      await fulfillJson(route, {
+      await fulfillJson(route, subscriptionQueueFixture({
         total: 1,
         items: [
           {
@@ -1022,12 +1106,12 @@ export async function installAdminMocks(
             },
           },
         ],
-      });
+      }, new URL(route.request().url()).searchParams));
       return;
     }
 
     if (pathname === '/api/admin/subscriptions/sub_mvp') {
-      await fulfillJson(route, {
+      await fulfillJson(route, subscriptionFixture({
         subscription: {
           subscription_id: 'sub_mvp',
           account_id: LONG_ACCOUNT_ID,
@@ -1094,7 +1178,7 @@ export async function installAdminMocks(
             cost: 349,
           },
         },
-      });
+      }));
       return;
     }
 
@@ -1183,6 +1267,10 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/sites/site_mvp') {
+      if (sitePayloadController) {
+        await fulfillJson(route, sitePayloadController.value);
+        return;
+      }
       await fulfillJson(route, {
         site: {
           site_id: 'site_mvp',
@@ -1226,6 +1314,38 @@ export async function installAdminMocks(
         },
         site_keys: [{ site_key_id: 'key_1', status: 'active' }],
       });
+      return;
+    }
+
+    if (pathname === '/api/admin/support-requests' && route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        items: [],
+        pagination: { total: 0, limit: 10, offset: 0, has_more: false },
+        summary: {
+          open: 0,
+          in_progress: 0,
+          critical: 0,
+          warning: 0,
+          monitor: 0,
+          stable: 0,
+          waiting_for_operator: 0,
+          waiting_for_customer: 0,
+          overdue: 0,
+        },
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile` && route.request().method() === 'PATCH') {
+      const fields = route.request().postDataJSON() as Record<string, string>;
+      const item = accountItems.find(item => item.account.account_id === LONG_ACCOUNT_ID)!;
+      const metadata = { ...item.account.metadata };
+      for (const key of ['operator_display_name', 'operator_note']) {
+        if (fields[key]) metadata[key] = fields[key].trim();
+        else delete metadata[key];
+      }
+      item.account.metadata = metadata;
+      await fulfillJson(route, item.account);
       return;
     }
 
@@ -1275,7 +1395,11 @@ export async function installAdminMocks(
         await fulfillJson(route, {
           account_id: accountId,
           name,
-          status: 'active',
+          status: 'active', metadata,
+          creation_operation_id: route.request().headers()['idempotency-key'],
+          creation_receipt: { operation_id: route.request().headers()['idempotency-key'], account_id: accountId, audit_event_id: 1 },
+          primary_identity: { principal_id: 'principal_created', email: String(payload.primary_email || '').toLowerCase(), status: 'active' },
+          membership: { membership_id: 'membership_created', role: 'owner', status: 'active' },
           current_subscription: bindDefaultFree
             ? {
                 subscription_id: `sub_${accountId}_free`,
@@ -1307,6 +1431,7 @@ export async function installAdminMocks(
         total: filteredItems.length,
         items: filteredItems.map(item => ({
           ...item,
+          account: { ...item.account, metadata: item.account.metadata || {} },
           identity_relationship_state: secondaryIdentities.has(item.account.account_id) ? 'healthy' : 'missing',
         })),
       });
@@ -1439,7 +1564,9 @@ export async function installAdminMocks(
         },
         identity_relationship_state: 'healthy',
         memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
-        sites: [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }],
+        sites: accountSitesController ? accountSitesController.value : (accountSites === undefined
+          ? [{ site_id: 'site_mvp', account_id: LONG_ACCOUNT_ID, name: 'MVP Site', status: 'active' }]
+          : accountSites),
         subscriptions: [primaryAccountSubscription],
         trial_readiness: {
           status: primaryAccountCoverageFollowUp ? 'action_required' : 'ready',
@@ -1480,7 +1607,12 @@ export async function installAdminMocks(
     }
 
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`) {
+      if (quotaPayloadController || quotaPayload !== undefined) {
+        await fulfillJson(route, quotaPayloadController ? quotaPayloadController.value : quotaPayload);
+        return;
+      }
       await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID,
         status: 'ok',
         generated_at: '2026-04-08T10:00:00Z',
         ai_credits: {
@@ -1496,6 +1628,7 @@ export async function installAdminMocks(
           source: 'ledger',
         },
         ai_credit_ledger_summary: {
+          ...ledgerSummaryFixture(),
           consumed_ai_credits: 250,
           granted_ai_credits: 0,
           net_used_ai_credits: 250,
@@ -1508,7 +1641,19 @@ export async function installAdminMocks(
       return;
     }
 
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/payment-orders`) {
+      await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID, items: [],
+        pagination: { limit: 5, offset: 0, total: 0 },
+      });
+      return;
+    }
+
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger`) {
+      if (ledgerPayloadController || ledgerPayload !== undefined) {
+        await fulfillJson(route, ledgerPayloadController ? ledgerPayloadController.value : ledgerPayload);
+        return;
+      }
       await fulfillJson(route, {
         account_id: LONG_ACCOUNT_ID,
         generated_at: '2026-04-08T10:00:00Z',
@@ -1520,10 +1665,13 @@ export async function installAdminMocks(
           has_more: false,
         },
         summary: {
+          ...ledgerSummaryFixture(),
+          total_ai_credits: 250,
           consumed_ai_credits: 250,
           granted_ai_credits: 0,
           net_used_ai_credits: 250,
           entry_count: 0,
+          breakdown: [],
         },
         items: [],
       });
@@ -1910,6 +2058,7 @@ export async function installAdminMocks(
 
     if (pathname === `/api/admin/plans/${LONG_PLAN_ID}`) {
       await fulfillJson(route, {
+        revision: `plan-v1:${'a'.repeat(64)}`,
         plan: {
           plan_id: LONG_PLAN_ID,
           name: 'Pro',
@@ -2002,6 +2151,7 @@ export async function installAdminMocks(
 
     if (pathname === `/api/admin/plans/${FREE_PLAN_ID}`) {
       await fulfillJson(route, {
+        revision: `plan-v1:${'b'.repeat(64)}`,
         plan: {
           plan_id: FREE_PLAN_ID,
           name: 'Free',
@@ -2102,6 +2252,12 @@ export async function installAdminMocks(
       await fulfillJson(route, { window_minutes: 10080, generated_at: '2026-10-07T06:00:00Z', totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 }, by_capability: [], by_instance: [], recent_failures: [] });
       return;
     }
+    if (pathname === '/api/admin/plugin-observability/history' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], page: 1, pages: 1, total: 0,
+        totals: { events: 0, succeeded: 0, failed: 0 },
+        snapshot: { at: '2026-10-07T06:00:00Z', id: 0 } });
+      return;
+    }
     if (pathname === '/api/admin/plugin-observability' && route.request().method() === 'GET') {
       await fulfillJson(route, {
         generated_at: '2026-10-07T06:00:00Z',
@@ -2152,7 +2308,7 @@ export async function installAdminMocks(
           qq_bound: false, qq_binding_count: 0,
         } : null;
         await fulfillJson(route, {
-          account: knownAccount.account, primary_identity: identity,
+          account: { ...knownAccount.account, metadata: knownAccount.account.metadata || {} }, primary_identity: identity,
           identity_relationship_state: identity ? 'healthy' : 'missing',
           memberships: identity ? [{ member_ref: `user:${email}`, identity_type: 'user', role: 'user', status: 'active' }] : [],
           sites: [], subscriptions: [],

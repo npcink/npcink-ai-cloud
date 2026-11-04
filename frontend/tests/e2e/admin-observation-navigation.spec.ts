@@ -73,3 +73,61 @@ test('four observation views share time and site scope with one selected tab', a
     { id: 'context-stability', status: 'pass', evidence: 'period/site survive tab switch, reload and history; failed export disabled' },
   ], interactionResults: [{ id: 'shared-scope', status: 'pass', evidence: 'four views, 14/30 day queries, site filters and history verified' }] });
 });
+
+test('quality keeps scope in URL and distinguishes missing samples from zero rates', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  const requests: string[] = [];
+  let mode: 'empty' | 'pending' | 'mixed' = 'empty';
+  await page.route('**/api/admin/editor-assist-quality?*', route => {
+    requests.push(route.request().url());
+    const totals = mode === 'empty'
+      ? { session_total: 0, resolved_session_total: 0, pending_session_total: 0 }
+      : mode === 'pending'
+        ? { session_total: 2, resolved_session_total: 0, pending_session_total: 2, repeated_session_total: 0, repeat_session_rate: 0 }
+        : { session_total: 3, resolved_session_total: 1, pending_session_total: 2, exact_saved_session_total: 1, exact_saved_rate: 1, repeated_session_total: 0, repeat_session_rate: 0 };
+    const trend = [
+      { label: '2026-10-01', start_at: '2026-10-01T00:00:00Z', end_at: '2026-10-03T00:00:00Z', session_total: 1, resolved_session_total: 1, exact_saved_session_total: 1, exact_saved_rate: 1, repeated_session_total: 0, repeat_session_rate: 0 },
+      { label: '2026-10-03', start_at: '2026-10-03T00:00:00Z', end_at: '2026-10-05T00:00:00Z', session_total: 0, resolved_session_total: 0 },
+      { label: '2026-10-05', start_at: '2026-10-05T00:00:00Z', end_at: '2026-10-07T00:00:00Z', session_total: 2, resolved_session_total: 0, repeated_session_total: 0, repeat_session_rate: 0 },
+    ];
+    return route.fulfill({ json: buildAdminApiEnvelope({ generated_at: '2026-10-07T00:00:00Z', totals: { ...totals, sample_stage: 'validation' }, trend: mode === 'mixed' ? trend : [], issue_candidates: [] }) });
+  });
+  await page.goto('/admin/usage-statistics?view=quality&window=336&site=site-a&task=content_summary');
+  const rates = page.locator('[data-ui="editor-quality-rate"]');
+  const scope = page.locator('[data-ui="editor-quality-scope"]');
+  const task = page.getByRole('combobox');
+  await expect(scope).toContainText('site-a');
+  await expect(scope).toContainText('14');
+  await expect(task).toHaveValue('content_summary');
+  await expect(rates.locator('dd')).toHaveText(['—', '—', '—', '—']);
+  await expect(rates.first()).toContainText(/No sample|暂无样本/);
+  mode = 'pending';
+  await page.getByRole('button', { name: /^刷新$|^Refresh$/ }).click();
+  await expect(rates.locator('dd')).toHaveText(['0%', '—', '—', '—']);
+  await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toContainText(/2 sessions pending|2 个会话待定/);
+  mode = 'mixed';
+  await page.getByRole('button', { name: /^刷新$|^Refresh$/ }).click();
+  await expect(rates.locator('dd')).toHaveText(['0%', '100%', '0%', '0%']);
+  await expect(rates.nth(1)).toContainText('1 / 1');
+  const samples = page.locator('[data-ui="editor-quality-trend-samples"]');
+  await samples.locator('summary').click();
+  await expect(samples.locator('tbody tr').nth(1).locator('td')).toHaveText(['0 / 0', '—', '—']);
+  await expect(samples.locator('tbody tr').nth(2).locator('td')).toHaveText(['0 / 2', '—', '0% (0 / 2)']);
+  await page.screenshot({ path: testInfo.outputPath('quality-sample-gaps-1440.png'), fullPage: true });
+  await task.selectOption('title_generation');
+  await expect(page).toHaveURL(/task=title_generation/);
+  await expect.poll(() => requests.at(-1)).toContain('task_key=title_generation');
+  await page.reload();
+  await expect(task).toHaveValue('title_generation');
+  await page.goBack();
+  await expect(task).toHaveValue('content_summary');
+  await page.getByRole('button', { name: /Clear site filter|清除站点筛选/ }).click();
+  await expect(page).not.toHaveURL(/site=/);
+  await expect(scope).toContainText(/All sites|全部站点/);
+  await expect.poll(() => requests.at(-1)).not.toContain('site_id=');
+  await page.getByRole('button', { name: /Clear task filter|清除任务筛选/ }).click();
+  await expect(task).toHaveValue('');
+  await expect(page).not.toHaveURL(/task=/);
+  await expect.poll(() => requests.at(-1)).not.toContain('task_key=');
+});

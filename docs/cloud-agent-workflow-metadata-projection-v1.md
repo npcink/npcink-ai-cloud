@@ -94,3 +94,17 @@ Use these checks for metadata projection drift:
 - `.venv/bin/python -m pytest tests/api/test_service_advisor_routes.py::test_internal_ai_advisor_routes_are_internal_and_evidence_backed`
 - `pnpm run test:anti-drift`
 - `pnpm run check:agent-workflow-metadata`
+
+
+## Availability and validation
+
+The temporary Operations Advisor pause withdraws its page's metadata disclosure
+and execution entrypoints. The authenticated read-only projection API remains
+available; catalog entries do not grant feature availability or local authority.
+
+The changed-source/CI router runs the existing authenticated read-only metadata
+API contract, including unauthorized refusal and no-registry/no-write evidence.
+The separate `pnpm run check:agent-workflow-metadata` browser smoke requires an
+explicit running M4 frontend URL and installed Chromium. Run it in the M4
+consumer lane; do not assume localhost Cloud services on a GitHub source runner
+or add M4 credentials/deployment operations to CI merely to satisfy that smoke.

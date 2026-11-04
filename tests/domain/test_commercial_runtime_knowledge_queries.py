@@ -334,3 +334,53 @@ def test_commercial_repository_preserves_runtime_and_knowledge_query_semantics(
         }
 
     dispose_engine(database_url)
+
+
+def test_count_active_runs_ignores_inline_runs_past_lease(
+    tmp_path: Path,
+) -> None:
+    """A `running` row older than the lease stops holding an admission slot.
+
+    The row itself keeps its `running` status: the provider outcome is unknown,
+    so the lease is an admission decision and never a terminal transition.
+    """
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'lease.sqlite3'}"
+    init_schema(database_url)
+    now = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
+
+    with get_session(database_url) as session:
+        session.add(
+            Site(
+                site_id="site_lease",
+                account_id=None,
+                name="Lease",
+                status="active",
+                site_url="https://lease.example.test",
+                metadata_json=None,
+                provisioned_at=now,
+            )
+        )
+        session.flush()
+        repository = CommercialRuntimeKnowledgeQueries(session)
+
+        fresh = _run_record("run_fresh", "site_lease", status="running", now=now)
+        stale = _run_record("run_stale", "site_lease", status="running", now=now)
+        stale.processing_started_at = now - timedelta(seconds=600)
+        queued = _run_record("run_queued", "site_lease", status="queued", now=now)
+        session.add_all([fresh, stale, queued])
+        session.flush()
+
+        assert repository.count_active_runs("site_lease") == 3
+        assert repository.count_active_runs("site_lease", active_lease_cutoff=None) == 3
+        assert (
+            repository.count_active_runs(
+                "site_lease", active_lease_cutoff=now - timedelta(seconds=180)
+            )
+            == 2
+        )
+
+        session.refresh(stale)
+        assert stale.status == "running"
+        assert stale.finished_at is None
+
+    dispose_engine(database_url)

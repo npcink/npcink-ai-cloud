@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from '@/lib/errors';
+import { readPortalRateLimitRetryAfterSeconds } from '@/lib/retry-after';
 
 function normalizeCooldownSeconds(value: unknown): number {
   const seconds = Number(value);
@@ -12,12 +12,7 @@ function normalizeCooldownSeconds(value: unknown): number {
 }
 
 export function readVerificationCodeRetryAfterSeconds(error: unknown): number {
-  if (!(error instanceof ApiError) || !error.details || typeof error.details !== 'object') {
-    return 0;
-  }
-  return normalizeCooldownSeconds(
-    (error.details as Record<string, unknown>).retry_after_seconds
-  );
+  return readPortalRateLimitRetryAfterSeconds(error);
 }
 
 export function useVerificationCodeCooldown() {

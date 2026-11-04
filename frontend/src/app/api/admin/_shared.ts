@@ -257,6 +257,7 @@ export async function requireAdminSessionData(
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       }),
       cache: 'no-store',
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]),
     });
   } catch {
     return buildErrorResponse(

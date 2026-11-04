@@ -65,3 +65,37 @@ describe('Portal activity request evidence', () => {
     expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).has('traceparent')).toBe(false);
   });
 });
+
+it.each([[429, ' 4 '], [503, 'Tue, 01 Jan 2030 00:00:10 GMT']] as const)('[F02-15] forwards actual upstream %s timing with a fresh reference', async (status, timing) => {
+  const body = { ...envelope, status: 'error' };
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json(body, { status, headers: { 'Retry-After': timing } })); vi.stubGlobal('fetch', fetchMock);
+  const request = new NextRequest('http://localhost/api/portal/account/audit-summary?site_id=a', { headers: { cookie: 'fixture' } });
+  const first = await proxyPortalBackendPath(request, '/portal/v1/account/audit-summary', options);
+  const second = await proxyPortalBackendPath(request, '/portal/v1/account/audit-summary', options);
+  expect(first.status).toBe(status); expect(await first.json()).toEqual(body);
+  expect(first.headers.get('retry-after')).toBe(timing.trim()); expect(second.headers.get('x-request-id')).not.toBe(first.headers.get('x-request-id'));
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).get('cookie')).toBe('fixture');
+  expect(String(fetchMock.mock.calls[0][0])).toContain('?site_id=a');
+});
+
+it.each(['network', 'timeout', 'json', 'private-body', 'long', 'crlf', 'nul', 'request-only'])('[F02-18] never invents or replays unsafe timing for %s', async (kind) => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const isPrivate = kind === 'private-body';
+  const response = new Response(kind === 'json' || isPrivate ? '{PRIVATE' : JSON.stringify(envelope), { headers: { 'content-type': 'application/json' } });
+  if (kind === 'json' || isPrivate) response.headers.set('Retry-After', '4');
+  if (['long', 'crlf', 'nul'].includes(kind)) {
+    const original = response.headers.get.bind(response.headers);
+    vi.spyOn(response.headers, 'get').mockImplementation((key) => key.toLowerCase() === 'retry-after' ? ({ long: '4'.repeat(129), crlf: '4\r\nInjected: true', nul: '4\0' }[kind] || '') : original(key));
+  }
+  const fetchMock = vi.fn().mockImplementation(async () => {
+    if (kind === 'network') throw new Error('PRIVATE');
+    if (kind === 'timeout') throw new DOMException('PRIVATE', 'TimeoutError');
+    return response;
+  }); vi.stubGlobal('fetch', fetchMock);
+  const path = isPrivate ? '/portal/v1/sessions' : '/portal/v1/account/audit-summary';
+  const result = await proxyPortalBackendPath(new NextRequest('http://localhost/api/portal/account/audit-summary', { headers: { 'Retry-After': '5' } }), path, options);
+  expect(result.headers.has('retry-after')).toBe(false);
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).has('retry-after')).toBe(false);
+  expect(result.status).toBe(kind === 'timeout' ? 504 : ['network', 'json', 'private-body'].includes(kind) ? 502 : 200);
+});

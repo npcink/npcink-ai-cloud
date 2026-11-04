@@ -701,6 +701,7 @@ def test_vector_rebuild_requests_automatic_site_sync_for_wrong_embedding_space(
 
     requested = service.rebuild_index()
 
+    assert requested["status"] == "awaiting_site_sync"
     assert requested["validation"]["index"]["status"] == "awaiting_site_sync"
     assert requested["maintenance"] == {
         "status": "awaiting_site",
@@ -709,9 +710,9 @@ def test_vector_rebuild_requests_automatic_site_sync_for_wrong_embedding_space(
         "site_count": 1,
     }
     assert backend_calls == []
-    assert service.get_profile()["validation"]["index"]["status"] == (
-        "awaiting_site_sync"
-    )
+    waiting = service.get_profile()
+    assert waiting["status"] == "awaiting_site_sync"
+    assert waiting["validation"]["index"]["status"] == "awaiting_site_sync"
     dispose_engine(database_url)
 
 

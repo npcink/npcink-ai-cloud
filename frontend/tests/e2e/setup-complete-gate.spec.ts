@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from './helpers/isolated-channel-fixture';
 
 test('completed installation permanently closes setup writes and page', async ({ request }) => {
   const setupPage = await request.get('/setup', { maxRedirects: 0 });

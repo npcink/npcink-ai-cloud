@@ -33,6 +33,10 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
+    Account,
+    AccountSubscription,
+    AccountUserMembership,
+    Principal,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
@@ -52,6 +56,10 @@ from app.domain.commercial.membership_policy import (
     assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+from app.domain.commercial.notifications import (
+    build_commercial_notification_id,
+    notify_unique_account_owner,
+)
 from app.domain.commercial.plan_catalog import (
     DEFAULT_FREE_PLAN_KIND,
     DEFAULT_FREE_SUBSCRIPTION_SOURCE,
@@ -155,7 +163,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 }
             if subscription_payload is not None:
                 payload["current_subscription"] = subscription_payload["subscription"]
-            self._record_service_audit_in_session(
+            if not str(account_id or "").strip() and identity is not None and audit_context:
+                # Same-transaction evidence distinguishes creation from a later upsert.
+                payload["creation_operation_id"] = audit_context.idempotency_key
+            event = self._record_service_audit_in_session(
                 repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="account.upsert",
@@ -163,6 +174,89 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 account_id=account.account_id,
                 scope_kind="account",
                 scope_id=account.account_id,
+                payload_json=payload,
+            )
+            if payload.get("creation_operation_id") and event is not None:
+                payload["creation_receipt"] = {
+                    "operation_id": audit_context.idempotency_key if audit_context else "",
+                    "account_id": account.account_id,
+                    "audit_event_id": event.id,
+                }
+            session.commit()
+            return payload
+
+    def confirm_admin_account_creation(
+        self, *, operation_id: str, primary_email: str, audit_context: ServiceAuditContext
+    ) -> dict[str, object]:
+        unconfirmed: dict[str, object] = {
+            "operation_id": operation_id, "state": "unconfirmed",
+            "account_id": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            events = CommercialServiceAuditRepository(session).find_account_creation_events(
+                operation_id=operation_id, actor_kind=audit_context.actor_kind,
+                actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return unconfirmed
+            event = events[0]
+            payload = event.payload_json or {}
+            identity = payload.get("primary_identity")
+            membership = payload.get("membership")
+            if not isinstance(identity, dict) or not isinstance(membership, dict):
+                return unconfirmed
+            account_id = event.account_id
+            if (
+                not account_id or event.scope_id != account_id
+                or payload.get("account_id") != account_id
+                or payload.get("creation_operation_id") != operation_id
+                or identity.get("email") != primary_email.strip().lower()
+            ):
+                return unconfirmed
+            account = session.get(Account, account_id)
+            principal = session.get(Principal, str(identity.get("principal_id") or ""))
+            owner = session.get(AccountUserMembership, str(membership.get("membership_id") or ""))
+            if (
+                account is None or principal is None or owner is None
+                or principal.email != identity.get("email")
+                or principal.status != PRINCIPAL_STATUS_ACTIVE
+                or owner.account_id != account_id or owner.principal_id != principal.principal_id
+                or owner.role != USER_ROLE_OWNER
+                or owner.status != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or membership.get("role") != USER_ROLE_OWNER
+                or membership.get("status") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or identity.get("status") != PRINCIPAL_STATUS_ACTIVE
+            ):
+                return unconfirmed
+            return {
+                "operation_id": operation_id, "state": "confirmed", "account_id": account_id,
+                "receipt": {"operation_id": operation_id, "account_id": account_id,
+                            "audit_event_id": event.id},
+            }
+
+    def update_account_operator_profile(
+        self,
+        account_id: str,
+        *,
+        fields: dict[str, str],
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        with get_session(self.database_url) as session:
+            repository = CommercialAccountSiteRepository(session)
+            account = repository.update_account_operator_profile(account_id, fields=fields)
+            if account is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found", f"account '{account_id}' was not found"
+                )
+            payload = self._serialize_account(account)
+            self._record_service_audit_in_session(
+                repository=CommercialServiceAuditRepository(session),
+                audit_context=audit_context,
+                event_kind="account.operator_profile.update",
+                outcome="succeeded",
+                account_id=account_id,
+                scope_kind="account",
+                scope_id=account_id,
                 payload_json=payload,
             )
             session.commit()
@@ -186,7 +280,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
-            account = account_site_repository.get_account(account_id)
+            account = account_site_repository.get_account_for_update(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -431,6 +525,66 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         )
         return payload
 
+    @staticmethod
+    def _is_payment_backed_subscription(subscription: AccountSubscription) -> bool:
+        metadata = dict(subscription.metadata_json or {})
+        return bool(metadata.get("payment_order_id")) or metadata.get("source") in {
+            "payment_order",
+            "subscription_order",
+            "subscription_order_full_refund_restore",
+        }
+
+    def _expire_paid_subscriptions_in_session(
+        self,
+        *,
+        repository: CommercialSubscriptionLifecycleRepository,
+        account_id: str,
+        now: datetime,
+    ) -> None:
+        expired = []
+        for subscription in repository.list_account_subscriptions(account_id):
+            if (
+                subscription.status != SUBSCRIPTION_STATUS_ACTIVE
+                or not self._is_payment_backed_subscription(subscription)
+                or subscription.current_period_end_at is None
+                or self._normalize_datetime(subscription.current_period_end_at) > now
+            ):
+                continue
+            subscription.status = SUBSCRIPTION_STATUS_CANCELED
+            subscription.canceled_at = now
+            subscription.metadata_json = {
+                **dict(subscription.metadata_json or {}),
+                "paid_period_expired_at": self._serialize_datetime(now),
+            }
+            repository.supersede_entitlement_snapshots(
+                account_id,
+                subscription_id=subscription.subscription_id,
+            )
+            expired.append(subscription.subscription_id)
+        if not expired:
+            return
+        repository.session.flush()
+        if not any(
+            item.status in {SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIALING}
+            for item in repository.list_account_subscriptions(account_id)
+        ):
+            self._restore_default_free_subscription_for_account_in_session(
+                repository=repository,
+                account_id=account_id,
+                now=now,
+                reason="paid_period_expired",
+            )
+        self._record_service_audit_in_session(
+            repository=repository,
+            audit_context=None,
+            event_kind="subscription.paid.expire",
+            outcome="succeeded",
+            account_id=account_id,
+            scope_kind="account",
+            scope_id=account_id,
+            payload_json={"expired_subscription_ids": expired},
+        )
+
     def _reconcile_account_subscription_state_in_session(
         self,
         *,
@@ -445,6 +599,12 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             now=now,
         )
         activated_orders = cast(Any, self)._activate_due_subscription_orders_in_session(
+            repository=repository,
+            account_id=account_id,
+            now=now,
+        )
+        # Paid scheduled orders activate first; only uncovered paid periods expire.
+        self._expire_paid_subscriptions_in_session(
             repository=repository,
             account_id=account_id,
             now=now,
@@ -536,6 +696,25 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             scope_id=account_id,
             payload_json=payload,
         )
+        for subscription in expired_trials:
+            period_end_at = subscription.current_period_end_at
+            if period_end_at is None:
+                continue
+            normalized_period_end_at = self._normalize_datetime(period_end_at)
+            notify_unique_account_owner(
+                session=repository.session,
+                account_id=account_id,
+                notification_id=build_commercial_notification_id(
+                    "pnotif_trial_expired",
+                    account_id,
+                    subscription.subscription_id,
+                    normalized_period_end_at.isoformat(),
+                ),
+                event_type="subscription.trial_expired",
+                title="试用已结束",
+                body="您的 Plus/Pro 试用已结束，账户已恢复到当前可用权益。",
+                link_href="/portal/billing",
+            )
         return payload
 
     def _upsert_account_subscription_in_session(

@@ -16,6 +16,12 @@ SITE_KNOWLEDGE_INDEX_METERING_CLASS = "site_knowledge_index_maintenance"
 PAID_CREDIT_BALANCE_SOURCE_TYPES = frozenset(
     {"credit_pack_purchase", "credit_pack_refund"}
 )
+# Operator top-ups raise package_limit via entitlement budgets; their ledger
+# grant rows are visibility-only and must not also move package net delta.
+SUBSCRIPTION_TOPUP_SOURCE_TYPE = "subscription_topup"
+PACKAGE_CREDIT_EXCLUDED_SOURCE_TYPES = frozenset(
+    {*PAID_CREDIT_BALANCE_SOURCE_TYPES, SUBSCRIPTION_TOPUP_SOURCE_TYPE}
+)
 AI_CREDIT_CHARGE_COMPONENT_REQUIRED_FIELDS = (
     "source_type",
     "charge_mode",
@@ -50,7 +56,7 @@ def package_credit_net_delta(entries: Iterable[object]) -> float:
     total = 0.0
     for entry in entries:
         source_type = str(getattr(entry, "source_type", "") or "")
-        if source_type in PAID_CREDIT_BALANCE_SOURCE_TYPES:
+        if source_type in PACKAGE_CREDIT_EXCLUDED_SOURCE_TYPES:
             continue
         total += float(getattr(entry, "ai_credit_delta", 0.0) or 0.0)
     return round(total, 6)

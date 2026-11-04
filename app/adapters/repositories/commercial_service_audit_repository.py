@@ -16,6 +16,68 @@ class CommercialServiceAuditRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def find_account_creation_events(
+        self, *, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        # Bound after exact identity/operation filtering, never a recent-page guess.
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "account.upsert",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "POST",
+            ServiceAuditEvent.path == "/internal/service/accounts",
+            ServiceAuditEvent.scope_kind == "account",
+        ).limit(2)))
+
+    def find_site_cooldown_events(
+        self, *, site_id: str, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        # Exact scope/actor/operation first; two rows are enough to reject ambiguity.
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "site.relink_cooldown.update",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == f"/internal/service/admin/sites/{site_id}/relink-cooldown",
+            ServiceAuditEvent.site_id == site_id,
+            ServiceAuditEvent.scope_kind == "site",
+            ServiceAuditEvent.scope_id == site_id,
+        ).limit(2)))
+
+    def find_plan_parameter_events(
+        self, *, plan_id: str, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "plan_version.publish",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == f"/internal/service/admin/plans/{plan_id}",
+            ServiceAuditEvent.plan_id == plan_id,
+            ServiceAuditEvent.scope_kind == "plan_version",
+        ).limit(2)))
+
+    def find_credit_pack_catalog_events(
+        self, *, operation_id: str, actor_kind: str, actor_ref: str | None
+    ) -> list[ServiceAuditEvent]:
+        return list(self.session.scalars(select(ServiceAuditEvent).where(
+            ServiceAuditEvent.idempotency_key == operation_id,
+            ServiceAuditEvent.actor_kind == actor_kind,
+            ServiceAuditEvent.actor_ref == actor_ref,
+            ServiceAuditEvent.event_kind == "payment.credit_pack_catalog.update",
+            ServiceAuditEvent.outcome == "succeeded",
+            ServiceAuditEvent.method == "PATCH",
+            ServiceAuditEvent.path == "/internal/service/admin/credit-packs",
+            ServiceAuditEvent.scope_kind == "service_setting",
+            ServiceAuditEvent.scope_id == "commercial_credit_pack_catalog",
+        ).limit(2)))
+
     def record_service_audit_event(
         self,
         *,

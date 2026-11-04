@@ -137,6 +137,7 @@ def create_run(
     run_id: str,
     policy: dict[str, Any] | None = None,
     execution_kind: str = "text",
+    data_classification: str = "internal",
 ) -> RunRecord:
     return repository.create_run(
         run_id=run_id,
@@ -153,7 +154,7 @@ def create_run(
         execution_kind=execution_kind,
         execution_tier="cloud",
         execution_pattern="inline",
-        data_classification="internal",
+        data_classification=data_classification,
         profile_id="text.balanced",
         canonical_run_id=None,
         status="running",
@@ -594,6 +595,40 @@ def test_candidate_engine_canonicalizes_image_provider_errors_before_persistence
         assert run.status == "failed"
         assert run.error_code == "provider.upstream_error"
         assert run.error_message == IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+        assert leaked_message not in (run.error_message or "")
+
+
+def test_candidate_engine_redacts_no_store_provider_error_before_persistence(
+    database_url: str,
+) -> None:
+    leaked_message = "AUDIT_PRIVATE_NOTE alice@example.com"
+    primary = SequenceProvider(
+        "primary",
+        [ProviderExecutionError("provider.invalid_request", leaked_message, retryable=False)],
+    )
+    service = execution_service(
+        providers={"primary": primary},
+        controller=RecordingRunController(),
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_no_store_provider_error",
+            policy={"allow_fallback": False, "storage_mode": "no_store"},
+            data_classification="pii",
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model-primary", "instance-primary")],
+            input_payload={"messages": [{"role": "user", "content": leaked_message}]},
+        )
+
+        assert run.status == "failed"
+        assert run.error_code == "provider.invalid_request"
+        assert run.error_message == "runtime execution failed"
         assert leaked_message not in (run.error_message or "")
 
 

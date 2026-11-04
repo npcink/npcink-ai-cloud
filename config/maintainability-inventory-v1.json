@@ -19,6 +19,7 @@
   "dated_active_authority": {
     "docs/ai-provider-env-config-retirement-2026-06-26.md": "Negative guard against restoring the removed environment-backed provider configuration path.",
     "docs/external-trial-operator-runbook-2026-06-11.md": "Current bounded operator procedure for the controlled trial.",
+    "docs/engineering/phase-1-closed-loop-runbook-2026-10-19.md": "Current Phase 1 operator checklist for WordPress editor adoption and bounded feedback evidence; it does not authorize production deployment, paid Provider calls, or plugin publication.",
     "docs/image-processing-fc-oss-readiness-2026-07-20.md": "Current no-migration decision record until measured reconsideration thresholds are met.",
     "docs/naming-residual-allowlist-2026-06-24.md": "Current cross-repository naming residue allowlist guard.",
     "docs/provider-connection-production-runbook-2026-06-30.md": "Current provider-connection production operator procedure.",

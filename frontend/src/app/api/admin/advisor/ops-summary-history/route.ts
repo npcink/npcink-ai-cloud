@@ -47,6 +47,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         method: 'GET',
         headers,
         cache: 'no-store',
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
       }
     );
   } catch {

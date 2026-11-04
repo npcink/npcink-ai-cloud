@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useLayoutEffect, useRef, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
@@ -13,20 +13,17 @@ import {
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
-import { cn, formatNumber } from '@/lib/utils';
+import { formatNumber } from '@/lib/utils';
 import {
   portalClient,
   type Entitlements,
 } from '@/lib/portal-client';
-import {
-  PortalPageStack,
-  PortalSection,
-  PortalCard,
-} from '@/components/portal/PortalScaffold';
+import { PortalPageStack } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
-import { PortalTag } from '@/components/portal/PortalTag';
+import { useSearchParams } from 'next/navigation';
 import { PortalSitesWorkspace } from '@/components/portal/PortalSitesWorkspace';
+import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
 type RestrictionItem = {
   id?: string;
@@ -79,8 +76,9 @@ function buildRestrictionItems({
   ].filter(Boolean) as RestrictionItem[];
 }
 
-export default function PortalPage() {
+function PortalHome() {
   const { t } = useLocale();
+  const isAddonBindPage = useSearchParams()?.get('connect') === 'wordpress-addon';
   const { session, isLoading, isAuthenticated } = useSession();
   const [accountEntitlements, setAccountEntitlements] = useState<Entitlements | null>(null);
   const [accountEntitlementsState, setAccountEntitlementsState] =
@@ -143,14 +141,7 @@ export default function PortalPage() {
   }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated, t]);
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mb-4 text-4xl">⏳</div>
-          <p className="text-gray-600 dark:text-gray-400">{t('common.loading')}</p>
-        </div>
-      </div>
-    );
+    return <PortalLoadingState message={t('common.loading')} />;
   }
 
   if (!isAuthenticated || !session) {
@@ -177,11 +168,6 @@ export default function PortalPage() {
   const isFreePackage = currentSubscription?.plan_kind === 'default_free'
     || currentSubscription?.plan_id === 'free';
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
-  const contextLabel = selectedSite
-    ? getPortalSiteDisplayName(selectedSite)
-    : hasVisibleSites
-      ? t('portal.home.account_context_label', {}, 'Account overview')
-      : t('portal.home.no_site_context_label', {}, 'Account overview · no connected sites');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: currentSubscription?.plan_version_id,
@@ -262,8 +248,15 @@ export default function PortalPage() {
       : []),
   ];
   const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
+  // Avoid a second "connect site" panel when the header focus banner already
+  // carries the same setup restriction (no sites / site not ready).
+  const checklistDuplicatesHeaderFocus =
+    restrictionItems.length > 0
+    && requiredAttentionItems.length > 0
+    && requiredAttentionItems.every((item) => item.key === 'site');
   const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0
-    && (hasSelectedSite || !hasVisibleSites);
+    && (hasSelectedSite || !hasVisibleSites)
+    && !checklistDuplicatesHeaderFocus;
   const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
@@ -305,9 +298,34 @@ export default function PortalPage() {
       ? t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention')
       : labels[String(overLimitResource?.key || '')] || t('portal.home.capacity_attention_label', {}, 'Package limit exceeded');
   }
+
+  const metricIconClass = 'h-4 w-4';
+  const packageMetricIcon = (
+    <svg className={metricIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7Z" />
+      <path d="M3 8.5 12 14l9-5.5" />
+      <path d="M12 14v7" />
+    </svg>
+  );
+  const creditsMetricIcon = (
+    <svg className={metricIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v8" />
+      <path d="M9.5 10.5c.5-.8 1.4-1.2 2.5-1.2 1.4 0 2.5.8 2.5 2s-1.1 2-2.5 2c-1.1 0-2 .4-2.5 1.2" />
+    </svg>
+  );
+  const sitesMetricIcon = (
+    <svg className={metricIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18" />
+      <path d="M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
   const operationSummaryItems = [
     {
       label: t('portal.home.package_card_label', {}, 'Current package'),
+      icon: packageMetricIcon,
       value: currentSubscription
         ? currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')
         : t('portal.home.package_pending_label', {}, 'To confirm'),
@@ -316,16 +334,22 @@ export default function PortalPage() {
     },
     {
       label: t('portal.usage.total_remaining_label', {}, 'Available AI credits'),
+      icon: creditsMetricIcon,
       value: accountEntitlementsUnavailable ? (
         <button
           type="button"
-          className="text-left text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+          className="text-left text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 disabled:cursor-wait disabled:opacity-70 dark:text-blue-300 dark:hover:text-blue-200"
+          disabled={accountEntitlementsPending}
           onClick={() => setAccountEntitlementsRetryVersion((current) => current + 1)}
         >
-          {t('portal.home.entitlements_retry', {}, 'Unavailable · Retry')}
+          {accountEntitlementsPending
+            ? t('portal.retry.refetching_entitlements', {}, 'Fetching usage…')
+            : t('portal.home.entitlements_retry', {}, 'Unavailable · Refetch usage')}
         </button>
       ) : accountEntitlementsPending ? (
-        t('common.loading')
+        accountEntitlementsRetryVersion > 0
+          ? t('portal.retry.refetching_entitlements', {}, 'Fetching usage…')
+          : t('common.loading')
       ) : (
         formatNumber(remainingCredits)
       ),
@@ -340,6 +364,7 @@ export default function PortalPage() {
     },
     {
       label: t('portal.home.site_connection_status_label', {}, 'Site connection status'),
+      icon: sitesMetricIcon,
       value: visibleSites.length
         ? restrictedCount > 0
           ? t('portal.home.site_connection_attention_value', { count: String(restrictedCount) }, `${restrictedCount} need attention`)
@@ -368,42 +393,58 @@ export default function PortalPage() {
             {},
             'The current package has no AI credits available. Buy AI credits or change the package before continuing.'
           ),
-          href: isFreePackage ? '/portal/usage' : '/portal/billing#package-options',
+          href: isFreePackage ? '/portal/billing#usage' : '/portal/billing?action=upgrade',
           action: isFreePackage
             ? t('portal.home.usage_action', {}, 'View usage')
             : t('portal.home.billing_action', {}, 'Review package'),
         }]
       : []),
-    ...overLimitResources.map((resource) => {
-      const labels: Record<string, string> = {
-        vector_documents: t('portal.usage.resource_vector_documents', {}, 'Text knowledge capacity'),
-        media_images: t('portal.usage.resource_media_images', {}, 'Image knowledge capacity'),
-        active_sites: t('portal.home.active_site_capacity_label', {}, 'Active site capacity'),
-        bound_sites: t('portal.usage.resource_bound_sites', {}, 'Bound sites'),
-      };
-      const resourceLabel = labels[String(resource.key || '')] || t('portal.home.package_capacity_label', {}, 'Package capacity');
-      const params = {
-        resource: resourceLabel,
-        used: formatNumber(Number(resource.used || 0)),
-        limit: formatNumber(Number(resource.limit || 0)),
-        exceeded: formatNumber(Math.max(0, Number(resource.used || 0) - Number(resource.limit || 0))),
-      };
-      const label = t('portal.home.capacity_attention_title', { resource: resourceLabel }, `${resourceLabel} needs attention`);
-      let detail = t('portal.home.capacity_attention_desc', params, `${resourceLabel} usage is ${params.used} of ${params.limit}.`);
-      if (resource.key === 'vector_documents') {
-        detail = t('portal.home.text_capacity_attention_desc', params, `Text knowledge usage is ${params.used} of ${params.limit}. New text indexing is paused; existing entries remain usable and updatable.`);
-      } else if (resource.key === 'media_images') {
-        detail = t('portal.home.media_capacity_attention_desc', params, `Image knowledge usage is ${params.used} of ${params.limit}. New image indexing is paused; existing images remain usable and refreshable.`);
-      }
-      return {
-        id: resource.key,
-        tone: 'warn' as const,
-        label,
-        detail,
-        href: '/portal/billing#package-options',
-        action: t('portal.home.billing_action', {}, 'Review package'),
-      };
-    }),
+    ...(overLimitResources.length > 0
+      ? (() => {
+          const labels: Record<string, string> = {
+            vector_documents: t('portal.usage.resource_vector_documents', {}, 'Text knowledge capacity'),
+            media_images: t('portal.usage.resource_media_images', {}, 'Image knowledge capacity'),
+            active_sites: t('portal.home.active_site_capacity_label', {}, 'Active site capacity'),
+            bound_sites: t('portal.usage.resource_bound_sites', {}, 'Bound sites'),
+          };
+          const buildResourceDetail = (resource: (typeof overLimitResources)[number]) => {
+            const resourceLabel = labels[String(resource.key || '')] || t('portal.home.package_capacity_label', {}, 'Package capacity');
+            const params = {
+              resource: resourceLabel,
+              used: formatNumber(Number(resource.used || 0)),
+              limit: formatNumber(Number(resource.limit || 0)),
+              exceeded: formatNumber(Math.max(0, Number(resource.used || 0) - Number(resource.limit || 0))),
+            };
+            if (resource.key === 'vector_documents') {
+              return t('portal.home.text_capacity_attention_desc', params, `Text knowledge usage is ${params.used} of ${params.limit}. New text indexing is paused; existing entries remain usable and updatable.`);
+            }
+            if (resource.key === 'media_images') {
+              return t('portal.home.media_capacity_attention_desc', params, `Image knowledge usage is ${params.used} of ${params.limit}. New image indexing is paused; existing images remain usable and refreshable.`);
+            }
+            return t('portal.home.capacity_attention_desc', params, `${resourceLabel} usage is ${params.used} of ${params.limit}.`);
+          };
+          if (overLimitResources.length === 1) {
+            const resource = overLimitResources[0];
+            const resourceLabel = labels[String(resource.key || '')] || t('portal.home.package_capacity_label', {}, 'Package capacity');
+            return [{
+              id: resource.key,
+              tone: 'warn' as const,
+              label: t('portal.home.capacity_attention_title', { resource: resourceLabel }, `${resourceLabel} needs attention`),
+              detail: buildResourceDetail(resource),
+              href: '/portal/billing?action=upgrade',
+              action: t('portal.home.billing_action', {}, 'Review package'),
+            }];
+          }
+          return [{
+            id: 'capacity-summary',
+            tone: 'warn' as const,
+            label: t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention'),
+            detail: overLimitResources.map(buildResourceDetail).join(' '),
+            href: '/portal/billing?action=upgrade',
+            action: t('portal.home.billing_action', {}, 'Review package'),
+          }];
+        })()
+      : []),
     ...(accountEntitlementsUnavailable
       ? [{
           tone: 'warn' as const,
@@ -416,7 +457,7 @@ export default function PortalPage() {
               'Package usage could not be loaded. Retry before relying on the service status.'
             ),
           href: accountEntitlementsError?.code === 'commercial.quota_exceeded'
-            ? '/portal/usage'
+            ? '/portal/billing#usage'
             : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
               ? '/portal/support?new=1&topic=account'
               : undefined,
@@ -429,163 +470,122 @@ export default function PortalPage() {
       : []),
   ];
   const showAccountSummary = true;
-  const primaryOperationFocusItem = operationFocusItems[0] || null;
-  const remainingOperationFocusItems = operationFocusItems.slice(1);
+  // Capacity alerts live inside My Sites (not floating between header and sites).
+  const capacityAttentionIds = new Set(['capacity-summary', 'vector_documents', 'media_images', 'active_sites', 'bound_sites']);
+  const capacityAttentionItems = operationFocusItems.filter((item) => capacityAttentionIds.has(String(item.id || '')));
+  const attentionFocusItems = operationFocusItems.filter((item) => !capacityAttentionIds.has(String(item.id || '')));
   const shouldShowFollowUpSection =
-    remainingOperationFocusItems.length > 0 || shouldShowOnboardingChecklist;
-  const showBothFollowUpPanels =
-    remainingOperationFocusItems.length > 0 && shouldShowOnboardingChecklist;
+    attentionFocusItems.length > 0 || shouldShowOnboardingChecklist;
+
+  // WordPress addon handoff: show only the minimal bind card, no home dashboard.
+  if (isAddonBindPage) return <PortalSitesWorkspace capacityAlerts={[]} />;
 
   return (
-    <PortalPageStack>
-      <section className="space-y-5" data-portal-home="operation-overview">
+    <PortalPageStack className="space-y-3" data-portal-home="page">
+      <section className="space-y-3" data-portal-home="operation-overview">
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}
-          description={t('portal.home.concise_desc')}
           currentPage="home"
-          titleAccessory={!primaryOperationFocusItem ? (
+          titleAccessory={attentionFocusItems.length === 0 && capacityAttentionItems.length === 0 ? (
             <PortalStatusBadge
               status={currentServiceStatusToken}
               label={currentServiceStatusLabel}
               className="shrink-0 text-[0.68rem]"
             />
           ) : null}
-          metadata={(
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
-              <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
-
-            </div>
-          )}
-          contextPanel={primaryOperationFocusItem ? (
-            <div
-              className={cn(
-                'flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border px-3 py-2',
-                primaryOperationFocusItem.tone === 'warn'
-                  ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
-                  : 'border-slate-200/80 bg-white/75 dark:border-slate-800 dark:bg-slate-950/55'
-              )}
-              data-portal-home="current-focus"
-            >
-              <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                {primaryOperationFocusItem.label}
-              </p>
-              <p className="text-xs leading-5 text-gray-600 dark:text-gray-300">
-                {primaryOperationFocusItem.detail}
-              </p>
-              {primaryOperationFocusItem.href && primaryOperationFocusItem.action ? (
-                <Link
-                  href={primaryOperationFocusItem.href}
-                  className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                >
-                  {primaryOperationFocusItem.action}
-                </Link>
-              ) : null}
-            </div>
-          ) : null}
           metrics={showAccountSummary ? operationSummaryItems : []}
-          metricsColumnsClassName="md:grid-cols-3"
+          metricsLayout="rail"
+          metricsPlacement="title-end"
         />
 
         {shouldShowFollowUpSection ? (
-          <PortalSection
-            variant="portal"
-            className={cn(!showBothFollowUpPanels && 'xl:max-w-3xl')}
-          >
-            <div
-              className={cn(
-                'grid items-start gap-4',
-                showBothFollowUpPanels && 'xl:grid-cols-[1.1fr_0.9fr]'
-              )}
-            >
-              {remainingOperationFocusItems.length > 0 ? (
-                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="additional-focus">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                        {t('common.status')}
-                      </p>
-                      <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                        {t('portal.home.current_status_title', {}, 'Service status')}
-                      </h2>
-                    </div>
-                    <PortalTag tone={currentServiceStatusToken === 'active' ? 'success' : 'warning'}>
-                      {currentServiceStatusLabel}
-                    </PortalTag>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {remainingOperationFocusItems.slice(0, 3).map((item) => (
-                      <div
+          <div className="flex w-full flex-col items-start gap-2" data-portal-home="follow-up">
+              {attentionFocusItems.length > 0 ? (
+                <div
+                  className="w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+                  data-portal-home="attention-focus"
+                >
+                  <ul className="divide-y divide-amber-200/70 dark:divide-amber-900/50" data-portal-home="attention-list">
+                    {attentionFocusItems.slice(0, 4).map((item) => (
+                      <li
                         key={item.id || item.label}
-                        className={cn(
-                          'rounded-xl border px-3 py-3',
-                          item.tone === 'warn'
-                            ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
-                            : 'border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/35'
-                        )}
+                        className="flex flex-nowrap items-center gap-2 px-3 py-1.5"
                       >
-                        <p className="text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">{item.detail}</p>
+                        <p className="min-w-0 text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
+                        {item.detail ? (
+                          <span
+                            className="group relative inline-flex shrink-0"
+                            tabIndex={0}
+                            aria-label={item.detail}
+                          >
+                            <span
+                              className="cursor-help text-xs leading-none text-amber-700/80 dark:text-amber-200/80"
+                              aria-hidden="true"
+                              title={item.detail}
+                            >
+                              ⓘ
+                            </span>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-64 max-w-[min(18rem,70vw)] rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-normal leading-5 text-slate-600 shadow-md group-hover:block group-focus-within:block dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                              {item.detail}
+                            </span>
+                          </span>
+                        ) : null}
                         {item.href && item.action ? (
                           <Link
                             href={item.href}
-                            className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                            className="btn btn-secondary btn-sm shrink-0"
                           >
                             {item.action}
                           </Link>
                         ) : null}
-                      </div>
+                      </li>
                     ))}
-                  </div>
-                </PortalCard>
+                  </ul>
+                </div>
               ) : null}
 
               {shouldShowOnboardingChecklist ? (
-                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="setup-checklist">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                        {t('portal.home.onboarding_label', {}, 'Needs attention')}
-                      </p>
-                      <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                        {t('portal.home.onboarding_title', {}, 'Before you continue')}
-                      </h2>
-                    </div>
-                    <PortalTag tone="warning">
-                      {requiredAttentionItems.length} {t('portal.home.filter_attention_only', {}, 'Needs attention')}
-                    </PortalTag>
-                  </div>
-                  <div className="mt-4 divide-y divide-slate-200/80 dark:divide-slate-800">
-                    {requiredAttentionItems.map((item, index) => (
-                      <Link
+                <div
+                  className="w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 px-3 py-2.5 dark:border-amber-900/60 dark:bg-amber-950/20"
+                  data-portal-home="setup-checklist"
+                >
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    {t('portal.home.onboarding_label', {}, 'Needs attention')}
+                  </p>
+                  <h2 className="mt-0.5 text-base font-semibold text-gray-950 dark:text-white">
+                    {t('portal.home.onboarding_title', {}, 'Before you continue')}
+                  </h2>
+                  <ul className="mt-2 divide-y divide-amber-200/70 dark:divide-amber-900/50">
+                    {requiredAttentionItems.map((item) => (
+                      <li
                         key={item.key}
-                        href={item.href}
-                        className="group flex gap-3 py-3 text-sm transition first:pt-0 last:pb-0 hover:text-blue-700 dark:hover:text-blue-300"
+                        className="flex flex-wrap items-center gap-2 py-2 first:pt-1 last:pb-0"
                       >
-                        <span
-                          className={cn(
-                            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[0.68rem] font-semibold',
-                            'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-200'
-                          )}
-                        >
-                          {String(index + 1)}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-slate-950 dark:text-white">{item.title}</span>
-                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {item.detail}
-                          </span>
-                        </span>
-                      </Link>
+                        <p className="min-w-0 text-sm font-semibold text-gray-950 dark:text-white">{item.title}</p>
+                        <Link href={item.href} className="btn btn-secondary btn-sm shrink-0">
+                          {item.action}
+                        </Link>
+                      </li>
                     ))}
-                  </div>
-                </PortalCard>
+                  </ul>
+                </div>
               ) : null}
-            </div>
-          </PortalSection>
+          </div>
         ) : null}
       </section>
 
-      <PortalSitesWorkspace />
+      <PortalSitesWorkspace capacityAlerts={capacityAttentionItems} />
     </PortalPageStack>
+  );
+}
+
+export default function PortalPage() {
+  return (
+    <Suspense fallback={null}>
+      <PortalHome />
+    </Suspense>
   );
 }

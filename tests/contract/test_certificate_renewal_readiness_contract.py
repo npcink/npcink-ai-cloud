@@ -232,6 +232,9 @@ fi
 printf 'openssl %s\n' "$*" >>"${FAKE_COMMAND_LOG}"
 case "${1:-}" in
   s_client)
+    if [[ " $* " = *" -verify_return_error "* ]]; then
+      [ "${FAKE_CHAIN_VALID:-1}" = "1" ] || exit 1
+    fi
     [ "${FAKE_SERVED_CONNECT:-1}" = "1" ]
     printf 'fake served certificate\n'
     ;;
@@ -922,3 +925,29 @@ def test_production_call_sites_require_all_bound_env_before_image_mutation() -> 
         assert f"current env must define {name}" in cutover
     assert "certbot.timer" not in loader
     assert "certbot.timer" not in cutover
+
+
+def test_maintenance_inspection_never_runs_certbot_or_writes_normal_receipt(tmp_path):
+    env, cert, evidence, hook, log = _fake_environment(tmp_path)
+    result = _run("inspect-maintenance", env, cert, evidence, hook)
+    assert result.returncode == 0, result.stderr
+    record = json.loads(result.stdout)
+    assert record["renewal_dry_run_passed"] is False
+    assert record["status"] == "maintenance_live_checks_passed"
+    assert not evidence.exists()
+    commands = log.read_text()
+    assert "certbot renew" not in commands
+    assert "systemctl reload nginx" in commands
+
+
+@pytest.mark.parametrize("failure", [
+    "FAKE_CHAIN_VALID", "FAKE_CERT_VALIDITY", "FAKE_CERT_DOMAIN_MATCH",
+    "FAKE_PRIVATE_KEY_MATCH", "FAKE_TIMER_ACTIVE", "FAKE_HOOK_SUCCESS",
+    "FAKE_NGINX_RELOAD", "FAKE_SERVED_MATCH",
+])
+def test_maintenance_live_failures_do_not_produce_receipt(tmp_path, failure):
+    env, cert, evidence, hook, _log = _fake_environment(tmp_path)
+    env[failure] = "0"
+    result = _run("inspect-maintenance", env, cert, evidence, hook)
+    assert result.returncode != 0
+    assert not evidence.exists()

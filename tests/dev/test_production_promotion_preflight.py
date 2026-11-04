@@ -203,9 +203,7 @@ def test_certificate_readiness_wait_binds_request_and_production_sha(
         [
             {
                 "databaseId": 321,
-                "displayTitle": (
-                    "Production Maintenance / certificate-readiness / " + request_id
-                ),
+                "displayTitle": ("Production Maintenance / certificate-readiness / " + request_id),
                 "status": "completed",
                 "conclusion": "success",
                 "headSha": SHA,
@@ -239,9 +237,7 @@ def test_certificate_readiness_rejects_mismatched_production_sha(
         lambda *_args, **_kwargs: [
             {
                 "databaseId": 321,
-                "displayTitle": (
-                    "Production Maintenance / certificate-readiness / " + request_id
-                ),
+                "displayTitle": ("Production Maintenance / certificate-readiness / " + request_id),
                 "status": "completed",
                 "conclusion": "success",
                 "headSha": "b" * 40,
@@ -392,10 +388,67 @@ def test_production_workflow_contract_selects_bootstrap_only_when_needed(
 
 
 def test_workflow_exposes_unique_readiness_request_contract() -> None:
-    workflow = (ROOT / ".github/workflows/production-maintenance.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (ROOT / ".github/workflows/production-maintenance.yml").read_text(encoding="utf-8")
 
     assert "run-name: Production Maintenance / ${{ inputs.action }}" in workflow
     assert "readiness_request_id:" in workflow
     assert "inputs.readiness_request_id || 'manual'" in workflow
+
+
+@pytest.mark.parametrize("exception", [False, True])
+def test_promotion_uses_only_explicit_certificate_lane(monkeypatch, capsys, exception):
+    import json
+
+    module = _load_module()
+    candidate = module.Candidate(
+        branch="release-fix/candidate",
+        base_sha=SHA,
+        candidate_sha="b" * 40,
+        candidate_tree="c" * 40,
+        changed_files=("deploy/remote-load-and-up.sh",),
+        predicted_lane="full",
+    )
+    monkeypatch.setattr(module, "inspect_candidate", lambda *a, **k: candidate)
+    monkeypatch.setattr(module, "_load_module", lambda *a: object())
+    monkeypatch.setattr(module, "_require_remote_refs_current", lambda *a, **k: SHA)
+    for name in (
+        "_require_candidate_mergeable",
+        "_run_local_gates",
+        "_require_deploy_secret_metadata",
+        "_require_no_active_deploy",
+    ):
+        monkeypatch.setattr(module, name, lambda *a, **k: None)
+    monkeypatch.setattr(
+        module,
+        "_resolve_remote_branch_sha",
+        lambda preflight, repo, branch: SHA if branch == "production" else candidate.candidate_sha,
+    )
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_run_json",
+        lambda command, **k: (
+            calls.append("exception")
+            or {"state": "inspection_only", "renewal_dry_run_passed": False}
+        ),
+    )
+    monkeypatch.setattr(module, "_production_workflow_supports_request_id", lambda *a: True)
+    monkeypatch.setattr(module, "_certificate_runs", lambda *a: [])
+    monkeypatch.setattr(
+        module, "_dispatch_certificate_readiness", lambda *a: calls.append("ordinary")
+    )
+    monkeypatch.setattr(module, "_wait_for_certificate_readiness", lambda *a, **k: 123)
+    args = ["preflight", "--python-bin", sys.executable, "--format", "json"]
+    if exception:
+        args.append("--certificate-maintenance-exception")
+    monkeypatch.setattr(module.sys, "argv", args)
+    assert module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert calls == ["exception" if exception else "ordinary"]
+    if exception:
+        assert result["certificate_evidence_state"] == "maintenance_exception"
+        assert result["certificate_readiness_run_id"] is None
+        assert result["certificate_maintenance_evidence"]["renewal_dry_run_passed"] is False
+    else:
+        assert result["certificate_readiness_run_id"] == 123
+        assert "certificate_evidence_state" not in result

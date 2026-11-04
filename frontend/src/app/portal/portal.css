@@ -1,0 +1,212 @@
+/* Portal-only density and shell styles. Keep out of globals.css so Admin
+ * visual selection is not forced to re-run for portal presentation work. */
+
+:root {
+  /* Portal density tokens (service center). Prefer these over page-level pixel literals. */
+  --portal-content-max-width: 56rem; /* ~896px; match Overview / Spec service-center width */
+  --portal-header-min-height: 5rem; /* 80px */
+  --portal-header-target-height: 7.5rem; /* 120px soft ceiling for title zone */
+  --portal-row-min-height: 4rem; /* 64px */
+  --portal-row-max-height: 5rem; /* 80px */
+  --portal-btn-height: 2.75rem;
+  --portal-btn-height-sm: 2.25rem;
+  --portal-btn-radius: 9999px;
+  --portal-control-radius: 0.75rem;
+  --portal-section-radius: 18px; /* Preserve the section primitive's fixed radius. */
+  --portal-card-radius: 0.75rem;
+  --portal-panel-radius: 1.6rem;
+  --portal-page-gap: 1.5rem;
+  --portal-header-gap: 1rem;
+  --portal-header-padding-bottom: 1rem;
+  --portal-section-padding: 1rem;
+  --portal-section-padding-wide: 1.25rem;
+  --portal-card-padding-inline: 1rem;
+  --portal-card-padding-block: 0.875rem;
+  --portal-panel-padding-inline: 1.25rem;
+  --portal-panel-padding-inline-wide: 1.75rem;
+  --portal-panel-padding-block: 1.5rem;
+  --portal-panel-padding-block-wide: 1.75rem;
+  --portal-row-padding-block: 0.75rem;
+  --portal-title-size: 1.75rem;
+  --portal-body-size: 0.875rem; /* 14px */
+  --portal-body-size-lg: 1rem; /* 16px */
+  --portal-leading: 1.6;
+}
+
+  .portal-shell .btn {
+    min-height: var(--portal-btn-height);
+    border-radius: var(--portal-btn-radius);
+    box-shadow: none;
+    font-weight: 600;
+    transform: none;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 120ms ease;
+  }
+
+  .portal-shell .btn-danger {
+    border-color: #d70015;
+    background: #d70015;
+    color: #ffffff;
+    box-shadow: none;
+  }
+
+  .portal-shell .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #b90012;
+    background: #b90012;
+  }
+
+  .portal-shell .btn-outline {
+    border-color: #d2d2d7;
+    background: transparent;
+    color: #1d1d1f;
+    box-shadow: none;
+  }
+
+  .portal-shell .btn-outline:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #b8b8bd;
+    background: #fafafc;
+  }
+
+  .portal-shell .btn-outline.portal-outline-danger {
+    color: #b91c1c;
+  }
+
+  /* Portal buttons suppress box shadows, including the shared focus ring. */
+  .portal-shell .btn-outline:focus-visible,
+  .portal-shell .btn-danger:focus-visible {
+    outline: 2px solid #64748b;
+    outline-offset: 2px;
+  }
+
+  .dark .portal-shell .btn-outline {
+    border-color: #64748b;
+    color: #f8fafc;
+  }
+
+  .dark .portal-shell .btn-outline:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: #94a3b8;
+    background: #1f2937;
+  }
+
+  .dark .portal-shell .btn-outline.portal-outline-danger {
+    color: #fca5a5;
+  }
+
+  .dark .portal-shell .btn-outline:focus-visible,
+  .dark .portal-shell .btn-danger:focus-visible {
+    outline-color: #94a3b8;
+  }
+
+  .portal-shell {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+  }
+
+  .portal-content {
+    max-width: var(--portal-content-max-width);
+  }
+
+  .portal-workspace-header {
+    min-height: var(--portal-header-min-height);
+  }
+
+  /* Tickets list: short title row — drop forced min-height empty band */
+  .portal-shell [data-portal-workspace-header="support"] {
+    min-height: 0;
+    padding-bottom: 0.5rem;
+    border-bottom-width: 0;
+  }
+
+  /* Package page: title + metrics rail — same compact chrome as tickets */
+  .portal-shell [data-portal-workspace-header="billing"] {
+    min-height: 0;
+    padding-bottom: 0.5rem;
+  }
+
+  /* Package page only: slightly tighter content pad (keep other portal pages at py-8) */
+  .portal-shell main:has([data-portal-workspace-header="billing"]) > .portal-content {
+    padding-top: 1.25rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .portal-shell .btn-sm,
+  .portal-shell .btn.btn-sm,
+  .portal-shell .portal-row-action-btn {
+    min-height: var(--portal-btn-height-sm);
+    padding-block: 0.35rem;
+    padding-inline: 0.9rem;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    border-radius: var(--portal-btn-radius);
+    box-shadow: none;
+    white-space: nowrap;
+  }
+
+  .portal-shell .portal-row-more-btn {
+    min-width: var(--portal-btn-height-sm);
+    padding-inline: 0.55rem;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+  }
+
+  .portal-shell .portal-row-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    padding: 0.55rem 0.85rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #1d1d1f;
+    background: transparent;
+    border: 0;
+  }
+
+  .portal-shell .portal-row-menu-item:hover,
+  .portal-shell .portal-row-menu-item:focus-visible {
+    background: #f5f5f7;
+    outline: none;
+  }
+
+  .portal-shell .portal-row-menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .portal-shell .portal-row-menu-item-danger {
+    color: #d70015;
+  }
+
+  .dark .portal-shell .portal-row-menu-item {
+    color: #f8fafc;
+  }
+
+  .dark .portal-shell .portal-row-menu-item:hover,
+  .dark .portal-shell .portal-row-menu-item:focus-visible {
+    background: #1f2937;
+  }
+
+  .dark .portal-shell .portal-row-menu-item-danger {
+    color: #ff453a;
+  }
+
+  .portal-shell .portal-list-row > th,
+  .portal-shell .portal-list-row > td {
+    padding-top: var(--portal-row-padding-block);
+    padding-bottom: var(--portal-row-padding-block);
+    vertical-align: middle;
+  }
+
+  .portal-list-row {
+    min-height: var(--portal-row-min-height);
+    max-height: none;
+  }
+
+  @media (min-width: 768px) {
+    .portal-list-row {
+      min-height: var(--portal-row-min-height);
+    }
+  }
+

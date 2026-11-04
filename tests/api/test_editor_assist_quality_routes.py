@@ -130,6 +130,9 @@ def test_editor_assist_quality_summary_builds_problem_candidates(
     assert data["totals"]["sample_stage"] == "validation"
     assert len(data["trend"]) == 1
     assert data["trend"][0]["session_total"] == 5
+    assert data["trend"][0]["resolved_session_total"] == 5
+    assert data["trend"][0]["repeated_session_total"] == 2
+    assert data["trend"][0]["exact_saved_session_total"] == 1
     assert data["comparison_window"]["session_total"] == 0
     assert data["tasks"][0]["task_key"] == "content_summary"
     assert {
@@ -291,6 +294,11 @@ def test_editor_assist_quality_marks_repeated_window_candidates_as_sustained(
     assert summary["comparison_window"]["session_total"] == 5
     assert len(summary["trend"]) == 7
     assert sum(int(item["session_total"]) for item in summary["trend"]) == 5
+    assert sum(int(item["resolved_session_total"]) for item in summary["trend"]) == 5
+    assert sum(int(item["exact_saved_session_total"]) for item in summary["trend"]) == 1
+    empty_buckets = [item for item in summary["trend"] if item["session_total"] == 0]
+    assert len(empty_buckets) == 6
+    assert all(item["resolved_session_total"] == 0 for item in empty_buckets)
     assert all(
         candidate["persistence"] == "sustained"
         and candidate["previous_observed_rate"] > 0
@@ -598,3 +606,26 @@ def test_editor_assist_quality_attribution_is_absent_without_run_evidence(
     assert attribution["coverage"]["unattributed_session_total"] == 5
     assert attribution["by_model"] == []
     assert attribution["by_runtime_profile"] == []
+
+
+def test_quality_trend_preserves_pending_and_empty_denominators(tmp_path: Path) -> None:
+    database_url, _ = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    service = EditorAssistQualityService(database_url)
+    empty = service.get_summary(window_hours=336, now=now)
+    assert empty["totals"]["session_total"] == 0
+    assert all(bucket["resolved_session_total"] == 0 for bucket in empty["trend"])
+    generated = next(
+        event for event in _fixture_events()
+        if event["event_kind"] == "addon.editor_assist.generation.presented"
+    )
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality", key_id="key_default", events=[generated], received_at=now,
+    )
+    pending = service.get_summary(window_hours=336, now=now)
+    assert pending["totals"]["session_total"] == 1
+    assert pending["totals"]["resolved_session_total"] == 0
+    assert pending["totals"]["pending_session_total"] == 1
+    assert pending["trend"][-1]["session_total"] == 1
+    assert pending["trend"][-1]["pending_session_total"] == 1
+    assert pending["trend"][-1]["resolved_session_total"] == 0

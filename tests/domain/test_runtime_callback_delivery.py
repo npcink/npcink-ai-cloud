@@ -649,3 +649,70 @@ def test_runtime_service_no_longer_owns_callback_delivery_details() -> None:
             for prefix in forbidden_import_prefixes
         )
     }
+
+
+@pytest.mark.parametrize("interrupt", [False, True])
+def test_optional_signing_batch_covers_delivery_and_closes_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt: bool,
+) -> None:
+    from contextlib import contextmanager
+
+    settings = _settings()
+    store = FakeStore()
+    for run_id in ["batch_first", "batch_second"]:
+        run = _run(run_id=run_id)
+        store.runs[run_id] = run
+        store.due_run_ids.append(run_id)
+    store.sites["site_alpha"] = _site(settings, secret="synthetic-initial-secret")
+    _install_fake_repository(monkeypatch, store)
+    events: list[str] = []
+
+    class BatchDispatcher(RecordingDispatcher):
+        active = False
+
+        @contextmanager
+        def signing_batch(self):  # type: ignore[no-untyped-def]
+            assert not self.active
+            self.active = True
+            events.append("enter")
+            try:
+                yield
+            finally:
+                self.active = False
+                events.append("exit")
+
+        def dispatch(
+            self, request: RuntimeCallbackDispatchRequest
+        ) -> RuntimeCallbackDispatchResult:
+            assert self.active
+            events.append("dispatch")
+            if interrupt:
+                raise RuntimeError("unexpected dispatch error")
+            result = super().dispatch(request)
+            # The next claim must reload registration even within a signing batch.
+            store.sites["site_alpha"] = _site(settings, secret="synthetic-rotated-secret")
+            return result
+
+    dispatcher = BatchDispatcher()
+    service = RuntimeCallbackDeliveryService(
+        database_url="unused",
+        settings=settings,
+        dispatcher=dispatcher,
+    )
+    if interrupt:
+        with pytest.raises(RuntimeError, match="unexpected dispatch error"):
+            service.dispatch_pending_callbacks(max_callbacks=2)
+        assert events == ["enter", "dispatch", "exit"]
+    else:
+        results = service.dispatch_pending_callbacks(max_callbacks=2)
+        assert len(results) == 2
+        assert events == ["enter", "dispatch", "dispatch", "exit"]
+        assert [request.secret for request in dispatcher.requests] == [
+            "synthetic-initial-secret",
+            "synthetic-rotated-secret",
+        ]
+        assert all(run.callback_status == "delivered" for run in store.runs.values())
+        assert store.commit_count == 5  # One recovery commit plus claim/delivery per run.
+    assert not dispatcher.active
+    assert store.reclaim_calls == 1

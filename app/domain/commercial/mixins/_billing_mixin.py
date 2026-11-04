@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -10,13 +12,18 @@ from uuid import uuid4
 
 from app.adapters.repositories.commercial_plan_repository import CommercialPlanRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
     CommercialSubscriptionLifecycleRepository,
 )
 from app.core.db import get_session
 from app.core.models import (
+    CREDIT_LEDGER_EVENT_GRANT,
     PLAN_STATUS_ACTIVE,
     PLAN_VERSION_STATUS_PUBLISHED,
+    SITE_STATUS_ARCHIVED,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_PAST_DUE,
     SUBSCRIPTION_STATUS_SUSPENDED,
@@ -24,9 +31,14 @@ from app.core.models import (
     AccountEntitlementSnapshot,
     AccountSubscription,
     BillingSnapshot,
+    Plan,
     PlanVersion,
     ServiceSetting,
     Site,
+)
+from app.domain.commercial.credits import (
+    AI_CREDIT_RATE_VERSION,
+    SUBSCRIPTION_TOPUP_SOURCE_TYPE,
 )
 from app.domain.commercial.currency import (
     SERVICE_SETTING_ACCOUNTING_FX,
@@ -112,6 +124,13 @@ ADMIN_SUBSCRIPTION_RISK_RANK = {
     "monitor": 2,
     "stable": 3,
 }
+# The plan directory count and its drilldown must use this exact lifecycle set.
+ADMIN_ACTIVE_SUBSCRIPTION_STATUSES = (
+    SUBSCRIPTION_STATUS_TRIALING,
+    SUBSCRIPTION_STATUS_ACTIVE,
+    SUBSCRIPTION_STATUS_PAST_DUE,
+    SUBSCRIPTION_STATUS_SUSPENDED,
+)
 ADMIN_SUBSCRIPTION_SORTS = frozenset({"priority", "expiry", "customer"})
 ADMIN_SUBSCRIPTION_RISK_FILTERS = frozenset(
     {"all", "needs_action", "critical", "warning", "monitor", "stable"}
@@ -285,66 +304,116 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            if repository.get_plan(plan_id) is None:
-                raise CommercialNotFoundError(
-                    "service.plan_not_found",
-                    f"plan '{plan_id}' was not found",
-                )
-            label_conflict = next(
-                (
-                    version
-                    for version in repository.list_plan_versions(plan_id=plan_id, limit=None)
-                    if version.version_label == version_label
-                    and version.plan_version_id != plan_version_id
-                ),
-                None,
-            )
-            if label_conflict is not None:
-                raise CommercialConflictError(
-                    "service.plan_version_label_conflict",
-                    (
-                        f"plan '{plan_id}' already has version label '{version_label}' "
-                        f"on plan version '{label_conflict.plan_version_id}'"
-                    ),
-                )
-            plan_version = repository.upsert_plan_version(
-                plan_version_id=plan_version_id,
+            payload = self._publish_plan_version_in_session(
+                repository=repository,
                 plan_id=plan_id,
+                plan_version_id=plan_version_id,
                 version_label=version_label,
                 status=status,
-                currency=self._normalize_plan_currency(currency),
-                entitlements_json=self._normalize_entitlements(entitlements_json),
-                budgets_json=self._normalize_budgets(budgets_json),
-                concurrency_json=self._normalize_concurrency(concurrency_json),
-                policy_json=self._normalize_commercial_policy(policy_json),
+                currency=currency,
+                entitlements_json=entitlements_json,
+                budgets_json=budgets_json,
+                concurrency_json=concurrency_json,
+                policy_json=policy_json,
                 metadata_json=metadata_json,
-            )
-            tier_id = self._infer_plan_tier_id(
-                repository.get_plan(plan_id),
-                [self._serialize_plan_version(plan_version)],
-            )
-            if status == PLAN_VERSION_STATUS_PUBLISHED and tier_id in {"plus", "pro"}:
-                cast(Any, self)._sync_standard_plan_offer_in_session(
-                    repository,
-                    tier_id=tier_id,
-                    plan_id=plan_id,
-                    plan_version_id=plan_version.plan_version_id,
-                    sales_price_cny=sales_price_cny,
-                )
-            payload = self._serialize_plan_version(plan_version)
-            self._record_service_audit_in_session(
-                repository=repository,
+                sales_price_cny=sales_price_cny,
                 audit_context=audit_context,
-                event_kind="plan_version.publish",
-                outcome="succeeded",
-                plan_id=plan_id,
-                plan_version_id=plan_version.plan_version_id,
-                scope_kind="plan_version",
-                scope_id=plan_version.plan_version_id,
-                payload_json=payload,
             )
             session.commit()
             return payload
+
+    def _publish_plan_version_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        plan_id: str,
+        plan_version_id: str,
+        version_label: str,
+        status: str = PLAN_VERSION_STATUS_PUBLISHED,
+        currency: str = "CNY",
+        entitlements_json: dict[str, object] | None = None,
+        budgets_json: dict[str, object] | None = None,
+        concurrency_json: dict[str, object] | None = None,
+        policy_json: dict[str, object] | None = None,
+        metadata_json: dict[str, object] | None = None,
+        sales_price_cny: float | None = None,
+        audit_context: ServiceAuditContext | None = None,
+        parameter_evidence: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        if repository.get_plan_for_update(plan_id) is None:
+            raise CommercialNotFoundError(
+                "service.plan_not_found",
+                f"plan '{plan_id}' was not found",
+            )
+        label_conflict = next(
+            (
+                version
+                for version in repository.list_plan_versions(plan_id=plan_id, limit=None)
+                if version.version_label == version_label
+                and version.plan_version_id != plan_version_id
+            ),
+            None,
+        )
+        if label_conflict is not None:
+            raise CommercialConflictError(
+                "service.plan_version_label_conflict",
+                (
+                    f"plan '{plan_id}' already has version label '{version_label}' "
+                    f"on plan version '{label_conflict.plan_version_id}'"
+                ),
+            )
+        plan_version = repository.upsert_plan_version(
+            plan_version_id=plan_version_id,
+            plan_id=plan_id,
+            version_label=version_label,
+            status=status,
+            currency=self._normalize_plan_currency(currency),
+            entitlements_json=self._normalize_entitlements(entitlements_json),
+            budgets_json=self._normalize_budgets(budgets_json),
+            concurrency_json=self._normalize_concurrency(concurrency_json),
+            policy_json=self._normalize_commercial_policy(policy_json),
+            metadata_json=metadata_json,
+        )
+        tier_id = self._infer_plan_tier_id(
+            repository.get_plan(plan_id),
+            [self._serialize_plan_version(plan_version)],
+        )
+        if status == PLAN_VERSION_STATUS_PUBLISHED and tier_id in {"plus", "pro"}:
+            cast(Any, self)._sync_standard_plan_offer_in_session(
+                repository,
+                tier_id=tier_id,
+                plan_id=plan_id,
+                plan_version_id=plan_version.plan_version_id,
+                sales_price_cny=sales_price_cny,
+            )
+        payload = self._serialize_plan_version(plan_version)
+        if parameter_evidence is not None:
+            parameter_offer = repository.get_plan_offer(f"{tier_id}_monthly_v1")
+            serialized_offer = (
+                cast(Any, self)._serialize_plan_offer(parameter_offer)
+                if parameter_offer is not None and parameter_offer.plan_id == plan_id
+                and parameter_offer.account_id is None
+                and parameter_offer.purchase_mode == "self_serve" else None
+            )
+            payload["parameter_operation"] = {
+                **parameter_evidence,
+                "parameters": self._admin_plan_parameter_values(payload, serialized_offer),
+            }
+        self._record_service_audit_in_session(
+            repository=repository,
+            audit_context=audit_context,
+            event_kind="plan_version.publish",
+            outcome="succeeded",
+            plan_id=plan_id,
+            plan_version_id=plan_version.plan_version_id,
+            scope_kind="plan_version",
+            scope_id=plan_version.plan_version_id,
+            payload_json=payload,
+        )
+        plan = repository.get_plan(plan_id)
+        assert plan is not None
+        plan.metadata_json = {**(plan.metadata_json or {}), "admin_parameters_epoch": uuid4().hex}
+        return payload
 
     def rebuild_billing_snapshot(
         self,
@@ -748,12 +817,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             for subscription in subscriptions
             if subscription.plan_id
             and subscription.status
-            in {
-                SUBSCRIPTION_STATUS_TRIALING,
-                SUBSCRIPTION_STATUS_ACTIVE,
-                SUBSCRIPTION_STATUS_PAST_DUE,
-                SUBSCRIPTION_STATUS_SUSPENDED,
-            }
+            in ADMIN_ACTIVE_SUBSCRIPTION_STATUSES
         )
         items = []
         for plan in plans:
@@ -820,7 +884,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 if str(getattr(offer, "plan_id", "") or "") == plan_id
                 and getattr(offer, "account_id", None) is None
                 and str(getattr(offer, "purchase_mode", "") or "") == "self_serve"
-                and str(getattr(offer, "status", "") or "") == "active"
+                and str(getattr(offer, "offer_id", "") or "")
+                == f"{tier_summary['tier_id']}_monthly_v1"
             ),
             None,
         )
@@ -829,6 +894,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "tier_summary": tier_summary,
             "latest_version": latest_version,
             "sales_offer": sales_offer,
+            "revision": self._admin_plan_revision(plan, latest_version, sales_offer),
             "package_fit_cues": self._build_plan_package_fit_cues(
                 tier_summary=tier_summary,
                 latest_version=latest_version,
@@ -851,10 +917,38 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             ],
         }
 
+    @staticmethod
+    def _admin_plan_revision(
+        plan: Plan, version: dict[str, object] | None, offer: dict[str, object] | None
+    ) -> str:
+        # No timestamp assumptions. The durable epoch invalidates ABA / same-value
+        # publications; the semantic fingerprint also covers pre-existing records.
+        semantic_version = {
+            key: value
+            for key, value in (version or {}).items()
+            if key not in {"created_at", "updated_at"}
+        }
+        material = {
+            "plan_id": plan.plan_id,
+            "status": plan.status,
+            "metadata": plan.metadata_json or {},
+            "version": semantic_version,
+            "sales_offer": offer,
+        }
+        return (
+            "plan-v1:"
+            + hashlib.sha256(
+                json.dumps(
+                    material, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+                ).encode()
+            ).hexdigest()
+        )
+
     def update_admin_plan_parameters(
         self,
         *,
         plan_id: str,
+        revision: str,
         monthly_included_points: float,
         site_limit: int,
         max_vector_documents: int,
@@ -869,57 +963,178 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         def _copy_mapping(value: object) -> dict[str, object]:
             return dict(value) if isinstance(value, dict) else {}
 
-        detail = self.get_admin_plan(plan_id)
-        latest_version = _copy_mapping(detail.get("latest_version"))
-        if not latest_version:
-            raise CommercialNotFoundError(
-                "service.plan_version_not_found",
-                f"plan '{plan_id}' has no current version to update",
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            plan = repository.get_plan_for_update(plan_id)
+            if plan is None:
+                raise CommercialNotFoundError(
+                    "service.plan_not_found", f"plan '{plan_id}' was not found"
+                )
+            versions = [
+                self._serialize_plan_version(item)
+                for item in repository.list_plan_versions(plan_id=plan_id, for_update=True)
+            ]
+            latest_version = self._select_latest_plan_version(versions)
+            tier_id = self._infer_plan_tier_id(plan, versions)
+            offer = repository.get_plan_offer_for_update(f"{tier_id}_monthly_v1")
+            sales_offer = (
+                cast(Any, self)._serialize_plan_offer(offer)
+                if offer is not None
+                and offer.plan_id == plan_id
+                and offer.account_id is None
+                and offer.purchase_mode == "self_serve"
+                else None
+            )
+            if not revision or revision != self._admin_plan_revision(
+                plan, latest_version, sales_offer
+            ):
+                raise CommercialConflictError(
+                    "service.admin_plan_revision_conflict",
+                    "Package parameters or sales availability changed. Read the latest values before saving.",
+                )
+            latest_version = _copy_mapping(latest_version)
+            if not latest_version:
+                raise CommercialNotFoundError(
+                    "service.plan_version_not_found",
+                    f"plan '{plan_id}' has no current version to update",
+                )
+
+            budgets = _copy_mapping(latest_version.get("budgets"))
+            budgets.update(
+                {
+                    "max_ai_credits_per_period": monthly_included_points,
+                    "max_cost_cny_per_period": max_cost_cny_per_period,
+                }
+            )
+            concurrency = _copy_mapping(latest_version.get("concurrency"))
+            concurrency["max_active_runs"] = max_active_runs
+            policy = _copy_mapping(latest_version.get("policy"))
+            subscription_policy = _copy_mapping(policy.get("subscription"))
+            subscription_policy["grace_period_days"] = grace_period_days
+            policy["subscription"] = subscription_policy
+            metadata = _copy_mapping(latest_version.get("metadata"))
+            metadata.update(
+                {
+                    "monthly_included_points": monthly_included_points,
+                    "site_limit": site_limit,
+                    "max_vector_documents": max_vector_documents,
+                    "max_media_images": max_media_images,
+                    "max_batch_items": max_batch_items,
+                }
             )
 
-        budgets = _copy_mapping(latest_version.get("budgets"))
-        budgets.update(
-            {
-                "max_ai_credits_per_period": monthly_included_points,
-                "max_cost_cny_per_period": max_cost_cny_per_period,
-            }
-        )
-        concurrency = _copy_mapping(latest_version.get("concurrency"))
-        concurrency["max_active_runs"] = max_active_runs
-        policy = _copy_mapping(latest_version.get("policy"))
-        subscription_policy = _copy_mapping(policy.get("subscription"))
-        subscription_policy["grace_period_days"] = grace_period_days
-        policy["subscription"] = subscription_policy
-        metadata = _copy_mapping(latest_version.get("metadata"))
-        metadata.update(
-            {
-                "monthly_included_points": monthly_included_points,
-                "site_limit": site_limit,
-                "max_vector_documents": max_vector_documents,
-                "max_media_images": max_media_images,
-                "max_batch_items": max_batch_items,
-            }
-        )
+            payload = self._publish_plan_version_in_session(
+                repository=repository,
+                plan_id=plan_id,
+                plan_version_id=str(latest_version.get("plan_version_id") or ""),
+                version_label=str(latest_version.get("version_label") or ""),
+                status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
+                currency=str(latest_version.get("currency") or "CNY"),
+                entitlements_json=_copy_mapping(latest_version.get("entitlements")),
+                budgets_json=budgets,
+                concurrency_json=concurrency,
+                policy_json=policy,
+                metadata_json=metadata,
+                sales_price_cny=sales_price_cny,
+                audit_context=audit_context,
+                parameter_evidence={
+                    "action": "parameters.update", "source_revision": revision,
+                },
+            )
 
-        return self.publish_plan_version(
-            plan_id=plan_id,
-            plan_version_id=str(latest_version.get("plan_version_id") or ""),
-            version_label=str(latest_version.get("version_label") or ""),
-            status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
-            currency=str(latest_version.get("currency") or "CNY"),
-            entitlements_json=_copy_mapping(latest_version.get("entitlements")),
-            budgets_json=budgets,
-            concurrency_json=concurrency,
-            policy_json=policy,
-            metadata_json=metadata,
-            sales_price_cny=sales_price_cny,
-            audit_context=audit_context,
-        )
+            session.commit()
+            return payload
+
+    @staticmethod
+    def _admin_plan_parameter_values(
+        version: dict[str, object], sales_offer: dict[str, object] | None,
+    ) -> dict[str, object]:
+        budgets = cast(dict[str, object], version.get("budgets") or {})
+        metadata = cast(dict[str, object], version.get("metadata") or {})
+        concurrency = cast(dict[str, object], version.get("concurrency") or {})
+        policy = cast(dict[str, object], version.get("policy") or {})
+        subscription = cast(dict[str, object], policy.get("subscription") or {})
+        parameters = {
+            "monthly_included_points": budgets.get("max_ai_credits_per_period", 0),
+            "site_limit": metadata.get("site_limit", 0),
+            "max_vector_documents": metadata.get("max_vector_documents", 0),
+            "max_media_images": metadata.get("max_media_images", 0),
+            "max_cost_cny_per_period": budgets.get("max_cost_cny_per_period", 0),
+            "sales_price_cny": sales_offer.get("amount", 0) if sales_offer else 0,
+            "max_active_runs": concurrency.get("max_active_runs", 0),
+            "max_batch_items": metadata.get("max_batch_items", 0),
+            "grace_period_days": subscription.get("grace_period_days", 0),
+        }
+        return parameters
+
+    def confirm_admin_plan_parameters(
+        self, *, plan_id: str, operation_id: str, source_revision: str,
+        audit_context: ServiceAuditContext,
+    ) -> dict[str, object]:
+        # Dedicated SELECT-only chain: no get_admin_site, reconciliation, bootstrap,
+        # billing, audit writes or commit. Missing/ambiguous evidence is not failure
+        # proof and must never authorize another write.
+        result: dict[str, object] = {
+            "plan_id": plan_id, "operation_id": operation_id,
+            "action": "parameters.update", "source_revision": source_revision,
+            "state": "unconfirmed", "current": None, "receipt": None,
+        }
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            events = CommercialServiceAuditRepository(session).find_plan_parameter_events(
+                plan_id=plan_id, operation_id=operation_id,
+                actor_kind=audit_context.actor_kind, actor_ref=audit_context.actor_ref,
+            )
+            if len(events) != 1:
+                return result
+            event = events[0]
+            payload = event.payload_json or {}
+            evidence = payload.get("parameter_operation")
+            if (
+                not isinstance(evidence, dict)
+                or evidence.get("action") != "parameters.update"
+                or evidence.get("source_revision") != source_revision
+                or payload.get("plan_id") != plan_id
+                or payload.get("plan_version_id") != event.plan_version_id
+                or event.scope_id != event.plan_version_id
+            ):
+                return result
+            plan = repository.get_plan(plan_id)
+            if plan is None:
+                return result
+            versions = [self._serialize_plan_version(row)
+                        for row in repository.list_plan_versions(plan_id=plan_id)]
+            current = self._select_latest_plan_version(versions)
+            if current is None or current.get("plan_version_id") != event.plan_version_id:
+                return result
+            tier_id = self._infer_plan_tier_id(plan, versions)
+            offer = repository.get_plan_offer(f"{tier_id}_monthly_v1")
+            sales_offer = (
+                cast(Any, self)._serialize_plan_offer(offer)
+                if offer is not None and offer.plan_id == plan_id
+                and offer.account_id is None and offer.purchase_mode == "self_serve" else None
+            )
+            parameters = self._admin_plan_parameter_values(current, sales_offer)
+            if evidence.get("parameters") != parameters:
+                return result
+            result.update(
+                state="confirmed",
+                current={"revision": self._admin_plan_revision(plan, current, sales_offer),
+                         "parameters": parameters, "plan_version_id": event.plan_version_id},
+                receipt={"operation_id": operation_id, "plan_id": plan_id,
+                         "plan_version_id": event.plan_version_id,
+                         "actor_kind": event.actor_kind, "actor_ref": event.actor_ref,
+                         "method": event.method, "path": event.path, "event_kind": event.event_kind,
+                         "audit_event_id": event.id, "action": "parameters.update",
+                         "source_revision": source_revision, "parameters": parameters},
+            )
+            return result
 
     def list_admin_subscriptions(
         self,
         *,
         status: str | None = None,
+        status_group: str | None = None,
         account_id: str | None = None,
         customer_query: str | None = None,
         plan_id: str | None = None,
@@ -929,6 +1144,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, object]:
+        if status_group not in (None, "", "active") or (status_group and status):
+            raise CommercialValidationError(
+                "service.admin_subscription_status_group_invalid",
+                "status_group must be active and cannot be combined with status",
+            )
+        statuses = list(ADMIN_ACTIVE_SUBSCRIPTION_STATUSES) if status_group else None
         normalized_offset = max(0, int(offset or 0))
         resolved_limit = max(1, int(limit or 100))
         normalized_sort = str(sort or "priority").strip().lower()
@@ -948,6 +1169,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             total = repository.count_subscriptions(
                 status=status,
+                statuses=statuses,
                 account_id=account_id,
                 customer_query=customer_query,
                 plan_id=plan_id,
@@ -960,6 +1182,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 )
             subscriptions = repository.list_subscriptions(
                 status=status,
+                statuses=statuses,
                 account_id=account_id,
                 customer_query=customer_query,
                 plan_id=plan_id,
@@ -1046,7 +1269,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             subscription = item.get("subscription")
             subscription_mapping = subscription if isinstance(subscription, dict) else {}
             account_id_value = str(subscription_mapping.get("account_id") or "")
-            customer_value = str(account_mapping.get("name") or account_id_value)
+            metadata = account_mapping.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+            customer_value = str(
+                metadata.get("operator_display_name")
+                or account_mapping.get("name")
+                or account_id_value
+            )
             return customer_value.casefold(), account_id_value.casefold()
 
         def _sort_key(
@@ -1102,6 +1331,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         return {
             "filters": {
                 "status": status or "",
+                "status_group": status_group or "",
                 "account_id": account_id or "",
                 "customer": customer_query or "",
                 "plan_id": plan_id or "",
@@ -1405,6 +1635,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             )
 
         plan_id, plan_version_id = CANONICAL_TIER_PLAN_IDS[tier_id]
+        repository.get_plan_for_update(plan_id)
         existing_versions = repository.list_plan_versions(
             plan_id=plan_id,
             status=PLAN_VERSION_STATUS_PUBLISHED,
@@ -1611,66 +1842,50 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         }
         topup_items.append(topup_record)
         subscription_metadata["operator_managed_topups"] = topup_items[-20:]
-        subscription_metadata["current_period_topup_totals"] = {
-            "ai_credits": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("ai_credits")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "runs": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("runs")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "tokens": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("tokens")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "cost_cny": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("cost_cny")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-        }
+        subscription_metadata["current_period_topup_totals"] = (
+            self._sum_operator_managed_topup_totals_for_period(
+                topup_items,
+                expected_period_start=expected_period_start,
+                expected_period_end=expected_period_end,
+            )
+        )
 
         subscription.metadata_json = subscription_metadata
+        if normalized_ai_credits > 0:
+            # Visibility-only grant: package_limit already includes the increment.
+            repository.record_credit_ledger_entry(
+                account_id=subscription.account_id,
+                site_id=None,
+                subscription_id=subscription.subscription_id,
+                plan_version_id=plan_version.plan_version_id,
+                run_id=None,
+                provider_call_id=None,
+                event_type=CREDIT_LEDGER_EVENT_GRANT,
+                source_type=SUBSCRIPTION_TOPUP_SOURCE_TYPE,
+                source_id=topup_id,
+                ai_credit_delta=round(normalized_ai_credits, 6),
+                quantity=round(normalized_ai_credits, 6),
+                unit="ai_credits",
+                rate=1.0,
+                rate_unit=None,
+                rate_version=AI_CREDIT_RATE_VERSION,
+                idempotency_key=f"subscription_topup:{topup_id}",
+                metadata_json={
+                    "topup_id": topup_id,
+                    "pack_id": str(selected_pack.get("pack_id") or "") if selected_pack else "",
+                    "pack_label": str(selected_pack.get("label") or "") if selected_pack else "",
+                    "points_label": (
+                        str(selected_pack.get("points_label") or "") if selected_pack else ""
+                    ),
+                    "reason": reason,
+                    "note": note,
+                    "period_start_at": expected_period_start,
+                    "period_end_at": expected_period_end,
+                    "affects_package_quota": False,
+                    "package_limit_already_increased": True,
+                },
+                created_at=now,
+            )
         repository.supersede_entitlement_snapshots(subscription.account_id)
         snapshot = repository.create_entitlement_snapshot(
             account_id=subscription.account_id,
@@ -1947,14 +2162,16 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         now: datetime,
     ) -> tuple[AccountSubscription, AccountEntitlementSnapshot | None, bool]:
         start_at, end_at = self._resolve_period(subscription, now)
-        if end_at >= now:
+        if end_at > now:
             snapshot = repository.get_active_entitlement_snapshot(
                 subscription.account_id,
                 subscription_id=subscription.subscription_id,
             )
             return subscription, snapshot, False
 
-        if subscription.status == SUBSCRIPTION_STATUS_TRIALING:
+        if subscription.status == SUBSCRIPTION_STATUS_TRIALING or cast(
+            Any, self
+        )._is_payment_backed_subscription(subscription):
             cast(Any, self)._reconcile_account_subscription_state_in_session(
                 repository=repository,
                 account_id=subscription.account_id,
@@ -2903,6 +3120,153 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "plan_version_id": plan_version_id,
         }
 
+    def _ensure_subscription_topup_ledger_entries_in_session(
+        self,
+        *,
+        repository: Any,
+        subscription: AccountSubscription,
+        period_start_at: datetime,
+        period_end_at: datetime,
+    ) -> int:
+        """Materialize visibility ledger grants for operator-managed top-ups.
+
+        Top-ups raise package_limit via entitlement budgets and historically did
+        not write credit_ledger_entries. Acquisition / Sources filters need a
+        grant row; package_credit_net_delta excludes subscription_topup so this
+        does not double-count remaining.
+        """
+        metadata = dict(subscription.metadata_json or {})
+        raw_topups = metadata.get("operator_managed_topups")
+        if not isinstance(raw_topups, list):
+            return 0
+        expected_start = self._serialize_datetime(period_start_at)
+        expected_end = self._serialize_datetime(period_end_at)
+        materialized = 0
+        for item in raw_topups:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("target_period_start_at") or "") != expected_start:
+                continue
+            if str(item.get("target_period_end_at") or "") != expected_end:
+                continue
+            topup_id = str(item.get("topup_id") or "").strip()
+            if not topup_id:
+                continue
+            increments = item.get("increments")
+            increments = increments if isinstance(increments, dict) else {}
+            ai_credits = round(self._coerce_float(increments.get("ai_credits")), 6)
+            if ai_credits <= 0:
+                continue
+            idempotency_key = f"subscription_topup:{topup_id}"
+            existing = repository.get_credit_ledger_entry_by_idempotency_key(idempotency_key)
+            applied_at_raw = item.get("applied_at")
+            created_at = (
+                cast(Any, self)._parse_datetime(applied_at_raw)
+                if applied_at_raw is not None
+                else None
+            ) or self.now_factory()
+            repository.record_credit_ledger_entry(
+                account_id=subscription.account_id,
+                site_id=None,
+                subscription_id=subscription.subscription_id,
+                plan_version_id=subscription.plan_version_id,
+                run_id=None,
+                provider_call_id=None,
+                event_type=CREDIT_LEDGER_EVENT_GRANT,
+                source_type=SUBSCRIPTION_TOPUP_SOURCE_TYPE,
+                source_id=topup_id,
+                ai_credit_delta=ai_credits,
+                quantity=ai_credits,
+                unit="ai_credits",
+                rate=1.0,
+                rate_unit=None,
+                rate_version=AI_CREDIT_RATE_VERSION,
+                idempotency_key=idempotency_key,
+                metadata_json={
+                    "topup_id": topup_id,
+                    "pack_id": str(item.get("pack_id") or ""),
+                    "pack_label": str(item.get("pack_label") or ""),
+                    "points_label": str(item.get("points_label") or ""),
+                    "reason": str(item.get("reason") or ""),
+                    "note": str(item.get("note") or ""),
+                    "period_start_at": expected_start,
+                    "period_end_at": expected_end,
+                    "affects_package_quota": False,
+                    "package_limit_already_increased": True,
+                },
+                created_at=created_at,
+            )
+            if existing is None:
+                materialized += 1
+        return materialized
+
+
+    def _sum_operator_managed_topup_totals_for_period(
+        self,
+        topup_items: Sequence[object],
+        *,
+        expected_period_start: str | None,
+        expected_period_end: str | None,
+    ) -> dict[str, float]:
+        """Sum same-period operator top-up increments (does not touch ledger)."""
+
+        expected_start = str(expected_period_start or "")
+        expected_end = str(expected_period_end or "")
+        totals = {
+            "ai_credits": 0.0,
+            "runs": 0.0,
+            "tokens": 0.0,
+            "cost_cny": 0.0,
+        }
+        for item in topup_items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("target_period_start_at") or "") != expected_start:
+                continue
+            if str(item.get("target_period_end_at") or "") != expected_end:
+                continue
+            increments = item.get("increments")
+            increments = increments if isinstance(increments, dict) else {}
+            for key in totals:
+                totals[key] += self._coerce_float(increments.get(key))
+        return {key: round(value, 6) for key, value in totals.items()}
+
+    def _carry_forward_operator_managed_topup_metadata(
+        self,
+        *,
+        source_subscription: AccountSubscription | None,
+        period_start_at: datetime,
+        period_end_at: datetime,
+    ) -> dict[str, object]:
+        """Keep same-subscription, same-period operator top-ups across activate.
+
+        Upgrade/renewal reuses the subscription row but replaces metadata from the
+        order payload, which drops ``operator_managed_topups``. Carry the history
+        forward and recompute ``current_period_topup_totals`` for the activated
+        period so ``_resolve_effective_subscription_budgets`` still adds them
+        (and ledger ``subscription_topup`` grants stay visibility-only).
+        """
+
+        if source_subscription is None:
+            return {}
+        source_metadata = dict(source_subscription.metadata_json or {})
+        raw_topups = source_metadata.get("operator_managed_topups")
+        if not isinstance(raw_topups, list) or not raw_topups:
+            return {}
+        topup_items = [dict(item) for item in raw_topups if isinstance(item, dict)]
+        if not topup_items:
+            return {}
+        expected_start = self._serialize_datetime(period_start_at)
+        expected_end = self._serialize_datetime(period_end_at)
+        return {
+            "operator_managed_topups": topup_items[-20:],
+            "current_period_topup_totals": self._sum_operator_managed_topup_totals_for_period(
+                topup_items,
+                expected_period_start=expected_start,
+                expected_period_end=expected_end,
+            ),
+        }
+
     def _build_subscription_topup_summary(
         self,
         subscription: AccountSubscription | None,
@@ -3109,6 +3473,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         missing_site_count = 0
 
         for site in sites:
+            if site.status == SITE_STATUS_ARCHIVED or site.ownership_released_at is not None:
+                continue
             site_id = str(site.site_id or "").strip()
             if not site_id:
                 continue
@@ -3207,6 +3573,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             )
             for site in covered_sites
             if str(site.site_id or "").strip()
+            and site.status != SITE_STATUS_ARCHIVED
+            and site.ownership_released_at is None
         ]
         if refreshed_billing_snapshots:
             status = "refreshed"

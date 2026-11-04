@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
@@ -116,6 +118,8 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
     assert data["entitlement"]["pro_cloud_runtime"] == {
         "contract_version": "pro-cloud-runtime-entitlement-v1",
         "feature_id": "nightly_site_inspection",
+        "available": False,
+        "availability_state": "paused",
         "execution_pattern": "whole_run_offload",
         "meter_key": "ai_credits",
         "limit_enforced": False,
@@ -337,6 +341,8 @@ def test_current_entitlement_returns_pro_cloud_runtime_usage_detail(
 
     assert response.status_code == 200
     pro_runtime = response.json()["data"]["entitlement"]["pro_cloud_runtime"]
+    assert pro_runtime["available"] is False
+    assert pro_runtime["availability_state"] == "paused"
     assert pro_runtime["meter_key"] == "ai_credits"
     assert pro_runtime["limit_enforced"] is False
     assert pro_runtime["max_nightly_inspection_runs_per_period"] == 3
@@ -462,3 +468,62 @@ def test_current_entitlement_rejects_unsupported_object_type(tmp_path: Path) -> 
     assert response.json()["error_code"] == "entitlement.object_type_unsupported"
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("query", ["", "object_id=", "object_id=site_alpha"])
+@pytest.mark.parametrize("auth_mode", ["authorized", "anonymous", "wrong_scope"])
+def test_current_entitlement_preserves_object_id_validation_and_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    query: str,
+    auth_mode: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    authorize = AsyncMock(wraps=entitlements_route.authorize_public_request)
+    monkeypatch.setattr(entitlements_route, "authorize_public_request", authorize)
+    path = "/v1/entitlements/current"
+    headers: dict[str, str] = {}
+    if auth_mode != "anonymous":
+        headers = build_auth_headers(
+            "GET",
+            path,
+            site_id="site_readonly" if auth_mode == "wrong_scope" else "site_alpha",
+            key_id="key_readonly" if auth_mode == "wrong_scope" else "key_default",
+            query=query,
+        )
+    try:
+        with client:
+            response = client.get(f"{path}?{query}" if query else path, headers=headers)
+
+        if query != "object_id=site_alpha":
+            # Pre-0.148, missing/default-empty and explicit empty both fail
+            # parameter validation before the route's authorization call.
+            assert response.status_code == 422
+            assert authorize.await_count == 0
+            errors = response.json()["detail"]
+            assert len(errors) == 1
+            assert errors[0]["loc"] == ["query", "object_id"]
+            assert errors[0]["type"] == "string_too_short"
+            assert errors[0]["input"] == ""
+        else:
+            assert authorize.await_count == 1
+            assert authorize.await_args.kwargs == {
+                "require_idempotency": False,
+                "required_scope": "entitlement:read",
+            }
+            if auth_mode == "authorized":
+                assert response.status_code == 200
+                assert response.json()["data"]["paid_object"] == {
+                    "type": "site",
+                    "id": "site_alpha",
+                    "account_id": "acct_site_alpha",
+                }
+            elif auth_mode == "wrong_scope":
+                assert response.status_code == 403
+                assert response.json()["error_code"] == "auth.scope_denied"
+            else:
+                assert response.status_code == 401
+                assert response.json()["status"] == "error"
+                assert response.json()["error_code"].startswith("auth.")
+    finally:
+        dispose_engine(database_url)

@@ -273,6 +273,70 @@ def test_data_handling_guard_preserves_secret_pii_and_no_store_errors() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "fingerprint",
+    (
+        "110858e310dacd5e8893b945343168659bcc5b0d0a3564c23e29ef74c60f0c50",
+        "a" * 27 + "1234567890" + "b" * 27,
+    ),
+)
+def test_site_knowledge_media_digest_preserves_public_content_contract(fingerprint: str) -> None:
+    validator, _ = _validator()
+    request = _request(
+        ability_name="npcink-cloud/site-knowledge-sync",
+        contract_version="site_knowledge_sync.v1",
+        data_classification="public_site_content",
+        input_payload={
+            "contract_version": "site_knowledge_sync.v1",
+            "sync_mode": "refresh",
+            "media_items": [{"media_fingerprint": fingerprint}],
+            "write_posture": "suggestion_only",
+            "direct_wordpress_write": False,
+        },
+    )
+
+    validator.validate_runtime_data_handling_contract(request)
+
+    assert request.data_classification == "public_site_content"
+    assert request.storage_mode == "result_only"
+    assert request.input_payload["media_items"][0]["media_fingerprint"] == fingerprint
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_code"),
+    (
+        ("title", "+1 202-555-0198", "runtime.pii_classification_required"),
+        ("alt", "person@example.com", "runtime.pii_classification_required"),
+        ("url", "https://example.test/2025550198.jpg", "runtime.pii_classification_required"),
+        ("description", "mak1_" + "a" * 59, "runtime.secret_input_detected"),
+        ("media_fingerprint", "2025550198", "runtime.pii_classification_required"),
+        ("secret", "a" * 64, "runtime.secret_input_detected"),
+    ),
+)
+def test_site_knowledge_media_digest_keeps_runtime_sensitive_errors(
+    field: str, value: str, error_code: str
+) -> None:
+    validator, _ = _validator()
+    request = _request(
+        ability_name="npcink-cloud/site-knowledge-sync",
+        contract_version="site_knowledge_sync.v1",
+        data_classification="public_site_content",
+        input_payload={
+            "contract_version": "site_knowledge_sync.v1",
+            "media_items": [
+                {"media_fingerprint": "a" * 27 + "1234567890" + "b" * 27, field: value}
+            ],
+        },
+    )
+
+    with pytest.raises(RuntimeExecutionContractError) as caught:
+        validator.validate_runtime_data_handling_contract(request)
+
+    assert caught.value.error_code == error_code
+    assert request.data_classification == "public_site_content"
+    assert request.storage_mode == "result_only"
+
+
 def test_connector_validation_delegates_neutral_and_wordpress_contracts() -> None:
     validator, _ = _validator()
     request = _connector_request()

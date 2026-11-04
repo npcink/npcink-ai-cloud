@@ -2,17 +2,21 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   BackofficePageStack,
   BackofficePageHeader,
   BackofficeSectionPanel,
   BackofficeStackCard,
+  BackofficeDisclosure,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
-import { createApiClient } from '@/lib/api-client';
+import { supportDetailClient, useSupportDetail } from '@/features/admin/support-requests/use-support-detail';
+import { readSupportDownload, type SupportAttachment } from '@/features/admin/support-requests/detail-evidence';
+import { useSupportDraftNavigation } from '@/features/admin/support-requests/use-support-draft-navigation';
+import { hasSupportMessage } from '@/features/admin/support-requests/support-text';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
 import {
@@ -20,66 +24,7 @@ import {
   normalizeAdminReturnTo,
 } from '@/lib/admin-return-context';
 
-type SupportRequestStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
-
-type SupportRequest = {
-  request_id: string;
-  account_id: string;
-  site_id?: string;
-  principal_id?: string;
-  email: string;
-  topic: string;
-  title: string;
-  description: string;
-  status: SupportRequestStatus;
-  priority: string;
-  admin_note?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-type SupportRequestMessage = {
-  message_id: string;
-  request_id: string;
-  author_kind: string;
-  visibility: string;
-  body: string;
-  created_at?: string;
-};
-
-type SupportRequestAttachment = {
-  attachment_id: string;
-  request_id: string;
-  uploader_kind: string;
-  visibility: string;
-  filename: string;
-  content_type: string;
-  byte_size: number;
-  content_base64?: string;
-  created_at?: string;
-};
-
-type SupportRequestFeedback = {
-  feedback_id: string;
-  request_id: string;
-  resolved: boolean;
-  rating: number;
-  comment?: string;
-  created_at?: string;
-};
-
-type SupportRequestDetailPayload = {
-  request?: SupportRequest;
-  messages?: SupportRequestMessage[];
-  attachments?: SupportRequestAttachment[];
-  feedback?: SupportRequestFeedback | null;
-};
-
-const NEXT_STATUSES: SupportRequestStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
-const supportRequestDetailClient = createApiClient({
-  cache: 'default',
-  idempotencyPrefix: 'admin_support_request_detail',
-});
+const NEXT_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
 
 function statusTone(status: string): string {
   if (status === 'open') return 'warning';
@@ -88,83 +33,7 @@ function statusTone(status: string): string {
   return 'read_only';
 }
 
-async function fetchSupportRequest(requestId: string): Promise<SupportRequestDetailPayload> {
-  return (await supportRequestDetailClient.request<SupportRequestDetailPayload>(
-    `/api/admin/support-requests/${encodeURIComponent(requestId)}`,
-    { cache: 'no-store' }
-  )).data;
-}
-
-async function updateSupportRequest(
-  requestId: string,
-  status: string
-): Promise<{ request?: SupportRequest }> {
-  return (await supportRequestDetailClient.request<{ request?: SupportRequest }>(
-    `/api/admin/support-requests/${encodeURIComponent(requestId)}`,
-    {
-      method: 'PATCH',
-      body: { status, admin_note: '' },
-    }
-  )).data;
-}
-
-async function createSupportRequestMessage(
-  requestId: string,
-  body: string,
-  visibility: 'public' | 'internal'
-): Promise<{
-  request?: SupportRequest;
-  message?: SupportRequestMessage;
-  notification?: { delivered?: boolean };
-}> {
-  return (await supportRequestDetailClient.request<{
-    request?: SupportRequest;
-    message?: SupportRequestMessage;
-    notification?: { delivered?: boolean };
-  }>(`/api/admin/support-requests/${encodeURIComponent(requestId)}/messages`, {
-    method: 'POST',
-    body: { body, visibility },
-  })).data;
-}
-
-async function createSupportRequestAttachment(
-  requestId: string,
-  payload: {
-    filename: string;
-    content_type: string;
-    content_base64: string;
-    visibility: 'public' | 'internal';
-  }
-): Promise<{ request?: SupportRequest; attachment?: SupportRequestAttachment }> {
-  return (await supportRequestDetailClient.request<{
-    request?: SupportRequest;
-    attachment?: SupportRequestAttachment;
-  }>(`/api/admin/support-requests/${encodeURIComponent(requestId)}/attachments`, {
-    method: 'POST',
-    body: payload,
-  })).data;
-}
-
-async function fetchSupportRequestAttachment(
-  requestId: string,
-  attachmentId: string
-): Promise<{ attachment?: SupportRequestAttachment }> {
-  return (await supportRequestDetailClient.request<{ attachment?: SupportRequestAttachment }>(
-    `/api/admin/support-requests/${encodeURIComponent(requestId)}/attachments/${encodeURIComponent(attachmentId)}`,
-    { cache: 'no-store' }
-  )).data;
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || '').split(',', 2)[1] || '');
-    reader.onerror = () => reject(reader.error || new Error('failed to read file'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function downloadAttachmentFile(attachment: SupportRequestAttachment): void {
+function downloadAttachmentFile(attachment: SupportAttachment): void {
   if (!attachment.content_base64) return;
   const binary = atob(attachment.content_base64);
   const bytes = new Uint8Array(binary.length);
@@ -198,150 +67,47 @@ export default function AdminSupportRequestDetailPage() {
     }
   );
   const { t } = useLocale();
-  const [supportRequest, setSupportRequest] = useState<SupportRequest | null>(null);
-  const [messages, setMessages] = useState<SupportRequestMessage[]>([]);
-  const [attachments, setAttachments] = useState<SupportRequestAttachment[]>([]);
-  const [feedback, setFeedback] = useState<SupportRequestFeedback | null>(null);
-  const [statusDraft, setStatusDraft] = useState<SupportRequestStatus>('open');
-  const [publicReply, setPublicReply] = useState('');
-  const [internalNote, setInternalNote] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [attachmentVisibility, setAttachmentVisibility] = useState<'public' | 'internal'>('public');
-  const [isLoading, setIsLoading] = useState(true);
-  const [pendingAction, setPendingAction] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-
-  const loadDetail = useCallback(async () => {
-    if (!requestId) return;
-    setIsLoading(true);
-    setError('');
+  const controller = useSupportDetail(requestId);
+  const { confirmation } = useSupportDraftNavigation(controller.hasOrdinaryDraft, controller.discardOrdinaryDrafts);
+  const { detail, draft, updateDraft, intent, locked, busy, loading: isLoading, readError, storageBlocked, lastReceipt } = controller;
+  const supportRequest = detail?.request || null;
+  const messages = detail?.messages || [], attachments = detail?.attachments || [], feedback = detail?.feedback || null;
+  const { publicReply, internalNote, file: attachmentFile, visibility: attachmentVisibility, status: statusDraft } = draft;
+  const pendingAction = busy ? intent?.action === 'message' ? intent.values.visibility : intent?.action || 'preparing' : '';
+  const [downloadError, setDownloadError] = useState('');
+  const downloadTarget = useRef(0);
+  useLayoutEffect(() => { downloadTarget.current += 1; return () => { downloadTarget.current += 1; }; }, [requestId]);
+  const handleAttachmentDownload = async (attachment: SupportAttachment) => {
+    if (!supportRequest || !controller.ready) return;
+    const target = requestId, revision = downloadTarget.current;
+    setDownloadError('');
     try {
-      const data = await fetchSupportRequest(requestId);
-      if (!data.request) {
-        throw new Error(t('error.failed_load'));
-      }
-      setSupportRequest(data.request);
-      setMessages(data.messages || []);
-      setAttachments(data.attachments || []);
-      setFeedback(data.feedback || null);
-      setStatusDraft(data.request.status);
+      const response = await supportDetailClient.request<unknown>(`/api/admin/support-requests/${encodeURIComponent(target)}/attachments/${encodeURIComponent(attachment.attachment_id)}`);
+      const parsed = readSupportDownload(response.data, attachment, supportRequest);
+      if (downloadTarget.current === revision) downloadAttachmentFile(parsed);
     } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_load')));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [requestId, t]);
-
-  useEffect(() => {
-    void loadDetail();
-  }, [loadDetail]);
-
-  const handleStatusUpdate = async () => {
-    setPendingAction('status');
-    setError('');
-    setNotice('');
-    try {
-      const data = await updateSupportRequest(requestId, statusDraft);
-      if (!data.request) {
-        throw new Error(t('error.failed_save'));
-      }
-      setSupportRequest(data.request);
-      setNotice(t('admin.support_requests_updated_notice', {}, 'Ticket updated.'));
-    } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setPendingAction('');
+      if (downloadTarget.current === revision) setDownloadError(resolveUiErrorMessage(err, t('error.failed_load')));
     }
   };
+  const error = storageBlocked ? t('admin.support_recovery.storage_blocked')
+    : controller.error === 'unknown' ? ''
+      : controller.error === 'write' ? t('admin.support_recovery.not_saved') : downloadError;
+  const notice = controller.notice === 'public_sent' ? t('admin.support_message_public_sent')
+    : controller.notice === 'public_saved' ? t('admin.support_message_public_saved')
+      : controller.notice ? t('admin.support_recovery.saved') : '';
 
-  const handleMessage = async (visibility: 'public' | 'internal') => {
-    const body = (visibility === 'public' ? publicReply : internalNote).trim();
-    if (!body) return;
-    setPendingAction(visibility);
-    setError('');
-    setNotice('');
-    try {
-      const data = await createSupportRequestMessage(requestId, body, visibility);
-      const updatedRequest = data.request;
-      const createdMessage = data.message;
-      if (!updatedRequest || !createdMessage) {
-        throw new Error(t('error.failed_save'));
-      }
-      setSupportRequest(updatedRequest);
-      setStatusDraft(updatedRequest.status);
-      setMessages((current) => [...current, createdMessage]);
-      if (visibility === 'public') {
-        setPublicReply('');
-        setNotice(
-          data.notification?.delivered
-            ? t('admin.support_message_public_sent', {}, 'Reply sent and customer notified.')
-            : t('admin.support_message_public_saved', {}, 'Reply saved. Email notification was not delivered.')
-        );
-      } else {
-        setInternalNote('');
-        setNotice(t('admin.support_message_internal_saved', {}, 'Internal note saved.'));
-      }
-    } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setPendingAction('');
-    }
-  };
-
-  const handleAttachmentUpload = async () => {
-    if (!attachmentFile) return;
-    setPendingAction('attachment');
-    setError('');
-    setNotice('');
-    try {
-      const contentBase64 = await readFileAsBase64(attachmentFile);
-      const data = await createSupportRequestAttachment(requestId, {
-        filename: attachmentFile.name,
-        content_type: attachmentFile.type || 'application/octet-stream',
-        content_base64: contentBase64,
-        visibility: attachmentVisibility,
-      });
-      if (!data.request || !data.attachment) {
-        throw new Error(t('error.failed_save'));
-      }
-      setSupportRequest(data.request);
-      setAttachments((current) => [...current, data.attachment as SupportRequestAttachment]);
-      setAttachmentFile(null);
-      setNotice(t('admin.support_attachment_created', {}, 'Attachment uploaded.'));
-    } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setPendingAction('');
-    }
-  };
-
-  const handleAttachmentDownload = async (attachment: SupportRequestAttachment) => {
-    setError('');
-    try {
-      const data = await fetchSupportRequestAttachment(requestId, attachment.attachment_id);
-      if (!data.attachment) {
-        throw new Error(t('error.failed_load'));
-      }
-      downloadAttachmentFile(data.attachment);
-    } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_load')));
-    }
-  };
-
-  if (isLoading) {
+  if (isLoading && !detail && !readError && !publicReply && !internalNote && !intent) {
     return <LoadingFallback />;
   }
 
   return (
     <BackofficePageStack data-ui="support-request-detail-workspace">
       <BackofficePageHeader
-        eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
-        description={supportRequest?.description || ''}
         summaryItems={supportRequest ? [
-          { label: t('admin.support_requests_priority', {}, 'Priority'), value: supportRequest.priority },
-          { label: t('common.account', {}, 'Account'), value: supportRequest.account_id },
+          { label: t('admin.support_recovery.ticket'), value: supportRequest.request_id },
+          { label: t('admin.support_requests_priority', {}, 'Priority'), value: ({ high: t('admin.support_priority_high', {}, 'High'), normal: t('admin.support_priority_normal', {}, 'Normal'), low: t('admin.support_priority_low', {}, 'Low') } as Record<string, string>)[supportRequest.priority] || supportRequest.priority },
+          { label: t('common.account', {}, 'Account'), value: supportRequest.email || supportRequest.account_id },
           { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
         ] : []}
         summaryAside={
@@ -359,6 +125,30 @@ export default function AdminSupportRequestDetailPage() {
         }
       />
 
+      {readError ? (
+        <div role="alert" className="space-y-2 text-sm" data-ui="support-read-recovery">
+          <p>{t('admin.support_recovery.read_failed')} · {requestId}</p>
+          <button type="button" className="btn btn-secondary" disabled={isLoading || busy} onClick={() => void controller.load()}>{t('common.retry')}</button>
+        </div>
+      ) : null}
+      {detail?.issues.length ? <div role="alert" className="text-sm" data-ui="support-child-issues">
+        <p>{t('admin.support_recovery.child_issues', { count: String(detail.issues.length) })}</p>
+        <p>{detail.issues.join(', ')}</p>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={busy || isLoading} onClick={() => void controller.load()}>{t('common.retry')}</button>
+      </div> : null}
+      {intent ? <div role="status" className="space-y-2 text-sm" data-ui="support-operation-recovery">
+        <p>{busy ? t('admin.support_recovery.sending') : t('admin.support_recovery.unknown')}</p>
+        <p>{t('admin.support_recovery.ticket')}: {intent.request_id}</p>
+        <button type="button" className="btn btn-secondary" disabled={busy || storageBlocked} onClick={() => void controller.confirm()}>{t('admin.support_recovery.confirm')}</button>
+        <BackofficeDisclosure summary={t('admin.support_recovery.evidence')}>
+          <div className="space-y-1 break-all"><p>{intent.actor_kind}: {intent.actor_ref}</p><p>{intent.operation_id}</p><p>{intent.created_at}</p>
+            <p className="whitespace-pre-wrap">{intent.action === 'message' ? intent.values.body : intent.action === 'status' ? intent.values.status : intent.values.filename} · {intent.values.visibility || ''}</p></div>
+        </BackofficeDisclosure>
+      </div> : null}
+      {lastReceipt ? <BackofficeDisclosure summary={t('admin.support_recovery.evidence')}>
+        <p className="break-all">{String(lastReceipt.operation_id)} · {String(lastReceipt.actor_ref)} · {String(lastReceipt.event_id)} · {String(lastReceipt.message_id || lastReceipt.attachment_id || '')} · {String(lastReceipt.created_at)}</p>
+      </BackofficeDisclosure> : null}
+
       {notice ? (
         <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
           {notice}
@@ -372,8 +162,7 @@ export default function AdminSupportRequestDetailPage() {
 
       {supportRequest ? (
         <BackofficeSectionPanel>
-          <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-4">
-            <span>{supportRequest.email}</span>
+          <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-3">
             <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportRequest.account_id}</Link>
             {supportRequest.site_id ? (
               <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportRequest.site_id}</Link>
@@ -385,8 +174,9 @@ export default function AdminSupportRequestDetailPage() {
         </BackofficeSectionPanel>
       ) : null}
 
-      <BackofficeSectionPanel>
+      {supportRequest ? <BackofficeSectionPanel>
         <div className="space-y-3">
+          {supportRequest?.description && !messages.some(message => message.body === supportRequest.description) ? <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{supportRequest.description}</p> : null}
           {messages.map((message) => (
             <BackofficeStackCard
               key={message.message_id}
@@ -406,71 +196,7 @@ export default function AdminSupportRequestDetailPage() {
             </BackofficeStackCard>
           ))}
         </div>
-      </BackofficeSectionPanel>
-
-      <BackofficeSectionPanel>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {t('admin.support_attachments_title', {}, 'Attachments')}
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('admin.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
-          </p>
-        </div>
-        {attachments.length ? (
-          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-            {attachments.map((attachment) => (
-              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
-                    <BackofficeStatusBadge
-                      status={attachment.visibility === 'internal' ? 'warning' : 'read_only'}
-                      label={
-                        attachment.visibility === 'internal'
-                          ? t('admin.support_attachment_internal', {}, 'Internal')
-                          : t('admin.support_attachment_public', {}, 'Public')
-                      }
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
-                  </p>
-                </div>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
-                  {t('common.download', {}, 'Download')}
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-center">
-          <input
-            className="input"
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
-            onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
-          />
-          <select
-            className="input"
-            value={attachmentVisibility}
-            onChange={(event) => setAttachmentVisibility(event.target.value as 'public' | 'internal')}
-          >
-            <option value="public">{t('admin.support_attachment_public', {}, 'Public')}</option>
-            <option value="internal">{t('admin.support_attachment_internal', {}, 'Internal')}</option>
-          </select>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={pendingAction === 'attachment' || !attachmentFile}
-            onClick={() => void handleAttachmentUpload()}
-          >
-            {pendingAction === 'attachment'
-              ? t('common.saving', {}, 'Saving...')
-              : t('admin.support_attachment_upload_action', {}, 'Upload')}
-          </button>
-        </div>
-      </BackofficeSectionPanel>
+      </BackofficeSectionPanel> : null}
 
       {feedback ? (
         <BackofficeSectionPanel>
@@ -513,7 +239,8 @@ export default function AdminSupportRequestDetailPage() {
               className="input mt-2 min-h-32"
               value={publicReply}
               maxLength={4000}
-              onChange={(event) => setPublicReply(event.target.value)}
+              disabled={busy || Boolean(intent)}
+              onChange={(event) => updateDraft({ publicReply: event.target.value })}
               placeholder={t('admin.support_message_public_placeholder', {}, 'Reply to the customer.')}
             />
           </label>
@@ -521,8 +248,9 @@ export default function AdminSupportRequestDetailPage() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={pendingAction === 'public' || !publicReply.trim()}
-              onClick={() => void handleMessage('public')}
+              disabled={locked || !hasSupportMessage(publicReply)}
+              data-ui="support-public-action"
+              onClick={() => void controller.submit('message', 'public')}
             >
               {pendingAction === 'public'
                 ? t('common.saving', {}, 'Saving...')
@@ -537,7 +265,8 @@ export default function AdminSupportRequestDetailPage() {
             <select
               className="input mt-2"
               value={statusDraft}
-              onChange={(event) => setStatusDraft(event.target.value as SupportRequestStatus)}
+              disabled={busy || Boolean(intent)}
+              onChange={(event) => updateDraft({ status: event.target.value, statusDirty: true })}
             >
               {NEXT_STATUSES.map((status) => (
                 <option key={status} value={status}>
@@ -549,8 +278,9 @@ export default function AdminSupportRequestDetailPage() {
           <button
             type="button"
             className="btn btn-secondary mt-3 w-full"
-            disabled={pendingAction === 'status'}
-            onClick={() => void handleStatusUpdate()}
+            disabled={locked}
+            data-ui="support-status-action"
+              onClick={() => void controller.submit('status')}
           >
             {pendingAction === 'status'
               ? t('common.saving', {}, 'Saving...')
@@ -563,15 +293,17 @@ export default function AdminSupportRequestDetailPage() {
               className="input mt-2 min-h-28"
               value={internalNote}
               maxLength={4000}
-              onChange={(event) => setInternalNote(event.target.value)}
+              disabled={busy || Boolean(intent)}
+              onChange={(event) => updateDraft({ internalNote: event.target.value })}
               placeholder={t('admin.support_message_internal_placeholder', {}, 'Visible only to admins.')}
             />
           </label>
           <button
             type="button"
             className="btn btn-secondary mt-3 w-full"
-            disabled={pendingAction === 'internal' || !internalNote.trim()}
-            onClick={() => void handleMessage('internal')}
+            disabled={locked || !hasSupportMessage(internalNote)}
+            data-ui="support-internal-action"
+              onClick={() => void controller.submit('message', 'internal')}
           >
             {pendingAction === 'internal'
               ? t('common.saving', {}, 'Saving...')
@@ -579,6 +311,74 @@ export default function AdminSupportRequestDetailPage() {
           </button>
         </BackofficeSectionPanel>
       </div>
+
+      <BackofficeDisclosure summary={<span>{t('admin.support_attachments_title', {}, 'Attachments')} · {attachments.length}{attachmentFile ? ` · ${attachmentFile.name}` : ''}</span>}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('admin.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+          </p>
+        </div>
+        {attachments.length ? (
+          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {attachments.map((attachment) => (
+              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
+                    <BackofficeStatusBadge
+                      status={attachment.visibility === 'internal' ? 'warning' : 'read_only'}
+                      label={
+                        attachment.visibility === 'internal'
+                          ? t('admin.support_attachment_internal', {}, 'Internal')
+                          : t('admin.support_attachment_public', {}, 'Public')
+                      }
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                  </p>
+                </div>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={!controller.ready} onClick={() => void handleAttachmentDownload(attachment)}>
+                  {t('common.download', {}, 'Download')}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-center">
+          <input
+            className="input"
+            type="file"
+            aria-label={t('admin.support_attachments_title', {}, 'Attachments')}
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+            disabled={busy || Boolean(intent)}
+            onChange={(event) => updateDraft({ file: event.target.files?.[0] || null })}
+          />
+          <select
+            className="input"
+            aria-label={t('admin.support_attachment_visibility', {}, 'Attachment visibility')}
+            value={attachmentVisibility}
+            disabled={busy || Boolean(intent)}
+            onChange={(event) => updateDraft({ visibility: event.target.value as 'public' | 'internal' })}
+          >
+            <option value="public">{t('admin.support_attachment_public', {}, 'Public')}</option>
+            <option value="internal">{t('admin.support_attachment_internal', {}, 'Internal')}</option>
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={locked || !attachmentFile}
+            data-ui="support-attachment-action"
+              onClick={() => void controller.submit('attachment')}
+          >
+            {pendingAction === 'attachment'
+              ? t('common.saving', {}, 'Saving...')
+              : t('admin.support_attachment_upload_action', {}, 'Upload')}
+          </button>
+        </div>
+      </BackofficeDisclosure>
+
+      {confirmation}
     </BackofficePageStack>
   );
 }

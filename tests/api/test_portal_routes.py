@@ -15,7 +15,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.engine import make_url
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
@@ -50,6 +50,7 @@ from app.core.models import (
     PlanVersion,
     PluginObservabilityEvent,
     PortalLoginCode,
+    PortalMutationIdempotencyReceipt,
     PortalOAuthState,
     Principal,
     PrincipalSiteBinding,
@@ -65,6 +66,7 @@ from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import resolve_principal_allowed_actions
+from app.domain.commercial.mixins import _portal_mixin
 from app.domain.commercial.mixins._portal_mixin import _hash_external_identity
 from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
@@ -83,6 +85,7 @@ from tests.conftest import (
 )
 
 _ACCESS_BY_EMAIL: dict[str, dict[str, object]] = {}
+_TEST_DATABASE_URL: str | None = None
 PORTAL_INTERNAL_IDENTITY_FIELDS = {
     "account_id",
     "principal_id",
@@ -90,9 +93,7 @@ PORTAL_INTERNAL_IDENTITY_FIELDS = {
     "role",
     "allowed_actions",
 }
-PORTAL_QQ_INTERNAL_IDENTITY_FIELDS = (
-    PORTAL_INTERNAL_IDENTITY_FIELDS - {"allowed_actions"}
-) | {
+PORTAL_QQ_INTERNAL_IDENTITY_FIELDS = (PORTAL_INTERNAL_IDENTITY_FIELDS - {"allowed_actions"}) | {
     "member_ref",
     "member_refs",
     "site_admin_ref",
@@ -207,6 +208,7 @@ def build_portal_headers(**kwargs: Any) -> dict[str, str]:
         session_version,
     )
     return _build_portal_headers(
+        database_url=_TEST_DATABASE_URL,
         principal_id=resolved_principal_id,
         session_version=resolved_session_version,
         **kwargs,
@@ -221,6 +223,7 @@ def build_portal_bearer_headers(**kwargs: Any) -> dict[str, str]:
         session_version,
     )
     return _build_portal_bearer_headers(
+        database_url=_TEST_DATABASE_URL,
         principal_id=resolved_principal_id,
         session_version=resolved_session_version,
         **kwargs,
@@ -238,6 +241,8 @@ def _build_client(
     portal_email_sender: PortalEmailSender | None = None,
     providers: dict[str, Any] | None = None,
 ) -> tuple[str, TestClient]:
+    global _TEST_DATABASE_URL
+    _TEST_DATABASE_URL = _sqlite_url(tmp_path)
     _ACCESS_BY_EMAIL.clear()
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -610,7 +615,10 @@ def _verify_portal_registration_code(
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200, addon_accounts_response.text
     addon_accounts = addon_accounts_response.json()["data"]["items"]
-    assert all(set(item) == {"account_id", "name", "site_count"} for item in addon_accounts)
+    assert all(
+        set(item) == {"account_id", "name", "site_count", "is_current"}
+        for item in addon_accounts
+    )
     access = {
         **_ACCESS_BY_EMAIL.get(normalized_email, {}),
         **data,
@@ -685,12 +693,15 @@ def _set_portal_cookie_session(
     settings = client.app.state.services.settings
     client.cookies.set(
         COOKIE_PORTAL_SESSION_TOKEN,
-        build_portal_session_token(
-            settings,
+        _build_portal_bearer_headers(
+            database_url=settings.database_url,
+            issuer=settings.portal_jwt_issuer,
+            audience=settings.portal_jwt_audience,
+            secret=settings.portal_jwt_secret,
             principal_id=principal_id,
             site_id=site_id,
             session_version=session_version,
-        ),
+        )["Authorization"][7:],
     )
 
 
@@ -793,6 +804,395 @@ def _configure_portal_qq_settings(
         headers=build_internal_headers(idempotency_key=f"{idempotency_prefix}-qq"),
     )
     assert response.status_code == 200, response.text
+
+
+def _commercial_guard_account(client: TestClient, account_id: str) -> dict[str, object]:
+    settings = client.app.state.services.settings
+    service = CommercialService(settings.database_url, settings=settings)
+    service.upsert_account(account_id=account_id, name=account_id, bind_default_free=True)
+    site_id = f"site_{account_id}"
+    site = client.post(
+        "/internal/service/sites",
+        json={"site_id": site_id, "account_id": account_id, "name": site_id, "status": "active"},
+        headers=build_internal_headers(idempotency_key=f"site-{account_id}"),
+    )
+    assert site.status_code == 200, site.text
+    return _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email=f"{account_id}@example.com",
+        idempotency_key=f"member-{account_id}",
+    )
+
+
+def test_commercial_order_limit_is_shared_by_account_and_preserves_replay(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "guard_a")
+    site_id = str(grant["portal_site_id"])
+    principal_id = str(grant["principal_id"])
+    requests = [
+        ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+        ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+        (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_medium"}),
+    ]
+    for index, (path, payload) in enumerate(requests):
+        response = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"order-{index}"
+            ),
+        )
+        assert response.status_code == 200, response.text
+    replay = client.post(
+        requests[0][0],
+        json=requests[0][1],
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="order-0"
+        ),
+    )
+    assert replay.status_code == 200, replay.text
+    for index, (path, payload) in enumerate(requests):
+        limited = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"limited-{index}"
+            ),
+        )
+        assert limited.status_code == 429, limited.text
+        assert limited.json()["error_code"] == "portal.subscription_order_rate_limited"
+        assert 1 <= int(limited.headers["Retry-After"]) <= 60
+        assert limited.json()["data"]["retry_after_seconds"] == int(limited.headers["Retry-After"])
+    other = _commercial_guard_account(client, "guard_b")
+    independent = client.post(
+        requests[1][0],
+        json=requests[1][1],
+        headers=build_portal_headers(
+            principal_id=str(other["principal_id"]),
+            site_id=str(other["portal_site_id"]),
+            idempotency_key="independent-order",
+        ),
+    )
+    assert independent.status_code == 200, independent.text
+    with get_session(database_url) as session:
+        receipts = session.scalars(
+            select(ReplayReceipt).where(
+                ReplayReceipt.scope_kind == "portal_order_account",
+                ReplayReceipt.scope_id == "guard_a",
+            )
+        ).all()
+        assert len(receipts) == 3
+        for receipt in receipts:
+            receipt.created_at = datetime.now(UTC) - timedelta(seconds=61)
+            receipt.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    # Retry each original rejected key, not a new key after the window expires.
+    for index, (path, payload) in enumerate(requests):
+        recovered = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"limited-{index}"
+            ),
+        )
+        assert recovered.status_code == 200, recovered.text
+
+
+def test_commercial_emergency_stop_masks_catalogs_blocks_new_writes_and_recovers(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "guard_stop")
+    site_id = str(grant["portal_site_id"])
+    principal_id = str(grant["principal_id"])
+    settings = client.app.state.services.settings
+    headers = build_portal_headers(principal_id=principal_id, site_id=site_id)
+    assert client.get("/portal/v1/account/plan-offers", headers=headers).json()["data"]["items"]
+    settings.commercial_emergency_stop = True
+    for path in (
+        "/portal/v1/account/plan-offers",
+        "/portal/v1/account/credit-packs",
+        f"/portal/v1/sites/{site_id}/credit-packs",
+    ):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["commercial_available"] is False
+        assert response.json()["data"]["items"] == []
+    catalog = client.get("/open/plan-catalog").json()["data"]
+    assert all(
+        item["availability"] == "unavailable"
+        for item in catalog["tiers"]
+        if item["tier_id"] in {"plus", "pro"}
+    )
+    for index, (path, payload) in enumerate(
+        [
+            ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+            ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+            (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+            ("/portal/v1/account/plan-trials", {"tier_id": "plus"}),
+        ]
+    ):
+        response = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id, site_id=site_id, idempotency_key=f"stopped-{index}"
+            ),
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["error_code"] == "service.commercial_temporarily_paused"
+    history = client.get("/portal/v1/account/payment-orders", headers=headers)
+    assert history.status_code == 200, history.text
+    settings.commercial_emergency_stop = False
+    restored = client.get("/portal/v1/account/plan-offers", headers=headers).json()["data"]
+    assert restored["commercial_available"] is True
+    assert len(restored["items"]) == 2
+    for index, (path, payload) in enumerate(
+        [
+            ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+            ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+            (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+        ]
+    ):
+        recovered = client.post(
+            path,
+            json=payload,
+            headers=build_portal_headers(
+                principal_id=principal_id,
+                site_id=site_id,
+                idempotency_key=f"stopped-{index}",
+            ),
+        )
+        assert recovered.status_code == 200, recovered.text
+    trial = client.post(
+        "/portal/v1/account/plan-trials",
+        json={"tier_id": "plus"},
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="stopped-3"
+        ),
+    )
+    assert trial.status_code == 200, trial.text
+    assert trial.json()["data"]["subscription"]["status"] == "trialing"
+    with get_session(database_url) as session:
+        audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.account_id == "guard_stop",
+                ServiceAuditEvent.event_kind == "subscription.paid_trial.start_or_upgrade",
+            )
+        )
+        assert audit is not None
+        snapshot = session.scalar(
+            select(AccountEntitlementSnapshot).where(
+                AccountEntitlementSnapshot.account_id == "guard_stop",
+                AccountEntitlementSnapshot.status == "active",
+            )
+        )
+        assert snapshot is not None
+        assert snapshot.plan_version_id == "plus_v1"
+        assert snapshot.budgets_json["max_ai_credits_per_period"] == 3000
+
+
+@pytest.mark.parametrize("order_kind", ["subscription", "account_pack", "site_pack"])
+@pytest.mark.parametrize("receipt_state", ["missing", "expired", "unfinished"])
+@pytest.mark.parametrize("legacy_order", [False, True])
+def test_commercial_durable_order_replays_after_receipt_loss_during_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    order_kind: str,
+    receipt_state: str,
+    legacy_order: bool,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "durable_replay")
+    principal_id = str(grant["principal_id"])
+    site_id = str(grant["portal_site_id"])
+    path, payload = {
+        "subscription": ("/portal/v1/account/subscription-orders", {"offer_id": "pro_monthly_v1"}),
+        "account_pack": ("/portal/v1/account/credit-pack-orders", {"pack_id": "pack_small"}),
+        "site_pack": (f"/portal/v1/sites/{site_id}/credit-pack-orders", {"pack_id": "pack_small"}),
+    }[order_kind]
+    key = "durable-original-key"
+    headers = build_portal_headers(principal_id=principal_id, site_id=site_id, idempotency_key=key)
+    created = client.post(path, json=payload, headers=headers)
+    assert created.status_code == 200, created.text
+    original_data = created.json()["data"]
+    original_id = original_data["order"]["order_id"]
+    with get_session(database_url) as session:
+        receipt = session.scalar(
+            select(PortalMutationIdempotencyReceipt).where(
+                PortalMutationIdempotencyReceipt.principal_id == principal_id,
+                PortalMutationIdempotencyReceipt.idempotency_key == key,
+            )
+        )
+        assert receipt is not None
+        if receipt_state == "missing":
+            session.delete(receipt)
+        elif receipt_state == "expired":
+            receipt.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        else:
+            receipt.state = "processing"
+            receipt.response_status = None
+            receipt.response_body_ciphertext = None
+            receipt.completed_at = None
+            receipt.claim_token = "abandoned-claim"
+            receipt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        order = session.scalar(select(PaymentOrder).where(PaymentOrder.order_id == original_id))
+        assert order is not None
+        if legacy_order:
+            metadata = dict(order.metadata_json)
+            metadata.pop("portal_request_fingerprint", None)
+            # Model an already-legacy row without advancing its business timestamp.
+            session.execute(
+                update(PaymentOrder)
+                .where(PaymentOrder.order_id == original_id)
+                .values(
+                    metadata_json=metadata,
+                    updated_at=order.updated_at,
+                )
+            )
+        session.commit()
+
+    def unexpected_new_order(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("durable replay must not invoke the new-order limiter or gateway")
+
+    monkeypatch.setattr(
+        portal_routes, "enforce_portal_subscription_order_rate_limit", unexpected_new_order
+    )
+    from app.domain.commercial.mixins import _payment_mixin, _subscription_commerce_mixin
+
+    monkeypatch.setattr(_payment_mixin, "get_payment_gateway_provider", unexpected_new_order)
+    monkeypatch.setattr(
+        _subscription_commerce_mixin, "get_payment_gateway_provider", unexpected_new_order
+    )
+    client.app.state.services.settings.commercial_emergency_stop = True
+    replay = client.post(path, json=payload, headers=headers)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"] == original_data
+    changed_payload = {
+        **payload,
+        ("offer_id" if order_kind == "subscription" else "pack_id"): (
+            "plus_monthly_v1" if order_kind == "subscription" else "pack_medium"
+        ),
+    }
+    conflict = client.post(path, json=changed_payload, headers=headers)
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error_code"] == "portal.idempotency_conflict"
+    # Check the durable scope itself, independently of the newly rebuilt receipt.
+    from app.domain.commercial.audit_context import ServiceAuditContext
+    from app.domain.commercial.errors import CommercialConflictError
+    from app.domain.portal_idempotency import build_portal_business_idempotency_key
+
+    context = ServiceAuditContext(
+        trace_id="",
+        method="POST",
+        path=path,
+        idempotency_key=build_portal_business_idempotency_key(
+            principal_id=principal_id, idempotency_key=key
+        ),
+    )
+    service = CommercialService(database_url, settings=client.app.state.services.settings)
+    service.upsert_account(account_id="another_account", name="Other", bind_default_free=True)
+    for account, site in [("another_account", site_id), ("durable_replay", "another_site")]:
+        with pytest.raises(CommercialConflictError) as caught:
+            if order_kind == "subscription":
+                service.create_account_subscription_payment_order(
+                    account_id=account,
+                    site_id=site,
+                    offer_id="pro_monthly_v1",
+                    audit_context=context,
+                )
+            else:
+                service.create_credit_pack_payment_order(
+                    account_id=account,
+                    site_id=site,
+                    pack_id="pack_small",
+                    audit_context=context,
+                )
+        assert caught.value.error_code == "portal.idempotency_conflict"
+    if order_kind != "subscription":
+        from app.domain.portal_idempotency import build_portal_request_fingerprint
+
+        alternate_path = (
+            f"/portal/v1/sites/{site_id}/credit-pack-orders"
+            if order_kind == "account_pack"
+            else "/portal/v1/account/credit-pack-orders"
+        )
+        context.path = alternate_path
+        context.request_fingerprint = build_portal_request_fingerprint(
+            method="POST",
+            route=alternate_path,
+            body=payload,
+            site_id=site_id,
+        )
+        with pytest.raises(CommercialConflictError) as route_conflict:
+            service.create_credit_pack_payment_order(
+                account_id="durable_replay",
+                site_id=site_id,
+                pack_id="pack_small",
+                audit_context=context,
+            )
+        assert route_conflict.value.error_code == "portal.idempotency_conflict"
+    with get_session(database_url) as session:
+        assert session.scalar(select(func.count()).select_from(PaymentOrder)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ReplayReceipt)
+                .where(
+                    ReplayReceipt.scope_kind == "portal_order_account",
+                )
+            )
+            == 1
+        )
+
+
+def test_commercial_unfinished_claim_without_order_still_fails_closed(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    grant = _commercial_guard_account(client, "unfinished_order")
+    principal_id = str(grant["principal_id"])
+    site_id = str(grant["portal_site_id"])
+    from app.domain.portal_idempotency import (
+        build_portal_request_fingerprint,
+        claim_portal_mutation,
+    )
+
+    path = "/portal/v1/account/credit-pack-orders"
+    payload = {"pack_id": "pack_small"}
+    settings = client.app.state.services.settings
+    claim_portal_mutation(
+        database_url=database_url,
+        principal_id=principal_id,
+        idempotency_key="unfinished",
+        method="POST",
+        route=path,
+        request_fingerprint=build_portal_request_fingerprint(
+            method="POST", route=path, body=payload, site_id=site_id
+        ),
+        now=datetime.now(UTC) - timedelta(seconds=120),
+        lease_seconds=30,
+        ttl_seconds=86400,
+        settings=settings,
+    )
+    response = client.post(
+        path,
+        json=payload,
+        headers=build_portal_headers(
+            principal_id=principal_id, site_id=site_id, idempotency_key="unfinished"
+        ),
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "portal.idempotency_indeterminate"
+    with get_session(database_url) as session:
+        assert session.scalar(select(func.count()).select_from(PaymentOrder)) == 0
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ReplayReceipt)
+                .where(ReplayReceipt.scope_kind == "portal_order_account")
+            )
+            == 0
+        )
 
 
 def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
@@ -968,6 +1368,29 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     portal_attachment_data = portal_attachment_response.json()["data"]
     _assert_no_portal_support_internal_fields(portal_attachment_data)
     portal_attachment = portal_attachment_data["attachment"]
+    assert not portal_attachment.get("message_id")
+
+    linked_message_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/messages",
+        json={
+            "body": "Attaching the payment note for review.",
+            "attachment_ids": [portal_attachment["attachment_id"]],
+        },
+        headers=_portal_cookie_headers(idempotency_key="portal-support-message-link-001"),
+    )
+    assert linked_message_response.status_code == 200, linked_message_response.text
+    linked_message_data = linked_message_response.json()["data"]
+    _assert_no_portal_support_internal_fields(linked_message_data)
+    assert linked_message_data["message"]["author_kind"] == "customer"
+    assert linked_message_data["attachments"]
+    assert (
+        linked_message_data["attachments"][0]["attachment_id"]
+        == portal_attachment["attachment_id"]
+    )
+    assert (
+        linked_message_data["attachments"][0]["message_id"]
+        == linked_message_data["message"]["message_id"]
+    )
 
     waiting_list_response = client.get(
         "/internal/service/admin/support-requests?attention=waiting_for_operator",
@@ -1092,7 +1515,40 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert failed_notification_response.json()["data"]["request"]["waiting_on"] == "customer"
     assert "smtp.internal" not in failed_notification_response.text
 
+    disposable_attachment_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/attachments",
+        json={
+            "filename": "discarded-note.txt",
+            "content_type": "text/plain",
+            "content_base64": "cGF5bWVudCBub3Rl",
+        },
+        headers=_portal_cookie_headers(idempotency_key="portal-support-discard-upload-001"),
+    )
+    assert disposable_attachment_response.status_code == 200
+    discarded_attachment = disposable_attachment_response.json()["data"]["attachment"]
+    discarded_id = discarded_attachment["attachment_id"]
+    delete_response = client.delete(
+        f"/portal/v1/support-requests/{request_id}/attachments/{discarded_id}",
+        headers=_portal_cookie_headers(idempotency_key="portal-support-discard-delete-001"),
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    _assert_no_portal_support_internal_fields(delete_response.json()["data"])
+    assert delete_response.json()["data"]["attachment"] == discarded_attachment
+    assert client.get(
+        f"/portal/v1/support-requests/{request_id}/attachments/{discarded_id}"
+    ).status_code == 404
+
     with get_session(database_url) as session:
+        deletion_audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "support_request.attachment_deleted",
+                ServiceAuditEvent.scope_id == request_id,
+            )
+        )
+        assert deletion_audit is not None
+        assert deletion_audit.payload_json["attachment_id"] == discarded_id
+        assert deletion_audit.payload_json["byte_size"] == len(b"payment note")
+        assert session.get(SupportRequestAttachment, discarded_id) is None
         audit_kinds = {
             event.event_kind
             for event in session.scalars(
@@ -1104,6 +1560,7 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
         }
     assert audit_kinds == {
         "support_request.attachment_created",
+        "support_request.attachment_deleted",
         "support_request.created",
         "support_request.feedback_submitted",
         "support_request.message_created",
@@ -1548,7 +2005,6 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     ) == {"action": ["npcink_cloud_addon_complete_auth"]}
 
     dispose_engine(database_url)
-
 
 
 def test_portal_addon_connection_rejects_cross_account_membership_escalation(
@@ -2491,7 +2947,6 @@ def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_ow
         assert bindings[1].released_at is None
 
     dispose_engine(database_url)
-
 
 
 def test_site_relink_policy_change_is_prospective_until_site_reset(
@@ -3515,7 +3970,10 @@ def test_principal_cannot_hold_active_memberships_in_multiple_accounts(tmp_path:
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200
     addon_accounts = addon_accounts_response.json()["data"]["items"]
-    assert all(set(item) == {"account_id", "name", "site_count"} for item in addon_accounts)
+    assert all(
+        set(item) == {"account_id", "name", "site_count", "is_current"}
+        for item in addon_accounts
+    )
     assert {item["account_id"] for item in addon_accounts} == {
         "acct_multi_principal_alpha"
     }
@@ -4006,6 +4464,7 @@ def test_portal_remember_me_expiry_survives_site_selection(tmp_path: Path) -> No
     )
     assert after_claims["site_id"] == "site_portal_remember_site"
     assert after_claims["exp"] == before_claims["exp"]
+    assert after_claims["sid"] == before_claims["sid"]
     assert after_claims["exp"] - after_claims["iat"] > 6 * 24 * 60 * 60
 
 
@@ -4044,6 +4503,7 @@ def test_portal_bearer_expiry_drives_site_selection_cookie_rotation(tmp_path: Pa
         COOKIE_PORTAL_SESSION_TOKEN,
         build_portal_session_token(
             settings,
+            session_id="codec-unrelated",
             principal_id="principal:unrelated@example.com",
             session_version=1,
             expires_at=datetime.now(UTC) + timedelta(hours=1),
@@ -4125,12 +4585,12 @@ def test_portal_email_change_rejects_near_expiry_before_mutation(tmp_path: Path)
     request_data = request_response.json()["data"]
     client.cookies.set(
         COOKIE_PORTAL_SESSION_TOKEN,
-        build_portal_session_token(
-            client.app.state.services.settings,
+        _build_portal_bearer_headers(
+            database_url=database_url,
             principal_id=str(verified_login["principal_id"]),
             session_version=int(verified_login["session_version"]),
             expires_at=datetime.now(UTC) + timedelta(seconds=30),
-        ),
+        )["Authorization"][7:],
     )
 
     verify_response = client.post(
@@ -4627,9 +5087,11 @@ def test_portal_qq_optional_profile_parse_failure_falls_back(
     ) == {}
 
 
+@pytest.mark.parametrize("order", ["rotate-before", "revoke-before"])
 def test_portal_qq_unbind_revokes_current_session(
     tmp_path: Path,
     monkeypatch: Any,
+    order: str,
 ) -> None:
     database_url, client = _build_client(
         tmp_path,
@@ -4649,6 +5111,11 @@ def test_portal_qq_unbind_revokes_current_session(
         "_fetch_qq_openid",
         lambda request, *, access_token: {"openid": "qq-openid-unbind", "unionid": ""},
     )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {},
+    )
 
     client.post(
         "/internal/service/accounts",
@@ -4661,7 +5128,7 @@ def test_portal_qq_unbind_revokes_current_session(
             "site_id": "site_portal_qq_unbind",
             "account_id": "acct_portal_qq_unbind",
             "name": "Portal QQ Unbind Site",
-            "status": "provisioning",
+            "status": "active",
         },
         headers=build_internal_headers(idempotency_key="portal-qq-unbind-site-001"),
     )
@@ -4690,6 +5157,25 @@ def test_portal_qq_unbind_revokes_current_session(
     )
     assert bind_response.status_code == 200, bind_response.text
 
+    settings = client.app.state.services.settings
+    initial_cookie = str(client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or "")
+    assert initial_cookie
+    initial_claims = decode_portal_session_cookie_claims(settings, initial_cookie)
+    rotated_cookie = ""
+    if order == "rotate-before":
+        # A legitimately signed response can arrive after unbind in a browser.
+        # Keep its exact token for reinjection after revocation below.
+        selected_response = client.post(
+            "/portal/v1/session/site", json={"site_id": "site_portal_qq_unbind"}
+        )
+        assert selected_response.status_code == 200, selected_response.text
+        rotated_cookie = str(selected_response.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or "")
+        assert rotated_cookie
+        selected_claims = decode_portal_session_cookie_claims(settings, rotated_cookie)
+        assert selected_claims["site_id"] == "site_portal_qq_unbind"
+        for claim in ("sub", "sid", "session_version", "exp"):
+            assert selected_claims[claim] == initial_claims[claim]
+
     unbind_response = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
     assert unbind_response.status_code == 200
     unbind_data = unbind_response.json()["data"]
@@ -4701,12 +5187,30 @@ def test_portal_qq_unbind_revokes_current_session(
         binding = session.scalar(select(IdentityProviderBinding))
         assert identity is not None
         assert identity.principal_id == principal_id
+        assert identity.session_version == initial_claims["session_version"] + 1
         assert binding is not None
         assert binding.principal_id == principal_id
 
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 401
     assert session_response.json()["error_code"] == "auth.portal_session_revoked"
+
+    # Sequential real-API order regressions. These assert signing/revocation
+    # semantics, not concurrent PostgreSQL lock scheduling.
+    for stale_cookie in (initial_cookie, rotated_cookie):
+        if not stale_cookie:
+            continue
+        client.cookies.clear()
+        client.cookies.set(COOKIE_PORTAL_SESSION_TOKEN, stale_cookie)
+        stale_read = client.get("/portal/v1/session")
+        assert stale_read.status_code == 401, stale_read.text
+        assert stale_read.json()["error_code"] == "auth.portal_session_revoked"
+        rejected_selection = client.post(
+            "/portal/v1/session/site", json={"site_id": "site_portal_qq_unbind"}
+        )
+        assert rejected_selection.status_code == 401, rejected_selection.text
+        assert rejected_selection.json()["error_code"] == "auth.portal_session_revoked"
+        assert not rejected_selection.cookies.get(COOKIE_PORTAL_SESSION_TOKEN)
 
     dispose_engine(database_url)
 
@@ -4919,15 +5423,22 @@ def test_portal_session_revoke_invalidates_another_active_session(tmp_path: Path
     dispose_engine(database_url)
 
 
-def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "generated_codes", [(123456, 654321), (123456, 123456)], ids=["distinct-otp", "repeated-otp"]
+)
+def test_expired_pending_registration_code_does_not_block_reissue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generated_codes: tuple[int, int]
+) -> None:
     database_url, client = _build_client(tmp_path)
     email = "expired-pending@example.com"
+    codes_to_issue = iter(generated_codes)
+    monkeypatch.setattr(_portal_mixin.secrets, "randbelow", lambda _upper: next(codes_to_issue))
     first = _request_portal_registration_code(
         client,
         email=email,
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    assert first["code"]
+    assert first["code"] == f"{generated_codes[0]:06d}"
     with get_session(database_url) as session:
         pending = session.scalar(
             select(PortalLoginCode).where(
@@ -4936,6 +5447,7 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
             )
         )
         assert pending is not None
+        first_code_id = pending.code_id
         pending.expires_at = datetime.now(UTC) - timedelta(minutes=1)
         session.commit()
 
@@ -4945,7 +5457,8 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
         headers={"x-npcink-debug-portal-link": "1"},
     )
 
-    assert second["code"] != first["code"]
+    # Fresh issuance is a new record; independent random OTPs may have the same value.
+    assert second["code"] == f"{generated_codes[1]:06d}"
     with get_session(database_url) as session:
         codes = list(
             session.scalars(
@@ -4954,8 +5467,11 @@ def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path
                 .order_by(PortalLoginCode.created_at.asc(), PortalLoginCode.code_id.asc())
             )
         )
-    assert [code.status for code in codes].count("pending") == 1
-    assert [code.status for code in codes].count("expired") == 1
+    assert len(codes) == 2
+    assert next(code for code in codes if code.code_id == first_code_id).status == "expired"
+    fresh_codes = [code for code in codes if code.code_id != first_code_id]
+    assert len(fresh_codes) == 1
+    assert fresh_codes[0].status == "pending"
     dispose_engine(database_url)
 
 
@@ -6048,7 +6564,6 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     dispose_engine(database_url)
 
 
-
 def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> None:
     database_url, client = _build_client(
         tmp_path,
@@ -6267,8 +6782,8 @@ def test_open_alipay_notify_marks_pro_monthly_order_paid(
     )
     assert return_response.status_code == 303
     assert return_response.headers["location"] == (
-        f"/portal/billing?payment_return=alipay&out_trade_no={external_order_no}"
-        "&trade_status=TRADE_SUCCESS"
+        f"/portal/account?payment_return=alipay&out_trade_no={external_order_no}"
+        "&trade_status=TRADE_SUCCESS#payment-orders"
     )
     with get_session(database_url) as session:
         payment_order = session.get(PaymentOrder, str(order["order_id"]))
@@ -6842,7 +7357,6 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     dispose_engine(database_url)
 
 
-
 def test_portal_account_routes_use_selected_site_account_for_multi_account_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -7225,7 +7739,7 @@ def test_portal_session_route_supports_jwt_with_session_cookies(tmp_path: Path) 
     assert len(data["sites"]) == 1
     assert data["selected_context"] is None
     assert data["session"]["transport"] == "header"
-    assert data["session"]["revocable"] is False
+    assert data["session"]["revocable"] is True
     assert data["session"]["expires_at"] != ""
 
     dispose_engine(database_url)
@@ -7966,6 +8480,51 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "site_portal_reads"
     }
 
+    # Acquisition-only filter must not reuse the consume-heavy total (Sources tab bug).
+    # Account-level grants (site_id NULL), e.g. subscription_topup, must still appear
+    # while the portal request is scoped to the selected site.
+    with get_session(database_url) as session:
+        subscription = session.scalar(
+            select(AccountSubscription).where(
+                AccountSubscription.account_id == "acct_portal_reads"
+            )
+        )
+        assert subscription is not None
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id=None,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            event_type=CREDIT_LEDGER_EVENT_GRANT,
+            source_type="subscription_topup",
+            source_id="topup_portal_reads_001",
+            ai_credit_delta=10000,
+            quantity=10000,
+            unit="ai_credits",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="subscription_topup:topup_portal_reads_001",
+            created_at=datetime.now(UTC),
+        )
+        session.commit()
+
+    acquisition_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger"
+        "?limit=10&event_types=grant,adjustment,refund",
+        headers=portal_reads_headers(),
+    )
+    assert acquisition_ledger_response.status_code == 200
+    acquisition_ledger_data = acquisition_ledger_response.json()["data"]
+    assert acquisition_ledger_data["pagination"]["total"] == 1
+    assert len(acquisition_ledger_data["items"]) == 1
+    topup_item = acquisition_ledger_data["items"][0]
+    assert topup_item["source_type"] == "subscription_topup"
+    assert float(topup_item["ai_credit_delta"]) == 10000.0
+    assert not str(topup_item.get("site_id") or "").strip()
+
     with get_session(database_url) as session:
         CommercialRepository(session).record_credit_ledger_entry(
             account_id="acct_portal_reads",
@@ -8122,6 +8681,28 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert latest_bucket["consumed_ai_credits"] >= 1
     assert latest_bucket["top_feature_key"]
 
+    exact_bucket_response = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={
+            "bucket": "60m",
+            "window": "period",
+            "start_at": latest_bucket["start_at"],
+            "end_at": latest_bucket["end_at"],
+        },
+        headers=portal_reads_headers(),
+    )
+    assert exact_bucket_response.status_code == 200
+    assert (
+        exact_bucket_response.json()["data"]["summary"]["consumed_ai_credits"]
+        == latest_bucket["consumed_ai_credits"]
+    )
+    invalid_bucket_range = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={"start_at": latest_bucket["start_at"]},
+        headers=portal_reads_headers(),
+    )
+    assert invalid_bucket_range.status_code == 400
+
     bucket_detail_response = client.get(
         "/portal/v1/account/credit-events",
         params={
@@ -8153,6 +8734,105 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert filtered_bucket_response.status_code == 200
     filtered_bucket_data = filtered_bucket_response.json()["data"]
     assert filtered_bucket_data["summary"]["consumed_ai_credits"] == 7.0
+
+    days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "limit": 3},
+        headers=portal_reads_headers(),
+    )
+    assert days_response.status_code == 200
+    days_data = days_response.json()["data"]
+    _assert_no_portal_commercial_internal_fields(days_data)
+    assert "account_id" not in days_data
+    assert days_data["contract_version"] == "portal-credit-event-days-v1"
+    assert days_data["timezone"] == "Asia/Shanghai"
+    assert days_data["pagination"]["limit"] == 3
+    assert days_data["pagination"]["total"] in {7, 8}
+    assert days_data["pagination"]["has_more"] is True
+    assert len(days_data["items"]) == 3
+    assert days_data["summary"]["consumed_ai_credits"] == 7.0
+    assert days_data["summary"]["event_count"] == 3
+    window_features = days_data["summary"]["feature_totals"]
+    assert sum(feature["consumed_ai_credits"] for feature in window_features) == 7.0
+    assert "topic_research" in {feature["feature_key"] for feature in window_features}
+    assert window_features == sorted(
+        window_features, key=lambda item: item["consumed_ai_credits"], reverse=True
+    )
+    assert [item["day"] for item in days_data["items"]] == sorted(
+        (item["day"] for item in days_data["items"]), reverse=True
+    )
+    for item in days_data["items"]:
+        assert item["start_at"] < item["end_at"]
+    # Day boundaries are local midnights (+08:00 => 16:00 UTC), except the clamped edges.
+    assert "T16:00:00" in days_data["items"][1]["start_at"]
+    today = days_data["items"][0]
+    assert today["event_count"] == 3
+    assert today["consumed_ai_credits"] == 7.0
+    assert sum(feature["consumed_ai_credits"] for feature in today["feature_totals"]) == 7.0
+    assert "topic_research" in {feature["feature_key"] for feature in today["feature_totals"]}
+    assert today["feature_totals"] == sorted(
+        today["feature_totals"], key=lambda item: item["consumed_ai_credits"], reverse=True
+    )
+
+    all_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "30d", "tz": "Asia/Shanghai", "limit": 31},
+        headers=portal_reads_headers(),
+    )
+    assert all_days_response.status_code == 200
+    all_days = all_days_response.json()["data"]
+    assert all_days["pagination"]["total"] in {30, 31}
+    assert sum(item["consumed_ai_credits"] for item in all_days["items"]) == 7.0
+    assert sum(1 for item in all_days["items"] if item["event_count"] > 0) == 1
+
+    second_page_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "30d", "tz": "Asia/Shanghai", "limit": 10, "offset": 10},
+        headers=portal_reads_headers(),
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()["data"]
+    assert [item["day"] for item in second_page["items"]] == [
+        item["day"] for item in all_days["items"][10:20]
+    ]
+
+    topic_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "feature": "topic_research"},
+        headers=portal_reads_headers(),
+    )
+    assert topic_days_response.status_code == 200
+    topic_days = topic_days_response.json()["data"]
+    assert topic_days["summary"]["event_count"] == 1
+    topic_feature_keys = {
+        feature["feature_key"]
+        for item in topic_days["items"]
+        for feature in item["feature_totals"]
+    }
+    assert topic_feature_keys == {"topic_research"}
+
+    site_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "site_id": "site_portal_reads"},
+        headers=portal_reads_headers(),
+    )
+    assert site_days_response.status_code == 200
+    assert site_days_response.json()["data"]["summary"]["consumed_ai_credits"] == 7.0
+
+    other_site_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "site_id": "site_not_selected"},
+        headers=portal_reads_headers(),
+    )
+    assert other_site_days_response.status_code == 409
+    assert other_site_days_response.json()["error_code"] == "portal.site_selection_required"
+
+    bad_tz_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Mars/Olympus"},
+        headers=portal_reads_headers(),
+    )
+    assert bad_tz_response.status_code in {400, 422}
 
     # Keep the remainder of this long scenario focused on the payment grant it creates below.
     with get_session(database_url) as session:
@@ -8518,4 +9198,93 @@ def test_portal_public_login_options_expose_only_availability(
     assert "private" not in response.text
     monkeypatch.setattr(portal, "_portal_qq_config", lambda request: {})
     assert client.get("/portal/v1/auth/login-options").json()["data"] == {"qq_available": False}
+    dispose_engine(database_url)
+
+
+def test_portal_addon_connection_accounts_mark_current_account_from_selected_site(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    site_id = "site_portal_current_account"
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_current", "name": "Current Account"},
+        headers=build_internal_headers(idempotency_key="portal-current-account-001"),
+    )
+    site_response = client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": site_id,
+            "account_id": "acct_portal_current",
+            "name": "Current Account Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-current-account-site-001"),
+    )
+    assert site_response.status_code == 200, site_response.text
+    grant = _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="portal-current-account@example.com",
+        idempotency_key="portal-current-account-member-001",
+    )
+
+    original_list_portal_accounts = CommercialService.list_portal_accounts
+
+    def list_with_second_account(
+        self: CommercialService, *, principal_id: str, **kwargs: object
+    ) -> dict[str, object]:
+        result = original_list_portal_accounts(self, principal_id=principal_id, **kwargs)
+        items = list(result.get("items") or [])
+        assert items, "fixture account must be eligible"
+        items.append(
+            {
+                **dict(items[0]),
+                "account_id": "acct_portal_other",
+                "name": "Other Account",
+                "site_count": 0,
+            }
+        )
+        return {**result, "items": items}
+
+    monkeypatch.setattr(CommercialService, "list_portal_accounts", list_with_second_account)
+
+    _set_portal_cookie_session(
+        client,
+        principal_id=str(grant["principal_id"]),
+        site_id="",
+        session_version=int(grant.get("session_version") or 1),
+    )
+    unknown_response = client.get("/portal/v1/addon-connection-accounts")
+    assert unknown_response.status_code == 200, unknown_response.text
+    unknown_items = unknown_response.json()["data"]["items"]
+    assert {item["account_id"] for item in unknown_items} == {
+        "acct_portal_current",
+        "acct_portal_other",
+    }
+    assert all(item["is_current"] is False for item in unknown_items)
+
+    select_response = client.post("/portal/v1/session/site", json={"site_id": site_id})
+    assert select_response.status_code == 200, select_response.text
+    session_data = select_response.json()["data"]
+    _assert_strict_portal_session(session_data)
+
+    known_response = client.get("/portal/v1/addon-connection-accounts")
+    assert known_response.status_code == 200, known_response.text
+    known_items = {
+        item["account_id"]: item for item in known_response.json()["data"]["items"]
+    }
+    assert known_items["acct_portal_current"]["is_current"] is True
+    assert known_items["acct_portal_other"]["is_current"] is False
+    assert set(known_items["acct_portal_current"]) == {
+        "account_id",
+        "name",
+        "site_count",
+        "is_current",
+    }
+
     dispose_engine(database_url)

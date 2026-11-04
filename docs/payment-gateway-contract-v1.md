@@ -10,7 +10,8 @@ The code truth is `app/domain/commercial/payment_gateways.py`.
 ## Boundary
 
 The gateway layer owns provider-specific order creation, payment callback
-verification, refund creation, and refund callback verification.
+verification, refund creation, refund query/reconciliation, and refund callback
+verification.
 
 The commercial service still owns:
 
@@ -38,6 +39,11 @@ Every provider must implement:
 - `verify_payment_callback(payload)`: returns normalized order number, trade
   number, event id, amount, status, and occurred time.
 - `create_refund(request)`: returns `external_refund_no` and provider metadata.
+- `query_refund(request)`: queries the same stable external refund number and
+  returns `succeeded` only after the provider response is signed, matched to the
+  original order, stable refund number, exact amount, and `REFUND_SUCCESS`
+  status; unsupported, delayed, malformed or rejected
+  queries return `unknown`.
 - `verify_refund_callback(payload)`: returns normalized refund number, provider
   refund number, event id, amount, status, and occurred time.
 
@@ -62,6 +68,14 @@ read from deployment environment variables. Real Alipay mode signs
 `alipay.trade.page.pay` orders with RSA2 and verifies asynchronous notify
 callbacks before any payment order is marked paid.
 
+The configured Alipay browser return endpoint redirects with HTTP 303 to
+`/portal/account?payment_return=alipay&out_trade_no=…&trade_status=…#payment-orders`.
+The account payment-order section polls the canonical order and refreshes the
+session, account entitlements, and order history. Terminal results remove the
+return query and stay at `/portal/account#payment-orders`. Legacy Portal billing
+return links redirect to this account section; package upgrades remain on the
+Package page. Browser return fields never settle an order or grant entitlement.
+
 Deployment environment variables are not a payment gateway configuration
 source. If `payment_alipay` is missing, disabled, incomplete, or fails key
 validation, public Alipay callbacks must fail closed and checkout orders must
@@ -78,7 +92,34 @@ Real Alipay refunds use `alipay.trade.refund` with a stable
 order number, and refund amount before recording provider success or changing
 entitlement. A timeout or malformed response is an unknown result, not a
 failed refund: the same stable refund number must be reconciled before any
-retry.
+retry. Verification uses the exact response-object text in the gateway JSON,
+including whitespace and escapes; duplicate keys are rejected. A success must
+include the matching order number and a finite, positive, exact refund amount.
+Only a verified explicit business rejection is failed; missing/invalid signatures,
+missing fields, mismatches, transport failures, and system errors remain unknown.
+A late gateway error cannot downgrade an already confirmed success.
+
+`requested` and `unknown` refunds are reconciled by the bounded
+`payment_refund_reconciliation` `ops_cadence` task. It queries
+`alipay.trade.fastpay.refund.query` with the persisted `out_request_no`, uses
+exponential backoff (5 minutes up to 6 hours), and stops after the configured
+attempt limit (default five). Exhaustion keeps the refund `unknown` and requires
+manual review. Due-time, lease and attempt limits are filtered before the SQL
+batch limit so exhausted rows cannot starve later refunds. The worker interval,
+batch size and maximum attempts are configured by
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_INTERVAL_SECONDS` (default 300, minimum 60),
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_BATCH_SIZE` (default 25, 1–100), and
+`NPCINK_CLOUD_PAYMENT_REFUND_RECONCILIATION_MAX_ATTEMPTS` (default 5, 1–20).
+The task never calls `create_refund` and never downgrades a
+callback or query success; a concurrent success wins when the state row is
+locked.
+
+Credit-pack grants with requested or unknown refunds are unavailable to runtime
+admission and consumption. Consumption locks the grants, then rechecks refund
+state in a separate statement; refund requests lock the same grant before checking
+prior consumption. A confirmed failure releases the freeze; success atomically
+reverses the grant. Partial pending refunds conservatively freeze the whole grant
+until their outcome is known. No database transaction spans gateway HTTP IO.
 
 Provider timestamps without an explicit offset must be interpreted in the
 provider's documented business timezone. Alipay `gmt_*` values are interpreted

@@ -757,6 +757,14 @@ class ServiceSettingsAdminService:
         enabled: bool,
         required_secret_keys: list[str],
     ) -> ServiceSetting:
+        # An exact empty string is the explicit clear operation. Whitespace is
+        # an invalid replacement, never permission to erase a saved credential.
+        for raw_value in secrets.values():
+            if isinstance(raw_value, str) and raw_value != "" and not raw_value.strip():
+                raise ServiceSettingsAdminError(
+                    "service_settings.secret_blank",
+                    "a replacement credential must not contain only whitespace",
+                )
         now = datetime.now(UTC)
         with get_session(self.database_url) as session:
             row = session.get(ServiceSetting, setting_id)

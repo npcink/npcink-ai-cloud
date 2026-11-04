@@ -41,8 +41,14 @@ Primary internal checkpoints:
 Cloud has two operator-known public entry points in the current deployment
 model:
 
-- local development: `http://127.0.0.1:8010/`
+- local development: `http://127.0.0.1:8010/` (Compose publishes on loopback;
+  see `docker-compose.dev.yml` / README)
 - production: `https://cloud.npc.ink/`
+
+Before `source deploy/workspace-target.env.sh` on a workstation, ensure
+`.deploy-secrets/workspace-target.env.sh` exists (copy from
+`deploy/workspace-target.env.example`). Real SSH host/user stay out of Git;
+see `deploy/WORKSPACE_TARGET.md`.
 
 Configuration ownership:
 

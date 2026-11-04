@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
-from app.adapters.providers.base import ProviderExecutionRequest
+from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionRequest
 from app.adapters.providers.litellm_gateway import LiteLLMGatewayProviderAdapter
 from app.adapters.providers.openrouter import OpenRouterProviderAdapter
 from app.adapters.providers.registry import build_provider_adapters
@@ -218,6 +219,7 @@ def test_siliconflow_image_generation_uses_images_list_without_forcing_response_
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["model"] == "Tongyi-MAI/Z-Image-Turbo"
         assert payload["prompt"] == "An editorial landscape"
+        assert payload["image_size"] == "512x512"
         assert "response_format" not in payload
         return httpx.Response(
             200,
@@ -250,6 +252,50 @@ def test_siliconflow_image_generation_uses_images_list_without_forcing_response_
     candidate = result.media_candidates[0]
     assert candidate.source_url == "https://images.siliconflow.test/generated.png"
     assert candidate.image_output_hosts == ("images.siliconflow.test",)
+
+
+@pytest.mark.parametrize(
+    ("options", "size"),
+    [
+        ({"aspect_ratio": "16:9", "resolution": "medium"}, "1024x576"),
+        ({"aspect_ratio": "3:4", "resolution": "medium"}, "768x1024"),
+        ({"aspect_ratio": "1:1", "resolution": "low"}, "512x512"),
+        ({"aspect_ratio": "1:1", "resolution": "high"}, "1536x1536"),
+        ({"size": "512x512"}, "512x512"),
+        ({"extra": {"image_size": "1024x1024", "batch_size": 1}}, "1024x1024"),
+    ],
+)
+def test_siliconflow_z_image_translates_platform_dimensions(options: dict, size: str) -> None:
+    adapter = SiliconFlowProviderAdapter(api_key="sf-key", image_response_format="url")
+    path, payload = adapter._build_http_request(
+        _build_request(
+            execution_kind="image_generation",
+            endpoint_variant="image_generations",
+            model_id="siliconflow/Tongyi-MAI/Z-Image-Turbo",
+            input_payload={"prompt": "An editorial landscape", "n": 1, **options},
+        )
+    )
+    assert path == "/images/generations"
+    assert payload == {
+        "model": "Tongyi-MAI/Z-Image-Turbo",
+        "prompt": "An editorial landscape",
+        "image_size": size,
+    }
+
+
+@pytest.mark.parametrize("options", [{"n": 2}, {"n": True}, {"size": "99999x99999"}])
+def test_siliconflow_z_image_rejects_unsupported_work_before_dispatch(options: dict) -> None:
+    adapter = SiliconFlowProviderAdapter(api_key="sf-key")
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter._build_http_request(
+            _build_request(
+                execution_kind="image_generation",
+                endpoint_variant="image_generations",
+                model_id="siliconflow/Tongyi-MAI/Z-Image-Turbo",
+                input_payload={"prompt": "An editorial landscape", **options},
+            )
+        )
+    assert error.value.error_code == "provider.unsupported_operation"
 
 
 def test_openrouter_provider_sets_router_headers_and_namespaces_model_ids() -> None:

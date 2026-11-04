@@ -2,9 +2,11 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -21,9 +23,7 @@ import {
   CreateAccountForm,
   useCreateAccountForm,
 } from '@/features/admin/accounts/CreateAccountForm';
-import {
-  buildCreateAccountPayload,
-} from '@/features/admin/accounts/create-account-form-model';
+import { useAccountCreation } from '@/features/admin/accounts/account-create-confirmation';
 import {
   resolveCustomerPackageDisplay,
   type CoverageState,
@@ -31,6 +31,7 @@ import {
 } from '@/lib/customer-package-display';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import { validateAccountDirectory } from '@/features/admin/accounts/account-projection';
 import {
   ADMIN_QUEUE_PATHNAMES,
   buildAdminAccountDetailPathname,
@@ -57,7 +58,6 @@ interface Account {
   status: string;
   created_at?: string;
   site_count: number;
-  subscription_count: number;
   display_package_label: string;
   primary_identity: PrimaryIdentity | null;
   identity_relationship_state: IdentityRelationshipState;
@@ -72,7 +72,6 @@ interface AccountsApiItem {
     metadata?: Record<string, unknown>;
   };
   site_count?: number;
-  active_subscription_count?: number;
   top_plan_id?: string;
   display_package_label?: string;
   package_alias?: string;
@@ -89,10 +88,6 @@ interface AccountsListPayload {
   hidden_internal_total?: number;
 }
 
-interface CreatedAccountPayload {
-  account_id?: string;
-}
-
 const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
 const ACCOUNTS_RETURN_CONTEXT_POLICY = {
   allowedPathnames: [ADMIN_QUEUE_PATHNAMES.accounts],
@@ -100,30 +95,11 @@ const ACCOUNTS_RETURN_CONTEXT_POLICY = {
 } as const;
 const INTERNAL_TEST_ACCOUNT_RE = /(^|[_-])(smoke)([_-]|$)|codex_image_smoke|site_knowledge_smoke/i;
 const ACCOUNT_SORTS = new Set<AccountSort>(['display_name', 'created_at']);
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 const accountsClient = createApiClient({ idempotencyPrefix: 'admin_accounts' });
 
 function isMalformedAccountText(value?: string): boolean {
   return MALFORMED_ACCOUNT_TEXT_RE.test(String(value || ''));
-}
-
-function prettifyAccountId(accountId: string): string {
-  if (isMalformedAccountText(accountId)) return '';
-  const stripped = accountId
-    .replace(/^acct[_-]?/i, '')
-    .replace(/^site[_-]?/i, '')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  if (!stripped) return accountId;
-  return stripped
-    .split(/\s+/)
-    .map((word) => {
-      const lower = word.toLowerCase();
-      if (lower === 'ai') return 'AI';
-      if (lower === 'api') return 'API';
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
 }
 
 function normalizeAccount(
@@ -133,10 +109,6 @@ function normalizeAccount(
   const account = item.account;
   if (!account?.account_id) return null;
   const metadata = account.metadata || {};
-  const operatorDisplayName = String(metadata.operator_display_name || '').trim();
-  const rawName = String(account.name || '').trim();
-  const safeName =
-    rawName && rawName !== account.account_id && !isMalformedAccountText(rawName) ? rawName : '';
   const packageDisplay = resolveCustomerPackageDisplay(t, {
     planId: item.top_plan_id,
     packageAlias: item.package_alias,
@@ -156,16 +128,11 @@ function normalizeAccount(
 
   return {
     account_id: account.account_id,
-    display_name:
-      operatorDisplayName ||
-      safeName ||
-      prettifyAccountId(account.account_id) ||
-      t('admin.accounts.malformed_account_label', {}, 'Malformed account record'),
+    display_name: customerLabel(account, t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')),
     operator_note: String(metadata.operator_note || '').trim(),
     status: String(account.status || 'inactive'),
     created_at: account.created_at,
     site_count: Number(item.site_count || 0),
-    subscription_count: Number(item.active_subscription_count || 0),
     display_package_label:
       String(item.display_package_label || '') || packageDisplay.display_package_label,
     primary_identity: primaryIdentity,
@@ -224,9 +191,7 @@ function AccountsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [actionError, setActionError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -278,7 +243,8 @@ function AccountsContent() {
         const payload = (
           await accountsClient.request<AccountsListPayload>(`/api/admin/accounts?${requestKey}`)
         ).data;
-        const normalized = (payload.items || [])
+        validateAccountDirectory(payload);
+        const normalized = payload.items!
           .map((item) => normalizeAccount(item, t))
           .filter((item): item is Account => Boolean(item));
         if (mountedRef.current && requestSequenceRef.current === sequence) {
@@ -319,27 +285,39 @@ function AccountsContent() {
     setDraftQuery(appliedQuery);
   }, [appliedQuery]);
 
+  // Quiet density: debounce search into the URL; Enter still applies immediately.
+  useEffect(() => {
+    const nextQuery = draftQuery.trim();
+    const currentQuery = appliedQuery.trim();
+    if (nextQuery === currentQuery) return;
+    const timer = window.setTimeout(() => {
+      updateDirectoryUrl({ q: nextQuery || null, offset: null });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [appliedQuery, draftQuery, updateDirectoryUrl]);
+
   const visibleAccounts = useMemo(
     () => (showInternalAccounts ? accounts : accounts.filter((account) => !isInternalAccount(account))),
     [accounts, showInternalAccounts]
   );
-  const pageSummary = useMemo(
-    () => ({
-      active: visibleAccounts.filter((account) => account.status === 'active').length,
-      loginReady: visibleAccounts.filter(
-        (account) => account.identity_relationship_state === 'healthy'
-      ).length,
-      sites: visibleAccounts.reduce((sum, account) => sum + account.site_count, 0),
-      subscriptions: visibleAccounts.reduce(
-        (sum, account) => sum + account.subscription_count,
-        0
-      ),
-    }),
-    [visibleAccounts]
-  );
   const isShowingRetainedResults = Boolean(
     loadError && loadedRequestKey && loadedRequestKey !== requestKey
   );
+
+  // Rows and total belong to the last successful request, including while a
+  // different URL page is pending or its request has failed.
+  const loadedOffset = normalizeOffset(new URLSearchParams(loadedRequestKey).get('offset'));
+  const loadedQuery = new URLSearchParams(loadedRequestKey);
+  const requestedQuery = new URLSearchParams(requestKey);
+  loadedQuery.delete('offset');
+  requestedQuery.delete('offset');
+  const isRetainingDifferentQuery = hasLoaded && loadedQuery.toString() !== requestedQuery.toString();
+  const isOutOfRangePage = hasLoaded && total > 0 && loadedOffset >= total && !visibleAccounts.length;
+  const changePage = (nextOffset: number) => {
+    if (isRetainingDifferentQuery) return;
+    if (nextOffset === offset) void loadAccounts(true);
+    else updateDirectoryUrl({ offset: String(nextOffset) });
+  };
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -357,79 +335,80 @@ function AccountsContent() {
     });
   };
 
+  const creation = useAccountCreation({
+    failureMessage: t('admin.accounts.create_rejected'),
+    emailConflictMessage: t('admin.accounts.email_already_owned'),
+    identityUnavailableMessage: t('admin.accounts.identity_unavailable'),
+    readFailureMessage: t('admin.customer_confirmation.read_failed'),
+    onCreated: (createdAccountId, values) => {
+      toast.success(values.bind_default_free
+        ? t('admin.accounts.onboarding_created_notice') : t('admin.accounts.account_created_notice'),
+        t('admin.accounts.account_created_title'));
+      setIsCreateOpen(false);
+      router.push(accountDetailHref(createdAccountId));
+    },
+  });
+  const isCreating = creation.busy;
   const closeCreateDialog = () => {
     if (isCreating) return;
     setIsCreateOpen(false);
-    setActionError('');
-    createAccountForm.reset();
+    if (!creation.intent) { creation.reset(); createAccountForm.reset(); }
   };
-
   const handleCreateAccount = async (fields: FormData) => {
+    if (!hasLoaded || loadError) return;
     const validation = createAccountForm.validate(fields);
-    if (!validation.success) return;
-    const values = validation.data;
-    setActionError('');
-    setIsCreating(true);
-    try {
-      const response = await accountsClient.request<CreatedAccountPayload>('/api/admin/accounts', {
-        method: 'POST',
-        body: buildCreateAccountPayload(values),
-      });
-      const createdAccountId = String(response.data?.account_id || '').trim();
-      if (!createdAccountId) {
-        throw new Error(
-          t(
-            'admin.accounts.created_account_id_missing',
-            {},
-            'The customer was created, but the generated account ID was not returned.'
-          )
-        );
-      }
-      toast.success(
-        values.bind_default_free
-          ? t(
-              'admin.accounts.onboarding_created_notice',
-              {},
-              'Customer account created and bound to the Free package.'
-            )
-          : t(
-              'admin.accounts.account_created_notice',
-              {},
-              'Account created without automatic subscription coverage.'
-            ),
-        t('admin.accounts.account_created_title', {}, 'Customer created')
-      );
-      setIsCreateOpen(false);
-      createAccountForm.reset();
-      router.push(accountDetailHref(createdAccountId));
-    } catch (err) {
-      setActionError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setIsCreating(false);
-    }
+    if (validation.success) await creation.submit(validation.data);
   };
+  const creationRecovery = creation.intent ? (
+    <div role="status" data-ui="customer-creation-unconfirmed" className="space-y-2 text-sm text-amber-800 dark:text-amber-200">
+      <p>{t('admin.customer_confirmation.create_unconfirmed')}</p>
+      <p className="break-words">{creation.intent.values.name} · {creation.intent.values.primary_email}</p>
+      <p className="break-all">{t('admin.customer_confirmation.operation')}: {creation.intent.operation_id}</p>
+      <button type="button" className="btn btn-secondary" disabled={isCreating} onClick={() => void creation.confirm()}>
+        {t('admin.customer_confirmation.read_result')}
+      </button>
+    </div>
+  ) : null;
 
   if (isLoading && !hasLoaded) return <LoadingFallback />;
 
   const hasFilters =
     Boolean(appliedQuery || appliedStatus || showInternalAccounts) || sort !== 'display_name';
 
+  const directoryPagination = visibleAccounts.length && (total > PAGE_SIZE || loadedOffset > 0) ? (
+    <ListPagination
+      offset={loadedOffset}
+      limit={PAGE_SIZE}
+      total={total}
+      isLoading={isRefreshing || isRetainingDifferentQuery}
+      onOffsetChange={changePage}
+    />
+  ) : hasLoaded ? (
+    <p data-ui="customer-directory-range" className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      {t('common.pagination_summary', {
+        start: visibleAccounts.length ? String(loadedOffset + 1) : '0',
+        end: visibleAccounts.length ? String(Math.min(loadedOffset + visibleAccounts.length, total)) : '0',
+        total: String(total),
+      })}
+    </p>
+  ) : null;
+
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.accounts.directory_eyebrow', {}, 'Customer operations')}
-        title={t('admin.accounts.list_title', {}, 'Customers')}
+        title={`${t('admin.accounts.list_title', {}, 'Customers')}${hasLoaded ? ` · ${formatInteger(total)}` : ''}`}
         description={t(
-          'admin.accounts.list_desc',
+          'admin.accounts.directory_boundary',
           {},
-          'Find a customer, create a customer, or open the customer record. Service problems are handled in Service status.'
+          'This page is the customer directory. Open Service status for cross-customer problems, then resolve customer-specific work in the customer record.'
         )}
         primaryAction={(
           <button
             type="button"
             className="btn btn-primary"
+            disabled={!hasLoaded || Boolean(loadError)}
             onClick={() => {
-              setActionError('');
+              creation.reset();
               createAccountForm.reset();
               setIsCreateOpen(true);
             }}
@@ -447,28 +426,6 @@ function AccountsContent() {
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
-        summaryItems={[
-          {
-            label: t('admin.accounts.summary_customers', {}, 'Customers'),
-            value: formatInteger(total),
-          },
-          {
-            label: t('admin.accounts.summary_active', {}, 'Active accounts'),
-            value: formatInteger(pageSummary.active),
-          },
-          {
-            label: t('admin.accounts.summary_login_ready', {}, 'Login ready'),
-            value: formatInteger(pageSummary.loginReady),
-          },
-          {
-            label: t('common.sites', {}, 'Sites'),
-            value: formatInteger(pageSummary.sites),
-          },
-          {
-            label: t('common.subscriptions', {}, 'Subscriptions'),
-            value: formatInteger(pageSummary.subscriptions),
-          },
-        ]}
       />
 
       <AdminWorkbenchDialog
@@ -488,6 +445,7 @@ function AccountsContent() {
         width="compact"
         onClose={closeCreateDialog}
         onSubmit={(fields) => void handleCreateAccount(fields)}
+        footerActions={creation.locked || !hasLoaded || Boolean(loadError) ? <button type="button" className="btn btn-secondary" disabled={isCreating} onClick={closeCreateDialog}>{t('common.close')}</button> : undefined}
       >
         <p className="text-sm text-slate-600 dark:text-slate-300 md:col-span-2">
           {t(
@@ -496,12 +454,21 @@ function AccountsContent() {
             'Account ID is generated automatically after creation.'
           )}
         </p>
+        {creationRecovery}
+        {creation.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.customer_confirmation.storage_blocked')}</p> : null}
         <CreateAccountForm
-          actionError={actionError}
+          actionError={creation.error}
+          values={creation.values}
+          setField={creation.setField}
+          locked={creation.locked || !hasLoaded || Boolean(loadError)}
           errors={createAccountForm.errors}
         />
       </AdminWorkbenchDialog>
 
+      {!isCreateOpen ? creationRecovery : null}
+      {!isCreateOpen && creation.storageBlocked ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{t('admin.customer_confirmation.storage_blocked')}</p> : null}
+      {!isCreateOpen && creation.error && creation.intent ? <p role="alert">{creation.error}</p> : null}
+      {creation.confirmedId ? <a className="btn btn-secondary" href={accountDetailHref(creation.confirmedId)}>{t('admin.customer_confirmation.open_created')}</a> : null}
       {loadError ? (
         <div
           role="alert"
@@ -523,14 +490,14 @@ function AccountsContent() {
       <BackofficeSectionPanel className="overflow-hidden p-0">
         <div
           data-ui="customer-directory-toolbar"
-          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-end"
+          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800"
         >
           <form
             data-ui="customer-directory-search"
-            className="flex min-w-0 gap-2 lg:w-full lg:max-w-2xl"
+            className="flex flex-wrap items-center gap-3"
             onSubmit={applySearch}
           >
-            <label className="min-w-0 flex-1">
+            <label className="min-w-0 basis-full xl:basis-64 xl:flex-1">
               <span className="sr-only">{t('common.search', {}, 'Search')}</span>
               <input
                 type="search"
@@ -544,53 +511,59 @@ function AccountsContent() {
                 onChange={(event) => setDraftQuery(event.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="sr-only">
               {t('common.search', {}, 'Search')}
             </button>
+            <div role="group" aria-label={t('common.status', {}, 'Status')} className="flex flex-wrap items-center gap-2">
+              <span className="sr-only">{t('common.status', {}, 'Status')}</span>
+              {[
+                { value: '', label: t('admin.accounts.all_statuses', {}, 'All account states') },
+                { value: 'active', label: t('status.active', {}, 'Active') },
+                { value: 'inactive', label: t('status.inactive', {}, 'Inactive') },
+                { value: 'suspended', label: t('status.suspended', {}, 'Suspended') },
+              ].map(({ value, label }) => (
+                <BackofficeFilterPill
+                  key={value}
+                  active={appliedStatus === value}
+                  aria-pressed={appliedStatus === value}
+                  onClick={() => updateDirectoryUrl({ status: value || null, offset: null })}
+                >
+                  {label}
+                </BackofficeFilterPill>
+              ))}
+            </div>
+            <label className="w-full shrink-0 sm:w-48">
+              <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
+              <select
+                className="input w-full"
+                value={sort}
+                onChange={(event) =>
+                  updateDirectoryUrl({
+                    sort: normalizeSort(event.target.value),
+                    offset: null,
+                  })
+                }
+              >
+                <option value="display_name">
+                  {t('admin.accounts.sort_name', {}, 'Sort: customer name')}
+                </option>
+                <option value="created_at">
+                  {t('admin.accounts.sort_created', {}, 'Sort: recently created')}
+                </option>
+              </select>
+            </label>
+            {hasFilters || draftQuery ? (
+              <div className="flex items-center justify-end whitespace-nowrap">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+                  onClick={clearFilters}
+                >
+                  {t('common.clear_filters', {}, 'Clear filters')}
+                </button>
+              </div>
+            ) : null}
           </form>
-          <label className="lg:w-48">
-            <span className="sr-only">{t('common.status', {}, 'Status')}</span>
-            <select
-              className="input w-full"
-              value={appliedStatus}
-              onChange={(event) =>
-                updateDirectoryUrl({ status: event.target.value || null, offset: null })
-              }
-            >
-              <option value="">{t('admin.accounts.all_statuses', {}, 'All account states')}</option>
-              <option value="active">{t('status.active', {}, 'Active')}</option>
-              <option value="inactive">{t('status.inactive', {}, 'Inactive')}</option>
-              <option value="suspended">{t('status.suspended', {}, 'Suspended')}</option>
-            </select>
-          </label>
-          <label className="lg:w-48">
-            <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
-            <select
-              className="input w-full"
-              value={sort}
-              onChange={(event) =>
-                updateDirectoryUrl({
-                  sort: normalizeSort(event.target.value),
-                  offset: null,
-                })
-              }
-            >
-              <option value="display_name">
-                {t('admin.accounts.sort_name', {}, 'Sort: customer name')}
-              </option>
-              <option value="created_at">
-                {t('admin.accounts.sort_created', {}, 'Sort: recently created')}
-              </option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={!hasFilters && !draftQuery}
-            onClick={clearFilters}
-          >
-            {t('common.clear_filters', {}, 'Clear filters')}
-          </button>
         </div>
 
         {hiddenInternalTotal > 0 ? (
@@ -614,7 +587,7 @@ function AccountsContent() {
             >
               {showInternalAccounts
                 ? t('admin.accounts.hide_internal_records', {}, 'Hide test records')
-                : t('admin.accounts.show_internal_records', {}, 'Show test records')}
+                : t('admin.accounts.show_internal_records', { count: formatInteger(hiddenInternalTotal) }, 'Show test records')}
             </button>
           </div>
         ) : null}
@@ -634,34 +607,24 @@ function AccountsContent() {
               `${formatInteger(visibleAccounts.length)} on this page · ${formatInteger(total)} total`
             )}
             bodyClassName="overflow-x-auto"
-            footer={(
-              <ListPagination
-                offset={offset}
-                limit={PAGE_SIZE}
-                total={total}
-                isLoading={isRefreshing}
-                onOffsetChange={(nextOffset) =>
-                  updateDirectoryUrl({ offset: String(nextOffset) })
-                }
-              />
-            )}
+            footer={directoryPagination}
           >
             <table
-              className="w-full min-w-[68rem] table-fixed border-collapse text-left text-sm"
+              className="w-full min-w-[44rem] table-fixed border-collapse text-left text-sm"
               aria-label={t('admin.accounts.table_region_label', {}, 'Customer directory')}
             >
               <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                 <tr>
-                  <th className="w-[18rem] px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
-                  <th className="w-[18rem] px-4 py-3">
+                  <th className="px-4 py-3">{t('common.accounts', {}, 'Customer')}</th>
+                  <th className="w-[30%] px-4 py-3">
                     {t('admin.accounts.login_email_label', {}, 'Login email')}
                   </th>
-                  <th className="w-[10rem] px-4 py-3">{t('common.status', {}, 'Status')}</th>
-                  <th className="w-[12rem] px-4 py-3">{t('common.package', {}, 'Package')}</th>
-                  <th className="w-[10rem] px-4 py-3">
-                    {t('admin.accounts.service_footprint_label', {}, 'Service footprint')}
+                  <th className="w-32 px-4 py-3">{t('admin.accounts.account_status_label', {}, 'Account status')}</th>
+                  <th className="w-24 px-4 py-3">{t('common.package', {}, 'Package')}</th>
+                  <th className="w-16 px-4 py-3">
+                    {t('admin.accounts.sites_label', {}, 'Sites')}
                   </th>
-                  <th className="px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
+                  <th className="w-20 px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -674,74 +637,59 @@ function AccountsContent() {
                     <td className="px-4 py-3">
                       <Link
                         href={accountDetailHref(account.account_id)}
-                        className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                        title={account.display_name}
+                        className="block truncate font-semibold text-blue-700 hover:underline dark:text-blue-300"
                       >
                         {account.display_name}
                       </Link>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        <BackofficeIdentifier value={account.account_id} />
+                        <BackofficeIdentifier value={account.account_id} className="block text-xs" />
                       </div>
                       {account.operator_note ? (
-                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                        <p title={account.operator_note} className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                           {account.operator_note}
                         </p>
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">
-                        {account.primary_identity?.email ||
-                          t('admin.accounts.identity_missing_label', {}, 'Login identity missing')}
+                      <p title={account.primary_identity?.email} className="truncate font-medium text-slate-900 dark:text-slate-100">
+                        {account.primary_identity?.email || (account.identity_relationship_state === 'missing'
+                          ? t('admin.accounts.identity_missing_label', {}, 'Login identity missing')
+                          : '—')}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {account.primary_identity?.last_login_at
-                          ? t(
-                              'admin.accounts.last_login_value',
-                              { date: formatDate(account.primary_identity.last_login_at) },
-                              `Last login ${formatDate(account.primary_identity.last_login_at)}`
-                            )
-                          : t('admin.accounts.never_logged_in', {}, 'No recorded login')}
-                      </p>
+                      {account.identity_relationship_state !== 'healthy' && (account.identity_relationship_state !== 'missing' || account.primary_identity?.email) ? (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                          {account.identity_relationship_state === 'missing'
+                            ? t('admin.accounts.identity_missing_label', {}, 'Login identity missing')
+                            : t(`admin.accounts.directory_identity_${account.identity_relationship_state}`)}
+                        </p>
+                      ) : null}
+                      {account.primary_identity && account.identity_relationship_state !== 'missing' ? (
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {account.primary_identity.last_login_at
+                            ? t('admin.accounts.last_login_value', { date: formatDate(account.primary_identity.last_login_at) })
+                            : t('admin.accounts.never_logged_in', {}, 'No recorded login')}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1.5">
-                        <BackofficeStatusBadge
-                          status={account.status}
-                          label={t(`status.${account.status}`, {}, account.status)}
-                        />
-                        {account.identity_relationship_state !== 'healthy' ? (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {t(
-                              `admin.accounts.identity_${account.identity_relationship_state}`,
-                              {},
-                              account.identity_relationship_state
-                            )}
-                          </span>
-                        ) : null}
-                      </div>
+                      <BackofficeStatusBadge
+                        status={account.status}
+                        label={t(`status.${account.status}`, {}, account.status)}
+                      />
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
                       {account.display_package_label}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-900 dark:text-slate-100">
-                        {t(
-                          'admin.accounts.site_count_value',
-                          { count: formatInteger(account.site_count) },
-                          `${formatInteger(account.site_count)} sites`
-                        )}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {t(
-                          'admin.accounts.subscription_count_value',
-                          { count: formatInteger(account.subscription_count) },
-                          `${formatInteger(account.subscription_count)} subscriptions`
-                        )}
+                        {formatInteger(account.site_count)}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={accountDetailHref(account.account_id)}
-                        className="btn btn-primary btn-sm"
+                        className="inline-flex min-h-9 items-center whitespace-nowrap font-medium text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
                       >
                         {t('common.details', {}, 'Details')}
                       </Link>
@@ -752,35 +700,43 @@ function AccountsContent() {
             </table>
           </AdminDataTableFrame>
         ) : (
-          <BackofficeEmptyState
-            className="m-5 md:m-6"
-            title={t('admin.accounts.no_match_title', {}, 'No customers match these filters')}
-            description={t(
-              'admin.accounts.no_match_desc',
-              {},
-              'Clear or adjust the customer search and account-state filter. No customer record has been changed.'
-            )}
-            action={
-              hasFilters ? (
+          <>
+            <BackofficeEmptyState
+              className="m-5 md:m-6"
+              title={total > 0
+                ? t('empty.no_data_title', {}, 'No data available')
+                : t('admin.accounts.no_match_title', {}, 'No customers match these filters')}
+              description={total > 0
+                ? t('empty.no_data_desc', {}, 'There is no data to display at this time.')
+                : t('admin.accounts.no_match_desc', {}, 'Clear or adjust the customer search and account-state filter. No customer record has been changed.')}
+              action={isOutOfRangePage ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing || isRetainingDifferentQuery}
+                  onClick={() => changePage(Math.min(
+                    Math.max(0, loadedOffset - PAGE_SIZE),
+                    Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE
+                  ))}
+                >
+                  {t('common.previous', {}, 'Previous')}
+                </button>
+              ) : hasFilters ? (
                 <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
                   {t('common.clear_filters', {}, 'Clear filters')}
                 </button>
-              ) : null
-            }
-          />
+              ) : null}
+            />
+            {directoryPagination}
+          </>
         )}
       </BackofficeSectionPanel>
 
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        {t(
-          'admin.accounts.directory_boundary',
-          {},
-          'This page is the customer directory. Open Service status for cross-customer problems, then resolve customer-specific work in the customer record.'
-        )}
-        {loadedAt
-          ? ` · ${t('common.updated_at', {}, 'Updated')} ${formatDate(loadedAt.toISOString())}`
-          : ''}
-      </p>
+      {loadedAt ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t('common.updated_at', {}, 'Updated')} {formatDate(loadedAt.toISOString())}
+        </p>
+      ) : null}
     </BackofficePageStack>
   );
 }

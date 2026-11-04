@@ -7,6 +7,38 @@ bounded public WordPress content that the local WordPress side sends through the
 Cloud Addon runtime client. It does not register WordPress abilities, own a
 workflow registry, or write WordPress content.
 
+## Current scope and extension discipline
+
+The operator's latest decision on 2026-10-25 keeps current knowledge support
+within text and images. Text includes the public post/page and opt-in comment
+sources below; images use the existing bounded attachment projection. PDF and
+video are explicitly deferred and have not been delivered. This supersedes the
+earlier same-day choice to implement PDF page text and existing video captions.
+A reserved type, metadata field or empty usage bucket is not ingestion,
+retrieval, metering or product-availability evidence.
+
+To keep later expansion possible without building it now:
+
+- Preserve `(site_id, source_type, source_id)` throughout storage, vector
+  identity, retrieval and typed removal; a bare WordPress post ID must not
+  replace a source-qualified identity. Keep existing text/image compatibility.
+- Preserve existing metadata, content-hash and image-fingerprint boundaries.
+  Future source revisions and page/time locators need an explicit validated
+  contract and propagation through chunking, both retrieval backends and the
+  consumer. Current metadata capacity does not prove that locator pipeline.
+- Keep WordPress as source, permission, local attachment and deletion truth.
+  Any future producer must define its update/removal lifecycle. Generic
+  post-ID cleanup is not evidence of typed removal for a new source kind.
+- Keep reserved video/PDF usage buckets read-only and inactive. Before future
+  activation, reconcile the legacy non-media text count and entitlement scope
+  in the [usage contract](portal-site-knowledge-usage-contract-v1.md).
+
+This extension floor does not require new tables, empty fields, parser
+registries, queues, raw-file downloads, OCR, ASR or new commercial meters.
+Future activation needs a newly agreed scope and real input-to-consumer
+acceptance for each type. Current text/image delivery, production state and
+human usage evidence still require their own verification.
+
 ## Runtime Abilities
 
 The Cloud runtime accepts these static managed ability names:
@@ -104,11 +136,72 @@ The media projection separates two revisions:
   description change therefore rebuilds embeddings without requiring another
   visual-recognition call.
 
-A complete media-only refresh is incremental. Existing rows with the same
-`content_hash` remain in place and are reported as `unchanged_documents`;
-changed rows are replaced in the existing Site Knowledge vector subsystem.
-This optimization does not create another cache, queue, registry, or vector
-store.
+For `npcink-cloud/site-knowledge-sync` with both outer and input
+`site_knowledge_sync.v1` contracts, a complete 64-character lowercase hex
+`media_items[].media_fingerprint` is an opaque revision digest for data-guard
+purposes. Embedded digit sequences do not require PII classification. This
+recognition applies only to that exact structural field; secret checks still
+apply, and the same digest in ordinary text, titles, ALT, or URLs remains
+subject to PII checks. Other fingerprint formats keep the existing checks.
+Cloud does not change the request's classification or storage mode.
+
+A complete media-only `refresh` is incremental when `media_items` supplies
+attachment IDs and `documents`/`comments` are empty or omitted. `post_ids` may
+be omitted; if supplied and nonempty, it must exactly match those attachment
+IDs to use this lane. Consumers need not add image IDs to `post_ids`.
+Existing rows with the same `content_hash` remain in place, require no new
+embedding, and are reported as `unchanged_documents`. Changed existing media
+rows replace exact site/type/id SQL chunks only after normalization, embedding
+and quota checks. The vector backend upserts the prepared source before
+pruning obsolete tail chunk indices. That tail cleanup also covers vector-only
+residue when the SQL root is absent. A failed upsert never initiates deletion. The existing unchanged-content shortcut remains unchanged.
+This replacement is a correctness requirement, not merely an embedding
+optimization. Same-number post/page roots, other media and other sites remain
+untouched. `rebuild` retains its existing destructive behavior. All refresh replacements,
+including mixed document/comment delivery and nonmatching nonempty `post_ids`,
+follow the preserve-on-omission rule below. This does not create another cache,
+queue, registry, or vector store, or make SQL presence a vector-cleanliness proof.
+
+### Refresh safety and explicit withdrawal (2026-10-28 candidate)
+
+`refresh` replaces only delivered, normalized and prepared sources. `post_ids`
+selects delivery context and never implies that an omitted source was withdrawn.
+Empty/partial/invalid collections, document or chunk quota skips, failed
+embeddings and interruptions before a source upsert retain that source's old
+SQL rows. Account plan capacity and site capacity are independent checks;
+updating an existing source does not consume a new account document slot.
+Completed full-manifest pruning, explicit delete and explicit rebuild retain
+their separate semantics. Rebuild is still destructive, not an atomic refresh.
+
+`site_knowledge_sync.v1` additively accepts these optional refresh-only lists:
+
+- `withdrawn_post_ids`: at most 1,000 strict positive integer WordPress root IDs;
+  applies the existing legacy post-index deletion scope, including associated
+  comments (not an exact typed media selector).
+- `withdrawn_comment_ids`: at most 1,000 strict positive integer comment IDs;
+  deletes only that site's exact comment source, never a same-number post/media.
+
+Booleans, strings, null, non-positive values and oversized lists are rejected;
+duplicates are deduplicated. A source cannot be both delivered and withdrawn;
+a withdrawn parent cannot contain delivered comments in the same request.
+Validation completes before progress callbacks or index mutation. Explicit
+withdrawals may succeed while unrelated replacements hit quota or fail; they
+are intentional removals, not rollback-protected replacement attempts.
+
+For external vectors, complete prepared source chunks are upserted first, then
+only obsolete `chunk_index >= new_chunk_count` values at exact site/type/id are
+removed. SQL source upsert replaces its chunks without pre-deleting its root.
+There is no distributed SQL/vector transaction: partial external upserts,
+prune failure or a crash between stores remain failed-run reconciliation risks.
+Local fake-vector tests establish ordering and scope, not live Zilliz evidence.
+
+For this semantic change migrate Addon/other signed producers **before Cloud**:
+legitimate privacy/deletion withdrawals must use explicit delete or the new
+markers. Older omission-only producers remain update-compatible but cannot
+withdraw through omission. The Addon keeps legacy `post_ids` while adding
+markers, allowing migration from the older Cloud cleanup behavior. No runtime
+version check or new registry/queue is added. Candidate/merged/M4 evidence and
+production rollout must be reported separately.
 
 `site_knowledge_status.v1` additively accepts up to 20
 `media_attachment_ids`. Its `media_evidence_items` response returns existing
@@ -132,6 +225,111 @@ content manifest. WordPress remains responsible for resolving titles, URLs,
 publication state, and presenting `indexed` versus `not_indexed` status to the
 operator.
 
+## Bounded typed deletion and storage presence
+
+The additive `source_items` field on the existing v1 abilities identifies an
+exact `(authenticated site, source_type, source_id)`. `text` is a legacy usage
+bucket, never a source identity. No new ability, REST route, contract version,
+WordPress write or Portal management surface is introduced.
+
+For `site_knowledge_sync.v1`, selectors are allowed only with `sync_mode=delete`:
+
+```json
+{
+  "contract_version": "site_knowledge_sync.v1",
+  "sync_mode": "delete",
+  "source_items": [{"source_type": "page", "source_id": 42}, {"source_type": "media", "source_id": 84}],
+  "operation_source": "admin_selected_delete",
+  "write_posture": "suggestion_only",
+  "direct_wordpress_write": false
+}
+```
+
+When present, `source_items` must be a list of 1–100 objects before
+deduplication. Every object has exactly `source_type` and `source_id`; the ID
+must be a strictly positive JSON integer (not bool, float or numeric string).
+Delete supports `post`, `page`, `media`; status additionally supports read-only
+`comment`. Duplicates collapse in first-input order; every distinct status
+selector receives one result. Empty, malformed, unknown-type and over-limit
+selectors fail with `SiteKnowledgeContractViolation`, never a whole-site
+fallback. Input cannot override `site_id`, `customer_id` or `account_id`.
+Typed delete rejects even empty `post_ids`, `documents`, `comments`,
+`media_items` or `maintenance` fields. Selectors on refresh/rebuild/search are
+rejected. Without `source_items`, all legacy selector/delete behavior remains.
+
+All selectors and post/page identity conflicts are checked before any deletion.
+Typed root removal uses exact site/type/ID in SQL and vector storage. A selected
+post/page additionally removes only comments linked by that site's
+`source_type=comment AND parent_post_id=root_id`: SQL documents and chunks
+(including orphan chunks) supply deduplicated comment identities, and an exact
+vector comment/parent filter also removes vector-only leftovers. A stored or
+selected opposite post/page type at the same ID fails the whole batch closed
+with `site_knowledge.source_identity_conflict`; comments lack a typed parent
+and cannot safely be assigned between those article roots. Before any batch
+deletion or progress side effect, preflight checks both relational storage and
+the active vector backend for that opposite typed root, including stale or
+vector-only residue left by a partial write. The vector check is an exact
+authenticated-site/type/ID scalar query with strong consistency, limited to
+one identity and no content retrieval; it is not approximate vector search.
+A query error or malformed response fails closed with
+`site_knowledge.zilliz_probe_failed`, with no batch deletions. This narrow
+preflight does not add vector observations to relational `source_presence`
+or promise exclusion of concurrent writers. Same-number media
+is an independent identity and is preserved. Media delete never cascades to
+its parent, sibling images, featured/embedded attachments or comments.
+
+Both storage operations must finish before cleanup reports completed. These
+stores do not form a distributed transaction: an exception can leave partial
+vector cleanup or rolled-back SQL. A failure is not evidence of released
+capacity or permission to automatically repeat an administrator confirmation.
+Existing runtime replay semantics remain unchanged: after an older producer
+rewrites a source, replaying the original delete key returns its old run. A
+separately approved, stable compensation attempt needs a distinct key; replay
+of that attempt keeps its own key and payload. This Cloud slice adds no
+operation registry, retry engine or producer suppression.
+
+For fresh relational readback, `site_knowledge_status.v1` accepts the same
+selectors and adds this top-level result member only when requested:
+
+```json
+{
+  "source_presence": {
+    "status": "complete",
+    "storage_scope": "relational_index",
+    "observed_at": "2026-10-25T08:00:00Z",
+    "requested_count": 1,
+    "items": [{
+      "source_type": "page",
+      "source_id": 42,
+      "document_present": false,
+      "stored_chunk_count": 0,
+      "public_document_present": false,
+      "public_chunk_count": 0,
+      "associated_comment_document_count": 0,
+      "associated_comment_stored_chunk_count": 0
+    }]
+  }
+}
+```
+
+`document_present` and `stored_chunk_count` include every stored status,
+including stale documents/chunks and orphan chunks. The separate public fields
+count only `post_status=publish` rows; they are index evidence, not a claim
+about current WordPress permissions. Post/page items separately count linked
+comment documents and chunks of all statuses; media/comment items return zero
+for those associated fields. An absent root with linked comment residue is
+therefore not fully removed. Responses contain identity/counts only, no body or
+other-site records. `observed_at` is this SQL read's time, not a global revision
+or a vector snapshot; relational status never claims to have queried vectors.
+Backend deletion/retrieval evidence must be checked independently. Capacity
+remains the separate existing usage projection and cannot prove a particular
+source absent or restored.
+
+This is the Cloud portion of text/image self-service reduction. Addon CAS
+pending/exclusion/restore state, complete image production, dispatch suppression,
+fresh-read consumption, bounded compensation ownership and the WordPress admin
+UI remain follow-up work. PDF/video ingestion, OCR and ASR remain deferred.
+
 ## Metering Boundary
 
 `npcink-cloud/site-knowledge-sync` is server-classified index maintenance. It
@@ -152,6 +350,13 @@ unmetered provider-cost bypass, and an exhausted AI-credit balance cannot block
 the maintenance needed to keep an already-entitled Site Knowledge index fresh.
 
 ## Vector Backend
+
+Retained historical targets may use the existing `stale` qualification while
+keeping their SQL/vector content. The bounded development operator lane and
+additive public-text delivery-length evidence are specified in
+[Source Evidence v1](site-knowledge-source-evidence-v1.md). Upstream delivery
+clipping is separate from Cloud normalization clipping; neither a missing
+legacy counter nor `content_truncated=false` proves full WordPress-body coverage.
 
 Site Knowledge now uses one Cloud-owned vector profile as its configuration
 truth:
@@ -404,6 +609,12 @@ ranking. Toolbox and other consumers may request a granularity, but they must
 not implement independent semantic dedupe or relevance scoring. Existing
 callers that omit the field continue to receive chunk-level results.
 
+The PostgreSQL JSON fallback is bounded to the newest `5000` indexed chunks.
+Its `result_grouping` metadata includes `candidate_window_limit=5000` and sets
+`candidate_window_limited=true` when the candidate window reaches that bound.
+That flag is a retrieval warning, not evidence that older content has no match.
+Production Zilliz retrieval remains responsible for scalable candidate search.
+
 Search also verifies that indexed chunks and the current query use the same
 embedding space, identified as `provider_id:model_id`. Embeddings produced by
 different models are different vector spaces and must not be compared, even
@@ -465,7 +676,12 @@ Supported first workflows:
   does not echo those passages.
   When a vector candidate and a source passage share a specific exact phrase,
   the result adds `anchor_or_context` plus bounded `anchor_evidence`; generic
-  phrases and the complete target title are rejected. Results continue to
+  phrases and the complete target title are rejected. Recognized URL, fenced/inline
+  code, pre/code/script/style block, CSS rule/comment and shortcode spans are
+  blanked before exact matching, preserving passage indices. This conservative
+  text guard is not a complete Markdown/HTML parser. Re-enrichment clears stale
+  anchor hints before recomputing them; WordPress editor range checks remain
+  mandatory. Results continue to
   include `anchor_text_candidates`, `link_target`, `suggested_action`, and
   `insert_mode=wordpress_local_only`.
   Cloud ranks this intent with vector retrieval, optional provider reranking,
@@ -684,3 +900,33 @@ Smoke evidence is written under `.tmp/site-knowledge-real-chain-smoke/` and must
 not be committed. Evidence contains only redacted configuration and pass/fail
 counts; it must not include provider keys, Cloud secrets, raw embeddings, query
 text, or chunk text.
+
+## Recommendation abstention version
+
+The recommendation intents now report their independently versioned v2 policy
+in `result_grouping.ranking_version`; search transport remains
+`site_knowledge_search.v1`. See [reading-task abstention v2](site-knowledge-reading-task-abstention-v2.md)
+for the successful-empty contract, evidence counters and unchanged v1 control.
+Other search intents retain their existing policy and response shape.
+
+## Local multimodal development profile (2026-10-29)
+
+The M4-only Qwen3-VL-Embedding-8B Q4 profile uses 4096D text and image embeddings
+in one space. Media sync accepts optional `media_items[].source_artifact_id`,
+reusing the existing site-scoped artifact ownership, expiry and byte checks.
+The background runtime projection forwards its already validated artifact ID.
+Otherwise only bounded public HTTPS image fetches are accepted; private URLs
+are not a fallback. The loader supports JPEG/PNG/WebP, at most 8 MiB/16M pixels,
+and derives a metadata-free 768px JPEG. Image bytes/base64 never enter knowledge
+SQL chunks or search results. A visual embedding is not a generated caption.
+
+Native Ollama requests use `/api/embed` with non-truncating text input or an image
+input object. Responses must have exactly 4096 finite, nonzero components. An
+unavailable/invalid image or vector leaves the previous source index intact.
+Incremental media refresh skips unchanged content only when that source already
+has a pixel embedding in the current local space. A metadata-only legacy vector
+must be upgraded through normal image loading even when its content hash matches.
+The additive Admin vector-profile `runtime` object reports actual environment,
+provider/model, dimensions, backend and index-space status without changing
+the production profile or existing credential/rebuild contracts. See the
+[local operations procedure](m4-preview-development-v1.md#unified-local-multimodal-embedding-2026-10-29).

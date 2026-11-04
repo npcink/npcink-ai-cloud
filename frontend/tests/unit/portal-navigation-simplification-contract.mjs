@@ -21,9 +21,10 @@ assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'portal navbar must de
 const primaryHrefs = Array.from(primarySource.matchAll(/href:\s*'([^']+)'/g), (match) => match[1]);
 assert.deepEqual(
   primaryHrefs,
-  ['/portal', '/portal/billing', '/portal/usage', '/portal/support', '/portal/account'],
-  'portal primary nav must merge overview and sites into service while keeping package, usage, tickets, and account'
+  ['/portal', '/portal/billing', '/portal/support', '/portal/account'],
+  'portal primary nav must be service / package / tickets / account (usage lives under package)'
 );
+assert.doesNotMatch(primarySource, /\/portal\/usage/, 'usage must not be a separate primary navigation entry (Spec: package page site list)');
 assert.doesNotMatch(primarySource, /\/portal\/sites/, 'sites must not remain a separate primary navigation entry');
 
 assert.doesNotMatch(
@@ -46,8 +47,8 @@ assert.equal(existsSync(monitoringPath), false, 'retired monitoring redirect rou
 assert.equal(existsSync(sitesRedirectPath), false, 'retired sites redirect route must be deleted');
 assert.match(
   auditSource,
-  /data-portal-support-deeplink="audit"/,
-  'recent activity may remain only as a support-request deep link'
+  /data-portal-account-deeplink="audit"/,
+  'recent activity may remain as an account deep link'
 );
 assert.match(
   navbarSource,
@@ -71,16 +72,40 @@ assert.match(
 );
 
 assert.match(i18nSource, /'portal\.nav_package': 'Package'/, 'English nav copy must expose package as its own entry');
-assert.match(i18nSource, /'portal\.nav_service': 'Account service'/, 'English nav copy must identify the account service entry');
-assert.match(i18nSource, /'portal\.nav_usage': 'Usage'/, 'English nav copy must expose usage as its own entry');
+assert.match(i18nSource, /'portal\.nav_service': 'Service'/, 'English nav copy must identify the service workspace entry');
+assert.match(i18nSource, /'portal\.nav_usage': 'Usage'/, 'legacy usage nav copy stays translated for the /portal/usage deep link');
 assert.match(i18nSource, /'portal\.workspace_label': 'Overview'/, 'English overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_support_requests': 'Tickets'/, 'English nav copy must expose support tickets as their own entry');
 assert.match(i18nSource, /'portal\.nav_account': 'Account'/, 'English nav copy must expose account and sign-in settings');
 assert.match(i18nSource, /'portal\.nav_package': '套餐'/, 'Chinese nav copy must expose package as its own entry');
-assert.match(i18nSource, /'portal\.nav_service': '账号服务'/, 'Chinese nav copy must identify the account service entry');
-assert.match(i18nSource, /'portal\.nav_usage': '用量'/, 'Chinese nav copy must expose usage as its own entry');
+assert.match(i18nSource, /'portal\.nav_service': '服务'/, 'Chinese nav copy must identify the service workspace entry');
+assert.match(i18nSource, /'portal\.nav_usage': '用量'/, 'legacy usage nav copy stays translated for the /portal/usage deep link');
 assert.match(i18nSource, /'portal\.workspace_label': '概览'/, 'Chinese overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_support_requests': '工单'/, 'Chinese nav copy must expose support tickets as their own entry');
 assert.match(i18nSource, /'portal\.nav_account': '账号'/, 'Chinese nav copy must expose account and sign-in settings');
+
+assert.match(
+  navbarSource,
+  /const logoutLabel = t\('portal\.nav_logout'/,
+  'portal navbar Logout copy must come from portal.nav_logout'
+);
+assert.match(i18nSource, /'portal\.nav_logout': 'Logout'/, 'English portal nav logout stays translated');
+assert.match(i18nSource, /'portal\.nav_logout': '退出'/, 'Chinese portal nav logout must use the compact label');
+assert.match(i18nSource, /'portal\.logout': '退出登录'/, 'shared logout copy used by Admin must retain its original label');
+assert.match(
+  navbarSource,
+  /<button[^>]*?\n?[\s\S]{0,200}data-portal-nav="logout"[\s\S]{0,600}?>\s*\{logoutLabel\}\s*<\/button>/,
+  'portal navbar desktop Logout must be a plain text button (Spec: 明文「退出」, no icon-only control)'
+);
+assert.doesNotMatch(
+  navbarSource,
+  /data-portal-nav="account-menu"|portal\.account\.menu_settings|portal\.account\.menu_orders/,
+  'portal navbar must not keep the account dropdown (settings / orders / signed-in as)'
+);
+assert.match(
+  navbarSource,
+  /href: '\/portal\/account'/,
+  'portal primary nav must keep Account as the path to account settings and orders'
+);
 
 console.log('portal_navigation_simplification_contract: ok');

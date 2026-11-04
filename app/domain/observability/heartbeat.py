@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from app.core.config import Settings
+from app.domain.commercial.service import CommercialService
+
+WORKER_HEARTBEAT_EVENT_KIND = "worker.heartbeat"
+WORKER_SCOPE_KIND = "worker"
+EXPECTED_WORKER_IDS = (
+    "runtime_queue",
+    "callback_dispatch",
+    "ops_cadence",
+)
+
+
+def expected_worker_ids(settings: Settings) -> tuple[str, ...]:
+    return EXPECTED_WORKER_IDS
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def build_worker_heartbeat_summary(
+    settings: Settings,
+    *,
+    worker_ids: tuple[str, ...] | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    effective_worker_ids = worker_ids or expected_worker_ids(settings)
+    current_time = (now or datetime.now(UTC)).astimezone(UTC)
+    interval_seconds = max(30, int(settings.worker_heartbeat_interval_seconds))
+    stale_after_seconds = interval_seconds * 2
+    heartbeat_events = _dict_items(
+        CommercialService(
+            settings.database_url,
+            settings=settings,
+        )
+        .list_service_audit_events(
+            event_kind=WORKER_HEARTBEAT_EVENT_KIND,
+            outcome="succeeded",
+            limit=max(20, len(effective_worker_ids) * 10),
+            include_payload=True,
+        )
+        .get("items")
+    )
+
+    latest_by_worker: dict[str, dict[str, object]] = {}
+    for event in heartbeat_events:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        worker_id = str(payload.get("worker_id") or event.get("scope_id") or "").strip()
+        if not worker_id or worker_id in latest_by_worker:
+            continue
+        latest_by_worker[worker_id] = event
+
+    items: list[dict[str, object]] = []
+    for worker_id in effective_worker_ids:
+        latest_event = latest_by_worker.get(worker_id)
+        payload = latest_event.get("payload") if isinstance(latest_event, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        recorded_at = _parse_timestamp(
+            payload.get("recorded_at") or (latest_event or {}).get("created_at")
+        )
+        age_seconds = (
+            max(0, int((current_time - recorded_at).total_seconds()))
+            if recorded_at is not None
+            else -1
+        )
+        if recorded_at is None:
+            freshness = "missing"
+        elif age_seconds > stale_after_seconds:
+            freshness = "stale"
+        elif age_seconds > interval_seconds:
+            freshness = "attention"
+        else:
+            freshness = "fresh"
+        items.append(
+            {
+                "worker_id": worker_id,
+                "freshness": freshness,
+                "status": str(payload.get("status") or ""),
+                "last_seen_at": str(
+                    payload.get("recorded_at") or (latest_event or {}).get("created_at") or ""
+                ),
+                "age_seconds": age_seconds,
+            }
+        )
+
+    return {
+        "generated_at": current_time.isoformat().replace("+00:00", "Z"),
+        "interval_seconds": interval_seconds,
+        "stale_after_seconds": stale_after_seconds,
+        "items": items,
+        "totals": {
+            "workers_total": len(items),
+            "fresh_total": sum(1 for item in items if item["freshness"] == "fresh"),
+            "attention_total": sum(1 for item in items if item["freshness"] == "attention"),
+            "stale_total": sum(1 for item in items if item["freshness"] == "stale"),
+            "missing_total": sum(1 for item in items if item["freshness"] == "missing"),
+        },
+    }
+
+
+def _dict_items(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        {str(key): item for key, item in candidate.items()}
+        for candidate in value
+        if isinstance(candidate, dict)
+    ]

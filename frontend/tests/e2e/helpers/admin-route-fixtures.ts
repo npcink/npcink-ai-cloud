@@ -1,9 +1,20 @@
 import type { Page } from '@playwright/test';
+import { packCatalog } from '../../fixtures/admin-credit-packs';
 import { buildAdminApiEnvelope } from './admin-operator-fixture';
 
 export async function installRouteAcceptanceMocks(page: Page, routePattern: string) {
   // Route-owned fixtures use the current default window and projection contract.
   // Missing endpoints still fail through installAdminMocks' strict fallback.
+  if (routePattern === '/admin/credit-packs') {
+    await page.route('**/api/admin/credit-packs', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ json: buildAdminApiEnvelope(packCatalog()) });
+    });
+  }
+
   if (routePattern === '/admin/media-observability' || routePattern === '/admin/vector-observability') {
     const media = routePattern === '/admin/media-observability';
     await page.route(`**/api${routePattern}?*`, async (route) => {

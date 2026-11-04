@@ -39,6 +39,23 @@ mutation notices, receipts, forms, diagnostics, and secondary help.
 Persistent boundary guidance should use a concise information hint or nearby
 help entry. It should not interrupt the primary task on every visit.
 
+### 3.1 Progressive disclosure
+
+- Keep the current object, textual state, frequent action, and next step visible.
+  Errors, unconfirmed evidence, save blockers, and potential Provider cost must
+  not be available only on hover.
+- Short non-interactive explanations use the shared `AdminHelpTip`, available
+  through hover, keyboard focus, and click. Interactive or long content uses an
+  explicit disclosure, dialog, or drawer.
+- Put batch maintenance, reference preferences, historical
+  evidence, and other infrequent operations behind clearly named disclosures
+  or More menus. Preserve recovery functionality and confirmation safeguards;
+  low frequency alone does not justify deleting a capability.
+- Show model context, reference price, and capability detail on demand instead
+  of repeating them in every row. Hide pagination when the result has one page.
+- Remove repeated descriptions and prose explaining the UI design itself.
+  Do not replace compact working tables with extra cards or nested tables.
+
 ## 4. Feedback Taxonomy
 
 ### 4.1 Transient success
@@ -50,6 +67,12 @@ copy, and refresh operations when no further operator decision is required.
 - Default duration is 5 seconds.
 - Copy names the affected object and the completed outcome.
 - A success Toast may point to persistent audit detail.
+- Each operation has one announcement owner. If a visible inline result or
+  receipt already announces the outcome, do not also show the same Toast.
+  Keep Toast feedback when a receipt is only reachable through a closed
+  latest-operation entry, or when no inline outcome exists.
+- Put browsing filters next to the list and label their scope/persistence.
+  Do not present a view-only selector as a saved mutation setting.
 
 ### 4.2 Contextual form feedback
 
@@ -78,6 +101,19 @@ The receipt is durable follow-up evidence, not a second success banner.
 
 - Keep the latest receipt reachable from the task toolbar, affected object, or
   contextual detail surface.
+- Store a visible receipt above any panel that is unmounted by an operation's
+  refresh or task-tab switch. Removing a duplicate Toast must not leave the
+  operator without a durable result after that refresh.
+- Default feedback is a compact, localized business result (for example,
+  “用途配置已保存，后续调用将按新配置选择模型。”), with an optional
+  “查看变更记录” link. Derive the result from the receipt event and outcome;
+  never infer successful execution or validation from a successful save.
+- Keep backend summaries, machine event/outcome values, scope IDs, record IDs
+  and copyable raw receipts behind a default-closed “操作详情” disclosure or
+  existing contextual inspector. Do not show a second oversized success card
+  containing English backend prose on Chinese pages.
+- Failed, partial, unknown results and unavailable audit records remain explicit
+  in the default view. Unknown outcomes must not inherit success styling/copy.
 - Open full receipt data in a dialog, drawer, or dedicated audit view.
 - Preserve copyable receipt text, audit filters, scope, outcome, and audit event
   reference.
@@ -92,10 +128,10 @@ The receipt is durable follow-up evidence, not a second success banner.
   incomplete or unsupported.
 - Preserve the backend `audit_state` separately from the mutation `outcome`.
   `persisted` means the audit follow-up entry exists; `unavailable` means the
-  governed mutation succeeded but its best-effort audit evidence could not be
-  persisted; `not_applicable` is reserved for operations whose contract does
+  best-effort operation record could not be saved, independently of whether
+  the operation succeeded or failed; `not_applicable` is reserved for operations whose contract does
   not require audit evidence.
-- When `audit_state=unavailable`, keep the successful operation summary, show
+- When `audit_state=unavailable`, keep the actual operation summary, show
   an explicit audit warning, hide the audit-trail link, and tell the operator
   not to repeat the mutation solely to manufacture audit evidence.
 - Do not permanently expand the page title or summary panel with receipt cards.
@@ -127,7 +163,10 @@ The receipt is durable follow-up evidence, not a second success banner.
 
 The supplier workspace is the first implementation of this contract:
 
-- save, delete, and standalone connection-test outcomes use global Toast;
+- supplier save and delete outcomes use global Toast; standalone connection
+  checks use one row-level result naming the completed stage;
+- automatic catalog refresh after save does not create another row success;
+  next-step content offers an action, and partial catalog failure stays with retry;
 - form-specific guidance and failures stay in the provider dialog;
 - the latest backend receipt remains stored;
 - a compact `Latest operation` toolbar action opens receipt detail;
@@ -145,5 +184,9 @@ pnpm --dir frontend run test:contracts
 pnpm run check:fast
 ```
 
-Also inspect the changed route at desktop and narrow mobile widths in both
-light and dark mode when the change affects shared visual primitives.
+PC is the current product scope; mobile and tablet are not acceptance targets.
+Use the selective verification contract in
+[frontend-pc-scope-and-selective-verification-v1.md](frontend-pc-scope-and-selective-verification-v1.md).
+Verify changed geometry at the narrow PC preview (~1056px) and ordinary desktop.
+Check dark styling when colors, surfaces, or interactive state styling changes;
+do not repeat unrelated theme/device matrices for copy-only changes.

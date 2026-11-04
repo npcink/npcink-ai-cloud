@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -24,6 +25,18 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+
+# Portal usage buckets. "text" matches the vector_documents entitlement
+# (all non-media documents); media filters indexed image source records.
+# A bucket's metering unit is the quantity each row's `used` field counts:
+# text = documents, media = indexed images, video/pdf = reserved source types.
+ACCOUNT_USAGE_SOURCE_TYPES = ("text", "media", "video", "pdf")
+ACCOUNT_USAGE_METERING_UNITS = {
+    "text": "document",
+    "media": "image",
+    "video": "video",
+    "pdf": "pdf",
+}
 
 
 def cleanup_site_knowledge_observability(
@@ -245,7 +258,6 @@ class SiteKnowledgeObservabilityService:
                 .where(*search_conditions)
                 .group_by(SiteKnowledgeSearchMetric.site_id)
                 .order_by(desc(func.count(SiteKnowledgeSearchMetric.id)))
-                .limit(50)
             ).all()
             error_rows = session.execute(
                 select(
@@ -271,6 +283,8 @@ class SiteKnowledgeObservabilityService:
             index_metrics=index_metrics,
             search_metrics=search_metrics,
         )
+        sites = self._build_sites(site_rows, latest_snapshots, index_metrics, search_metrics)
+        failure_groups = self._build_failure_groups(index_metrics, search_metrics)
         return {
             "contract_version": "magick-vector-observability-summary-v1",
             "generated_at": self._format_datetime(current_time),
@@ -289,26 +303,73 @@ class SiteKnowledgeObservabilityService:
                 window_hours=bounded_hours,
             ),
             "intents": [self._intent_summary(row) for row in intent_rows],
-            "sites": [
-                self._site_summary(row, latest_snapshots=latest_snapshots) for row in site_rows
-            ],
+            "sites": sites[:50],
+            "sites_total": len(sites),
+            "sites_limit": 50,
+            "sites_truncated": len(sites) > 50,
+            "failure_groups": failure_groups[:25],
+            "failure_groups_total": len(failure_groups),
+            "failure_groups_limit": 25,
+            "failure_groups_truncated": len(failure_groups) > 25,
             "index_snapshots": [
                 self._snapshot_summary(snapshot) for snapshot in latest_snapshots.values()
             ],
             "errors": [self._error_summary(row) for row in error_rows],
         }
 
-    def get_account_document_breakdown(self, *, site_ids: list[str]) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(
-                site_ids, exclude_source_type="media"
+    def get_account_document_breakdown(
+        self,
+        *,
+        site_ids: list[str],
+        source_type: str = "text",
+    ) -> dict[str, object]:
+        normalized_source_type = str(source_type).strip().lower()
+        if normalized_source_type not in ACCOUNT_USAGE_SOURCE_TYPES:
+            raise ValueError(
+                f"unsupported site knowledge usage source type: {source_type!r}"
             )
-        return {
-            "sites": sites,
-            "total_indexed_document_count": sum(
-                _coerce_int(site.get("indexed_document_count"), default=0) for site in sites
-            ),
+        with get_session(self.database_url) as session:
+            repository = SiteKnowledgeRepository(session)
+            if normalized_source_type == "text":
+                sites = repository.list_document_counts_by_site(
+                    site_ids, exclude_source_type="media"
+                )
+            elif normalized_source_type == "media":
+                sites = repository.list_document_counts_by_site(
+                    site_ids, source_type=normalized_source_type
+                )
+            else:
+                # Reserved buckets: no ingestion/counting contract is enabled yet.
+                sites = []
+        rows: list[dict[str, object]] = []
+        for site in sites:
+            used = _coerce_int(site.get("indexed_document_count"), default=0)
+            # Non-text buckets only list sites that actually hold the resource,
+            # so an unused account returns items: [] for empty-state rendering.
+            if normalized_source_type != "text" and used <= 0:
+                continue
+            row: dict[str, object] = {
+                "site_id": str(site.get("site_id") or ""),
+                "site_name": str(site.get("site_name") or ""),
+                "status": str(site.get("status") or ""),
+                "used": used,
+                "last_indexed_at": str(site.get("last_indexed_at") or ""),
+            }
+            if normalized_source_type == "text":
+                # Legacy field consumed by the existing portal text breakdown.
+                row["indexed_document_count"] = used
+            rows.append(row)
+        total_used = sum(_coerce_int(row.get("used"), default=0) for row in rows)
+        payload: dict[str, object] = {
+            "source_type": normalized_source_type,
+            "metering_unit": ACCOUNT_USAGE_METERING_UNITS[normalized_source_type],
+            "items": rows,
+            "total_used": total_used,
         }
+        if normalized_source_type == "text":
+            payload["sites"] = rows
+            payload["total_indexed_document_count"] = total_used
+        return payload
 
     def _latest_snapshots(
         self,
@@ -397,6 +458,63 @@ class SiteKnowledgeObservabilityService:
             "avg_latency_ms": self._optional_avg(row[4]),
         }
 
+    def _build_sites(
+        self,
+        rows: Sequence[Any],
+        snapshots: dict[str, SiteKnowledgeIndexSnapshot],
+        index_metrics: list[SiteKnowledgeIndexJobMetric],
+        search_metrics: list[SiteKnowledgeSearchMetric],
+    ) -> list[dict[str, Any]]:
+        sites: dict[str, dict[str, Any]] = {
+            str(row[0]): self._site_summary(row, latest_snapshots=snapshots) for row in rows
+        }
+        site_ids = set(snapshots) | {m.site_id for m in index_metrics}
+        for site_id in site_ids - sites.keys():
+            sites[site_id] = self._site_summary(
+                (site_id, 0, 0, 0, None, None), latest_snapshots=snapshots
+            )
+        for item in sites.values():
+            item.update(
+                index_jobs_total=0, index_failed_total=0, search_failed_total=0,
+                last_index_job_finished_at="",
+            )
+        for metric in index_metrics:
+            item = sites[metric.site_id]
+            item["index_jobs_total"] += 1
+            item["index_failed_total"] += int(metric.status == "failed")
+            item["last_index_job_finished_at"] = max(
+                str(item["last_index_job_finished_at"]), self._format_datetime(metric.finished_at)
+            )
+        for search in search_metrics:
+            sites[search.site_id]["search_failed_total"] += int(search.status == "failed")
+        return sorted(
+            sites.values(), key=lambda item: (-int(item["queries_total"]), str(item["site_id"]))
+        )
+
+    def _build_failure_groups(
+        self,
+        index_metrics: list[SiteKnowledgeIndexJobMetric],
+        search_metrics: list[SiteKnowledgeSearchMetric],
+    ) -> list[dict[str, Any]]:
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        for kind, metrics in (("index", index_metrics), ("search", search_metrics)):
+            for metric in metrics:
+                if metric.status != "failed":
+                    continue
+                code = metric.error_code or ""
+                group = groups.setdefault((kind, code), {
+                    "kind": kind, "error_code": code, "count": 0, "last_seen_at": "",
+                })
+                group["count"] += 1
+                group["last_seen_at"] = max(
+                    group["last_seen_at"],
+                    self._format_datetime(metric.finished_at or metric.created_at),
+                )
+        return sorted(
+            groups.values(),
+            key=lambda item: (-int(item["count"]), item["kind"], item["error_code"]),
+        )
+
     def _site_summary(
         self,
         row: Any,
@@ -418,6 +536,7 @@ class SiteKnowledgeObservabilityService:
             "document_count": int(snapshot.document_count or 0) if snapshot else 0,
             "chunk_count": int(snapshot.chunk_count or 0) if snapshot else 0,
             "last_indexed_at": self._format_datetime(snapshot.last_indexed_at) if snapshot else "",
+            "captured_at": self._format_datetime(snapshot.captured_at) if snapshot else "",
         }
 
     def _snapshot_summary(self, snapshot: SiteKnowledgeIndexSnapshot) -> dict[str, object]:
@@ -524,6 +643,9 @@ class SiteKnowledgeObservabilityService:
             timeline.append(
                 {
                     "bucket_start_at": self._format_datetime(bucket_start),
+                    "bucket_end_at": self._format_datetime(
+                        min(end_at, bucket_start + timedelta(seconds=bucket_seconds))
+                    ),
                     "index_jobs_total": bucket["index_jobs_total"],
                     "indexed_chunks_total": bucket["indexed_chunks_total"],
                     "search_queries_total": bucket["search_queries_total"],

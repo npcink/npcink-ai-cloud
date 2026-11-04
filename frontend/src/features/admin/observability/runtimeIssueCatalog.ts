@@ -1,3 +1,4 @@
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
 import { formatNumber } from '@/lib/utils';
 import { statusTone } from '@/features/admin/observability/runtimeTelemetry';
 
@@ -61,7 +62,7 @@ export const evidenceLanes: EvidenceLane[] = [
     descKey: 'admin.advanced.ai_advisor_desc',
     descFallback: 'AI-assisted diagnosis for selected operational signals.',
   },
-];
+].filter(lane => !OPERATIONS_ADVISOR_PAUSED || lane.id !== 'advisor');
 
 export const runtimeEvidenceItems = [
   {
@@ -116,6 +117,7 @@ export function issueTitle(issue: { code: string; title: string }, t: Translatio
 
 export function issueAction(issue: { code: string; suggestedAction: string }, t: TranslationFn): string {
   if (issue.code === 'hosted_model.provider_errors') return t('admin.troubleshooting.action_provider_failures', {}, 'Inspect the failure details and next actions below.');
+  if (issue.code === 'hosted_model.failed_runs') return t('admin.troubleshooting.action_failed_run_records');
   const knownActions: Record<string, [string, string]> = {
     inspect_metering_callback_or_usage_event_mapping: ['admin.troubleshooting.action_check_metering', 'Ask technical support to check usage event recording and request association for the affected functions.'],
     inspect_provider_credentials_quota_and_health: ['admin.troubleshooting.action_check_provider_health', 'Check supplier health, credentials, and quota evidence.'],
@@ -146,7 +148,28 @@ export function issueEvidenceGuidance(issue: { code: string }, t: TranslationFn)
   if (issue.code === 'hosted_model.provider_errors') {
     return t('admin.troubleshooting.evidence_provider_error', {}, 'This represents provider-call errors. Confirm the individual run evidence before declaring recovery.');
   }
-  return t('admin.troubleshooting.evidence_runtime_failure', {}, 'This represents runtime failures in the selected telemetry window.');
+  if (issue.code === 'hosted_model.failed_runs') return t('admin.troubleshooting.evidence_runtime_failure', {}, 'This represents runtime failures in the selected telemetry window.');
+  return t('admin.troubleshooting.evidence_unknown');
+}
+
+export function issueImpact(issue: { code: string }, t: TranslationFn): string {
+  const keys: Record<string, string> = {
+    'hosted_model.provider_errors': 'provider',
+    'hosted_model.failed_runs': 'failed',
+    'hosted_model.provider_call_gap': 'call_gap',
+    'hosted_model.unmetered_runs': 'meter_gap',
+  };
+  return t(`admin.troubleshooting.impact_${keys[issue.code] || 'unknown'}`);
+}
+
+export function providerFailureAction(reason: string, t: TranslationFn): string {
+  const keys: Record<string, string> = { output_schema_invalid: 'schema', invalid_request: 'invalid_request', timeout: 'timeout' };
+  return t(`admin.troubleshooting.failure_step_${keys[reason] || 'unknown'}`);
+}
+
+export function issueVerification(issue: { code: string }, t: TranslationFn): string {
+  const evidenceGap = issue.code === 'hosted_model.provider_call_gap' || issue.code === 'hosted_model.unmetered_runs';
+  return t(`admin.troubleshooting.verify_${evidenceGap ? 'evidence' : 'outcome'}`);
 }
 
 export function severityLabel(severity: string, t: TranslationFn): string {
@@ -192,4 +215,16 @@ export function runStatusLabel(status: string, t: TranslationFn): string {
   if (status.toLowerCase() === 'succeeded') return t('admin.troubleshooting.run_succeeded');
   if (status.toLowerCase() === 'failed') return t('admin.troubleshooting.run_failed');
   return status;
+}
+
+export function providerEvidenceLabel(state: string | undefined, t: TranslationFn): string {
+  const labels: Record<string, string> = {
+    recorded: 'admin.troubleshooting.evidence_recorded',
+    pending: 'admin.troubleshooting.evidence_pending',
+    failed_without_call: 'admin.troubleshooting.evidence_failed_without_call',
+    canceled_without_call: 'admin.troubleshooting.evidence_canceled_without_call',
+    missing: 'admin.troubleshooting.evidence_missing',
+    not_required: 'admin.troubleshooting.evidence_not_required',
+  };
+  return t(labels[state || ''] || 'admin.troubleshooting.evidence_unverified');
 }

@@ -1,5 +1,6 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { test } from './helpers/critical-network-fixture';
+import { captureIsolatedCheckpoint } from './helpers/isolated-channel-fixture';
 
 const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
@@ -83,6 +84,7 @@ async function installLoginFlowMocks(
     initialRateLimitSeconds = 0,
     resendRateLimitSeconds = 0,
     remainingFreeCredits = 300,
+    addonAccounts = [{ account_id: 'acct_portal_login_e2e', name: 'Portal Login E2E', site_count: 0 }],
   }: {
     initiallyLoggedIn?: boolean;
     withSessionCookie?: boolean;
@@ -90,6 +92,7 @@ async function installLoginFlowMocks(
     initialRateLimitSeconds?: number;
     resendRateLimitSeconds?: number;
     remainingFreeCredits?: number;
+    addonAccounts?: Array<{ account_id: string; name: string; site_count: number }>;
   } = {}
 ) {
   let loggedIn = initiallyLoggedIn;
@@ -218,6 +221,11 @@ async function installLoginFlowMocks(
       return;
     }
 
+    if (pathname === '/auth/login-options') {
+      await fulfillJson(route, { qq_available: true });
+      return;
+    }
+
     if (pathname === '/auth/qq/start') {
       qqStartReturnTo = String(url.searchParams.get('return_to') || '');
       expect(url.searchParams.get('intent')).toBe('login');
@@ -249,15 +257,7 @@ async function installLoginFlowMocks(
     }
 
     if (pathname === '/addon-connection-accounts') {
-      await fulfillJson(route, {
-        items: [
-          {
-            account_id: 'acct_portal_login_e2e',
-            name: 'Portal Login E2E',
-            site_count: 0,
-          },
-        ],
-      });
+      await fulfillJson(route, { items: addonAccounts });
       return;
     }
 
@@ -298,9 +298,13 @@ test('QQ is a first-class login entry and preserves the Portal return path', asy
   const calls = await installLoginFlowMocks(page);
 
   await page.goto('/portal/login?redirect=/portal/usage');
-  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+  // Button label is aria-only (QQ Connect mark image); wait until login-options marks QQ available.
+  const qq = page.getByRole('button', { name: /QQ 登录|QQ login/i });
+  await expect(qq).toBeVisible();
+  await qq.click();
 
   await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
+  // Legacy /portal/usage deep-link remains a valid return_to (shim → billing#usage).
   expect(calls.qqStartReturnTo()).toBe('/portal/usage');
 });
 
@@ -309,7 +313,9 @@ test('registration preserves a selected paid plan through QQ authentication', as
 
   await page.goto('/portal/register?plan=pro');
   await expect(page.getByText(/Continue with Pro after signup|注册后继续选择 Pro/i)).toBeVisible();
-  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+  const qq = page.getByRole('button', { name: /QQ 登录|QQ login/i });
+  await expect(qq).toBeVisible();
+  await qq.click();
 
   await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
   expect(calls.qqStartReturnTo()).toBe('/portal/billing?plan=pro&action=upgrade');
@@ -401,6 +407,18 @@ test('an authenticated user is redirected from the login page to the Portal defa
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
+for (const entry of ['login', 'register', 'second-factor']) {
+  test(`authenticated ${entry} retains an exit when the next page stalls`, async ({ page }) => {
+    await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+    await page.route(url => url.pathname === '/portal' && url.searchParams.has('_rsc'), () => {});
+    await page.goto(`/portal/${entry}`);
+    const continueLink = page.getByRole('link', { name: /^Continue$|^继续$/ });
+    await expect(continueLink).toHaveAttribute('href', entry === 'register' ? '/portal#sites' : '/portal');
+    await continueLink.click();
+    await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
+  });
+}
+
 test('an authenticated user is redirected from registration to the Portal connection guide', async ({ page }) => {
   await installLoginFlowMocks(page, { initiallyLoggedIn: true });
 
@@ -415,17 +433,19 @@ test('a new account offers site connection before package review', async ({ page
 
   await page.goto('/portal');
 
-  const setupChecklist = page.locator('[data-portal-home="setup-checklist"]');
-  await expect(setupChecklist).toBeVisible();
-  await expect(setupChecklist.getByRole('link')).toHaveCount(1);
-  await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
-  await expect(setupChecklist).toContainText(
-    /Connect your first site|连接您的第一个站点/i
-  );
-  await expect(setupChecklist).toContainText(
-    /Review your account package and credits above|账户套餐和额度请查看上方信息/i
-  );
-  await expect(setupChecklist.locator('a[href="#sites"]')).toHaveCount(1);
+  // Quiet home: empty-site setup lives in the sites connect-guide + header attention,
+  // not a duplicate setup-checklist (checklist is suppressed when it would only repeat
+  // the same "connect site" focus already shown above).
+  await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-home="attention-focus"]')).toBeVisible();
+  await expect(page.getByText(/Site setup still needs attention|站点接入仍需处理/i)).toBeVisible();
+  const connectGuide = page.locator('[data-portal-sites="connect-guide"]');
+  await expect(connectGuide).toBeVisible();
+  await expect(connectGuide).toContainText(/Connect a site first|请先连接站点/i);
+  await expect(connectGuide).toContainText(/npcink-cloud-addon/i);
+  // Onboarding must not push package/billing before the first site is connected.
+  await expect(page.locator('[data-portal-home="attention-focus"] a[href="/portal/billing"]')).toHaveCount(0);
+  await expect(connectGuide.locator('a[href="/portal/billing"]')).toHaveCount(0);
   const overview = page.locator('[data-portal-home="operation-overview"]');
   await expect(overview.getByText('Free', { exact: true })).toBeVisible();
   await expect(overview.getByText('300', { exact: true })).toBeVisible();
@@ -437,10 +457,16 @@ test('exhausted Free credits lead to usage review without a payment requirement'
   await installLoginFlowMocks(page, { initiallyLoggedIn: true, remainingFreeCredits: 0 });
   await page.goto('/portal');
   const followUp = page.locator('[data-portal-home="operation-overview"]');
-  await expect(page.getByText(/Free credits for this period have been used|本周期 Free 额度已用完/i)).toBeVisible();
+  const attention = followUp.locator('[data-portal-home="attention-focus"]');
+  await expect(attention.getByText(/AI credits need attention|AI 积分需要处理/i)).toBeVisible();
+  // Detail copy lives in the ⓘ tooltip/aria-label (hidden until hover).
+  await expect(
+    attention.locator('[aria-label*="本周期 Free 额度已用完"], [aria-label*="Free credits for this period have been used"]')
+  ).toHaveCount(1);
   await expect(followUp.locator('a[href="/portal/billing#package-options"]')).toHaveCount(0);
   await expect(followUp.getByRole('link', { name: '查看用量', exact: true })).toBeVisible();
-  await expect(page.locator('a[href="/portal/usage"]').first()).toBeVisible();
+  // Quiet billing: usage deep-link is billing#usage (legacy /portal/usage removed).
+  await expect(page.locator('a[href="/portal/billing#usage"]').first()).toBeVisible();
 });
 
 test('a stale Portal cookie returns to login without exposing protected navigation', async ({ page }) => {
@@ -475,14 +501,13 @@ test('addon binding survives login and returns the complete payload to WordPress
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
   await expect(page).toHaveURL(`${BASE_URL}${bindingPath}`);
-  await expect(page.getByRole('heading', { name: /Finish WordPress connection|完成站点绑定/i }).first()).toBeVisible();
-  const accountChoice = page.getByRole('radio', { name: /Portal Login E2E/i });
+  await expect(page.getByRole('heading', { name: /Connect this site to your account|把这个站点绑定到你的账号/i })).toBeVisible();
+  await expect(page.locator('[data-portal-bind="account"]')).toContainText('Portal Login E2E');
+  await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
+  await expect(page.getByText(/acct_/)).toHaveCount(0);
   const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
-  await expect(accountChoice).not.toBeChecked();
-  await expect(submitButton).toBeDisabled();
   expect(calls.addonConnectionPayload()).toBeNull();
-
-  await accountChoice.check();
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-state-001/);
@@ -495,7 +520,7 @@ test('addon binding survives login and returns the complete payload to WordPress
   });
 });
 
-test('mobile email login preserves the WordPress binding and explicit ownership confirmation', async ({ page }) => {
+test('mobile email login preserves the WordPress binding and single confirmation', async ({ page }) => {
   const calls = await installLoginFlowMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
   const bindingPath = `/portal?${new URLSearchParams({
@@ -512,18 +537,15 @@ test('mobile email login preserves the WordPress binding and explicit ownership 
   await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
-  const connectionDialog = page.getByRole('dialog', { name: /Finish WordPress connection|完成站点绑定/i });
-  await expect(connectionDialog).toBeInViewport();
-  const accountChoice = connectionDialog.getByRole('radio', { name: /Portal Login E2E/i });
-  await expect(accountChoice).not.toBeChecked();
-  await accountChoice.check();
-  await connectionDialog.getByRole('button', { name: /Finish connection|完成绑定/i }).click();
+  const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
+  await expect(submitButton).toBeInViewport();
+  await submitButton.click();
 
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-mobile-001/);
   expect(calls.addonConnectionPayload()?.account_id).toBe('acct_portal_login_e2e');
 });
 
-test('public authentication entry keeps current desktop and mobile visual contracts', async ({ page }) => {
+test('public authentication entry keeps current PC visual contracts', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => {
     window.localStorage.setItem('locale', 'zh-CN');
@@ -553,13 +575,26 @@ test('public authentication entry keeps current desktop and mobile visual contra
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
+});
+
+test('optional mobile authentication visual observation', async ({ page }, testInfo) => {
+  // Portal delivery is PC-only; retain historical mobile assertions for explicit observation.
+  test.skip(process.env.NPCINK_CLOUD_PORTAL_MOBILE_VISUAL !== '1', 'Opt in with NPCINK_CLOUD_PORTAL_MOBILE_VISUAL=1');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+    window.localStorage.setItem('theme', 'light');
+  });
+  await installLoginFlowMocks(page);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portal/login');
   await expect(
     page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
   ).toBeVisible();
-  await expect(page).toHaveScreenshot('portal-login-current-mobile.png', {
+  // Keep both historical comparisons observable even when the first baseline differs.
+  await captureIsolatedCheckpoint(page, testInfo, 'optional-mobile-login');
+  await expect.soft(page).toHaveScreenshot('portal-login-current-mobile.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
@@ -568,8 +603,95 @@ test('public authentication entry keeps current desktop and mobile visual contra
   await expect(
     page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
   ).toBeVisible();
-  await expect(page).toHaveScreenshot('portal-register-current-mobile.png', {
+  await captureIsolatedCheckpoint(page, testInfo, 'optional-mobile-register');
+  await expect.soft(page).toHaveScreenshot('portal-register-current-mobile.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,
   });
 });
+
+for (const [variant, addonAccounts] of [
+  ['single', [{ account_id: 'acct_one', name: '', site_count: 2 }]],
+  ['multi', [
+    { account_id: 'acct_a', name: '个人账号', site_count: 1 },
+    { account_id: 'acct_b', name: '公司团队', site_count: 4 },
+  ]],
+] as const) {
+  test(`minimal addon bind page shows no IDs or dashboard chrome (${variant} account)`, async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('locale', 'zh-CN');
+      window.localStorage.setItem('theme', 'light');
+    });
+    await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [...addonAccounts] });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/portal?${new URLSearchParams({
+      connect: 'wordpress-addon',
+      site_url: 'https://demo.example.com',
+      site_name: 'Demo Site',
+      return_url: 'https://demo.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth',
+      state: 'addon-state-001',
+    }).toString()}`);
+    const card = page.locator('[data-portal-bind="card"]');
+    await expect(card).toBeVisible();
+    await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
+    await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
+    await expect(page.getByText(/acct_/)).toHaveCount(0);
+    await expect(page.getByRole('button')).toHaveCount(1);
+    const submit = page.getByRole('button', { name: '完成绑定' });
+    if (variant === 'multi') {
+      await expect(page.getByRole('radio')).toHaveCount(2);
+      await expect(submit).toBeDisabled();
+      if (process.env.BIND_SHOT_DIR) {
+        await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-multi-unselected-1280.png`, fullPage: true });
+      }
+      await page.getByRole('radio', { name: '公司团队' }).check();
+    } else {
+      await expect(card).toContainText(LOGIN_EMAIL);
+    }
+    await expect(submit).toBeEnabled();
+    if (process.env.BIND_SHOT_DIR) {
+      await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-${variant}-1280.png`, fullPage: true });
+    }
+  });
+}
+
+for (const locale of ['zh-CN', 'en'] as const) {
+  test(`[F02-13 F02-20] ${locale} header cooldown is bounded, body-first and never resends automatically`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
+    await installLoginFlowMocks(page);
+    let requests = 0;
+    const timings = ['4', '1', '0', 'invalid', '86401'];
+    await page.route('**/api/portal/auth/code/request', async (route) => {
+      expect(route.request().method()).toBe('POST');
+      const index = requests++;
+      expect(index).toBeLessThan(timings.length);
+      await fulfillError(route, 429, 'portal.login_code_rate_limited', index === 1 ? { retry_after_seconds: 7 } : {}, { 'Retry-After': timings[index] });
+    });
+    await page.goto('/portal/login');
+    await page.clock.install({ time: new Date('2030-01-01T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2030-01-01T00:00:01Z'));
+    await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+    const send = page.getByRole('button', { name: /Send verification code|发送验证码/i });
+    await send.click();
+    const cooling = page.getByRole('button', { name: /Send in 4s|4 秒后发送/i });
+    await expect(cooling).toBeDisabled();
+    await expect(page.getByText(/Try again in 4 seconds|请在 4 秒后重试/i)).toBeVisible();
+    await cooling.evaluate((element) => { (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click(); });
+    expect(requests).toBe(1);
+    await page.screenshot({ path: testInfo.outputPath('header-countdown.png'), fullPage: true });
+    await page.clock.fastForward(5000); await expect(send).toBeEnabled(); expect(requests).toBe(1);
+    await send.click();
+    await expect(page.getByRole('button', { name: /Send in 7s|7 秒后发送/i })).toBeDisabled();
+    await expect(page.getByText(/Try again in 7 seconds|请在 7 秒后重试/i)).toBeVisible();
+    expect(requests).toBe(2);
+    await page.clock.fastForward(8000); await expect(send).toBeEnabled(); expect(requests).toBe(2);
+    for (let index = 2; index < timings.length; index += 1) {
+      await send.click();
+      await expect(page.getByText(locale === 'en' ? 'Too many requests. Try again later.' : '请求过于频繁，请稍后再试。', { exact: true })).toBeVisible();
+      await expect(send).toBeEnabled(); expect(requests).toBe(index + 1);
+      await page.clock.fastForward(90000); expect(requests).toBe(index + 1);
+    }
+    await testInfo.attach('explicit-code-requests', { body: JSON.stringify({ requests, timings }), contentType: 'application/json' });
+  });
+}

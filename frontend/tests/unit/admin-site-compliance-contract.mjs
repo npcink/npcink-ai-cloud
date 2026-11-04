@@ -11,7 +11,7 @@ const layout = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), '
 
 assert.match(
   layout,
-  /href: '\/admin\/site-compliance'[\s\S]*?labelKey: 'admin\.nav_site_compliance'/,
+  /href: '\/admin\/site-compliance'[\s\S]*?labelKey: 'admin\.workspace_tab_compliance'/,
   'admin navigation must expose the site compliance workspace'
 );
 
@@ -65,7 +65,7 @@ assert.match(
 
 assert.match(
   page,
-  /closest\('a\[href\]'\)[\s\S]*?beforeunload[\s\S]*?<ConfirmModal/,
+  /useAdminNavigationGuard\([\s\S]*?dirty, setPendingNavigationHref[\s\S]*?<ConfirmModal/,
   'unsaved compliance edits must be protected for browser and admin navigation'
 );
 

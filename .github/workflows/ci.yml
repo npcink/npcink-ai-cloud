@@ -836,7 +836,7 @@ jobs:
             --shards 4 \
             --shard "${{ matrix.shard }}" \
             --collected-item-floor-seconds 1.0 \
-            tests/api tests/contract tests/domain \
+            tests/core tests/api tests/contract tests/domain tests/workers \
             > "artifacts/pytest-files-shard-${{ matrix.shard }}.txt"
           echo "## Pytest Shard ${{ matrix.shard }}" >> "${GITHUB_STEP_SUMMARY}"
           echo "" >> "${GITHUB_STEP_SUMMARY}"
@@ -1127,7 +1127,8 @@ jobs:
   frontend:
     needs: [classify]
     if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
-    runs-on: ubuntu-latest
+    # Playwright Chromium does not support the Ubuntu 26.04 latest runner yet.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
@@ -1180,7 +1181,9 @@ jobs:
         if: needs.classify.outputs.frontend_e2e_required == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
-        run: pnpm --dir frontend exec playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci-configure-ubuntu-archive.py
+          pnpm --dir frontend exec playwright install --with-deps chromium
 
       # The admin operator-path spec runs in full: title-filter selection hid
       # return-context link drift from CI for seven weeks until #1020.
@@ -1197,6 +1200,28 @@ jobs:
           node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts tests/e2e/admin-navigation.spec.ts tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/admin-ai-advisor-pc-v2.spec.ts
           node scripts/run-admin-visual-checks.mjs --ci-changed
           node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-workspace-path.spec.ts --grep 'portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
+
+      - name: TOTP activation contracts and compiled BFF
+        if: needs.classify.outputs.frontend_e2e_required == 'true'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+          PLAYWRIGHT_NO_COPY_PROMPT: '1'
+          NEXT_PUBLIC_ENV: test
+          NPCINK_CLOUD_SETUP_STATE_OVERRIDE: complete
+          CLOUD_API_BASE_URL: http://127.0.0.1:1
+          CLOUD_PUBLIC_BASE_URL: http://127.0.0.1:3301
+        run: |
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-totp-activation.spec.ts --grep '@contract' --retries=0 --workers=1
+          node frontend/tests/compiled/portal-totp-bff.mjs
+
+      - name: Preserve failed frontend screenshot evidence
+        if: failure() && needs.classify.outputs.frontend_e2e_required == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-failed-screenshots
+          path: frontend/test-results/**/*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Unchanged frontend acknowledgement
         if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'

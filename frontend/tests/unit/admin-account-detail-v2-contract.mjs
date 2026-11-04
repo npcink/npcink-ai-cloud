@@ -33,6 +33,18 @@ const operatorProfileSource = [
     'utf8'
   ),
 ].join('\n');
+const accountProjectionSource = readFileSync(
+  fromFrontendRoot('src/features/admin/accounts/account-projection.ts'),
+  'utf8'
+);
+const siteDetailSource = readFileSync(
+  fromFrontendRoot('src/app/admin/sites/[siteId]/page.tsx'),
+  'utf8'
+);
+const siteOperationsSource = readFileSync(
+  fromFrontendRoot('src/features/admin/sites/site-operations.ts'),
+  'utf8'
+);
 const architectureSource = readFileSync(
   fromFrontendRoot('../docs/cloud-admin-information-architecture-v2.md'),
   'utf8'
@@ -210,7 +222,7 @@ assert.match(
 );
 assert.match(
   source,
-  /metric\.status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
+  /quotaMetricDisplayStatus\(metric\)[\s\S]*status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
   'API-key coverage gaps must not be mislabeled as exhausted numeric quota'
 );
 assert.match(
@@ -281,8 +293,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /activeDetailTab === 'overview'[\s\S]*admin\.account_detail\.access_status_title[\s\S]*admin\.accounts\.suspend_account_action/,
-  'account status and its direct contextual action must stay in Overview'
+  /activeDetailTab === 'access'[\s\S]*<CustomerAccessPanel[\s\S]*admin\.account_detail\.access_status_title[\s\S]*admin\.accounts\.suspend_account_action/,
+  'the contextual account-status action belongs to Access, beside the access controls'
 );
 assert.match(
   source,
@@ -301,8 +313,8 @@ assert.match(
 );
 assert.match(
   operatorProfileSource,
-  /buildAccountOperatorProfilePayload[\s\S]*bind_default_free: false[\s\S]*accountDetailClient\.request[\s\S]*'\/api\/admin\/accounts'/,
-  'the feature API must preserve the bounded account metadata payload'
+  /buildAccountOperatorProfilePayload[\s\S]*operator_display_name: values\.operator_display_name\.trim\(\)[\s\S]*operator_note: values\.operator_note\.trim\(\)[\s\S]*accountDetailClient\.request[\s\S]*\/operator-profile`[\s\S]*method: 'PATCH'/,
+  'the feature API must update only operator fields through the dedicated PATCH, preserving account lifecycle ownership'
 );
 assert.match(source, /useToast\(\)/, 'customer and commercial success feedback must use global Toast');
 assert.doesNotMatch(
@@ -336,6 +348,41 @@ assert.match(
   source,
   /<ConfirmModal[\s\S]*pendingConfirmation/,
   'governed and destructive customer actions must keep object-specific confirmation'
+);
+assert.match(
+  accountProjectionSource,
+  /export function normalizeAccountSites[\s\S]*Array\.isArray\(value\)[\s\S]*Invalid customer site evidence/,
+  'customer site evidence must be validated as a bounded collection instead of defaulting malformed data to an empty list'
+);
+assert.match(
+  source,
+  /normalizeAccountSites\(payload\.sites, accountId\)[\s\S]*setSiteEvidenceError/,
+  'customer detail must keep malformed site evidence local to the Sites surface'
+);
+assert.match(
+  creditEvidenceSource,
+  /Number\.isFinite\(value\)[\s\S]*normalizeAccountQuotaSummary[\s\S]*normalizeAccountCreditLedger/,
+  'quota and ledger evidence must reject non-finite values before presentation'
+);
+assert.match(
+  creditEvidenceSource,
+  /payload\.account_id !== accountId[\s\S]*payload\.items\.map/,
+  'credit ledger evidence must be bound to the requested customer and validate every item'
+);
+assert.match(
+  source,
+  /useAdminNavigationGuard\([\s\S]*operatorProfileController\.dirty/,
+  'customer operator-profile drafts must use the shared navigation guard'
+);
+assert.match(
+  siteDetailSource,
+  /useAdminNavigationGuard\([\s\S]*operations\.inputDirty/,
+  'site datetime drafts must use the shared navigation guard'
+);
+assert.match(
+  siteOperationsSource,
+  /inputDirty[\s\S]*!intent[\s\S]*input !==/,
+  'site ordinary draft state must remain separate from pending operation recovery'
 );
 assert.match(
   architectureSource,

@@ -10,6 +10,7 @@ const accessSource = readFileSync(resolve(root, 'src/features/admin/accounts/Cus
 const createSource = [
   'src/features/admin/accounts/CreateAccountForm.tsx',
   'src/features/admin/accounts/create-account-form-model.ts',
+  'src/features/admin/accounts/account-create-confirmation.ts',
 ].map((path) => readFileSync(resolve(root, path), 'utf8')).join('\n');
 const dialogSource = readFileSync(
   resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'),
@@ -26,9 +27,38 @@ const serviceSource = readFileSync(
 
 assert.match(
   directorySource,
-  /BackofficePageHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*<table/,
-  'customer directory must use one compact header, summary strip, and semantic directory table'
+  /BackofficePageHeader[\s\S]*AdminDataTableFrame[\s\S]*<table/,
+  'customer directory must use one compact header and semantic directory table'
 );
+assert.match(directorySource, /const PAGE_SIZE = 10;/, 'directory pages must request exactly ten customers');
+assert.match(directorySource, /BackofficeFilterPill[\s\S]*role="group"[\s\S]*aria-pressed=\{appliedStatus === value\}/, 'status uses the existing mutually exclusive named pills');
+for (const key of ['admin.accounts.all_statuses', 'status.active', 'status.inactive', 'status.suspended']) {
+  assert.ok(directorySource.includes(`t('${key}'`), `status must reuse ${key}`);
+}
+assert.match(directorySource, /<ListPagination[\s\S]*offset=\{loadedOffset\}[\s\S]*limit=\{PAGE_SIZE\}[\s\S]*total=\{total\}/, 'valid multi-page results must keep the shared pager with successful-result scope');
+assert.match(directorySource, /new URLSearchParams\(loadedRequestKey\)\.get\('offset'\)/, 'pending and failed URL changes must retain the displayed successful page offset');
+assert.match(directorySource, /loadedQuery\.delete\('offset'\)[\s\S]*requestedQuery\.delete\('offset'\)[\s\S]*const isRetainingDifferentQuery = hasLoaded && loadedQuery\.toString\(\) !== requestedQuery\.toString\(\)/, 'retained pagination must distinguish offset-only navigation from changed query dimensions');
+assert.match(directorySource, /if \(isRetainingDifferentQuery\) return;/, 'old result offsets must never paginate a different requested query');
+assert.match(directorySource, /isLoading=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'the shared pager must stay disabled while retaining results from another query');
+assert.match(directorySource, /action=\{isOutOfRangePage[\s\S]*disabled=\{isRefreshing \|\| isRetainingDifferentQuery\}/, 'empty-page recovery must respect the same retained-query boundary');
+assert.match(directorySource, /nextOffset === offset\) void loadAccounts\(true\)/, 'retrying a retained next page already present in the URL must issue a fresh read');
+assert.match(directorySource, /customer-directory-range[\s\S]*common.pagination_summary/, 'single and empty pages must show an honest visible range');
+assert.match(directorySource, /isOutOfRangePage[\s\S]*empty.no_data_title[\s\S]*Math.floor\(\(total - 1\) \/ PAGE_SIZE\) \* PAGE_SIZE/, 'positive-total empty pages need an explicit bounded recovery without misleading no-match text');
+assert.doesNotMatch(directorySource, /searchParams\.get\('limit'\)|QuietQueuePagination|function \w*Pagination|useAdminQueueKeyboard/, 'the directory must not gain URL page size, a copied pager, or keyboard selection');
+assert.doesNotMatch(directorySource, /summaryItems=|subscription_count_value/, 'directory avoids duplicate count strips and detail-only subscription totals');
+assert.match(directorySource, /hasLoaded \? ` · \$\{formatInteger\(total\)\}`/, 'successful customer total appears in the title');
+assert.doesNotMatch(
+  directorySource,
+  /summary_active|summary_login_ready/,
+  'directory must not keep the decorative multi-metric summary strip'
+);
+assert.match(directorySource, /loadedAt[\s\S]*common.updated_at/, 'successful read freshness must remain visible');
+assert.match(directorySource, /onSubmit=\{applySearch\}[\s\S]*onChange=\{\(event\) => setDraftQuery/, 'search keeps a local draft with Enter submit');
+assert.match(directorySource, /setTimeout\([\s\S]*updateDirectoryUrl\([\s\S]*q:/, 'search also applies through a short debounce');
+assert.match(directorySource, /button type="submit" className="sr-only"/, 'primary Search control is demoted from a blue button');
+assert.match(directorySource, /underline-offset-2[\s\S]*common\.clear_filters/, 'clear filters is a text link, not a secondary button');
+assert.match(directorySource, /hiddenInternalTotal > 0[\s\S]*show_internal_records[\s\S]*hide_internal_records|hiddenInternalTotal > 0[\s\S]*hide_internal_records[\s\S]*show_internal_records/, 'the internal record notice and visibility toggle must remain');
+
 assert.doesNotMatch(
   directorySource,
   /AccountRisk|accountRisk|riskToneClassName|risk_reason|account-inspector|focus:|aria-controls="account-inspector"/,
@@ -156,7 +186,7 @@ assert.doesNotMatch(
 
 assert.match(
   directorySource,
-  /AdminWorkbenchDialog[\s\S]*handleCreateAccount[\s\S]*toast\.success[\s\S]*router\.push/,
+  /useAccountCreation\([\s\S]*onCreated:[\s\S]*toast\.success[\s\S]*router\.push[\s\S]*AdminWorkbenchDialog[\s\S]*handleCreateAccount/,
   'customer creation must use the shared dialog, retain success feedback, and open the generated customer'
 );
 assert.match(

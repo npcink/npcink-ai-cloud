@@ -7,6 +7,8 @@ type RouteAcceptance = (typeof acceptanceMatrix.routes)[number];
 
 function installBrowserFailureCapture(page: Page) {
   const failures: string[] = [];
+  const canceledReads: Array<{ url: string; failure: string }> = [];
+  const successfulReads = new Set<string>();
 
   page.on('pageerror', (error) => failures.push(`pageerror: ${error.message}`));
   page.on('console', (message: ConsoleMessage) => {
@@ -18,13 +20,19 @@ function installBrowserFailureCapture(page: Page) {
     const isExpectedAbort = reason === 'net::ERR_ABORTED' && (
       request.resourceType() === 'document' || requestUrl.searchParams.has('_rsc')
     );
-    if (!isExpectedAbort) failures.push(`requestfailed: ${request.method()} ${request.url()} (${reason})`);
+    const failure = `requestfailed: ${request.method()} ${request.url()} (${reason})`;
+    if (reason === 'net::ERR_ABORTED' && request.method() === 'GET' && requestUrl.pathname.startsWith('/api/admin/')) {
+      // React development remounts cancel obsolete query reads. Require a
+      // successful replacement of the exact URL; an unrecovered abort still fails.
+      canceledReads.push({ url: request.url(), failure });
+    } else if (!isExpectedAbort) failures.push(failure);
   });
   page.on('response', (response: Response) => {
     if (response.status() >= 500) failures.push(`response: ${response.status()} ${response.url()}`);
+    if (response.ok() && response.request().method() === 'GET') successfulReads.add(response.url());
   });
 
-  return failures;
+  return () => [...failures, ...canceledReads.filter(read => !successfulReads.has(read.url)).map(read => read.failure)];
 }
 
 
@@ -52,7 +60,16 @@ async function expectDesktopRouteBaseline(page: Page, route: RouteAcceptance) {
     '/admin/accounts/[accountId]': '/admin/accounts',
     '/admin/sites/[siteId]': '/admin/accounts',
     '/admin/subscriptions/[subscriptionId]': '/admin/subscriptions',
-    '/admin/support-requests/[requestId]': '/admin/support-requests',
+    '/admin/support-requests/[requestId]': '/admin/accounts',
+    '/admin/support-requests': '/admin/accounts',
+    '/admin/customer-notifications': '/admin/accounts',
+    '/admin/coverage': '/admin/subscriptions',
+    '/admin/plans': '/admin/subscriptions',
+    '/admin/credit-packs': '/admin/subscriptions',
+    '/admin/economics': '/admin/subscriptions',
+    '/admin/external-services': '/admin/ai-resources',
+    '/admin/vector-settings': '/admin/ai-resources',
+    '/admin/site-compliance': '/admin/service-settings',
     '/admin/plugin-observability': '/admin/usage-statistics',
     '/admin/media-observability': '/admin/usage-statistics',
     '/admin/vector-observability': '/admin/usage-statistics',
@@ -65,13 +82,15 @@ async function expectDesktopRouteBaseline(page: Page, route: RouteAcceptance) {
   const activeNav = page.locator('[data-ui="admin-primary-nav"] a[aria-current="page"]');
   await expect(activeNav).toHaveCount(1);
   await expect(activeNav).toHaveAttribute('href', parent);
-  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toContainText((await activeNav.innerText()).trim());
+  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
 
   if (!route.routePattern.includes('[') && route.routePattern !== '/admin/login') {
-    // Every standalone page is findable from the global quick switcher.
+    // Active pages are discoverable; a paused bookmark must stay withdrawn.
     await page.getByRole('button', { name: /打开快速跳转|Open quick switcher/i }).click();
     const command = page.getByRole('dialog');
-    await expect(command.locator(`a[href="${route.routePattern}"]`)).toBeVisible();
+    const entry = command.locator(`a[href="${route.routePattern}"]`);
+    if (route.routePattern === '/admin/ai-advisor') await expect(entry).toHaveCount(0);
+    else await expect(entry).toBeVisible();
     await page.keyboard.press('Escape');
   }
 }
@@ -93,7 +112,7 @@ test.describe('current-master Admin route acceptance matrix', () => {
       await page.waitForLoadState('networkidle');
       await expectDesktopRouteBaseline(page, route);
 
-      expect(browserFailures, `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
+      expect(browserFailures(), `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
       expect(unhandledAdminRequests, `${route.routePattern} made unhandled Admin API requests`).toEqual([]);
     });
   }

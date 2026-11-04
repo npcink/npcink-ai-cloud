@@ -6,6 +6,8 @@ import {
   formatUsageRatio,
   metricToBudgetSummary,
   quotaMetricLabel,
+  quotaMetricDisplayStatus,
+  quotaMetricNeedsAttention,
   quotaMetricToneClass,
   quotaToneClass,
   summarizeBudget,
@@ -31,6 +33,42 @@ function siteRuntime(
 }
 
 describe('Account credit presentation model', () => {
+  it('treats complete API-key site coverage as healthy rather than exhausted capacity', () => {
+    const coverage = {
+      key: 'active_api_key_sites', used: 1, limit: 1, remaining: 0,
+      usage_ratio: 1, unlimited: false, status: 'ok', unit: 'site',
+    };
+    expect(quotaMetricNeedsAttention(coverage)).toBe(false);
+    expect(quotaMetricToneClass(coverage)).toBeUndefined();
+    const gap = { ...coverage, used: 0, remaining: 1, usage_ratio: 0, status: 'limited' };
+    expect(quotaMetricNeedsAttention(gap)).toBe(true);
+    expect(quotaMetricToneClass(gap)).toContain('red');
+  });
+
+  it.each([[0.79, false], [0.8, true], [1, true]])(
+    'preserves capacity attention at usage ratio %s', (ratio, attention) => {
+      expect(quotaMetricNeedsAttention({
+        key: 'vector_documents', used: ratio * 100, limit: 100, remaining: 100 - ratio * 100,
+        usage_ratio: ratio, unlimited: false, status: 'ok', unit: 'document',
+      })).toBe(attention);
+    }
+  );
+
+  it.each([[0.79, 'ok'], [0.8, 'near_limit'], [1, 'limited']])(
+    'uses the same capacity status for summaries, colors and detail rows at %s', (ratio, status) => {
+      expect(quotaMetricDisplayStatus({
+        key: 'vector_documents', used: ratio * 100, limit: 100, remaining: 100 - ratio * 100,
+        usage_ratio: ratio, unlimited: false, status: 'ok', unit: 'document',
+      })).toBe(status);
+    }
+  );
+
+  it('preserves explicit severity and unknown evidence without imposing capacity on unlimited metrics', () => {
+    const metric = { key: 'vector_documents', used: 0, limit: 0, remaining: 0, usage_ratio: 1, unlimited: true, status: 'ok', unit: 'document' };
+    expect(quotaMetricDisplayStatus(metric)).toBe('ok');
+    expect(quotaMetricDisplayStatus({ ...metric, status: 'near_limit' })).toBe('near_limit');
+    expect(quotaMetricDisplayStatus({ ...metric, status: 'unknown' })).toBe('unknown');
+  });
   it('aggregates trusted site runtime budgets without inventing a finite limit', () => {
     expect(summarizeBudget({}, 'runs')).toEqual({
       used: 0,

@@ -44,6 +44,13 @@ class RuntimeContext:
     service: RuntimeService
 
 
+@pytest.fixture(autouse=True)
+def retained_runtime_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retained implementation; default release availability is tested separately."""
+    from app.domain.runtime import availability
+    monkeypatch.setattr(availability, "PAUSED_RUNTIME_FEATURES", frozenset())
+
+
 @pytest.fixture
 def runtime_context(tmp_path: Path) -> Iterator[RuntimeContext]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'artifact-coordination.sqlite3'}"
@@ -532,4 +539,9 @@ def test_runtime_facade_retains_run_04_entrypoints_with_extracted_delegation() -
         assert source.count(f"def {method_name}(") == 1
         assert expected_call in ast.unparse(methods[method_name])
     for method_name in expected_calls:
-        assert len(methods[method_name].body) == 1
+        body = methods[method_name].body
+        if method_name == "enqueue_media_job_run":
+            assert isinstance(body[0], ast.Expr)
+            assert "require_runtime_available" in ast.unparse(body[0])
+            body = body[1:]
+        assert len(body) == 1

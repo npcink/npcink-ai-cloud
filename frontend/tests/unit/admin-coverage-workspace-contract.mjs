@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { frontendRoot } from './_paths.mjs';
 
 const coverageSource = readFileSync(resolve(frontendRoot, 'src/app/admin/coverage/page.tsx'), 'utf8');
+const evidenceSource = readFileSync(resolve(frontendRoot, 'src/features/admin/coverage/evidence.ts'), 'utf8');
 const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const navigationSource = readFileSync(resolve(frontendRoot, 'src/features/admin/navigation.ts'), 'utf8');
 const i18nSource = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
 const serviceSource = readFileSync(
   resolve(frontendRoot, '../app/domain/commercial/mixins/_admin_mixin.py'),
@@ -37,7 +39,7 @@ assert.doesNotMatch(
 
 assert.match(
   coverageSource + serviceSource,
-  /data-ui="coverage-pagination"[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
+  /changePage[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*data-ui="coverage-pagination"[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
   'Coverage pagination must be URL-backed while filtering and ordering happen before service pagination'
 );
 
@@ -67,21 +69,25 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
+  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*admin\.coverage\.status_filter_label[\s\S]*coverage-filter-toolbar[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
   'Coverage defaults to customers needing action and the clear action restores that URL-owned default'
 );
 
 assert.match(
-  coverageSource + serviceSource,
-  /primary_identity\?[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
+  evidenceSource + coverageSource + serviceSource,
+  /primary_identity[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
   'Coverage must search customer login identity and route identity problems to customer access'
 );
 
-assert.match(
-  serviceSource,
-  /missing_package_coverage[\s\S]*#coverage-actions[\s\S]*subscription_lifecycle_risk[\s\S]*\/admin\/subscriptions\/[\s\S]*billing_snapshot_follow_up[\s\S]*\/admin\/subscriptions\/[\s\S]*site_status_follow_up[\s\S]*#site-footprint/,
-  'Coverage actions must route package, subscription, billing, and site problems to their owning work surfaces'
-);
+for (const [reason, destination] of [
+  ['missing_package_coverage', '#coverage-actions'],
+  ['subscription_lifecycle_risk', '/admin/subscriptions/'],
+  ['billing_snapshot_follow_up', '/admin/subscriptions/'],
+  ['site_status_follow_up', '#site-footprint'],
+]) {
+  const reasonBlock = serviceSource.split(`reason_code = "${reason}"`)[1]?.split('elif ')[0] || '';
+  assert.ok(reasonBlock.includes(destination), `${reason} must route to its owning work surface`);
+}
 
 assert.doesNotMatch(
   coverageSource,
@@ -138,9 +144,15 @@ assert.doesNotMatch(
 );
 
 assert.match(
+  navigationSource,
+  /commercialWorkspaceTabs[\s\S]*href: '\/admin\/coverage'[\s\S]*href: '\/admin\/subscriptions'/,
+  'Service status and subscriptions must stay sibling tabs in the commercial workspace'
+);
+
+assert.match(
   layoutSource,
-  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
-  'Service risks and subscriptions must be independent top-level sidebar destinations'
+  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_commercial_records'/,
+  'The commercial workspace must own one primary sidebar entry'
 );
 
 assert.match(
@@ -161,4 +173,20 @@ assert.doesNotMatch(
   'Coverage workspace must not introduce commercial front-office or WordPress write actions'
 );
 
+
+assert.match(coverageSource, /const DEFAULT_PAGE_SIZE = 10;[\s\S]*parsed >= 1 && parsed <= 500/, 'default ten rows must preserve existing URL limit1..500');
+assert.match(coverageSource, /role="group" aria-label=\{t\('admin\.coverage\.status_filter_label'\)\}[\s\S]*aria-pressed=\{view === filter.value\}/, 'service states are mutually exclusive named pills');
+assert.match(coverageSource, /queueParamsRef.current.toString\(\)\) return;[\s\S]*setDebouncedSearchQuery/, 'local URL synchronization must not bypass the existing search debounce');
+assert.match(coverageSource, /window.setTimeout[\s\S]*setDebouncedSearchQuery\(searchQuery\)[\s\S]*250/, 'search stays automatically debounced at250ms');
+assert.match(coverageSource, /loadedQuery.delete\('offset'\)[\s\S]*requestedQuery.delete\('offset'\)[\s\S]*isDebouncingSearch/, 'retained query identity includes the debounce window and all dimensions except offset');
+assert.match(coverageSource, /if \(isRefreshing \|\| isRetainingDifferentQuery\) return;/, 'handlers cannot paginate retained results into another query');
+assert.match(coverageSource, /nextOffset === offset\) void loadCoverage\(true\)/, 'same target offset retries a real GET');
+assert.match(coverageSource, /queueRequestKey === coverageRequestKey &&[\s\S]*!isDebouncingSearch &&[\s\S]*!isRefreshing &&[\s\S]*pagination.total <= offset/, 'automatic recovery consumes only current successful evidence');
+assert.match(coverageSource, /rangeStart = visibleItems.length[\s\S]*rangeEnd = visibleItems.length[\s\S]*data-ui="coverage-pagination"/, 'zero and single-page ranges stay visible and use actual returned rows');
+for (const key of ['summary_total', 'filter_needs_action', 'common.updated_at', 'visibleSummary.error', 'visibleSummary.warning', 'activeQueue.generated_at']) assert.ok(coverageSource.includes(key), `preserve summary/freshness ${key}`);
+assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQuery \|\| pagination.offset <= 0\}/, 'previous obeys the query boundary');
+assert.match(coverageSource, /disabled=\{isRefreshing \|\| isRetainingDifferentQuery \|\| !pagination.hasMore\}/, 'next keeps backend has_more and the query boundary');
+
 console.log('admin_coverage_workspace_contract: ok');
+
+assert.match(coverageSource, /setQueue\(readCoverageQueue\(coveragePayload, coverageRequestKey\)\)/, 'only validated scoped coverage evidence reaches the page');

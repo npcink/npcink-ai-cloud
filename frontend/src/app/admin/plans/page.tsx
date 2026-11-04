@@ -26,6 +26,7 @@ import {
   localizeUsageBand,
 } from '@/lib/admin-plan-copy';
 import { createApiClient } from '@/lib/api-client';
+import { requirePlanCatalog, type PlanConfirmation } from '@/features/admin/plans/plan-projection';
 import { ADMIN_CURRENCY } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -88,8 +89,8 @@ type CanonicalTierCoverageItem = {
 };
 
 type PlanCatalogPayload = {
-  items?: PlanListItem[];
-  tier_templates?: TierSummary[];
+  items: PlanListItem[];
+  tier_templates: TierSummary[];
 };
 
 type BootstrapResult = {
@@ -178,6 +179,8 @@ function PlansContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingPlan, setEditingPlan] = useState<{ focus: string; planId: string; alias: string; tierId: string; active: number } | null>(null);
+  const [pendingPlans, setPendingPlans] = useState<string[]>([]);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -191,6 +194,23 @@ function PlansContent() {
     status: 'active',
     description: '',
   });
+
+  const readPendingPlans = useCallback(() => {
+    try { setPendingPlans(Object.keys(sessionStorage).filter(key => key.startsWith('admin.plan-parameters.v1:')).map(key => key.slice('admin.plan-parameters.v1:'.length))); }
+    catch { /* Individual editor fails closed on unavailable storage. */ }
+  }, []);
+  useEffect(() => { readPendingPlans(); }, [readPendingPlans, focusedTierId]);
+  const applyConfirmedParameters = (planId: string, current: PlanConfirmation) => {
+    const p = current.parameters;
+    setPlans(rows => rows.map(item => item.plan.plan_id !== planId || !item.latest_version ? item : {
+      ...item, latest_version: { ...item.latest_version,
+        budgets: { ...item.latest_version.budgets, max_ai_credits_per_period: p.monthly_included_points, max_cost_cny_per_period: p.max_cost_cny_per_period },
+        concurrency: { ...item.latest_version.concurrency, max_active_runs: p.max_active_runs },
+        metadata: { ...item.latest_version.metadata, monthly_included_points: p.monthly_included_points, site_limit: p.site_limit, max_vector_documents: p.max_vector_documents, max_media_images: p.max_media_images, max_batch_items: p.max_batch_items },
+      },
+    }));
+    readPendingPlans();
+  };
 
   const updateCatalogUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParamsKey);
@@ -219,10 +239,10 @@ function PlansContent() {
     else setIsLoading(true);
     setError(null);
     try {
-      const payload = await fetchPlanCatalog();
+      const payload = requirePlanCatalog(await fetchPlanCatalog()) as unknown as PlanCatalogPayload;
       if (sequence !== requestSequenceRef.current) return;
-      setPlans(payload.items || []);
-      setTierTemplates(payload.tier_templates || []);
+      setPlans(payload.items);
+      setTierTemplates(payload.tier_templates);
       setLoadedAt(new Date());
       hasLoadedRef.current = true;
     } catch (err) {
@@ -398,13 +418,42 @@ function PlansContent() {
     await runBootstrapShells(failedShells, succeededResults);
   }, [bootstrapResults, runBootstrapShells, tierTemplates]);
 
+  // Retain the open object independently of refreshable directory rows. A
+  // background empty/changed catalog must not unmount an ordinary draft.
+  useEffect(() => {
+    setEditingPlan(current => {
+      if (!focusedTierId) return null;
+      if (current?.focus === focusedTierId) return current;
+      const item = plans.find(row => row.plan.plan_id === focusedTierId)
+        || findCanonicalShellPlan(plans, focusedTierId);
+      if (item) return { focus: focusedTierId, planId: item.plan.plan_id,
+        alias: item.tier_summary.package_alias, tierId: item.tier_summary.tier_id,
+        active: item.subscription_counts.active };
+      // Recovery remains reachable even if the directory itself cannot load.
+      if (pendingPlans.includes(focusedTierId)) return { focus: focusedTierId,
+        planId: focusedTierId, alias: focusedTierId, tierId: focusedTierId, active: 0 };
+      return null;
+    });
+  }, [focusedTierId, plans, pendingPlans]);
+  const pendingRecovery = pendingPlans.length ? <div role="status" data-ui="plan-pending-directory" className="space-y-2 text-sm">
+    {pendingPlans.map(id => <div key={id} className="flex flex-wrap items-center gap-2"><span>{t('admin.plans.operation_pending', { plan: id })}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => updateCatalogUrl({ focus: id })}>{t('admin.plans.open_pending')}</button></div>)}
+  </div> : null;
+  const workbench = editingPlan ? <PlanManagementWorkbench
+    key={editingPlan.planId} open planId={editingPlan.planId}
+    activeSubscriptionCount={editingPlan.active}
+    fallbackName={localizePackageAlias(t, editingPlan.tierId, editingPlan.alias)}
+    onClose={() => updateCatalogUrl({ focus: null })}
+    onParametersConfirmed={current => applyConfirmedParameters(editingPlan.planId, current)}
+    onSaved={() => loadPlans(true)}
+  /> : null;
+
   if (isLoading) {
-    return <LoadingFallback />;
+    return <><LoadingFallback />{workbench}</>;
   }
 
   if (error && plans.length === 0) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <>{pendingRecovery}<div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-md text-center">
           <h2 className="mb-4 text-2xl font-bold text-red-600">{t('common.error')}</h2>
           <p className="mb-6 text-gray-600 dark:text-gray-400">{error}</p>
@@ -412,7 +461,7 @@ function PlansContent() {
             {t('common.retry')}
           </button>
         </div>
-      </div>
+      </div>{workbench}</>
     );
   }
 
@@ -424,7 +473,6 @@ function PlansContent() {
       isPresent: Boolean(item && Number(item.published_version_count || 0) > 0),
     };
   });
-  const readyPackageCount = canonicalTierCoverage.filter((entry) => entry.isPresent).length;
   const activeSubscriptions = canonicalTierCoverage.reduce(
     (sum, entry) => sum + Number(entry.item?.subscription_counts?.active || 0),
     0
@@ -438,7 +486,6 @@ function PlansContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        eyebrow={t('admin.nav_plan_catalog', {}, 'Package Catalog')}
         title={t('admin.coverage_package_catalog_title', {}, 'Coverage package catalog')}
         description={t(
           'admin.package_management_center_desc',
@@ -450,13 +497,13 @@ function PlansContent() {
         )}
         summaryItems={[
           { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
-          { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(readyPackageCount), toneClassName: readyPackageCount === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
           { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
           { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
           { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
         ]}
       />
 
+      {pendingRecovery}
       {error ? <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"><span>{error}{plans.length > 0 ? <span className="mt-1 block text-xs">{t('admin.plans.retained_notice', {}, 'Showing the last successfully loaded catalog.')}</span> : null}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadPlans(true)}>{t('common.retry')}</button></div> : null}
 
       <div className="min-w-0">
@@ -482,12 +529,12 @@ function PlansContent() {
               <table className="w-full min-w-[48rem] table-fixed text-left text-xs" aria-label={t('admin.plans.list_label', {}, 'Package list')}>
                 <thead className="bg-slate-50/70 text-slate-500 dark:bg-slate-900/35 dark:text-slate-400">
                   <tr>
-                    <th scope="col" className="w-[16%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
-                    <th scope="col" className="w-[30%] px-3 py-2 font-semibold">{t('common.status')}</th>
-                    <th scope="col" className="w-[11%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
+                    <th scope="col" className="w-[14%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
+                    <th scope="col" className="w-[17%] px-3 py-2 font-semibold">{t('common.status')}</th>
+                    <th scope="col" className="w-[22%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
                     <th scope="col" className="w-[13%] px-3 py-2 text-right font-semibold">{t('admin.included_points', {}, 'Package AI credits')}</th>
                     <th scope="col" className="w-[22%] px-3 py-2 font-semibold">{t('common.limit', {}, 'Limits')}</th>
-                    <th scope="col" className="w-[8%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
+                    <th scope="col" className="w-[12%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -505,7 +552,7 @@ function PlansContent() {
                         ? t('admin.plans.reason_unpublished', {}, 'The package exists but has no published version for subscription assignment.')
                         : null;
                     const planId = item?.plan?.plan_id || '';
-                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}`;
+                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}&risk=all`;
                     return (
                       <tr
                         key={shell.tier_id}
@@ -530,31 +577,38 @@ function PlansContent() {
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
                           {planId ? (
                             <Link
-                              href={subscriptionsHref}
-                              aria-label={`${t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')} · ${packageAlias}`}
-                              className="inline-flex min-w-8 cursor-pointer items-center justify-end gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                              href={`${subscriptionsHref}&status_group=active`}
+                              aria-label={`${t('admin.plans.active_subscriptions_action', { count: formatInteger(item?.subscription_counts?.active || 0) })} · ${packageAlias}`}
+                              className="ml-auto flex w-fit items-center gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
                             >
-                              {formatInteger(item?.subscription_counts?.active || 0)}
+                              {formatInteger(item?.subscription_counts?.active || 0)}<span aria-hidden="true">›</span>
+                            </Link>
+                          ) : <p>{formatInteger(item?.subscription_counts?.active || 0)}</p>}
+                          {planId ? (
+                            <Link
+                              href={subscriptionsHref}
+                              aria-label={`${t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })} · ${packageAlias}`}
+                              className="inline-flex cursor-pointer items-center justify-end gap-1 whitespace-nowrap rounded px-1 py-0.5 text-xs font-medium text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                            >
+                              {t('admin.plans.all_subscriptions_action', { count: formatInteger(item?.subscription_counts?.total || 0) })}
                               <span aria-hidden="true">›</span>
                             </Link>
-                          ) : formatInteger(item?.subscription_counts?.active || 0)}
+                          ) : null}
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
                           {formatInteger(latestMetadataValue(latestVersion, sourceTier.monthly_included_points, 'monthly_included_points'))}
                         </td>
                         <td className="px-3 py-2.5">
-                          <p className="whitespace-nowrap text-[0.68rem] text-slate-600 dark:text-slate-300">
-                            <span>{t('admin.site_limit', {}, 'Sites')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</strong></span>
-                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
-                            <span>{t('admin.concurrency', {}, 'Concurrency')} <strong className="text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</strong></span>
-                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
-                            <span>{t('admin.batch_ceiling', {}, 'Batch')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.max_batch_items, 'max_batch_items'))}</strong></span>
+                          <p className="flex flex-wrap gap-x-3 gap-y-1 text-[0.68rem] text-slate-600 dark:text-slate-300">
+                            <span className="whitespace-nowrap">{t('admin.site_limit', {}, 'Sites')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</strong></span>
+                            <span className="whitespace-nowrap">{t('admin.concurrency', {}, 'Concurrency')} <strong className="text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</strong></span>
+                            <span className="whitespace-nowrap">{t('admin.batch_ceiling', {}, 'Batch')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.max_batch_items, 'max_batch_items'))}</strong></span>
                           </p>
                         </td>
-                        <td className="px-3 py-2.5 text-right">
+                        <td className="px-1 py-2.5 text-right">
                           <button
                             type="button"
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary btn-sm max-w-full whitespace-normal"
                             aria-label={planId
                               ? t('admin.plans.manage_title', { package: packageAlias }, `Manage ${packageAlias}`)
                               : undefined}
@@ -589,20 +643,7 @@ function PlansContent() {
           </AdminDataTableFrame>
       </div>
 
-      {selectedEntry?.item?.plan?.plan_id ? (
-        <PlanManagementWorkbench
-          open
-          planId={selectedEntry.item.plan.plan_id}
-          activeSubscriptionCount={Number(selectedEntry.item.subscription_counts?.active || 0)}
-          fallbackName={localizePackageAlias(
-            t,
-            selectedEntry.shell.tier_id,
-            (selectedEntry.item.tier_summary || selectedEntry.shell).package_alias
-          )}
-          onClose={() => updateCatalogUrl({ focus: null })}
-          onSaved={() => loadPlans(true)}
-        />
-      ) : null}
+      {workbench}
 
       {missingShellCount > 0 ? (
       <details id="package-maintenance" className="border-t border-slate-200 pt-4 dark:border-slate-800">

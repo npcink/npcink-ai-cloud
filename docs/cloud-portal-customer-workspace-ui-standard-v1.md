@@ -89,6 +89,37 @@ The normal route composition is:
 A page must not repeat the title, site name, URL, status, or primary action in
 multiple adjacent cards.
 
+### 2.1 Simple service home and navigation
+
+Primary navigation contains Home, Plan & credits, Usage history, and Help &
+support. Account settings and sign-out belong to the account utility menu;
+mobile navigation keeps both reachable. Existing route URLs remain stable.
+
+The home composition uses three states: no-site setup, daily use, and attention.
+A known account or site issue takes priority over setup. Loading remains neutral;
+a failed entitlement read must never become a zero balance or healthy service.
+Connection lifecycle is not proof of runtime health.
+
+Show one connection guide in the site workspace. Expand its three steps for
+accounts without a site and disclose it on demand for connected accounts. Do
+not repeat the guide in a warning, checklist, and empty-state panel, or require
+Free users to review a package before connecting. Always preserve the existing
+WordPress-originated handoff and explicit account-ownership confirmation.
+
+Show the primary issue and its next action first. Keep every remaining issue
+reachable in a counted disclosure. Account credits and package ownership remain
+independent from selected-site context; homepage composition must not introduce
+per-site detail requests.
+
+Site rows may offer a navigation-only WordPress dashboard link. Build the
+standard `wp-admin/` path from an HTTP(S) WordPress site URL, preserving its
+subdirectory and port. Reject missing, malformed, credential-bearing, or
+non-WordPress URLs. Do not append Cloud credentials, return state, or tokens.
+Open the link in a new tab with `noopener noreferrer` and an accessible hint.
+Custom admin paths and installations with different home/admin roots still use
+the customer's existing WordPress entry; no verified admin URL is projected by
+the current API contract.
+
 ## 3. Shared Workspace Header
 
 Use `PortalWorkspaceHeader` for primary Portal routes.
@@ -415,6 +446,11 @@ current origin/master baseline
 
 ### 13.3 Treat contracts and review as product evidence
 
+- Layout / density / attention UX for the current home workspace also follows
+  [Portal UI Spec](portal-ui-spec.md) §9「交付门禁 / 自检」: after `m4:preview:sync`,
+  open `http://127.0.0.1:18010/portal` (or affected routes), visually check that
+  Spec’s acceptance checklist, fix residuals, then report done — **contracts alone
+  are not UI delivery**.
 - Static source contracts are executable ownership rules. When a behavior is
   intentionally retired, update every contract that still requires it and run
   the complete contract suite before publication.

@@ -47,7 +47,9 @@ class AgentFeedbackPayload(BaseModel):
     source_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     source_score: int | None = Field(default=None, ge=0, le=100)
     source_severity: str = Field(default="", max_length=64)
-    ranking_version: Literal["internal_links.v1", "related_content.v1"] | None = None
+    ranking_version: Literal[
+        "internal_links.v1", "related_content.v1", "internal_links.v2", "related_content.v2",
+    ] | None = None
     candidate_rank: int | None = Field(default=None, ge=1, le=20, strict=True)
     score_bucket: Literal["low", "medium", "high", "unknown"] | None = None
     retrieval_source: Literal[

@@ -117,6 +117,18 @@ test('fixed service directory uses a table and one configuration workbench', asy
     contentType: 'image/png',
   });
 
+  await page.setViewportSize({ width: 1056, height: 733 });
+  const serviceTable = page.locator('[data-ui="external-service-table"]');
+  expect(await serviceTable.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const configure = page.locator('[data-external-service-id="tavily"]').getByRole('button', { name: /Configure|配置/i });
+  const configureBox = await configure.boundingBox();
+  expect(configureBox!.x + configureBox!.width).toBeLessThanOrEqual(1056);
+  await configure.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: testInfo.outputPath('external-services-1056.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+
   await page.getByRole('tab', { name: /Image sources|图库来源/i }).click();
   await expect(page.locator('[data-external-service-id="unsplash"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="pixabay"]')).toBeVisible();
@@ -213,7 +225,7 @@ test('stored credentials require explicit replacement and clearing needs confirm
   expect(writes[1]).toMatchObject({
     provider_id: 'jina_reader',
     enabled: true,
-    source_role: 'reader_enhancement',
+    source_role: 'execution_source',
     runtime_profile_ids: ['web-search.reader'],
     metadata: {
       ui_source: 'external_services',
@@ -244,4 +256,99 @@ test('external supplier test translates network failures in row feedback', async
   await page.locator('[data-external-service-id="tavily"]').getByRole('button', { name: '测试', exact: true }).click();
   await expect(page.locator('[data-external-service-feedback="tavily"]')).toContainText('无法连接供应商');
   await expect(page.getByText('web search provider request failed')).toHaveCount(0);
+});
+
+for (const responseKind of ['unavailable', 'malformed'] as const) {
+  test(`initial ${responseKind} read does not invent an empty writable configuration`, async ({ page }) => {
+    const writes = await installExternalServicesHarness(page);
+    let fail = true;
+    await page.route('**/api/admin/provider-connections', async route => {
+      if (!fail) return route.fallback();
+      await route.fulfill({ status: responseKind === 'unavailable' ? 503 : 200, json: responseKind === 'unavailable'
+        ? buildAdminApiErrorEnvelope('unavailable', 'provider.unavailable') : buildAdminApiEnvelope({}) });
+    });
+    await page.goto('/admin/external-services');
+    await expect(page.getByRole('button', { name: /Retry|重试/ })).toBeVisible();
+    await expect(page.locator('[data-ui="external-service-table"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText('0/10');
+    expect(writes).toHaveLength(0);
+    fail = false;
+    await page.getByRole('button', { name: /Retry|重试/ }).click();
+    await expect(page.locator('[data-external-service-id="tavily"]')).toBeVisible();
+  });
+}
+
+test('saved changes with failed readback freeze the stale snapshot and retry only the read', async ({ page }) => {
+  const writes = await installExternalServicesHarness(page);
+  let failRead = false;
+  await page.route('**/api/admin/provider-connections', async route => {
+    if (route.request().method() !== 'GET' || !failRead) return route.fallback();
+    await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('unavailable', 'provider.unavailable') });
+  });
+  await page.goto('/admin/external-services');
+  const row = page.locator('[data-external-service-id="tavily"]');
+  await row.getByRole('button', { name: /Configure|配置/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('checkbox').uncheck();
+  failRead = true;
+  await dialog.getByRole('button', { name: /^Save$|^保存$/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-external-service-feedback="tavily"]')).toContainText(/do not save again|无需再次保存/);
+  await expect(page.locator('[data-ui="external-stale-snapshot"]')).toBeVisible();
+  await expect(row.getByRole('button', { name: /Configure|配置/ })).toBeDisabled();
+  await expect(row.getByRole('button', { name: /^Test$|^测试$/ })).toBeDisabled();
+  expect(writes).toHaveLength(1);
+  failRead = false;
+  await page.getByRole('button', { name: /Retry|重试/ }).click();
+  await expect(row.getByRole('button', { name: /Configure|配置/ })).toBeEnabled();
+  await expect(row).toContainText(/Disabled|停用/);
+  expect(writes).toHaveLength(1);
+});
+
+for (const theme of ['light', 'dark'] as const) {
+test(`verification failures survive refresh and unobserved connections remain unverified in ${theme}`, async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(theme => localStorage.setItem('theme', theme), theme);
+  await installExternalServicesHarness(page);
+  await page.route('**/api/admin/provider-connections', async route => {
+    await route.fulfill({ json: buildAdminApiEnvelope({ connections: [
+      { ...connections[0], verification_status: 'failed', attention_required: true, last_error_code: 'provider.authentication_failed' },
+      { ...connections[0], connection_id: 'external_bocha', provider_id: 'bocha', verification_status: 'not_observed' },
+    ] }) });
+  });
+  await page.goto('/admin/external-services');
+  const row = page.locator('[data-external-service-id="tavily"]');
+  await expect(row).toContainText(/Verification failed|验证失败/);
+  await expect(row).toContainText('provider.authentication_failed');
+  await expect(page.locator('[data-external-service-id="bocha"]')).toContainText(/Not verified|未验证/);
+  await page.reload();
+  await expect(row).toContainText(/Verification failed|验证失败/);
+  await page.screenshot({ path: testInfo.outputPath(`external-verification-${theme}.png`), fullPage: true, animations: 'disabled' });
+});
+}
+
+test('service categories support URL replay, browser history and keyboard tabs on a narrow PC', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await installExternalServicesHarness(page);
+  await page.goto('/admin/external-services?category=image');
+  const images = page.getByRole('tab', { name: /Image sources|图库来源/ });
+  const search = page.getByRole('tab', { name: /Web search|网页搜索/ });
+  await expect(images).toHaveAttribute('aria-selected', 'true');
+  await images.focus();
+  await images.press('Home');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/category=search/);
+  await search.press('End');
+  await expect(images).toBeFocused();
+  await expect(images).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'external-tab-image');
+  await page.reload();
+  await expect(images).toHaveAttribute('aria-selected', 'true');
+  await search.click();
+  await expect(page).toHaveURL(/category=search/);
+  await page.goBack();
+  await expect(images).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('external-categories-900.png'), fullPage: true });
 });

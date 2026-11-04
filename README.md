@@ -14,16 +14,37 @@ It is not a second WordPress control plane, ability registry, workflow
 registry, prompt/preset source of truth, approval system, or final WordPress
 write owner.
 
+Operations Advisor is temporarily paused. New analysis and summary actions are
+unavailable; historical summary records remain readable through authenticated
+support interfaces. See [reversible pauses](docs/reversible-feature-pauses-v1.md).
+
+Cloud nightly inspection, site-operations analysis, article audio generation,
+media optimization/derivative jobs, batch derivative planning and media governance
+audit are temporarily paused. Their product entrypoints are withdrawn and new
+execution, retry and queued work are rejected before Provider/processing work.
+Historical results, adopted media, backup recovery, retention and ordinary text,
+image, ALT, Site Knowledge and search services remain available. These source
+changes require separate deployment before they change production behavior.
+
 ## Current Focus
 
 The current product focus is the normal WordPress Ability -> Addon -> Cloud
 runtime -> hosted model -> reviewed editor-adoption loop. Keep only the usage,
 error, provider, and quality evidence needed to prove that loop.
 
+The operator confirmed the
+[value-first development decision on 2026-10-27](docs/engineering/phase-1-scope.md#value-first-development-decision-2026-10-27):
+focus new improvements on title, summary and selected-text rewrite usefulness.
+Freeze further ecosystem, workflow, adaptive-routing, analytics and platform
+expansion while preserving existing services and necessary maintenance.
+Technical acceptance does not establish human value or activate the full backlog.
+
 Until that loop has sufficient real evidence:
 
-- do not expand broad Admin governance, dashboard, alert-ranking, or commercial
-  front-office scope;
+- keep broad governance and alert-ranking expansion bounded to actual evidence;
+- commercial expansion remains frozen outside the approved existing-sales and
+  shared-trial exception and the [bounded manual service-notice exception](docs/customer-service-notifications-v1.md); follow the
+  [bounded rollout contract](docs/engineering/commercial-development-next-stage-v1.md);
 - do not generate paid provider calls solely to manufacture observation data;
 - do not add orchestration infrastructure or move local WordPress truth into
   Cloud;
@@ -31,6 +52,11 @@ Until that loop has sufficient real evidence:
   evidence as separate states.
 
 Current revisions, PRs, M4 ownership, and release state are time-sensitive.
+All eligible normal accounts are in scope for existing Plus/Pro monthly
+purchases, credit packs, and the shared 14-day Plus/Pro trial. The three-user
+Free validation remains independent; it is not an access allowlist or a
+prerequisite for paid access. This approved rollout scope is not evidence of
+production deployment or successful real transactions.
 Inspect the current `origin/master`, active tasks, open PRs, and M4 status before
 using a dated closeout record as present truth.
 
@@ -49,6 +75,7 @@ Start with:
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
 - [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
+- [Portal UI Spec（客户门户布局 / IA）](docs/portal-ui-spec.md) — 含顶栏 56rem 对齐与套餐页+用量抽屉（§10）
 - [Internal Readiness Final Handoff — 2026-08-18](docs/history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
@@ -141,6 +168,11 @@ Useful local endpoints:
 - `http://127.0.0.1:8010/health/live`
 - `http://127.0.0.1:8010/admin/login`
 - `http://127.0.0.1:8010/portal/login`
+
+`docker-compose.dev.yml` publishes Postgres/Redis/proxy on `127.0.0.1` only
+(localhost UX unchanged). Override `NPCINK_CLOUD_DEV_POSTGRES_PASSWORD` in
+`.env` if you want a non-default local DB password; do not run this stack
+bound to shared/public networks.
 
 For setup, service settings, PostgreSQL 18, and production-style configuration,
 follow the [first-install runbook](docs/cloud-first-install-rds-pg18-runbook.md)
@@ -322,7 +354,8 @@ passwords, SSH keys, or encryption roots.
 - Keep development-only values in ignored `.env.local` when local Docker needs
   them.
 - Configure provider connections and service settings through their current
-  Admin surfaces; retired provider/service `.env` fallbacks must not return.
+  Admin surfaces (`/admin/ai-resources`); production rejects provider `*_API_KEY`
+  env fallbacks so compose cannot dual-channel override Admin-managed secrets.
 - Runtime-data encryption key rotation follows `deploy/OPS_PLAYBOOK.md`; it is
   not an ordinary environment edit.
 - Test fixtures belong under `tests/fixtures/`; runtime output belongs under

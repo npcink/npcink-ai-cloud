@@ -4,28 +4,29 @@ import { resolve } from 'node:path';
 import { frontendRoot } from './_paths.mjs';
 
 const source = readFileSync(resolve(frontendRoot, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
-const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const editorSource = readFileSync(resolve(frontendRoot, 'src/features/admin/credit-packs/use-credit-pack-editor.ts'), 'utf8');
+const navigationSource = readFileSync(resolve(frontendRoot, 'src/features/admin/navigation.ts'), 'utf8');
 const defaultSurfaceStart = source.indexOf('<BackofficePageStack className="space-y-5">');
 const editorStart = source.indexOf('<AdminWorkbenchDialog', defaultSurfaceStart);
 const defaultSurface = source.slice(defaultSurfaceStart, editorStart);
 const editorSurface = source.slice(editorStart);
 
 assert.match(source, /usePathname[\s\S]*useRouter[\s\S]*searchParams\.get\('status'\)[\s\S]*searchParams\.get\('focus'\)/, 'Credit pack filter and focus must be URL-backed');
-assert.match(source, /requestActiveRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedRef[\s\S]*if \(requestActiveRef\.current\) return/, 'Credit pack reads must deduplicate Strict Mode requests and reject stale replacement');
+assert.match(editorSource, /requestActiveRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedRef[\s\S]*if \(requestActiveRef\.current \|\| busy\.current\) return/, 'Reads must deduplicate and isolate stale results');
 assert.match(defaultSurface, /BackofficeConfigurationHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*data-ui="credit-pack-directory-row"/, 'The default surface must use the shared compact configuration header and one comparison table');
 assert.doesNotMatch(defaultSurface, /<input|<textarea/, 'The default credit pack directory must be read-only until one pack enters edit mode');
 assert.doesNotMatch(defaultSurface, /common\.save|handleSaveDraft/, 'The default header and directory must not expose an ambiguous save-all action');
 assert.doesNotMatch(defaultSurface, /admin\.credit_packs_open_packages/, 'The independent AI credit pack workspace must not duplicate package-catalog navigation');
 assert.match(
-  layoutSource,
-  /href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.nav_credit_packs'[\s\S]*activePrefixes: \['\/admin\/credit-packs'\]/,
-  'AI credit pack routes must own their sidebar state'
+  navigationSource,
+  /href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.workspace_tab_credit_packs'/,
+  'AI credit pack routes must stay inside the commercial workspace tabs'
 );
 assert.match(editorSurface, /open=\{Boolean\(draft\)\}[\s\S]*isDraftDirty[\s\S]*handleSaveDraft[\s\S]*AdminConfigurationTable/, 'The shared workbench must use a configuration table and save only an explicitly changed selected pack');
-assert.match(source, /items\.map\(\(item\) => item\.pack_id === draft\.pack_id \? normalizeItem\(draft\) : normalizeItem\(item\)\)[\s\S]*saveCatalog\(nextItems\)/, 'One-pack editing must preserve the atomic complete-catalog PATCH contract');
+assert.match(editorSource, /draftBase\.items\.map\(item => item\.pack_id === target\.pack_id \? target : item\)[\s\S]*method: 'PATCH'[\s\S]*idempotencyKey: submitted\.operation_id[\s\S]*expected_revision: submitted\.expected_revision, items: submitted\.items/, 'Preserve atomic full catalog CAS and original key');
 assert.match(source, /useToast\(\)[\s\S]*toast\.success/, 'Successful pack updates must use non-shifting global Toast feedback');
 assert.match(source, /credit_packs_edit_boundary[\s\S]*future customer purchases only[\s\S]*Existing payment orders and package entitlement remain unchanged/, 'The workbench must explain purchase snapshot and ownership boundaries');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeMetricStrip|BackofficeStackCard/, 'The credit pack configuration page must not regress to a hero metric panel or editable card wall');
-assert.doesNotMatch(source, /from '@\/components\/ui\/Modal'|<Modal/, 'Credit pack editing must not use a route-local generic modal');
+assert.doesNotMatch(source, /import \{ Modal \}|<Modal/, 'Credit pack editing must not use a route-local generic modal');
 
 console.log('admin_credit_packs_directory_v2_contract: ok');

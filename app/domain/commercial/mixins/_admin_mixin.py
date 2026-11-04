@@ -91,6 +91,7 @@ from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
+from app.domain.portal_sessions.service import lock_login_scope, lock_login_scopes
 from app.domain.runtime.provider_budget import ProviderBudgetService
 
 AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
@@ -100,9 +101,16 @@ AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
     CREDIT_LEDGER_EVENT_REFUND,
 ]
 
+AI_CREDIT_ACQUISITION_LEDGER_EVENT_TYPES = [
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
+    CREDIT_LEDGER_EVENT_REFUND,
+]
+
 AI_CREDIT_LEDGER_CATEGORY_LABELS = {
     "monthly_plan_grant": "Monthly plan grant",
     "credit_pack_purchase": "Credit pack purchase",
+    "subscription_topup": "Top-up pack",
     "ai_usage": "AI usage",
     "refund_adjustment": "Refund adjustment",
     "operator_adjustment": "Operator adjustment",
@@ -1083,9 +1091,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             identity_repository = CommercialIdentityRepository(session)
             access_repository = CommercialAccessRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
-            identity = identity_repository.get_principal_identity_by_ref(
-                principal_id=normalized_principal_id,
-            )
+            identity = lock_login_scope(session, normalized_principal_id)
             if identity is None:
                 raise CommercialNotFoundError(
                     "service.principal_not_found",
@@ -1176,10 +1182,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             identity_repository = CommercialIdentityRepository(session)
             access_repository = CommercialAccessRepository(session)
             audit_repository = CommercialServiceAuditRepository(session)
+            locked_identities = lock_login_scopes(session, normalized_principal_ids)
             for normalized_principal_id in normalized_principal_ids:
-                identity = identity_repository.get_principal_identity_by_ref(
-                    principal_id=normalized_principal_id,
-                )
+                identity = locked_identities[normalized_principal_id]
                 if identity is None:
                     totals["failed"] += 1
                     items.append(
@@ -1694,7 +1699,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         now = self.now_factory()
         items: list[dict[str, object]] = []
         for account in accounts:
-            account_sites = sites_by_account.get(account.account_id, [])
+            account_sites = [
+                site
+                for site in sites_by_account.get(account.account_id, [])
+                if site.status != SITE_STATUS_ARCHIVED and site.ownership_released_at is None
+            ]
             account_subscriptions = subscriptions_by_account.get(account.account_id, [])
             primary_subscription = service._select_primary_subscription(account_subscriptions)
             package_summary = service._build_subscription_package_summary(
@@ -1809,17 +1818,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     if primary_subscription is not None
                     else f"/admin/accounts/{account.account_id}#coverage-actions"
                 )
-            elif str(billing_status.get("status") or "") in {"missing", "stale"} and site_count > 0:
-                severity = "warning"
-                reason_code = "billing_snapshot_follow_up"
-                reason_label = "Current-period billing snapshot needs follow-up."
-                recommended_action = "inspect_billing_snapshot"
-                action_label = "Inspect subscription"
-                action_href = (
-                    f"/admin/subscriptions/{primary_subscription.subscription_id}"
-                    if primary_subscription is not None
-                    else f"/admin/accounts/{account.account_id}#coverage-actions"
-                )
             elif days_until_end is not None and 0 <= days_until_end <= 14:
                 severity = "warning"
                 reason_code = "subscription_expiring_soon"
@@ -1845,6 +1843,20 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 recommended_action = "inspect_site_key_coverage"
                 action_label = "Open site footprint"
                 action_href = f"/admin/accounts/{account.account_id}#site-footprint"
+            elif str(billing_status.get("status") or "") in {"missing", "stale"} and site_count > 0:
+                severity = "warning"
+                reason_code = "billing_snapshot_follow_up"
+                reason_label = (
+                    "Usage statistics need maintenance; this is not evidence of payment failure "
+                    "or service denial."
+                )
+                recommended_action = "inspect_billing_snapshot"
+                action_label = "Inspect subscription"
+                action_href = (
+                    f"/admin/subscriptions/{primary_subscription.subscription_id}"
+                    if primary_subscription is not None
+                    else f"/admin/accounts/{account.account_id}#coverage-actions"
+                )
             elif site_count > 0:
                 severity = "ok"
                 reason_code = "service_coverage_aligned"
@@ -1925,8 +1937,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             account_payload: dict[str, object] = (
                 cast(dict[str, object], account) if isinstance(account, dict) else {}
             )
+            metadata = account_payload.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
             return (
-                str(account_payload.get("name") or account_payload.get("account_id") or "").lower(),
+                str(
+                    metadata.get("operator_display_name")
+                    or account_payload.get("name")
+                    or account_payload.get("account_id")
+                    or ""
+                ).lower(),
                 str(account_payload.get("account_id") or ""),
             )
 
@@ -1982,11 +2001,14 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 )
                 package_value = item.get("package")
                 package_payload = package_value if isinstance(package_value, dict) else {}
+                metadata_value = account_payload.get("metadata")
+                metadata_payload = metadata_value if isinstance(metadata_value, dict) else {}
                 searchable = " ".join(
                     str(value or "")
                     for value in (
                         account_payload.get("account_id"),
                         account_payload.get("name"),
+                        metadata_payload.get("operator_display_name"),
                         identity_payload.get("email"),
                         identity_payload.get("principal_id"),
                         subscription_payload.get("subscription_id"),
@@ -2638,6 +2660,36 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             session.commit()
         return payload
 
+    def get_admin_account_credit_adjustment(
+        self, account_id: str, *, operation_id: str, audit_context: ServiceAuditContext
+    ) -> dict[str, object]:
+        # This exact lookup is independent of ledger pagination/periods. Absence
+        # cannot prove a request was never accepted (it may still be in flight).
+        with get_session(self.database_url) as session:
+            if CommercialAccountSiteRepository(session).get_account(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found", f"account '{account_id}' was not found"
+                )
+            entry = CommercialCreditRepository(session).get_credit_ledger_entry_by_idempotency_key(
+                f"account_credit_adjustment:{account_id}:{operation_id}"
+            )
+            applied = (
+                entry is not None
+                and entry.account_id == account_id
+                and entry.source_type == "operator_credit_adjustment"
+                and (entry.metadata_json or {}).get("actor_kind") == audit_context.actor_kind
+                and (entry.metadata_json or {}).get("actor_ref") == audit_context.actor_ref
+            )
+            return {
+                "account_id": account_id,
+                "operation_id": operation_id,
+                "state": "applied" if applied else "unconfirmed",
+                "entry": (
+                    self._serialize_credit_ledger_entry(entry, include_internal=True)
+                    if applied else None
+                ),
+            }
+
     def get_admin_account_credit_ledger(
         self,
         account_id: str,
@@ -2646,12 +2698,23 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         source_type: str | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
         normalized_limit = min(100, max(1, int(limit or 50)))
         normalized_offset = max(0, int(offset or 0))
         normalized_source_type = str(source_type or "").strip()
         source_types = [normalized_source_type] if normalized_source_type else None
+        visible_event_types = set(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        if event_types is None:
+            resolved_event_types = list(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        else:
+            resolved_event_types = [
+                str(item or "").strip().lower()
+                for item in event_types
+                if str(item or "").strip().lower() in visible_event_types
+            ]
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             subscription_repository = CommercialSubscriptionRepository(session)
@@ -2675,11 +2738,22 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             subscription_id = (
                 primary_subscription.subscription_id if primary_subscription is not None else None
             )
+            if primary_subscription is not None:
+                # Backfill visibility grants for historical operator top-ups that
+                # only raised package_limit (no ledger row at apply time).
+                cast(Any, self)._ensure_subscription_topup_ledger_entries_in_session(
+                    repository=cast(Any, credit_repository),
+                    subscription=primary_subscription,
+                    period_start_at=period_start_at,
+                    period_end_at=period_end_at,
+                )
+                session.commit()
             entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2689,8 +2763,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             total = credit_repository.count_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2698,8 +2773,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             summary_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2838,6 +2914,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 25,
         offset: int = 0,
         site_id: str | None = None,
+        include_unscoped: bool = False,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         normalized_site_id = str(site_id or "").strip()
         ledger = self.get_admin_account_credit_ledger(
@@ -2845,6 +2923,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             limit=min(50, max(1, int(limit or 25))),
             offset=max(0, int(offset or 0)),
             site_ids=[normalized_site_id] if normalized_site_id else None,
+            # Account Sources keeps site_id NULL grants (subscription_topup).
+            # Site-scoped ledger stays strict so site summaries are not inflated.
+            include_unscoped=include_unscoped,
+            event_types=event_types,
         )
         raw_summary = ledger.get("summary")
         summary: dict[str, object] = (
@@ -3023,6 +3105,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         if event_type == CREDIT_LEDGER_EVENT_GRANT:
             if source_type == "credit_pack_purchase":
                 return "credit_pack_purchase"
+            if source_type == "subscription_topup":
+                return "subscription_topup"
             if source_type == "operator_credit_adjustment":
                 return "operator_adjustment"
             return "monthly_plan_grant"
@@ -3054,6 +3138,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             return f"Monthly package grant added {credits} AI credits to the current period."
         if category == "credit_pack_purchase":
             return f"Credit pack payment added {credits} AI credits after payment confirmation."
+        if category == "subscription_topup":
+            return (
+                f"Operator top-up pack added {credits} AI credits "
+                "to the package limit this period."
+            )
         if category == "ai_usage":
             label = AI_CREDIT_COMPONENT_LABELS.get(source_type, source_type or "AI capability")
             return f"{label} consumed {credits} AI credits."

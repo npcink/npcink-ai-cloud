@@ -9,11 +9,35 @@ vi.mock('@/lib/env', () => ({
 import { GET, POST } from '@/app/admin/auth/login/route';
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe('admin login BFF origin', () => {
+  it.each(['application/json', 'application/x-www-form-urlencoded'])('ends a stalled %s login with retryable guidance', async contentType => {
+    const timeout = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+    const fetchMock = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = POST(new NextRequest('http://127.0.0.1:18010/admin/auth/login', {
+      method: 'POST', headers: { 'content-type': contentType },
+      body: contentType === 'application/json' ? JSON.stringify({ admin_key: 'test' }) : 'admin_key=test',
+    }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    timeout.abort(new DOMException('deadline', 'TimeoutError'));
+    const response = await pending;
+    if (contentType === 'application/json') {
+      expect(response.status).toBe(504);
+      expect(await response.json()).toMatchObject({ error_code: 'auth.admin_login_timeout' });
+    } else {
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toContain('error=auth.admin_login_timeout');
+    }
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
   it.each([
     ['http://127.0.0.1:18010', '/admin/vector-settings', '/admin/vector-settings'],
     ['http://localhost:18010', '//attacker.example/admin', '/admin'],

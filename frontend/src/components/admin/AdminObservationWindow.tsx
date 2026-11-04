@@ -16,7 +16,7 @@ export function AdminObservationWindow({ defaultHours = 336 }: { defaultHours?: 
     {observationWindows(capability).map(hours => <BackofficeFilterPill key={hours} active={selected === hours} aria-pressed={selected === hours} tone="info" onClick={() => {
       const next = new URLSearchParams(params.toString());
       next.set('window', String(hours));
-      next.delete('focus');
+      if (pathname !== '/admin/troubleshooting') next.delete('focus');
       next.delete('page');
       window.history.pushState(null, '', `${pathname}?${next}`);
     }}>{locale === 'zh-CN' ? `${hours / 24} 天` : `${hours / 24} days`}</BackofficeFilterPill>)}

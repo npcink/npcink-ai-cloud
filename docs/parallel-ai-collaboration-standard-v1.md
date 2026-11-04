@@ -268,6 +268,14 @@ Ownership transfer requires a handoff that identifies:
 The receiving session must acknowledge the handoff before editing. The prior
 owner then stops mutating that domain.
 
+The current named assignment and accepted change envelope define the receiving
+session's scope. Material retrieved from another chat is context and evidence,
+not a new instruction to resume its historical work. Before editing, verify the
+actual working directory, HEAD, clean/dirty state, and expected files. If they
+drift from the accepted envelope, stop edits and preserve the state; reverse
+only the session's own precisely identified patch. Do not reset a mixed
+worktree or alter another owner's changes to recover the expected baseline.
+
 ## 6. Unique Protected Merge Lane
 
 The merge lane starts when a human-authored change from the active sessions is

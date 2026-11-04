@@ -25,7 +25,7 @@ async function expectParent(page: Page, href: string) {
   const active = page.locator('[data-ui="admin-primary-nav"] a[aria-current="page"]');
   await expect(active).toHaveCount(1);
   await expect(active).toHaveAttribute('href', href);
-  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toContainText((await active.innerText()).trim());
+  await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
 }
 
 test('all observation pages expose one shared family with the correct parent', async ({ page }, testInfo) => {
@@ -62,7 +62,7 @@ test('observation links and parent return preserve scope through browser history
   await expect(page).toHaveURL(/\/admin\/plugin-observability\?window=720&site=site_mvp$/);
   await page.reload();
   await expectParent(page, '/admin/usage-statistics');
-  await page.locator('[data-ui="admin-route-breadcrumb"] a').click();
+  await page.locator('[data-ui="admin-observability-tabs"] a[href^="/admin/usage-statistics?"]').first().click();
   await expect(page).toHaveURL(/\/admin\/usage-statistics\?window=720&site=site_mvp$/);
 });
 
@@ -92,11 +92,11 @@ test('observation navigation wraps on mobile and remains keyboard reachable', as
 
 test('diagnostic pages share visible entrances and retain an owning parent', async ({ page }, testInfo) => {
   await navigationMocks(page);
-  for (const route of ['/admin/audit', '/admin/agent-feedback', '/admin/ai-advisor']) {
+  for (const route of ['/admin/audit', '/admin/agent-feedback']) {
     await page.goto(route);
     await expectParent(page, '/admin/troubleshooting');
     const nav = page.locator('[data-ui="admin-diagnostic-navigation"]');
-    await expect(nav.getByRole('link')).toHaveCount(4);
+    await expect(nav.getByRole('link')).toHaveCount(3);
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
     await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href', route === '/admin/agent-feedback' ? `${route}?window=24` : route);
     await page.screenshot({ path: testInfo.outputPath(`${route.split('/').at(-1)}-1440.png`), fullPage: true });
@@ -119,7 +119,7 @@ test('audit navigation translates supported site scope and exposes a return entr
   await expect(page).toHaveURL(/\/admin\/audit\?site_id=site_mvp$/);
   await expect(page.locator('input[name="site_id"]')).toHaveValue('site_mvp');
   await expect(nav.locator('a[href^="/admin/agent-feedback"]')).toHaveAttribute('href', '/admin/agent-feedback?window=24&site=site_mvp');
-  await expect(nav.locator('a[href^="/admin/ai-advisor"]')).toHaveAttribute('href', '/admin/ai-advisor?site=site_mvp');
+  await expect(nav.locator('a[href^="/admin/ai-advisor"]')).toHaveCount(0);
 });
 
 test('plugin navigation stays available on a load error and explains short-window transitions', async ({ page }) => {
@@ -165,12 +165,12 @@ test('every observation and diagnostic page fits the whole narrow viewport', asy
         : route.includes('view=quality') ? '/api/admin/editor-assist-quality'
           : route.includes('usage-statistics') || route === '/admin/troubleshooting' ? '/api/admin/runtime-telemetry'
             : `/api${route}`;
-    const loaded = page.waitForResponse(response => new URL(response.url()).pathname === endpoint);
+    const loaded = route === '/admin/ai-advisor' ? Promise.resolve() : page.waitForResponse(response => new URL(response.url()).pathname === endpoint);
     await page.goto(route);
     await loaded;
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expectParent(page, route.includes('observability') || route.includes('usage-statistics') ? '/admin/usage-statistics' : '/admin/troubleshooting');
-    if (route === '/admin/ai-advisor') await expect(page.locator('[data-ui="advisor-current-diagnosis"]')).toBeVisible();
+    if (route === '/admin/ai-advisor') await expect(page.locator('[data-ui="ai-advisor-paused"]')).toBeVisible();
     await expectWholePageFits(page);
     await page.screenshot({ path: testInfo.outputPath(`${route.split('/').at(-1)!.replace('?', '-')}-390.png`), fullPage: true });
   }
@@ -203,23 +203,16 @@ test('summary windows match controls, URL and requests while runtime keeps 90 da
   await expect(nav.locator('a[href^="/admin/media-observability"]')).toHaveAttribute('title', /近 30 天|last 30 days/);
 });
 
-test('populated and failed advisor states stay readable on narrow screens without AI calls', async ({ page }) => {
+test('paused advisor stays readable on narrow screens without any advisor calls', async ({ page }) => {
   await navigationMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  const aiRequests: string[] = [];
-  page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/advisor/')) aiRequests.push(request.url()); });
+  const requests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/admin/advisor/')) requests.push(request.url()); });
   await page.goto('/admin/ai-advisor');
-  const panel = page.locator('[data-ui="advisor-current-diagnosis"]');
-  await expect(panel).toBeVisible();
-  await expect(panel).toContainText(/高置信度|High confidence/);
+  await expect(page.locator('[data-ui="ai-advisor-paused"]')).toBeVisible();
   await expectWholePageFits(page);
-  await page.route('**/api/admin/advisor/ops-summary-preview?*', route => route.fulfill({ status: 503, json: {} }));
-  await page.reload();
-  await expect(page.locator('[data-ui="admin-diagnostic-navigation"]')).toBeVisible();
-  await expectWholePageFits(page);
-  expect(aiRequests).toEqual([]);
+  expect(requests).toEqual([]);
 });
-
 
 test('diagnostic tool footer uses destination capabilities for every direct entrance', async ({ page }) => {
   await navigationMocks(page);
@@ -231,4 +224,57 @@ test('diagnostic tool footer uses destination capabilities for every direct entr
   }
   await expect(footer.locator('a[href^="/admin/agent-feedback"]')).toHaveAttribute('href', '/admin/agent-feedback?window=168&site=site_mvp');
   await expect(page.locator('[data-ui="runtime-quality-link"]')).toHaveAttribute('href', '/admin/usage-statistics?view=quality&window=720&site=site_mvp');
+});
+
+
+test('all six Admin families use one centered PC header navigation without utility overlap', async ({ page }, testInfo) => {
+  await navigationMocks(page);
+  const routes = ['/admin/accounts', '/admin/subscriptions', '/admin/ai-resources', '/admin/service-settings', '/admin/vector-observability', '/admin/audit'];
+  for (const route of routes) {
+    await page.goto(route);
+    const header = page.locator('[data-ui="admin-header-layout"]');
+    const nav = page.locator('[data-admin-secondary-navigation]');
+    await expect(nav).toHaveCount(1);
+    await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+    await expect(page.locator('main [data-admin-secondary-navigation], main [data-ui="admin-workspace-navigation"], main [data-ui="admin-observability-tabs"], main [data-ui="admin-diagnostic-navigation"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toHaveCount(0);
+    for (const width of [1920, 1440, 1056]) {
+      await page.setViewportSize({ width, height: 1050 });
+      await expect.poll(async () => {
+        const geometry = await nav.boundingBox();
+        const frame = await header.boundingBox();
+        return geometry && frame ? Math.abs((geometry.x + geometry.width / 2) - (frame.x + frame.width / 2)) : 999;
+      }).toBeLessThan(2);
+      // ResizeObserver places the menu on its own row after the viewport changes.
+      // Centering alone can already pass before that placement has settled.
+      await expect.poll(async () => {
+        const navBox = (await nav.boundingBox())!;
+        const utilityBox = (await page.getByRole('button', { name: /Open quick switcher|打开快速跳转/i }).boundingBox())!;
+        return navBox.y >= utilityBox.y + utilityBox.height || navBox.x + navBox.width <= utilityBox.x;
+      }).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
+  await page.goto('/admin/vector-observability?window=336&site=site_mvp');
+  await page.setViewportSize({ width: 1920, height: 1050 });
+  await expect(page.locator('[data-ui="admin-header-layout"]')).toHaveAttribute('data-navigation-layout', 'inline');
+  await page.screenshot({ path: testInfo.outputPath('secondary-navigation-zh-1920.png'), fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('option', { name: 'English', exact: true }).click();
+  const nav = page.locator('[data-admin-secondary-navigation]');
+  for (const width of [1920, 1440, 1056]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await expect.poll(async () => {
+      const box = (await nav.boundingBox())!;
+      const frame = (await page.locator('[data-ui="admin-header-layout"]').boundingBox())!;
+      return Math.abs(box.x + box.width / 2 - frame.x - frame.width / 2);
+    }).toBeLessThan(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`secondary-navigation-en-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: /Collapse sidebar/i }).click();
+  await expect(page.getByRole('button', { name: /Expand sidebar/i })).toBeVisible();
+  await page.getByRole('button', { name: /Open quick switcher/i }).click();
+  await expect(page.getByRole('dialog', { name: /Quick switcher/i })).toBeVisible();
+  await page.keyboard.press('Escape');
 });

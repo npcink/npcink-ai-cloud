@@ -102,7 +102,11 @@ class RuntimeContractValidator:
     def validate_runtime_data_handling_contract(self, request: RuntimeRequest) -> None:
         data_classification = str(request.data_classification or "").strip().lower()
         storage_mode = str(request.storage_mode or RUNTIME_STORAGE_MODE_RESULT_ONLY).strip()
-        finding = find_runtime_data_guard_finding(request.input_payload)
+        finding = find_runtime_data_guard_finding(
+            request.input_payload,
+            ability_name=request.ability_name,
+            contract_version=request.contract_version,
+        )
         if finding is not None and finding.kind == "secret":
             raise RuntimeExecutionContractError(
                 "runtime.secret_input_detected",

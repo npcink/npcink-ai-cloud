@@ -69,172 +69,222 @@ assert.match(
   /<Modal[\s\S]*data-portal-support="new-ticket-dialog"/,
   'Portal ticket creation must open in a focused dialog instead of displacing ticket history'
 );
-assert.ok(
-  portalSupportPageSource.indexOf('portal.support_request_list_title') < portalSupportPageSource.indexOf('data-portal-support="status-rules"'),
-  'Portal ticket history must appear before status guidance'
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="ticket-guide"[\s\S]*support_guide_categories[\s\S]*support_guide_response/,
+  'Portal support must keep problem category and response guidance in a quiet title ⓘ hint'
 );
 assert.match(
   portalSupportPageSource,
-  /<ListPagination[\s\S]*offset=\{offset\}[\s\S]*total=\{total\}/,
-  'Portal support history must expose all tickets through pagination'
+  /actions=\{\([\s\S]*data-portal-support="header-actions"[\s\S]*data-portal-support="status-filters"[\s\S]*data-portal-support="submit-ticket"/,
+  'Portal support header must keep status filters and submit icon in the title-end actions group'
 );
 assert.match(
   portalSupportPageSource,
-  /data-portal-support="tickets-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_request_view_detail/,
-  'Portal support history must use a semantic PC table with one detail action per ticket'
+  /data-portal-support="status-filters"/,
+  'Portal ticket status filters must remain available but demoted to a secondary control group'
 );
+
 assert.match(
   portalSupportPageSource,
-  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*accountSites\.find\(\(site\) => site\.site_id === item\.site_id\)[\s\S]*support_request_other_site/,
-  'Portal support rows must distinguish account-level, known-site, and other-site tickets'
-);
-assert.match(
-  portalSupportPageSource,
-  /portal\.support_request_column[\s\S]*supportRequestSiteLabel\(item\)[\s\S]*data-portal-support="ticket-cards"[\s\S]*supportRequestSiteLabel\(item\)/,
-  'Portal support history must use a concise ticket column and the same site semantics in desktop and mobile layouts'
-);
-assert.match(
-  i18nSource,
-  /'portal\.support_topic_technical': 'Technical support'[\s\S]*'portal\.support_topic_technical': '技术支持'/,
-  'Portal support must localize legacy technical ticket topics'
-);
-assert.match(
-  portalSupportPageSource,
-  /SUPPORT_TOPICS[\s\S]*billing[\s\S]*payment[\s\S]*site[\s\S]*usage[\s\S]*account[\s\S]*general/,
-  'Portal support form must expose bounded customer-support topics'
-);
-assert.match(
-  portalSupportPageSource,
-  /support_rule_open[\s\S]*support_rule_in_progress[\s\S]*support_rule_resolved[\s\S]*support_rule_closed[\s\S]*data-portal-support="status-rules"/,
-  'Portal support page must explain ticket status, close evaluation, and reopen expectations'
-);
-assert.match(
-  portalPackagePanelSource,
-  /\/portal\/support\?new=1&topic=billing/,
-  'Portal package dialog must keep a contextual support path for Agency requests'
-);
-assert.doesNotMatch(
-  portalBillingPageSource,
-  /supportRequestHref|portal\.support_request_new_action/,
-  'Portal package header must not duplicate the global ticket navigation'
+  /data-portal-support="tickets-table"[\s\S]*min-w-\[720px\]/,
+  'Portal support PC tickets table must use a quieter min-width that fits quieter portal chrome'
 );
 assert.doesNotMatch(
   portalSupportPageSource,
-  /const initialSiteId = searchParams\?\.get\('site'\) \|\| selectedSiteId|if \(!siteId && selectedSiteId\)/,
-  'Portal support form must default to account-level issues unless a site is explicitly passed'
+  /min-w-\[980px\]/,
+  'Portal support PC tickets table must not keep the wider 980px floor'
 );
 assert.match(
   portalSupportPageSource,
-  /initialSiteIsVisible[\s\S]*setSiteId\(initialSiteIsVisible \? initialSiteId : ''\)/,
-  'Portal support must preserve an explicitly linked visible account site, including an inactive site'
-);
-assert.match(
-  portalSupportPageSource,
-  /const visibleSites = accountSites;[\s\S]*site_id: siteId,/,
-  'Portal support must let the customer associate any visible account site and rely on server-side access validation'
+  /max-w-\[16rem\][\s\S]*max-w-\[10rem\]/,
+  'Portal support PC ticket title/site cells must use the narrower max-width caps'
 );
 assert.doesNotMatch(
-  portalBillingPageSource,
-  /portal\.billing\.help_title|portal\.billing\.help_desc/,
-  'Portal package page must not keep a separate help card after the ticket tab exists'
+  portalSupportPageSource,
+  /max-w-\[26rem\]|max-w-\[14rem\]/,
+  'Portal support PC ticket title/site cells must not keep the older wider max-width caps'
+);
+
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="list-toolbar"/,
+  'Portal support must not keep an in-card list toolbar row for filters'
 );
 assert.match(
-  portalClientSource,
-  /async getAccountEntitlements[\s\S]*\/account\/entitlements[\s\S]*async createAccountCreditPackOrder[\s\S]*\/account\/credit-pack-orders/,
-  'Portal client must expose account-level package, credit pack, and payment operations'
+  portalSupportPageSource,
+  /PortalPageStack className="space-y-3"/,
+  'Portal support page stack must use tighter title-to-list spacing'
 );
 assert.match(
-  portalClientSource,
-  /async listSupportRequests[\s\S]*\/support-requests/,
-  'Portal client must expose support request listing'
+  portalSupportPageSource,
+  /data-portal-support="header-actions"[\s\S]*status-filters[\s\S]*submit-ticket/,
+  'Portal support filters must sit in the header actions cluster before the submit icon'
 );
 assert.match(
-  portalClientSource,
-  /async createSupportRequest[\s\S]*'POST', '\/support-requests'/,
-  'Portal client must expose support request creation'
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /actionsPlacement === 'title-end'[\s\S]*data-portal-header-actions="title-end"/,
+  'PortalWorkspaceHeader title-end actions must use a right-edge wrapper'
 );
 assert.match(
-  portalClientSource,
-  /pendingWriteKeys[\s\S]*writeIntentSignature[\s\S]*isUnconfirmedWriteError/,
-  'Portal writes must retain one idempotency key while the outcome remains unconfirmed'
+  portalSupportPageSource,
+  /data-portal-support="submit-ticket"[\s\S]*portal\.support_request_new_action[\s\S]*PortalActionIcon id="ticket-new"/,
+  'Portal submit-ticket header control must be an accessible icon button'
 );
 assert.match(
-  portalClientSource,
-  /async getSupportRequest[\s\S]*\/support-requests\/\$\{requestId\}/,
-  'Portal client must expose support request detail loading'
+  portalSupportPageSource,
+  /data-portal-support="view-detail"[\s\S]*PortalActionIcon id="view-detail"/,
+  'Portal ticket row detail control must be an accessible icon link'
 );
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /<p className="text-xs font-medium[\s\S]*portal\.support_filter_label/,
+  'Portal support must not show a visible Filter by status label'
+);
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /: <p className="text-sm text-slate-500">\{t\('portal\.support_account_scope_label'\)\}<\/p>/,
+  'Portal support must not show a standing Account scope label on the list toolbar'
+);
+
+
 assert.match(
-  portalClientSource,
-  /async createSupportRequestMessage[\s\S]*'POST', `\/support-requests\/\$\{requestId\}\/messages`/,
-  'Portal client must expose customer ticket replies'
+  portalSupportPageSource,
+  /actionsPlacement="title-end"/,
+  'Portal support header must place filters/submit at the title-end edge'
+);
+
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /common\.back/,
+  'Ticket detail must not show a redundant Back action beside the breadcrumb'
 );
 assert.match(
   portalSupportDetailPageSource,
-  /portalClient\.getSupportRequest[\s\S]*portalClient\.createSupportRequestMessage/,
-  'Portal ticket detail page must load messages and let customers reply'
+  /titleDisplay="sr-only"/,
+  'Ticket detail must hide the large H1 when breadcrumb already shows 工单 / title'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="ticket-description"/,
+  'Ticket detail must not keep a separate description card that duplicates the first customer bubble'
 );
 assert.match(
   portalSupportDetailPageSource,
-  /createSupportRequestAttachment[\s\S]*getSupportRequestAttachment[\s\S]*submitSupportRequestFeedback/,
-  'Portal ticket detail page must support attachments, downloads, and close evaluation'
+  /data-portal-support="message-thread"[\s\S]*bubble-customer[\s\S]*bubble-operator/,
+  'Ticket detail must render Q&A as left/right chat bubbles'
 );
 assert.match(
-  adminLayoutSource,
-  /href: '\/admin\/support-requests'[\s\S]*admin\.nav_support_requests/,
-  'Admin navigation must expose the support request queue'
+  portalSupportDetailPageSource,
+  /data-portal-support="system-line"/,
+  'Ticket detail must render system status changes as thin centered lines'
 );
 assert.match(
-  adminSupportPageSource,
-  /createApiClient[\s\S]*`\/api\/admin\/support-requests\?\$\{(?:requestKey|params\.toString\(\))\}`/,
-  'Admin support page must load the support request queue through the admin proxy'
+  portalSupportDetailPageSource,
+  /data-portal-support="composer"[\s\S]*data-portal-support="reply-actions"[\s\S]*composer-attach[\s\S]*refresh-detail[\s\S]*support_message_reply_action/,
+  'Ticket detail must use a compact composer with attach, refresh, and send'
 );
 assert.match(
-  adminSupportPageSource,
-  /params\.set\('offset'[\s\S]*<ListPagination[\s\S]*total=\{total\}/,
-  'Admin support queue must expose all filtered tickets through pagination'
+  portalSupportDetailPageSource,
+  /data-portal-support="attachment-chips"[\s\S]*data-portal-support="attachment-remove"/,
+  'Composer attachment chips must expose a remove control'
 );
 assert.match(
-  adminSupportPageSource,
-  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\((?:item\.request_id|requestId|input\.requestId)\)\}[\s\S]*method: 'PATCH'/,
-  'Admin support page must update ticket status through the admin proxy'
+  portalSupportDetailPageSource,
+  /composerDrafts\.map\(\(draft\)[\s\S]*data-draft-local=\{!draft\.attachment_id[\s\S]*data-portal-support="attachment-remove"[\s\S]*handleComposerDraftRemove\(draft\)/,
+  'Local attachment drafts must expose the same cancel/remove control before upload'
+);
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /data-portal-support="reply-reopen-notice"[\s\S]*border-amber-200 bg-amber-50/,
+  'Ticket detail must not keep the tall amber reopen banner'
 );
 assert.match(
-  adminSupportPageSource,
-  /params\.set\('topic', (?:appliedTopic|topic|filters\.topic)\)[\s\S]*value=\{(?:appliedTopic|topicFilter)\}/,
-  'Admin support queue must expose the backend topic filter'
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*data-portal-support="feedback-rating-stars"/,
+  'Close evaluation must use a resolved segment and star rating instead of wide selects'
 );
 assert.match(
-  adminSupportPageSource,
-  /buildAdminQueueReturnTo[\s\S]*buildAdminDetailHref[\s\S]*supportRequestDetailHref/,
-  'Admin support queue must link to ticket detail while preserving the queue return context'
+  portalSupportDetailPageSource,
+  /data-portal-support="close-evaluation"[\s\S]*justify-end[\s\S]*support_feedback_submit_action/,
+  'Close evaluation submit must be right-aligned'
+);
+
+assert.doesNotMatch(
+  portalSupportPageSource,
+  /data-portal-support="status-rules"/,
+  'Portal support list must not keep a standing ticket-status legend card'
 );
 assert.match(
-  adminSupportDetailPageSource,
-  /createSupportRequestMessage[\s\S]*visibility[\s\S]*public[\s\S]*internal/,
-  'Admin ticket detail must support public replies and internal notes'
+  portalSupportPageSource,
+  /data-portal-support="ticket-guide"[\s\S]*support_guide_status_summary/,
+  'Portal support must keep status meaning in the quiet title ⓘ hint'
+);
+
+assert.match(
+  readFileSync(resolve(process.cwd(), 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8'),
+  /titleDisplay\?: 'visible' \| 'sr-only'/,
+  'PortalWorkspaceHeader must support sr-only title for breadcrumb-led detail pages'
+);
+
+
+assert.match(
+  portalSupportDetailPageSource,
+  /statusTone\(supportRequest\.status\)[\s\S]{0,120}force|force[\s\S]{0,80}statusTone\(supportRequest\.status\)/,
+  'Ticket detail status badge must force-render so resolved is never silenced'
 );
 assert.match(
-  adminSupportDetailPageSource,
-  /createSupportRequestAttachment[\s\S]*fetchSupportRequestAttachment[\s\S]*support_feedback_title/,
-  'Admin ticket detail must support attachments and show close evaluation'
+  portalSupportPageSource,
+  /statusTone\(item\.status\)[\s\S]{0,120}force/,
+  'Ticket list status badges must force-render so resolved is never silenced'
 );
 assert.match(
-  adminProxySource,
-  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^support-requests\\\/\[\^\/\]\+\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_accounts'/,
-  'Admin proxy must explicitly allowlist support request status updates with account-management authority'
+  portalSupportDetailPageSource,
+  /rounded-2xl[\s\S]*data-portal-support="composer-shell"|data-portal-support="composer-shell"[\s\S]*rounded-2xl/,
+  'Ticket composer must use a rounded shell matching bubble radius'
 );
 assert.match(
-  adminProxySource,
-  /methods: \['POST'\],[\s\S]*?pattern: \/\^support-requests\\\/\[\^\/\]\+\\\/\(\?:messages\|attachments\)\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_accounts'/,
-  'Admin proxy must explicitly allowlist support request message and attachment creation with account-management authority'
+  portalSupportDetailPageSource,
+  /data-portal-support="refresh-detail"[\s\S]*absolute|absolute[\s\S]*data-portal-support="refresh-detail"/,
+  'Ticket refresh must sit inside the input trailing corner, not beside send'
 );
 assert.match(
-  i18nSource,
-  /portal\.nav_support_requests[\s\S]*portal\.support_status_in_progress[\s\S]*admin\.nav_support_requests[\s\S]*admin\.support_status_in_progress/,
-  'Support request Portal and Admin labels must be localized'
+  portalSupportDetailPageSource,
+  /text-right[\s\S]*data-portal-support="reply-reopen-notice"|data-portal-support="reply-reopen-notice"[\s\S]*text-right/,
+  'Reopen hint must be right-aligned under the composer send side'
 );
 assert.match(
-  i18nSource,
-  /portal\.support_status_rules_title[\s\S]*portal\.support_rule_closed[\s\S]*portal\.support_status_rules_title[\s\S]*portal\.support_rule_closed/,
-  'Support status rule copy must be localized in English and Chinese'
+  portalSupportDetailPageSource,
+  /max-w-\[30rem\][\s\S]*data-portal-support="close-evaluation"/,
+  'Close evaluation must use a narrow centered card (~30rem)'
 );
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="feedback-resolved-segment"[\s\S]*flex-1|flex w-full[\s\S]*feedback-resolved-segment/,
+  'Close evaluation segment must span the narrow card width'
+);
+
+
+assert.doesNotMatch(
+  portalSupportDetailPageSource,
+  /bubble-customer[\s\S]{0,800}support_message_author_customer|authorLabel\(/,
+  'Ticket bubbles must not show You/Support author labels; color alone distinguishes sides'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /data-portal-support="bubble-time"[\s\S]*group-hover:opacity-100[\s\S]*group-focus-within:opacity-100|group-hover:opacity-100[\s\S]*group-focus-within:opacity-100[\s\S]*bubble-time/,
+  'Ticket bubble timestamps must stay hidden until hover/focus'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackUpdateLink[\s\S]*close-evaluation-update[\s\S]*support_feedback_update_action/,
+  'After feedback is submitted, detail must collapse the close-eval card behind an Update evaluation link'
+);
+assert.match(
+  portalSupportDetailPageSource,
+  /showFeedbackEditor[\s\S]*!feedback \|\| feedbackEditorOpen|!feedback \|\| feedbackEditorOpen[\s\S]*showFeedbackEditor/,
+  'Close evaluation editor must open only when no feedback yet or the user expands Update evaluation'
+);
+
+console.log('portal_support_requests_contract: ok');

@@ -153,6 +153,19 @@ class CommercialSupportRepository(CommercialSupportQueries):
         self.session.flush()
         return attachment
 
+    def delete_support_request_attachment(
+        self,
+        attachment: SupportRequestAttachment,
+        *,
+        activity_at: datetime | None = None,
+    ) -> None:
+        now = activity_at or datetime.now(UTC)
+        request = self.get_support_request(str(attachment.request_id or ""))
+        if request is not None:
+            request.updated_at = now
+        self.session.delete(attachment)
+        self.session.flush()
+
     def upsert_support_request_feedback(
         self,
         *,

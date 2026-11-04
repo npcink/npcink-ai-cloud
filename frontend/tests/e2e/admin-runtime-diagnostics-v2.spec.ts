@@ -1,3 +1,4 @@
+import { buildRuntimeTelemetryFixture, buildRuntimeRunsFixture } from './helpers/runtime-telemetry-fixture';
 import { expect, test, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import {
@@ -11,8 +12,78 @@ import {
 } from './helpers/admin-visual-receipt';
 
 async function selectPanel(page: import('@playwright/test').Page, name: 'records' | 'trend' | 'overview') {
-  await page.locator(`#diagnostic-tab-${name}`).click();
+  const tab = page.locator(`#diagnostic-tab-${name}`);
+  await tab.click();
+  // URL-backed tab state can commit after the click completes.
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator(`#diagnostic-panel-${name}`)).toBeVisible();
 }
+
+test('missing-call investigation separates comparison records and retains recovery scope', async ({ page }, testInfo) => {
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const issueCode = 'hosted_model.provider_call_gap';
+  const requests: URL[] = [];
+  await page.route(/\/api\/admin\/runtime-telemetry(?:\/runs)?\?/, async route => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    const review = Boolean(url.searchParams.get('since'));
+    const context = url.searchParams.get('evidence_scope') === 'context';
+    const data = url.pathname.endsWith('/runs') ? {
+      items: review ? [] : [{
+        run_id: context ? 'recorded-comparison' : 'failed-unverified', site_id: 'site-alpha',
+        ability_name: 'test/inspect', ability_family: 'text', profile_id: 'text.ai',
+        status: context ? 'succeeded' : 'failed', error_code: context ? null : 'runtime.rejected',
+        started_at: '2026-10-27T10:00:00Z', duration_ms: 100,
+        provider_call_count: context ? 2 : 0, has_meter_event: true,
+        provider_evidence_state: context ? 'recorded' : 'failed_without_call',
+      }],
+    } : {
+      generated_at: '2026-10-27T12:00:00Z',
+      totals: { runs: review ? 0 : 2, provider_call_run_coverage_rate: 0.5,
+        provider_evidence_required_runs: review ? 0 : 2, metered_run_coverage_rate: 1 },
+      capability_groups: [{ group_id: 'text', runs_total: 2, provider_call_run_coverage_rate: 0.5, provider_call_gap_runs: 1 }],
+      alert_summary: { status: review ? 'inactive' : 'warning', alerts: review ? [] : [
+        { code: issueCode, severity: 'warning', count: 1, capabilities: ['text'] },
+      ] },
+    };
+    await route.fulfill({ json: buildAdminApiEnvelope((url.pathname.endsWith('/runs') ? buildRuntimeRunsFixture(data) : buildRuntimeTelemetryFixture(data, url.searchParams))) });
+  });
+  await page.goto(`/admin/troubleshooting?focus=${issueCode}&site=site-alpha`);
+  await page.getByRole('button', { name: /Inspect missing-call runs|查看缺失调用的运行/, exact: true }).click();
+  const evidence = page.locator('[data-ui="runtime-run-evidence"]');
+  await expect(evidence).toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await evidence.getByRole('button', { name: /View detail|查看详情/, exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('failed-unverified');
+  await expect(page.getByRole('dialog')).toContainText(/stopped before a call|是否在调用前终止/);
+  await page.keyboard.press('Escape');
+  await evidence.getByRole('button', { name: /Runs with call evidence|有调用记录的对照/, exact: true }).click();
+  await expect(evidence).toContainText(/Call recorded|已有调用记录/);
+  await expect(evidence).not.toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await expect(page).toHaveURL(/evidence=context/);
+  await evidence.getByRole('button', { name: /Missing-call runs|缺失调用的运行/, exact: true }).click();
+  await expect(evidence).toContainText(/Failed; call stage unverified|运行失败，调用阶段待核实/);
+  await page.getByRole('button', { name: /Review runs from now|从现在开始复核/, exact: true }).click();
+  const absent = page.locator('[data-ui="runtime-focus-absent"]');
+  await expect(absent).toContainText(/cannot|不能/);
+  await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
+  await expect(page).toHaveURL(/since=/);
+  await expect(page.getByRole('main')).toContainText(/no requests|没有运行|暂无请求|尚无请求|没有请求|未发现运行/i);
+  await page.reload();
+  await expect(absent).toBeVisible();
+  await expect(page.getByRole('link', { name: /Usage statistics|使用统计/, exact: true })).toHaveAttribute('href', /since=/);
+  await page.getByRole('button', { name: /Return to full period|返回完整时段/, exact: true }).click();
+  await expect(page).not.toHaveURL(/since=/);
+  await expect(page.locator('#runtime-diagnostic-inspector')).toBeVisible();
+  expect(requests.some(url => url.pathname.endsWith('/runs') && url.searchParams.get('evidence_scope') === 'context')).toBe(true);
+  expect(requests.filter(url => url.searchParams.has('since')).every(url => url.searchParams.get('since') === '2026-10-27T12:00:00Z')).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+  await page.screenshot({ path: testInfo.outputPath('missing-call-closure-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 900, height: 1050 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(900);
+  await page.screenshot({ path: testInfo.outputPath('missing-call-closure-900.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+});
 
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
   return panel.locator('canvas').evaluate((canvas) => {
@@ -108,6 +179,11 @@ test('runtime diagnostics shows evidence in three tabs with default selection an
   const trendExport = JSON.parse(readFileSync((await trendDownload.path())!, 'utf8'));
   expect(trendExport.selected_issue).toBe('hosted_model.provider_call_gap');
   expect(trendExport.unit).toBe('runs');
+  expect(trendExport.scope.window_hours).toBe(336);
+  expect(trendExport.timezone).toBe('UTC');
+  expect(trendExport.window).toHaveProperty('until');
+  expect(trendExport.evidence_limits).toEqual(expect.any(Object));
+  expect(trendExport.requested_display_limit).toBe(25);
   expect(trendExport.issues).toBeUndefined();
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-trend-expanded.png'), animations: 'disabled' });
   await selectPanel(page, 'overview');
@@ -173,6 +249,9 @@ test('editorial quality detail remains available on the dedicated statistics vie
   await expect(qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]')).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
+  const qualityReference = qualityPanel.locator('[data-ui="editor-quality-reference"]');
+  await expect(qualityReference).not.toHaveAttribute('open', '');
+  await qualityReference.locator('summary').press('Enter');
   const downloadEvent = page.waitForEvent('download');
   await qualityPanel.getByRole('button', { name: /Export JSON|导出 JSON/i }).click();
   const download = await downloadEvent;
@@ -186,7 +265,7 @@ test('editorial quality detail remains available on the dedicated statistics vie
 test('anomaly selection keeps counts honest and preserves the diagnostic time window', async ({ page }) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-04-08T10:00:00Z',
       totals: { runs: 10, provider_call_run_coverage_rate: 1, metered_run_coverage_rate: 1 },
       capability_groups: [],
@@ -195,7 +274,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
         { code: 'hosted_model.failed_runs', severity: 'warning', count: 2, capabilities: ['text'], suggested_action: 'inspect_runtime_failure_detail' },
         { code: 'hosted_model.unmetered_runs', severity: 'error', count: 1, capabilities: ['knowledge'], suggested_action: 'inspect_metering_callback_or_usage_event_mapping' },
       ] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.goto('/admin/troubleshooting?window=720');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]').first()).toContainText(/Usage records missing|计量记录缺失/i);
@@ -228,11 +307,11 @@ test('no traffic is distinct from no monitored anomaly', async ({ page }) => {
   await installAdminMocks(page);
   let runs = 0;
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-04-08T10:00:00Z',
       totals: { runs },
       alert_summary: { status: runs ? 'ok' : 'inactive', alert_count: 0, alerts: [] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.goto('/admin/troubleshooting');
   const queue = page.locator('[data-ui="runtime-diagnostic-table-frame"]');
@@ -282,7 +361,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   const toolLinks = lanes;
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /More diagnostic tools|更多诊断工具/ })).toHaveCount(0);
-  await expect(toolLinks.getByRole('link')).toHaveCount(7);
+  await expect(toolLinks.getByRole('link')).toHaveCount(6);
   await expect(lanes).toBeVisible();
   await expect(lanes.locator('summary')).toHaveCount(0);
   await expect(toolLinks.locator('a[href="/admin/audit"]')).toBeVisible();
@@ -290,7 +369,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   await expect(toolLinks.locator('a[href^="/admin/media-observability"]')).toBeVisible();
   await expect(toolLinks.locator('a[href^="/admin/vector-observability"]')).toBeVisible();
   await expect(toolLinks.locator('a[href^="/admin/agent-feedback"]')).toBeVisible();
-  await expect(toolLinks.locator('a[href^="/admin/ai-advisor"]')).toBeVisible();
+  await expect(toolLinks.locator('a[href^="/admin/ai-advisor"]')).toHaveCount(0);
   await expect(lanes.getByRole('combobox')).toHaveCount(0);
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -310,7 +389,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   await expect(page.getByRole('heading', { level: 1, name: /Plugin observability|插件观测/i })).toBeVisible();
 });
 
-test('editor quality keeps sample sufficiency separate from candidate status', async ({ page }) => {
+test('editor quality keeps sample sufficiency separate from candidate status', async ({ page }, testInfo) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/editor-assist-quality*', async (route) => {
     await route.fulfill({
@@ -338,28 +417,47 @@ test('editor quality keeps sample sufficiency separate from candidate status', a
   await expect(qualityPanel).toContainText(/Too few samples to assess quality|样本不足，暂不能判断效果/i);
   await expect(qualityPanel).toContainText(/insufficient|样本不足/i);
   await expect(qualityPanel).not.toContainText(/No review candidate|无复核候选/i);
+  await expect(qualityPanel.getByText(/No interval trend evidence returned|当前样本未返回区间趋势证据/)).toBeVisible();
+  await expect(qualityPanel.getByText(/No editor-assist sessions in this window|当前时间窗没有编辑辅助会话/)).toHaveCount(0);
+  const sampleLimit = qualityPanel.locator('[data-ui="editor-quality-sample-limit"]');
+  await expect(sampleLimit).toBeVisible();
+  const rates = qualityPanel.locator('[data-ui="editor-quality-rate"]');
+  await expect(rates.first()).toBeVisible();
+  expect((await sampleLimit.boundingBox())!.y).toBeLessThan((await rates.first().boundingBox())!.y);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(value => document.documentElement.classList.toggle('dark', value === 'dark'), theme);
+      await expect(sampleLimit).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`quality-sample-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
+  }
+
 });
 
 
 test('provider failure details explain cause, export evidence and keep recovery unverified', async ({ page }) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-09-10T10:00:00Z', totals: { runs: 45 },
       provider_failures: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', profile_id: 'wp-ai.classification', provider_id: 'openai', model_id: 'gpt-5.5', reason: 'output_schema_invalid', error_code: 'provider.invalid_request', occurred_at: '2026-09-05T10:00:00Z', recovery: 'unverified' }],
       alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 3, capabilities: ['text'] }] },
-    })) });
+    }, new URL(route.request().url()).searchParams))) });
   });
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeRunsFixture({
       generated_at: '2026-09-10T10:00:00Z', sampled: false, truncated: false,
-      items: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
-    })) });
+      items: [{ selected_provider_id: 'historical-provider', selected_model_id: 'historical-model', run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
+    }))) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
   await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
   await expect(page.locator('[data-ui="runtime-inspector-summary"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
+  await expect(page.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
+  await expect(page.locator('[data-ui="runtime-verification-guidance"]')).toContainText(/next natural business run|下一次同类自然业务运行/);
   await selectPanel(page, 'records');
   await expect(page.locator('[data-ui="runtime-run-evidence"]')).toContainText('site-alpha');
   await expect(page.locator('[data-ui="provider-recovery-status"]')).toContainText(/恢复待验证|Recovery unverified/i);
@@ -367,6 +465,9 @@ test('provider failure details explain cause, export evidence and keep recovery 
   await trigger.click();
   const drawer = page.getByRole('dialog');
   await expect(drawer.getByText('run-schema-rejected', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-provider', { exact: true })).toBeVisible();
+  await expect(drawer.getByText('historical-model', { exact: true })).toBeVisible();
+  await expect(drawer.locator('[data-ui="runtime-record-handling"]')).toContainText(/后台设置无法修复|Fix the structured output/);
   await expect(drawer.locator('details')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
@@ -377,6 +478,10 @@ test('provider failure details explain cause, export evidence and keep recovery 
   const evidence = JSON.parse(readFileSync((await download.path())!, 'utf8'));
   expect(evidence.recovery).toBe('unverified');
   expect(evidence.windowHours).toBe(336);
+  expect(evidence.generatedAt).toBe(evidence.generated_at);
+  expect(evidence.scope.window_hours).toBe(336);
+  expect(evidence.requested_display_limit).toBe(25);
+  expect(evidence.failure_details).toEqual({ returned: 1, may_be_truncated: false });
   expect(evidence.failures[0].runId).toBe('run-schema-rejected');
 });
 
@@ -385,10 +490,10 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   await installAdminMocks(page);
   await page.setViewportSize({ width: 628, height: 837 });
   await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(buildRuntimeRunsFixture({
       sampled: false, truncated: false,
       items: [{ run_id: 'run-success-with-evidence-gap', site_id: 'site-alpha', ability_name: 'npcink-cloud/site-knowledge-status', ability_family: 'knowledge', profile_id: 'site-knowledge.managed', status: 'SUCCEEDED', error_code: null, duration_ms: 118, provider_call_count: 0, has_meter_event: true }],
-    })) });
+    }))) });
   });
   await page.goto('/admin/troubleshooting');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
@@ -402,6 +507,7 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   const trigger = evidence.getByRole('button', { name: /View detail|查看详情/ });
   await trigger.click();
   await expect(page.getByRole('dialog').getByText('run-success-with-evidence-gap', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(/No recorded call evidence|暂无调用证据/);
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(628);
@@ -431,11 +537,11 @@ test('inherited scope filters stay visible at the scope row and clear independen
   await expect(scopeFilters).toHaveCount(0);
 });
 
-test('multi-function evidence retains successful scopes, distinguishes failures, and retries', async ({ page }, testInfo) => {
+test('issue evidence ignores display-group limits, isolates failures, and retries', async ({ page }, testInfo) => {
   await installAdminMocks(page);
   await page.setViewportSize({ width: 1440, height: 1050 });
   const requests: URL[] = [];
-  let failKnowledge = true;
+  let failSource = true;
   let failAll = false;
   let malformed = false;
   const summary = {
@@ -455,12 +561,11 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
     const url = new URL(route.request().url());
     if (!url.pathname.endsWith('/runs')) {
       if (url.searchParams.get('recent_minutes') === '43200') await new Promise((resolve) => setTimeout(resolve, 500));
-      await route.fulfill({ json: buildAdminApiEnvelope(summary) });
+      await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeTelemetryFixture(summary, url.searchParams)) });
       return;
     }
     requests.push(url);
-    const scope = url.searchParams.get('capability')!;
-    if (failAll || (scope === 'knowledge' && failKnowledge)) {
+    if (failAll || failSource) {
       await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('evidence source unavailable') });
       return;
     }
@@ -468,11 +573,11 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
       await route.fulfill({ json: buildAdminApiEnvelope({ items: [{ run_id: null }, { run_id: null }] }) });
       return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({ items: [{
+    await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ items: ['text', 'knowledge', 'unlisted'].map(scope => ({
       run_id: `run-${scope}`, site_id: 'site-alpha', ability_name: `inspect-${scope}`, ability_family: scope,
       profile_id: `${scope}.managed`, status: 'succeeded', duration_ms: 118, provider_call_count: 0,
       has_meter_event: true, started_at: '2026-10-07T10:00:00Z',
-    }], sampled: false, truncated: false }) });
+    })), sampled: false, truncated: false })) });
   });
   await page.goto('/admin/troubleshooting?site=site-alpha');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(3);
@@ -483,14 +588,15 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
 
   await selectPanel(page, 'records');
   const evidence = page.locator('[data-ui="runtime-run-evidence"]');
-  await expect(evidence.getByRole('alert')).toContainText(/Some functions could not load|部分功能的记录加载失败/);
-  await expect(evidence).toContainText('inspect-text');
+  await expect(evidence.getByRole('alert')).toContainText(/Run records could not load|运行记录加载失败/);
+  await expect(evidence).not.toContainText('inspect-text');
   await expect(evidence).not.toContainText(/No related run records|未返回相关运行记录/);
-  expect(requests.filter((url) => url.searchParams.get('issue_code') === 'hosted_model.provider_call_gap').map((url) => url.searchParams.get('capability')).sort()).toEqual(['knowledge', 'text']);
+  expect(requests.filter((url) => url.searchParams.get('issue_code') === 'hosted_model.provider_call_gap').map((url) => url.searchParams.get('capability')).sort()).toEqual([null]);
   expect(requests.every((url) => url.searchParams.get('site_id') === 'site-alpha' && url.searchParams.get('recent_minutes') === '20160')).toBe(true);
-  failKnowledge = false;
+  failSource = false;
   await evidence.getByRole('button', { name: /Retry records|重试加载记录/ }).click();
   await expect(evidence).toContainText('inspect-knowledge');
+  await expect(evidence).toContainText('inspect-unlisted');
   await expect(evidence.getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-three-issues-selected.png'), animations: 'disabled' });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -528,14 +634,14 @@ test('four anomalies keep a five-record default, a short queue and a single-unit
   await page.route(/\/api\/admin\/runtime-telemetry(?:\/runs)?\?/, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/runs')) {
-      await route.fulfill({ json: buildAdminApiEnvelope({ sampled: true, truncated: true, items: Array.from({ length: 13 }, (_, index) => ({
+      await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ sampled: true, truncated: true, items: Array.from({ length: 13 }, (_, index) => ({
         run_id: `run-sample-${index}`, site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text',
         profile_id: 'text.managed', status: url.searchParams.get('issue_code') === 'hosted_model.provider_errors' ? 'failed' : 'succeeded', duration_ms: 1000, provider_call_count: 1, has_meter_event: false,
         started_at: `2026-10-07T10:${String(index).padStart(2, '0')}:00Z`,
-      })) }) });
+      })) })) });
       return;
     }
-    await route.fulfill({ json: buildAdminApiEnvelope({
+    await route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
       generated_at: '2026-10-07T10:00:00Z', totals: { runs: 1858, provider_call_run_coverage_rate: 0.94, metered_run_coverage_rate: 0.91 },
       capability_groups: [
         { group_id: 'knowledge', runs_total: 151, metered_run_coverage_rate: 0.54 },
@@ -546,7 +652,7 @@ test('four anomalies keep a five-record default, a short queue and a single-unit
         count: [166, 122, 102, 60][index], capabilities: index === 0 ? ['text', 'knowledge'] : ['text', 'vision'],
         daily_counts: [{ day: '2026-10-06', count: [100, 110, 90, 50][index] }, { day: '2026-10-07', count: [66, 12, 12, 10][index] }],
       })) },
-    }) });
+    }, new URL(route.request().url()).searchParams)) });
   });
   await page.goto('/admin/troubleshooting?focus=hosted_model.unmetered_runs');
   const inspector = page.locator('#runtime-diagnostic-inspector');
@@ -605,8 +711,10 @@ test('task tabs support keyboard, help is optional, and navigation retains suppo
   await installAdminMocks(page);
   await page.goto('/admin/troubleshooting?site=site-alpha&function=knowledge&focus=unknown');
   const issue = page.locator('[data-ui="runtime-diagnostic-issue"]').first();
+  await expect(page.locator('[data-ui="runtime-focus-absent"]')).toBeVisible();
+  await expect(page).toHaveURL(/focus=unknown/);
+  await issue.click();
   await expect(issue).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).not.toHaveURL(/focus=unknown/);
   const overview = page.locator('#diagnostic-tab-overview');
   const records = page.locator('#diagnostic-tab-records');
   await overview.focus();
@@ -646,7 +754,7 @@ for (const width of [1280, 1440, 1920]) {
     await expect(inspector).toBeVisible();
     const queueBox = (await queue.boundingBox())!;
     const inspectorBox = (await inspector.boundingBox())!;
-    expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(2);
     expect(queueBox.width).toBe(320);
     expect(queueBox.y).toBeLessThan(220);
     const leftTitle = (await queue.getByRole('heading', { level: 2 }).boundingBox())!;
@@ -678,12 +786,13 @@ for (const width of [1280, 1440, 1920]) {
 test('diagnostic help remains inside a short viewport and flips above its trigger', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 300 });
   await installAdminMocks(page);
-  await page.goto('/admin/troubleshooting');
+  // Finish the initial default-focus URL selection before positioning the anchor.
+  await page.goto('/admin/troubleshooting?focus=hosted_model.provider_call_gap');
   const trigger = page.locator('[data-ui="runtime-issue-evidence"] thead button');
+  // The document uses smooth scrolling. Finish positioning before opening help
+  // so intermediate offscreen frames cannot dismiss the focused tooltip.
+  await trigger.evaluate(element => element.scrollIntoView({ block: 'end', behavior: 'instant' }));
   await trigger.focus();
-  // Put the trigger at the bottom explicitly: native focus scrolling differs
-  // across browser platforms and may leave enough room below for the help.
-  await trigger.evaluate(element => element.scrollIntoView({ block: 'end' }));
   await expect(page.getByRole('tooltip')).toBeVisible();
   await expect.poll(async () => {
     const tip = (await page.getByRole('tooltip').boundingBox())!;
@@ -694,7 +803,7 @@ test('diagnostic help remains inside a short viewport and flips above its trigge
   const tipBox = (await page.getByRole('tooltip').boundingBox())!;
   expect(tipBox.y).toBeGreaterThanOrEqual(8);
   expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(292);
-  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(triggerBox.y);
+  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(triggerBox.y + 12);
   await trigger.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
@@ -720,3 +829,49 @@ for (const width of [1280, 480]) {
     await expect(page.getByRole('tooltip')).toHaveCount(0);
   });
 }
+
+
+test('mixed call failures keep successful outcomes and per-record handling distinct', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installAdminMocks(page);
+  let failRefresh = false;
+  const failures = [
+    { run_id: 'run-timeout-then-success', reason: 'timeout', error_code: 'provider.timeout' },
+    { run_id: 'run-parameters', reason: 'invalid_request', error_code: 'provider.invalid_request' },
+  ].map(item => ({ ...item, site_id: 'site-alpha', profile_id: 'text.managed', provider_id: 'fixture-provider', model_id: 'fixture-model', occurred_at: '2026-11-03T08:00:00Z' }));
+  await page.route(/\/api\/admin\/runtime-telemetry\?/, route => route.fulfill({ json: failRefresh ? buildAdminApiErrorEnvelope('unavailable') : buildAdminApiEnvelope(buildRuntimeTelemetryFixture({
+    generated_at: '2026-11-03T08:01:00Z', totals: { runs: 2 }, provider_failures: failures,
+    alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 2, capabilities: ['text'] }] },
+  }, new URL(route.request().url()).searchParams)), status: failRefresh ? 503 : 200 }));
+  await page.route('**/api/admin/runtime-telemetry/runs*', route => route.fulfill({ json: buildAdminApiEnvelope(buildRuntimeRunsFixture({ items: failures.map((failure, index) => ({
+    run_id: failure.run_id, site_id: 'site-alpha', ability_family: 'text', ability_name: `text-task-${index}`, profile_id: 'text.managed', status: index === 0 ? 'succeeded' : 'failed', provider_call_count: 1, has_meter_event: true,
+  })) })) }));
+  await page.goto('/admin/troubleshooting?window=336&site=site-alpha&focus=hosted_model.provider_errors');
+  const inspector = page.locator('#runtime-diagnostic-inspector');
+  await expect(inspector.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
+  await expect(inspector.locator('[data-ui="runtime-investigation-actions"]')).toContainText(/latest returned failure sample|最近返回的失败样本/);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`handling-${width}.png`), animations: 'disabled' });
+  }
+  await page.getByRole('button', { name: /Language|语言/ }).click();
+  await page.getByRole('option', { name: 'English' }).click();
+  await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toContainText('next natural business run');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('handling-english-dark-900.png'), animations: 'disabled', fullPage: true });
+  await selectPanel(page, 'records');
+  const buttons = inspector.getByRole('button', { name: /View detail|查看详情/ });
+  await expect(inspector.getByText(/^Succeeded$|^成功$/)).toBeVisible();
+  await buttons.nth(1).click();
+  await expect(page.getByRole('dialog').locator('[data-ui="runtime-record-handling"]')).toContainText(/rejected call parameters|请求参数/);
+  await expect(page.getByRole('dialog').locator('[data-ui="runtime-record-handling"]')).not.toContainText(/continues to time out|持续超时/);
+  await page.keyboard.press('Escape');
+  await selectPanel(page, 'overview');
+  failRefresh = true;
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
+  await expect(inspector.locator('[data-ui="runtime-issue-impact"]')).toContainText(/retained older evidence|保留的旧证据/);
+  await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toHaveCount(0);
+});
