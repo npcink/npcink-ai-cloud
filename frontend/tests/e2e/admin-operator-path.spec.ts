@@ -167,7 +167,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
 
   await page.goto('/admin/subscriptions');
-  await expect(page.getByRole('heading', { name: /^Subscription operations$|^订阅运营$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Subscription operations|订阅运营)( · [\d,]+)?$/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-queue-item"] a[href^="/admin/subscriptions/sub_mvp?"]')).toBeVisible();
   await expect(
     page.locator('[data-ui="backoffice-page-header"]').getByText(/^Critical$|^严重风险$|^嚴重風險$/i)
@@ -348,9 +348,11 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await installAdminMocks(page);
 
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
-  await expect(page.getByText('acct_mvp_ent...rimary').first()).toHaveCount(0);
-  await page.getByText(/Customer identifiers|客户标识|客戶標識/i).click();
-  await expect(page.getByText('acct_mvp_ent...rimary').first()).toBeVisible();
+  const customerIdentifiers = page.locator('[data-ui="account-identifiers"]');
+  await expect(customerIdentifiers).not.toHaveAttribute('open', '');
+  await expect(customerIdentifiers.getByText('acct_mvp_ent...rimary')).toBeHidden();
+  await customerIdentifiers.locator(':scope > summary').click();
+  await expect(customerIdentifiers.getByText('acct_mvp_ent...rimary')).toBeVisible();
   await expect(page.getByRole('link', { name: /Open customer subscription|打开客户订阅/i })).toHaveCount(0);
   await expect(page.getByText(/Package and top-up|套餐和加量|方案和加量/i)).toHaveCount(0);
   await expect(page.getByRole('tab', { name: /^Overview|^概况|^概況/i })).toHaveAttribute('aria-selected', 'true');
