@@ -106,17 +106,18 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
     return route.fulfill({ json: buildAdminApiEnvelope(detail) });
   });
   await page.goto(path);
-  await expect(page.getByRole('heading', { name: 'Customer notices', exact: true })).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Preview recipients', exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Notices', exact: true })).toBeVisible();
+  await expect(page.locator('[data-ui="notices-two-column"]')).toBeVisible();
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
+  const compose = page.locator('[data-ui="notice-compose-modal"]');
+  await expect(compose.getByRole('button', { name: 'Preview recipients', exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('notices-ready.png'), fullPage: true });
-  await page.getByLabel('Recipients', { exact: true }).selectOption('all');
-  await page.getByLabel('Title', { exact: true }).fill('Tonight’s maintenance');
-  await page
+  await compose.getByLabel('Recipients', { exact: true }).selectOption('all');
+  await compose.getByLabel('Title', { exact: true }).fill('Tonight’s maintenance');
+  await compose
     .getByLabel('Message (plain text)', { exact: true })
     .fill('Service maintenance 22:00–22:30. <script> is plain text.');
-  await page.getByLabel('Destination', { exact: true }).selectOption('/portal/usage');
+  await compose.getByLabel('Destination', { exact: true }).selectOption('/portal/usage');
   await page.reload();
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Tonight’s maintenance');
   await page.getByRole('button', { name: 'Preview recipients', exact: true }).click();
@@ -162,7 +163,7 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
     route: path,
     pageModel: 'configuration',
     testedStates: states,
-    pageTitle: page.getByRole('heading', { name: 'Customer notices', exact: true }),
+    pageTitle: page.getByRole('heading', { name: 'Notices', exact: true }),
     workingSurface: page.locator('[data-ui="customer-notifications-workspace"]'),
     browserEvidence: evidence,
     dataMode: 'mocked',
@@ -251,10 +252,12 @@ test('expired preview preserves Chinese draft and permits a fresh preview', asyn
     }) });
   });
   await page.goto(path);
-  await page.getByLabel('发送范围', { exact: true }).selectOption('all');
-  await page.getByLabel('通知标题', { exact: true }).fill('今晚维护通知');
-  await page.getByLabel('通知正文（纯文本）', { exact: true }).fill('维护时间为今晚22点至22点30分，结束后恢复服务。');
-  await page.getByRole('button', { name: '预览收件人', exact: true }).click();
+  await page.getByRole('button', { name: '新建通知', exact: true }).click();
+  const composeZh = page.locator('[data-ui="notice-compose-modal"]');
+  await composeZh.getByLabel('发送范围', { exact: true }).selectOption('all');
+  await composeZh.getByLabel('通知标题', { exact: true }).fill('今晚维护通知');
+  await composeZh.getByLabel('通知正文（纯文本）', { exact: true }).fill('维护时间为今晚22点至22点30分，结束后恢复服务。');
+  await composeZh.getByRole('button', { name: '预览收件人', exact: true }).click();
   await page.getByRole('button', { name: '发送通知', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '发送通知', exact: true }).click();
   await expect(page.getByLabel('通知标题', { exact: true })).toBeEnabled();
@@ -278,6 +281,7 @@ test('storage failure retains the latest text and blocks writes', async ({ page 
     return route.fulfill({ json: buildAdminApiEnvelope({ items: [], total_count: 0, limit: 20, offset: 0 }) });
   });
   await page.goto(path);
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
   await expect(page.getByLabel('Title', { exact: true })).toBeEnabled();
   await page.evaluate(() => {
     Storage.prototype.setItem = () => { throw new DOMException('Simulated unavailable storage', 'QuotaExceededError'); };
@@ -329,10 +333,12 @@ test('retry after rolled-back send keeps the batch and renews the consumed reque
     return route.fulfill({ json: buildAdminApiEnvelope(detail) });
   });
   await page.goto(path);
-  await page.getByLabel('Recipients', { exact: true }).selectOption('all');
-  await page.getByLabel('Title', { exact: true }).fill('Retried notice');
-  await page.getByLabel('Message (plain text)', { exact: true }).fill('No duplicate inbox deliveries.');
-  await page.getByRole('button', { name: 'Preview recipients', exact: true }).click();
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
+  const composeRetry = page.locator('[data-ui="notice-compose-modal"]');
+  await composeRetry.getByLabel('Recipients', { exact: true }).selectOption('all');
+  await composeRetry.getByLabel('Title', { exact: true }).fill('Retried notice');
+  await composeRetry.getByLabel('Message (plain text)', { exact: true }).fill('No duplicate inbox deliveries.');
+  await composeRetry.getByRole('button', { name: 'Preview recipients', exact: true }).click();
   const send = async () => {
     await page.getByRole('button', { name: 'Send notice', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Send notice', exact: true }).click();
