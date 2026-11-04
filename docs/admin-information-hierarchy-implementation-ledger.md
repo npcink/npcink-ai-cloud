@@ -1428,3 +1428,22 @@ M4 candidate/CI/merged/accepted/production/human状态由下方后继回执单�
 `ops_cadence.py` 的13项真实任务补齐事件及范围标签，原码继续位于技术详情，
 未知类型/任务仍保留可区分原值。未启用任何暂停任务或改变调度。补正后类型、
 翻译完整性、定向ESLint及3项身份显示单元测试通过。
+
+本批M4最终回执：源码候选 `07ee3536f392802db0611ddaa803948dd65cca4d`
+（clean）同步完成，`m4-final-health.json` 为healthy；frontend revision与候选
+相同，backend revision为同提交前12位，`backend_source_dirty=false`。候选
+`516924e4` 的9项新行为/Portal单多账户及8项通知/工单恢复PC用例通过；最终
+审计标签候选整份专项19项通过（2.4m），覆盖失败/未知、完整原码、精确URL、
+分页恢复、重试、异步竞争与1280/1440 PC双语明暗。27项后端用例也在M4通过。
+最后补正仅涉及审计标签，不改变前述客户、Portal和工单源码。
+
+代理只读核对实际订阅的两个无名客户可由短编号区分，实际审计的心跳、支付
+过期检查和退款核对有可读事件/范围/来源；退款记录技术详情完整保留原始
+事件码、范围类型/编号、操作方类型/编号与结果码。实际1280×800页面无横向
+溢出，已恢复浏览器默认视口。最终专项截图和回执在证据目录
+`m4-final-audit-tests/`，代理目检`m4-final-audit-readable-evidence-1440.png`；
+`report.md`记录完整处置及复现结果。未发送真实通知、未修改真实客户资料。
+
+证据状态分别为：local定向通过、M4 candidate已验证；CI/PR、merged、M4 accepted、
+production和human acceptance均未执行。本地后续文档提交只补记该候选回执，
+不把未运行的全量测试、旧导航golden差异或人工验收写成通过。
