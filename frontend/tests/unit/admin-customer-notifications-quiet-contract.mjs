@@ -9,11 +9,26 @@ const source = readFileSync(
 );
 const i18n = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
 
-assert.match(source, /admin\.notices\.page_title/, 'page h1 uses Quiet page_title, not the longer tab label');
+assert.match(source, /admin\.notices\.page_title/, 'page h1 uses Quiet page_title');
 assert.match(i18n, /'admin\.notices\.page_title': 'Notices'/, 'en page title is Notices');
 assert.match(i18n, /'admin\.notices\.page_title': '通知'/, 'zh page title is 通知');
-assert.match(i18n, /'admin\.notices\.title': 'Customer notices'/, 'tab label stays Customer notices');
-assert.match(i18n, /'admin\.notices\.title': '客户通知'/, 'zh tab label stays 客户通知');
+assert.match(i18n, /'admin\.notices\.title': 'Notices'/, 'tab label is Notices');
+assert.match(i18n, /'admin\.notices\.title': '通知'/, 'zh tab label is 通知');
+assert.match(source, /data-ui="notice-compose-trigger"/, 'compose trigger is present');
+assert.match(source, /aria-label=\{t\('admin\.notices\.new'\)\}/, 'compose trigger keeps accessible name');
+assert.match(source, /<path d="M12 5v14" \/>/, 'compose trigger uses plus icon');
+{
+  const trigger = source.match(/data-ui="notice-compose-trigger"[\s\S]*?<\/button>/);
+  assert.ok(trigger, 'compose trigger button closes');
+  assert.match(trigger[0], /<svg[\s\S]*<\/svg>/, 'compose trigger renders an svg icon');
+  assert.doesNotMatch(
+    trigger[0],
+    />\s*\{t\('admin\.notices\.new'\)\}\s*<\/button>/,
+    'compose trigger must not render the label as visible button text',
+  );
+}
+assert.match(source, /data-ui="notice-history-row"[\s\S]*aria-pressed/, 'history rows are selectable/pressable');
+assert.match(source, /data-ui="notice-history-pager"/, 'history pager is Quiet and marked');
 
 assert.match(source, /data-ui="notices-two-column"/, 'main area is two-column');
 assert.match(source, /data-ui="notice-compose-modal"/, 'compose lives in a modal');

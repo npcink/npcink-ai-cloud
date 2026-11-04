@@ -375,11 +375,27 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
         description={t('admin.notices.boundary')}
         secondaryAction={
           <button
-            className="btn btn-secondary"
+            type="button"
+            data-ui="notice-compose-trigger"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
             disabled={Boolean(c.draft?.pending) || c.busy || c.blocked}
+            aria-label={t('admin.notices.new')}
+            title={t('admin.notices.new')}
             onClick={openCompose}
           >
-            {t('admin.notices.new')}
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
           </button>
         }
       />
@@ -446,67 +462,85 @@ function NoticeWorkspace({ accountId }: { accountId: string }) {
                   <p className="px-4 py-3 text-sm">{t('admin.notices.empty')}</p>
                 ) : (
                   <ul data-ui="notice-history-list" className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                    {c.history.items.map((item) => (
+                    {c.history.items.map((item) => {
+                      const inspectRow = () => {
+                        if (c.busy || c.draft?.pending) return;
+                        userClosedCompose.current = true;
+                        setComposeOpen(false);
+                        void c.inspect(item.dispatch_id);
+                      };
+                      const selected = detail?.dispatch_id === item.dispatch_id;
+                      return (
                       <li
                         key={item.dispatch_id}
-                        className="grid gap-1.5 px-4 py-3"
                         data-ui="notice-history-row"
+                        className={
+                          selected
+                            ? 'bg-blue-50/65 dark:bg-blue-950/15'
+                            : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35'
+                        }
                       >
-                        <div className="break-words text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {item.title}
-                        </div>
-                        <div
-                          className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400"
-                          data-ui="notice-history-metrics"
+                        <button
+                          type="button"
+                          className="grid w-full gap-1 px-4 py-2.5 text-left disabled:opacity-50"
+                          disabled={c.busy || Boolean(c.draft?.pending)}
+                          aria-pressed={selected}
+                          onClick={inspectRow}
                         >
-                          <span className="break-all">{item.actor_ref}</span>
-                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">
-                            ·
-                          </span>
-                          <span>
-                            {item.status === 'preview'
-                              ? t('admin.notices.not_sent')
-                              : t('admin.notices.history_counts', {
-                                  sent: String(item.sent_count),
-                                  skipped: String(item.skipped_count),
-                                  read: String(item.read_count),
-                                })}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">
-                            ·
-                          </span>
-                          <span>{formatDate(item.sent_at || item.created_at)}</span>
-                        </div>
-                        <div>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            disabled={c.busy || Boolean(c.draft?.pending)}
-                            onClick={() => {
-                              userClosedCompose.current = true;
-                              setComposeOpen(false);
-                              void c.inspect(item.dispatch_id);
-                            }}
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <span className="break-words text-sm font-semibold text-slate-950 dark:text-white [overflow-wrap:anywhere]">
+                              {item.title}
+                            </span>
+                            <span className="shrink-0 text-xs font-medium text-slate-500 underline-offset-2 hover:underline dark:text-slate-400">
+                              {t('admin.notices.details')}
+                            </span>
+                          </div>
+                          <div
+                            className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400"
+                            data-ui="notice-history-metrics"
                           >
-                            {t('admin.notices.details')}
-                          </button>
-                        </div>
+                            <span>
+                              {item.status === 'preview'
+                                ? t('admin.notices.not_sent')
+                                : t('admin.notices.history_counts', {
+                                    sent: String(item.sent_count),
+                                    skipped: String(item.skipped_count),
+                                    read: String(item.read_count),
+                                  })}
+                            </span>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">
+                              ·
+                            </span>
+                            <span className="tabular-nums">{formatDate(item.sent_at || item.created_at)}</span>
+                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">
+                              ·
+                            </span>
+                            <span className="break-all">{item.actor_ref}</span>
+                          </div>
+                        </button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
-                <div className="flex items-center gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <div
+                  data-ui="notice-history-pager"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-200/80 px-4 py-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                >
                   <span>
                     {c.history.total_count} {t('admin.notices.records')}
                   </span>
                   <button
-                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    className="font-medium text-slate-600 underline-offset-2 hover:text-slate-950 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline dark:text-slate-300 dark:hover:text-white"
                     disabled={c.offset === 0 || c.busy}
                     onClick={() => c.setOffset(c.offset - 20)}
                   >
                     {t('admin.notices.previous')}
                   </button>
                   <button
-                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    className="font-medium text-slate-600 underline-offset-2 hover:text-slate-950 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline dark:text-slate-300 dark:hover:text-white"
                     disabled={c.offset + 20 >= c.history.total_count || c.busy}
                     onClick={() => c.setOffset(c.offset + 20)}
                   >
