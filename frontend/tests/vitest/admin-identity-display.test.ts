@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readableIdentityName, siteIdentity } from '../../src/lib/identity-display';
-import { auditActorLabel, auditEventLabel, auditOutcomeLabel } from '../../src/lib/admin-audit-display';
+import { auditActorLabel, auditEventLabel, auditOutcomeLabel, auditScopeLabel } from '../../src/lib/admin-audit-display';
 import { translate } from '../../src/lib/i18n';
 import { supportCustomerLabel, supportSiteLabel } from '../../src/features/admin/support-requests/display';
 
@@ -23,6 +23,9 @@ describe('readable identities retain honest fallbacks', () => {
     expect(auditEventLabel('customer_notification.sent', zh)).toBe('发送客户通知');
     expect(auditEventLabel('support_request.message_created', zh)).toBe('回复工单');
     expect(auditOutcomeLabel('succeeded', zh)).toBe('成功');
+    expect(auditEventLabel('payment.refund_reconciliation.cadence', zh)).toBe('核对退款结果');
+    expect(auditScopeLabel('worker', 'ops_cadence', zh)).toBe('系统任务 · 定时维护任务');
+    expect(auditScopeLabel('ops_cadence', 'payment_refund_reconciliation', zh)).toBe('定时维护任务 · 核对退款结果');
     expect(auditActorLabel('system_worker', 'ops_cadence', zh)).toBe('系统任务 · 定时维护任务');
     expect(auditActorLabel('unknown', 'mystery', zh)).not.toContain('平台管理员');
     expect(auditActorLabel('platform_admin', 'admin_a', zh)).not.toBe(auditActorLabel('platform_admin', 'admin_b', zh));
