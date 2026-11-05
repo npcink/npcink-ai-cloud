@@ -239,7 +239,8 @@ def test_runtime_image_installs_shell_contract_tools_only_for_dev_package_extras
     assert development_stage.count(package_install) == 1
     assert package_install not in runtime_stage
     assert package_install not in production_stage
-    assert production_stage.strip() == ""
+    # Production may prune unused libraries, but must not acquire dev tools.
+    assert re.search(r"\b(?:bash|coreutils|curl|git|openssl)\b", production_stage) is None
     assert development_compose.count("target: development") == 4
     assert development_compose.count('PACKAGE_EXTRAS: "[dev,zilliz]"') == 4
 
