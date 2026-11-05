@@ -1401,6 +1401,51 @@ def test_cached_scan_materials_can_be_re_evaluated_with_a_new_database(
     } == stable_hashes
 
 
+@pytest.mark.parametrize("with_equivalence", [False, True])
+@pytest.mark.parametrize("index_exit_code", [0, 42])
+def test_scan_index_handles_optional_arguments_and_propagates_failure(
+    tmp_path: Path,
+    with_equivalence: bool,
+    index_exit_code: int,
+) -> None:
+    source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
+    function = (
+        "write_scan_index() {"
+        + source.split("write_scan_index() {", 1)[1].split("\n}", 1)[0]
+        + "\n}"
+    )
+    # /bin/bash is macOS's 3.2 shell on the authoring host and Bash 5 in CI.
+    # Exercise the real function with no Docker or vulnerability feed calls.
+    harness = """
+set -euo pipefail
+ROOT_DIR=/source
+LOCK_FILE=/source/lock.json
+INDEX_SCOPE=focused
+RELEASE_PLATFORM=linux/arm64
+OUTPUT_DIR=/reports
+EQUIVALENCE_ARGS=()
+RECEIPTS=("/reports/api receipt.json")
+if [ "$1" = True ]; then EQUIVALENCE_ARGS=(--equivalence /reports/equivalence.json); fi
+"""
+    harness += f"python3() {{ printf '<%s>\\n' \"$@\"; return {index_exit_code}; }}\n"
+    result = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            harness + function + "\nwrite_scan_index",
+            "proof",
+            str(with_equivalence),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert result.returncode == index_exit_code, result.stderr
+    assert "</reports/api receipt.json>" in result.stdout
+    assert ("<--equivalence>" in result.stdout) is with_equivalence
+
+
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
 
