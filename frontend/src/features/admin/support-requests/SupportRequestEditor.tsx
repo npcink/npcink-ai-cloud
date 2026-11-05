@@ -42,8 +42,15 @@ export function SupportRequestEditor({ request, directoryBlocked, onClose, onSav
         <p>{busy ? t('admin.support_recovery.sending') : t('admin.support_recovery.unknown')}</p>
         <button type="button" className="btn btn-secondary" disabled={busy || storageBlocked} onClick={() => void controller.confirm()}>{t('admin.support_recovery.confirm')}</button>
         <BackofficeDisclosure summary={t('admin.support_recovery.evidence')}>
-          <div className="break-all"><p>{intent.actor_ref} · {intent.operation_id} · {intent.created_at}</p>
-            <p className="whitespace-pre-wrap">{intent.values.status} · {intent.values.admin_note}</p></div>
+          <dl className="space-y-2 select-text break-all">
+            {[
+              [t('admin.audit_workspace.actor_ref'), intent.actor_ref],
+              [t('admin.readability.operation_id'), intent.operation_id],
+              [t('admin.readability.occurred_at'), intent.created_at],
+              [t('common.status'), intent.values.status],
+              [t('admin.accounts.operator_note_label'), intent.values.admin_note],
+            ].map(([label, value]) => <div key={label}><dt className="font-medium">{label}</dt><dd className="whitespace-pre-wrap">{value || '—'}</dd></div>)}
+          </dl>
         </BackofficeDisclosure>
       </div> : null}
       <label className="block text-sm text-slate-700 dark:text-slate-200">

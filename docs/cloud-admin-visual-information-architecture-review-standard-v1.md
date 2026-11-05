@@ -339,10 +339,12 @@ blue actions in one toolbar require explicit justification.
 
 The Usage Statistics page follows this order:
 
-1. the shared four observation TABs and 1/3/7/14/30-day control;
-2. page title, compact runtime metrics, and source freshness;
-3. one wrapping toolbar with refresh, `Chart` / `Table`, and site/function/plugin
-   dimensions next to the working surface; source and active scope remain visible;
+1. shell-owned observation navigation, followed by the page title, source-specific
+   time-window controls and refresh together (2026-11-04 refinement);
+2. explicit visible scope/freshness and compact runtime metrics; static page
+   explanation may use explicitly selected title help;
+3. one wrapping toolbar with `Chart` / `Table` and site/function/plugin dimensions
+   next to the working surface; source and active scope remain visible;
 4. one dimension table, comparison chart, or paginated plugin history;
 5. definitions and technical-validation scope, collapsed by default.
 

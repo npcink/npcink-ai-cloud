@@ -60,8 +60,8 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await auditButton.click();
   const auditDrawer = page.getByRole('dialog', { name: /Recent audit records|近期审计记录/i });
   await expect(auditDrawer).toBeVisible();
-  await expect(auditDrawer.getByText('Subscription Bind')).toBeVisible();
-  await expect(auditDrawer.getByText('Subscription Billing Snapshot Rebuild')).toBeVisible();
+  await expect(auditDrawer.getByText(/Link subscription|关联订阅/)).toBeVisible();
+  await expect(auditDrawer.getByText(/Refresh billing statistics|刷新计费用量统计/)).toBeVisible();
   await expect(auditDrawer.getByText(/trace-audit-101/)).toBeHidden();
   await auditDrawer.getByRole('button', { name: /^Close$|^关闭$/i }).click();
   await expect(auditDrawer).toBeHidden();

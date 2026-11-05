@@ -113,3 +113,18 @@ test('site details label independent states and keep released ownership controls
   await expect(ownership.getByRole('button', { name: /Allow now|立即允许/ })).toBeVisible();
   await expect(ownership.getByRole('button', { name: /Save unlock time|保存解锁时间/ })).toBeVisible();
 });
+
+test('identifier-only site names fall back to a verified domain or an explicit unnamed site', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installAdminMocks(page);
+  let siteUrl = 'https://editorial.example.test/articles';
+  await page.route('**/api/admin/sites/site_mvp', route => route.fulfill({ json: buildAdminApiEnvelope({
+    site: { site_id: 'site_mvp', account_id: 'acct_fixture', name: 'site_mvp', site_url: siteUrl, status: 'active' },
+  }) }));
+  await page.goto('/admin/sites/site_mvp');
+  await expect(page.getByRole('heading', { name: 'editorial.example.test', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('site-domain-fallback-1440.png'), fullPage: true });
+  siteUrl = '';
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '未命名站点 · site_mvp', exact: true })).toBeVisible();
+});

@@ -185,16 +185,21 @@ The operator-authorized refinement on 2026-10-07 replaces the earlier
 three-card grid and nested disclosure pattern; visual acceptance of the
 new candidate remains separate from this target contract:
 
-1. a compact two-row toolbar: title/freshness and the time window/actions on
-   the first row; factual metrics and the runtime conclusion on the second.
-   Scoped filters may occupy an additional row when present;
-2. the runtime conclusion shares the metric row rather than an empty banner;
+1. a compact title/time-window/action row, followed by visible source freshness
+   and scoped filters when present. Dynamic context uses the explicit `scope`
+   and `freshness` header slots, never static description help;
+2. the 2026-11-04 operator-approved refinement places the selected-period
+   conclusion beside its historical/recovery qualification, before factual
+   metrics. Completeness shows its same-source applicable run denominator;
+   unknown denominators remain unknown. Do not infer current outage or recovery
+   from historical counts;
 3. one bounded anomaly list carrying severity, count with its unit, and scope;
 4. one adjacent inspector that selects the first anomaly when no focus is
    provided. Keep explicit URL focus on refresh, including an absent-issue
    state when the returned evidence does not contain it; selecting another anomaly opens
    its overview. The inspector has one task tab row: Overview, Run records,
-   and Daily trend. Overview includes function totals and the next action;
+   and Daily trend. Overview shows current sample clues and limits, the next action and its
+   investigation entry, recovery verification, then function totals;
 5. Run records initially shows five returned records, loading, partial/total
    failure, empty state, and retry. Complete metadata opens in the shared
    inspector drawer with focus containment and recovery;
@@ -210,14 +215,21 @@ new candidate remains separate from this target contract:
 8. the short anomaly list ends at its own height. Both adjacent frames start
    at the same top edge, with matched compact headers and surface boundaries.
    At desktop widths the queue uses the shared 20rem width token; below the
-   desktop breakpoint the panels stack. From 1600px the overview places its
-   function table and next action side by side; narrower screens stack them.
-   Numeric columns align to the right. Recovery status belongs in the inspector
-   header; investigation export sits with the other actions. Help tips flip
+   desktop breakpoint the panels stack. At every PC width, next-action guidance
+   precedes the function table; do not add a second wide-screen split between
+   them. Limit prose reading width while allowing tables to use the evidence
+   surface. Numeric columns align to the right. Recovery status belongs beside
+   the inspector title; investigation export sits with the other actions. Help tips flip
    above the trigger near the viewport bottom;
 9. no mutation, routing, provider, prompt, approval, or WordPress write
    authority. Function totals and anomaly counts have different denominators;
    never derive missing counts from rounded completeness percentages.
+
+The shared `AdminActionGuidance` presents explanation, current evidence,
+limitations, next step, actions and verification. Callers own business state,
+severity and all effects. `BackofficePageHeader.descriptionDisplay` explicitly
+chooses visible static explanation or help; existing defaults remain compatible.
+Dynamic scope, freshness, unknowns and blocking facts must use visible slots.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.

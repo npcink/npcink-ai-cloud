@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readSiteDisplay } from '@/lib/identity-display';
 
 const count = z.number().int().nonnegative();
 const rate = z.number().min(0).max(1);
@@ -14,6 +15,7 @@ const alert = z.object({ code: text.min(1), severity: text.min(1), title: text, 
   count, capabilities: z.array(text), suggested_action: text, href: text,
   daily_counts: z.array(z.object({ day: z.iso.date(), count })) });
 const telemetry = z.object({
+  site_display: z.unknown().optional().transform(readSiteDisplay),
   generated_at: timestamp,
   window: z.object({ since: timestamp, until: timestamp }),
   filters: z.object({ site_id: text, capability: text, recent_minutes: count.positive(), since: timestamp, limit: count.positive() }),

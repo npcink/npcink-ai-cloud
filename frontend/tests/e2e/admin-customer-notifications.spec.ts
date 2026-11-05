@@ -106,23 +106,24 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
     return route.fulfill({ json: buildAdminApiEnvelope(detail) });
   });
   await page.goto(path);
-  await expect(page.getByRole('heading', { name: 'Customer notices', exact: true })).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Preview recipients', exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Notices', exact: true })).toBeVisible();
+  await expect(page.locator('[data-ui="notices-two-column"]')).toBeVisible();
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
+  const compose = page.locator('[data-ui="notice-compose-modal"]');
+  await expect(compose.getByRole('button', { name: 'Preview recipients', exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('notices-ready.png'), fullPage: true });
-  await page.getByLabel('Recipients', { exact: true }).selectOption('all');
-  await page.getByLabel('Title', { exact: true }).fill('Tonight’s maintenance');
-  await page
+  await compose.getByLabel('Recipients', { exact: true }).selectOption('all');
+  await compose.getByLabel('Title', { exact: true }).fill('Tonight’s maintenance');
+  await compose
     .getByLabel('Message (plain text)', { exact: true })
     .fill('Service maintenance 22:00–22:30. <script> is plain text.');
-  await page.getByLabel('Destination', { exact: true }).selectOption('/portal/usage');
+  await compose.getByLabel('Destination', { exact: true }).selectOption('/portal/usage');
   await page.reload();
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Tonight’s maintenance');
   await page.getByRole('button', { name: 'Preview recipients', exact: true }).click();
   await expect(page.getByText(/The result is unconfirmed/)).toBeVisible();
   await page.getByRole('button', { name: 'Read batch result', exact: true }).click();
-  await expect(page.locator('[data-ui="notice-preview"]')).toContainText('Ready 2');
+  await expect(page.locator('[data-ui="notice-preview"]')).toContainText(/Ready\s*2/);
   await expect(page.getByText('No unique active owner', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send notice', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('notices-preview.png'), fullPage: true });
@@ -130,6 +131,7 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
   await expect(page.getByRole('dialog')).toContainText('2 account owners');
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(sends).toBe(0);
+  await expect(page.getByRole('button', { name: 'Send notice', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Send notice', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Send notice', exact: true }).click();
   await expect(page.getByText(/The result is unconfirmed/)).toBeVisible();
@@ -138,7 +140,7 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
   await expect(page.getByText(/The result is unconfirmed/)).toBeVisible();
   await page.getByRole('button', { name: 'Read batch result', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delivery result', exact: true })).toBeVisible();
-  await expect(page.locator('[data-ui="notice-preview"]')).toContainText('Inbox 2');
+  await expect(page.locator('[data-ui="notice-preview"]')).toContainText(/Inbox\s*2/);
   expect(previews).toBe(1);
   expect(sends).toBe(1);
   await page.setViewportSize({ width: 1056, height: 800 });
@@ -162,7 +164,7 @@ test('service notice preview, retained draft and lost-send recovery on PC', asyn
     route: path,
     pageModel: 'configuration',
     testedStates: states,
-    pageTitle: page.getByRole('heading', { name: 'Customer notices', exact: true }),
+    pageTitle: page.getByRole('heading', { name: 'Notices', exact: true }),
     workingSurface: page.locator('[data-ui="customer-notifications-workspace"]'),
     browserEvidence: evidence,
     dataMode: 'mocked',
@@ -217,7 +219,7 @@ test('customer detail shortcut and recipient search preserve explicit scope', as
   await page.getByRole('link', { name: 'Send notice', exact: true }).click();
   await expect(page.getByLabel('Recipients', { exact: true })).toHaveValue('selected');
   await expect(
-    page.getByRole('button', { name: 'Remove acct_mvp_enterprise_primary' }),
+    page.getByRole('button', { name: /^Remove .*acct_mvp_ent…_primary$/ }),
   ).toBeVisible();
   await page.getByLabel('Find customers by name or email').fill('Enterprise');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -251,10 +253,12 @@ test('expired preview preserves Chinese draft and permits a fresh preview', asyn
     }) });
   });
   await page.goto(path);
-  await page.getByLabel('发送范围', { exact: true }).selectOption('all');
-  await page.getByLabel('通知标题', { exact: true }).fill('今晚维护通知');
-  await page.getByLabel('通知正文（纯文本）', { exact: true }).fill('维护时间为今晚22点至22点30分，结束后恢复服务。');
-  await page.getByRole('button', { name: '预览收件人', exact: true }).click();
+  await page.getByRole('button', { name: '新建通知', exact: true }).click();
+  const composeZh = page.locator('[data-ui="notice-compose-modal"]');
+  await composeZh.getByLabel('发送范围', { exact: true }).selectOption('all');
+  await composeZh.getByLabel('通知标题', { exact: true }).fill('今晚维护通知');
+  await composeZh.getByLabel('通知正文（纯文本）', { exact: true }).fill('维护时间为今晚22点至22点30分，结束后恢复服务。');
+  await composeZh.getByRole('button', { name: '预览收件人', exact: true }).click();
   await page.getByRole('button', { name: '发送通知', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '发送通知', exact: true }).click();
   await expect(page.getByLabel('通知标题', { exact: true })).toBeEnabled();
@@ -278,6 +282,7 @@ test('storage failure retains the latest text and blocks writes', async ({ page 
     return route.fulfill({ json: buildAdminApiEnvelope({ items: [], total_count: 0, limit: 20, offset: 0 }) });
   });
   await page.goto(path);
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
   await expect(page.getByLabel('Title', { exact: true })).toBeEnabled();
   await page.evaluate(() => {
     Storage.prototype.setItem = () => { throw new DOMException('Simulated unavailable storage', 'QuotaExceededError'); };
@@ -329,10 +334,12 @@ test('retry after rolled-back send keeps the batch and renews the consumed reque
     return route.fulfill({ json: buildAdminApiEnvelope(detail) });
   });
   await page.goto(path);
-  await page.getByLabel('Recipients', { exact: true }).selectOption('all');
-  await page.getByLabel('Title', { exact: true }).fill('Retried notice');
-  await page.getByLabel('Message (plain text)', { exact: true }).fill('No duplicate inbox deliveries.');
-  await page.getByRole('button', { name: 'Preview recipients', exact: true }).click();
+  await page.getByRole('button', { name: 'New notice', exact: true }).click();
+  const composeRetry = page.locator('[data-ui="notice-compose-modal"]');
+  await composeRetry.getByLabel('Recipients', { exact: true }).selectOption('all');
+  await composeRetry.getByLabel('Title', { exact: true }).fill('Retried notice');
+  await composeRetry.getByLabel('Message (plain text)', { exact: true }).fill('No duplicate inbox deliveries.');
+  await composeRetry.getByRole('button', { name: 'Preview recipients', exact: true }).click();
   const send = async () => {
     await page.getByRole('button', { name: 'Send notice', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Send notice', exact: true }).click();
@@ -374,10 +381,141 @@ test('an unreadable draft permits history inspection without clearing unknown in
   });
   await page.goto(path);
   await expect(page.getByText(/The local draft could not be read or retained/)).toBeVisible();
-  await page.getByRole('button', { name: 'View details', exact: true }).click();
+  await page.locator('[data-ui="notice-history-panel"]').getByRole('button', { name: /Previously sent notice/ }).click();
   await expect(page.getByRole('heading', { name: 'Delivery result', exact: true })).toBeVisible();
   await expect(page.locator('[data-ui="notice-preview"]')).toContainText('Inspect before recreating.');
   await expect(page.getByRole('button', { name: 'Send notice', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => sessionStorage.getItem('admin.customer-notice.v1:platform:operator-e2e:'))).toBe('{unreadable');
   expect(writes).toBe(0);
+});
+
+test('Chinese notice detail stays readable with long identities, selection and server paging', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh'));
+  await installAdminMocks(page);
+  const evidence = observeAdminBrowserEvidence(page);
+  let paged = false;
+  let writes = 0;
+  const accountId = `acct_${'a'.repeat(32)}`;
+  const notice = {
+    dispatch_id: `notice_${'c'.repeat(32)}`, title: '服务维护通知',
+    body: '您好，服务将于今晚 22:00 至 22:30 进行维护。维护结束后恢复使用。\n如有疑问，请通过门户工单联系我们。',
+    link_href: '/portal/account', audience: 'all', status: 'sent', actor_kind: 'platform_admin',
+    actor_ref: 'platform:operator-e2e', created_at: '2026-11-03T07:00:00Z', sent_at: '2026-11-03T07:01:00Z',
+    target_count: 2, ready_count: 0, sent_count: 1, skipped_count: 1, read_count: 1, failed_count: 0,
+    recipients: [
+      { account_id: accountId, account_name: accountId, principal_id: 'owner_one',
+        email: 'long-recipient-address-for-layout@example.test', status: 'sent', reason: '',
+        is_read: true, notification_id: 'pnotif_layout' },
+      { account_id: 'acct_long_customer', account_name: '用于验证较窄桌面窗口中长客户名称完整显示的示例客户',
+        principal_id: '', email: '', status: 'skipped', reason: 'owner_ambiguous', is_read: false },
+    ],
+  };
+  const offsets: number[] = [];
+  await page.route('**/api/admin/customer-notifications**', async (route) => {
+    if (route.request().method() !== 'GET') writes += 1;
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/api/admin/customer-notifications') {
+      return route.fulfill({ json: buildAdminApiEnvelope({ ...notice, dispatch_id: url.pathname.split('/').at(-1) }) });
+    }
+    const offset = Number(url.searchParams.get('offset') || 0);
+    offsets.push(offset);
+    const all = Array.from({ length: paged ? 21 : 1 }, (_, index) => ({
+      ...notice, recipients: undefined,
+      dispatch_id: index === 0 ? notice.dispatch_id : `notice_${String(index).padStart(32, '0')}`,
+      title: index === 0 ? notice.title : `历史通知 ${index + 1}`,
+    }));
+    return route.fulfill({ json: buildAdminApiEnvelope({ items: all.slice(offset, offset + 20), total_count: all.length, limit: 20, offset }) });
+  });
+  await page.goto(path);
+  const history = page.locator('[data-ui="notice-history-panel"]');
+  const detail = page.locator('[data-ui="notice-detail-panel"]');
+  const row = history.getByRole('button', { name: /服务维护通知/ });
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await expect(detail.getByRole('heading', { name: '服务维护通知' })).toBeVisible();
+  await expect(detail.locator('[data-ui="notice-result-metrics"]')).not.toContainText('可发送');
+  await expect(detail.locator('[data-ui="notice-sender"]')).toHaveText('发送人: 平台管理员');
+  await expect(detail.getByRole('cell', { name: '未命名客户 1', exact: true })).toBeVisible();
+  await expect(detail.getByRole('cell', { name: 'long-recipient-address-for-layout@example.test', exact: true })).toBeVisible();
+  await expect(detail.getByText(accountId, { exact: true })).toBeHidden();
+  await expect(detail.getByText(notice.actor_ref, { exact: true })).toBeHidden();
+  await expect(detail.getByText('没有唯一有效负责人', { exact: true })).toBeVisible();
+  await expect(history.getByRole('button', { name: '上一页', exact: true })).toHaveCount(0);
+  await expect(history.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0);
+  await expect(detail.locator('details')).not.toHaveAttribute('open', '');
+  await page.screenshot({ path: testInfo.outputPath('notices-layout-zh-1440.png'), fullPage: true });
+  const boxes = await page.evaluate(() => {
+    const history = document.querySelector('[data-ui="notice-history-panel"]')!.getBoundingClientRect();
+    const detail = document.querySelector('[data-ui="notice-detail-panel"]')!.getBoundingClientRect();
+    return { history: { x: history.x, y: history.y, width: history.width }, detail: { x: detail.x, y: detail.y, width: detail.width } };
+  });
+  expect(boxes.detail.width).toBeGreaterThan(boxes.history.width);
+  expect(Math.abs(boxes.detail.y - boxes.history.y)).toBeLessThan(2);
+  await detail.getByText('操作详情', { exact: true }).click();
+  await expect(detail.getByText('创建时间', { exact: true })).toBeVisible();
+  await expect(detail.getByText('发送时间', { exact: true })).toBeVisible();
+  await expect(detail.getByText('通知编号', { exact: true })).toBeVisible();
+  await expect(detail.getByText(notice.dispatch_id, { exact: true })).toBeVisible();
+  await expect(detail.getByText('发送人标识', { exact: true })).toBeVisible();
+  await expect(detail.getByText(notice.actor_ref, { exact: true })).toBeVisible();
+  await expect(detail.getByText(accountId, { exact: true })).toBeVisible();
+  await expect(detail.getByText('acct_long_customer', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('notices-identity-details.png'), fullPage: true });
+  await detail.getByText('操作详情', { exact: true }).click();
+  for (const width of [1280, 1056]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`notices-layout-zh-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.screenshot({ path: testInfo.outputPath('notices-layout-zh-dark.png'), fullPage: true });
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  paged = true;
+  await page.reload();
+  await expect(history.getByRole('button', { name: '下一页', exact: true })).toBeEnabled();
+  await history.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(history.getByText('历史通知 21', { exact: true })).toBeVisible();
+  await expect(history.getByRole('button', { name: '下一页', exact: true })).toBeDisabled();
+  await history.getByRole('button', { name: '上一页', exact: true }).click();
+  await expect(history.getByRole('button', { name: /服务维护通知/ })).toBeVisible();
+  expect(offsets).toContain(20);
+  notice.actor_kind = 'unknown_identity';
+  await page.reload();
+  await history.getByRole('button', { name: /服务维护通知/ }).click();
+  await expect(detail.locator('[data-ui="notice-sender"]')).toHaveText('发送人: 身份类型待确认');
+  await detail.getByText('操作详情', { exact: true }).click();
+  await expect(detail.getByText('unknown_identity', { exact: true })).toBeVisible();
+  expect(writes).toBe(0);
+  expect(evidence.consoleErrors).toEqual([]);
+});
+
+test('selected customer labels survive searches and draft reload without trusting mismatched identities', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en'));
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  let mismatch = false;
+  await page.route('**/api/admin/accounts/acct_readable', route => route.fulfill({
+    json: buildAdminApiEnvelope({ account: { account_id: mismatch ? 'acct_other' : 'acct_readable', name: mismatch ? 'Wrong customer' : 'Editorial team', metadata: {} }, primary_identity: { email: 'editor@example.test' } }),
+  }));
+  await page.route('**/api/admin/accounts?*', route => route.fulfill({
+    json: buildAdminApiEnvelope({ items: [{ account: { account_id: 'acct_other', name: 'Another customer' } }] }),
+  }));
+  await page.goto(`${path}?account=acct_readable`);
+  const remove = page.getByRole('button', { name: 'Remove Editorial team · acct_readable', exact: true });
+  await expect(remove).toBeVisible();
+  await page.getByLabel('Find customers by name or email').fill('Another');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText('Another customer · acct_other', { exact: true })).toBeVisible();
+  await expect(remove).toBeVisible();
+  await page.getByLabel('Title', { exact: true }).fill('Retained draft');
+  await page.reload();
+  await expect(remove).toBeVisible();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Retained draft');
+  await page.screenshot({ path: testInfo.outputPath('selected-customer-readable-1440.png'), fullPage: true });
+  mismatch = true;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Remove Customer name unverified · acct_readable', exact: true })).toBeVisible();
+  await expect(page.getByText('Wrong customer', { exact: true })).toHaveCount(0);
 });

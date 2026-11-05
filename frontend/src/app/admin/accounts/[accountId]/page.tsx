@@ -1,4 +1,5 @@
 'use client';
+import { shortIdentity } from '@/lib/identity-display';
 
 import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
@@ -1222,13 +1223,14 @@ function AccountDetailContent() {
     { ...account, metadata: { ...account.metadata, operator_display_name: account.operator_display_name } },
     t('admin.accounts.unnamed_customer', {}, 'Unnamed customer')
   );
+  const accountConfirmationLabel = `${accountTitle} · ${account.primary_identity?.email || shortIdentity(account.account_id)}`;
   const hasAdvancedChecks = siteEvidenceAvailable && siteOptions.length > 0;
   const detailTabs: Array<{ id: AccountDetailTab; label: string; navLabel: string; detail: string; href: string }> = [
     {
       id: 'overview',
       label: t('admin.account_detail.overview_tab', undefined, 'Overview'),
       navLabel: t('admin.account_detail.overview_tab', undefined, 'Overview'),
-      detail: translateStatusLabel(postureTone, t),
+      detail: `${t('admin.hierarchy.coverage')}: ${translateStatusLabel(postureTone, t)}`,
       href: '#account-overview',
     },
     {
@@ -1513,6 +1515,7 @@ function AccountDetailContent() {
     <BackofficePageStack className="!space-y-4">
       <BackofficePageHeader
         title={accountTitle}
+        scope={<span>{account.primary_identity?.email || t('admin.accounts.unnamed_customer')} · {t('admin.hierarchy.customer_identity')}: {shortIdentity(account.account_id)}</span>}
         description={t('admin.account_detail.page_help', {}, 'Review this customer’s package, access, usage and sites.')}
         summaryItems={headerMetrics}
         secondaryAction={(
@@ -1815,8 +1818,8 @@ function AccountDetailContent() {
                                   title: t('admin.account_detail.confirm_package_change_title', undefined, 'Confirm package change'),
                                   message: t(
                                     'admin.account_detail.confirm_package_change_desc',
-                                    { package: label, account: account.name || account.account_id },
-                                    `Change ${account.name || account.account_id} to ${label}? This updates the customer package immediately.`
+                                    { package: label, account: accountConfirmationLabel },
+                                    `Change ${accountConfirmationLabel} to ${label}? This updates the customer package immediately.`
                                   ),
                                   confirmLabel: t('admin.account_detail.confirm_package_change_action', undefined, 'Change package'),
                                   onConfirm: () => void handleChangePackage(option),
@@ -2086,8 +2089,8 @@ function AccountDetailContent() {
                     title: t('admin.account_detail.confirm_package_repair_title', undefined, 'Confirm subscription repair'),
                     message: t(
                       'admin.account_detail.confirm_package_repair_desc',
-                      { account: account.name || account.account_id },
-                      `Apply the subscription repair fields to ${account.name || account.account_id}?`
+                      { account: accountConfirmationLabel },
+                      `Apply the subscription repair fields to ${accountConfirmationLabel}?`
                     ),
                     confirmLabel: t('admin.account_detail.change_package_action', undefined, 'Change package'),
                     onConfirm: () => void handleChangePackage(),
@@ -2108,8 +2111,8 @@ function AccountDetailContent() {
                     title: t('admin.account_detail.confirm_suspend_title', undefined, 'Confirm suspension'),
                     message: t(
                       'admin.account_detail.confirm_suspend_desc',
-                      { account: account.name || account.account_id },
-                      `Suspend current coverage for ${account.name || account.account_id}?`
+                      { account: accountConfirmationLabel },
+                      `Suspend current coverage for ${accountConfirmationLabel}?`
                     ),
                     confirmLabel: t('admin.account_detail.suspend_coverage_action', undefined, 'Suspend coverage'),
                     variant: 'danger',
@@ -2131,8 +2134,8 @@ function AccountDetailContent() {
                     title: t('admin.account_detail.confirm_cancel_title', undefined, 'Confirm cancellation'),
                     message: t(
                       'admin.account_detail.confirm_cancel_desc',
-                      { account: account.name || account.account_id },
-                      `Cancel current coverage for ${account.name || account.account_id}?`
+                      { account: accountConfirmationLabel },
+                      `Cancel current coverage for ${accountConfirmationLabel}?`
                     ),
                     confirmLabel: t('admin.account_detail.cancel_coverage_action', undefined, 'Cancel coverage'),
                     variant: 'danger',

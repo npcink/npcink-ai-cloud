@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -37,7 +38,9 @@ from app.core.models import (
     SUPPORT_REQUEST_STATUS_IN_PROGRESS,
     SUPPORT_REQUEST_STATUS_OPEN,
     SUPPORT_REQUEST_STATUS_RESOLVED,
+    Account,
     ServiceAuditEvent,
+    Site,
     SupportRequest,
     SupportRequestAttachment,
     SupportRequestFeedback,
@@ -454,8 +457,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 attention=normalized_attention or None,
                 risk_as_of=risk_as_of,
             )
+            display_rows = self._support_display_rows(session, items)
         return {
-            "items": [self._serialize_support_request(item) for item in items],
+            "items": display_rows,
             "pagination": {
                 "limit": safe_limit,
                 "offset": safe_offset,
@@ -464,6 +468,47 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             },
             "summary": summary,
         }
+
+    def _support_display_rows(
+        self, session: Session, requests: list[SupportRequest]
+    ) -> list[dict[str, object]]:
+        """Admin-only readable projection, batched and bounded by the requested page."""
+        account_ids = {row.account_id for row in requests}
+        site_ids = {row.site_id for row in requests if row.site_id}
+        accounts = (
+            {
+                row.account_id: row
+                for row in session.scalars(
+                    select(Account).where(Account.account_id.in_(account_ids))
+                )
+            }
+            if account_ids
+            else {}
+        )
+        sites = (
+            {
+                row.site_id: row
+                for row in session.scalars(select(Site).where(Site.site_id.in_(site_ids)))
+            }
+            if site_ids
+            else {}
+        )
+        result = []
+        for row in requests:
+            payload = self._serialize_support_request(row)
+            account = accounts.get(row.account_id)
+            metadata = (account.metadata_json or {}) if account else {}
+            payload["account_name"] = (
+                str(metadata.get("operator_display_name") or account.name or "") if account else ""
+            )
+            site = sites.get(row.site_id or "")
+            # A site transferred since ticket creation must not supply another
+            # customer's current private display metadata.
+            owned_site = site if site and site.account_id == row.account_id else None
+            payload["site_name"] = str(owned_site.name or "") if owned_site else ""
+            payload["site_url"] = str(owned_site.site_url or "") if owned_site else ""
+            result.append(payload)
+        return result
 
     def get_admin_support_request(
         self,
@@ -488,7 +533,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
             feedback = repository.get_support_request_feedback(str(request.request_id or ""))
             return {
-                "request": self._serialize_support_request(request),
+                "request": self._support_display_rows(session, [request])[0],
                 "messages": [
                     self._serialize_support_request_message(message) for message in messages
                 ],

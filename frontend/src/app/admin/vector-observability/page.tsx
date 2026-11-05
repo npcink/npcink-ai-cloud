@@ -13,7 +13,8 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { getVectorFailureGuidance, getVectorGuidance } from '@/features/admin/observability/vector-guidance';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
-import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
+import { AdminActionGuidance } from '@/components/admin/AdminActionGuidance';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -362,9 +363,10 @@ function AdminVectorObservabilityContent() {
 
   return (
     <BackofficePageStack spacing="compact">
-      <AdminObservabilityTabs />
       <BackofficePageHeader
         density="compact"
+        toolbarControls={<AdminObservationWindow />}
+        freshness={data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : undefined}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}
         secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
       />
@@ -384,7 +386,6 @@ function AdminVectorObservabilityContent() {
           {t('common.apply', {}, 'Apply')}
         </button>
         {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-        {data?.generatedAt ? <p className="ml-auto text-xs text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
         {data ? <BackofficeStatusBadge status={data.health.status} label={`${c('所选时段信号', 'Selected-period signal')}: ${vectorStatusLabel(t, data.health.status)} · ${c('健康分', 'Health score')}: ${data.health.score}`} /> : null}
       </div>
 
@@ -393,6 +394,12 @@ function AdminVectorObservabilityContent() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => updateUrl({ focus: null })}>{c('清除定位', 'Clear focus')}</button>
       </div> : null}
       {data ? <p data-ui="vector-signal-scope" className="text-xs text-slate-500 dark:text-slate-400">{c('这是所选时段的历史汇总，未核实当前恢复状态。已索引量为最新留存快照，非时段新增。', 'Historical evidence for the selected period; current recovery is unverified. Indexed counts are latest retained snapshots, not period additions.')}</p> : null}
+      {guidance && !error && !loading ? <AdminActionGuidance dataUi="vector-handling-guidance" headingLevel={2} className="border-l-2 border-amber-500 pl-3"
+        title={c(...guidance.title)} explanation={c(...guidance.meaning)} nextStep={<>{c('下一步：', 'Next: ')}{c(...guidance.next)}</>}
+        actions={<><span className="text-slate-500 dark:text-slate-400">{c('最近检索：', 'Last search: ')}{guidance.lastSearchAt ? formatDate(guidance.lastSearchAt) : c('时间未提供', 'Time not provided')}</span>
+          <Link className="text-blue-700 underline dark:text-blue-300" href={diagnosticHref}>{c('查看运行诊断', 'View runtime diagnostics')}</Link>
+        </>}
+      /> : null}
       {!data ? null : (
         <div data-ui="vector-observability-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-5">
           {[
@@ -413,15 +420,6 @@ function AdminVectorObservabilityContent() {
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.vector_obs.stale_notice', {}, 'The last successfully loaded vector snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 
-      {guidance && !error && !loading ? <section data-ui="vector-handling-guidance" className="border-l-2 border-amber-500 pl-3 text-sm">
-        <h2 className="font-semibold text-slate-950 dark:text-white">{c(...guidance.title)}</h2>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">{c(...guidance.meaning)}</p>
-        <p className="mt-1 text-slate-800 dark:text-slate-100">{c('下一步：', 'Next: ')}{c(...guidance.next)}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className="text-slate-500 dark:text-slate-400">{c('最近检索：', 'Last search: ')}{guidance.lastSearchAt ? formatDate(guidance.lastSearchAt) : c('时间未提供', 'Time not provided')}</span>
-          <Link className="text-blue-700 underline dark:text-blue-300" href={diagnosticHref}>{c('查看运行诊断', 'View runtime diagnostics')}</Link>
-        </div>
-      </section> : null}
 
       {!data ? null : isEmpty ? (
         <>

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { siteIdentity } from '@/lib/identity-display';
 import { AdminNavigationScopeHint } from '@/components/admin/AdminNavigationScopeHint';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,6 +12,7 @@ import {
   BackofficePageStack,
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
+import { AdminActionGuidance } from '@/components/admin/AdminActionGuidance';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
@@ -33,7 +35,6 @@ import {
   issueBreakdownMetric,
   issueCount,
   issueEvidenceGuidance,
-  issueOwner,
   issueImpact,
   issueVerification,
   providerFailureAction,
@@ -249,7 +250,7 @@ export default function AdminTroubleshootingPage() {
       <BackofficePageHeader
         density="compact"
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
-        description={data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : undefined}
+        freshness={data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : undefined}
         toolbarControls={<AdminObservationWindow defaultHours={336} />}
         secondaryAction={<div className="flex items-center gap-3">
           <Link className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
@@ -268,9 +269,10 @@ export default function AdminTroubleshootingPage() {
                   aria-label={t('admin.troubleshooting.clear_site_filter', {}, 'Clear site filter')}
                   onClick={() => updateUrl({ site: null })}
                 >
-                  {t('admin.troubleshooting.site_filter', {}, 'Site')}: {siteFilter}<span aria-hidden="true"> ×</span>
+                  {t('admin.troubleshooting.site_filter', {}, 'Site')}: {siteIdentity(data?.siteDisplay[siteFilter]?.name, data?.siteDisplay[siteFilter]?.url, siteFilter, t('admin.readability.unnamed_site'))}<span aria-hidden="true"> ×</span>
                 </BackofficeFilterPill>
               ) : null}
+              {siteFilter ? <details className="text-xs text-slate-500"><summary className="cursor-pointer">{t('admin.readability.site_id')}</summary><code className="select-text break-all">{siteFilter}</code></details> : null}
               {capabilityFilter ? (
                 <BackofficeFilterPill
                   active
@@ -285,11 +287,7 @@ export default function AdminTroubleshootingPage() {
           ) : null}
 
       {searchParams.get('run_id') ? <ExactRuntimeRun runId={searchParams.get('run_id')!} site={siteFilter} windowHours={windowHours} since={since} refreshSignal={refreshSignal} onClear={() => updateUrl({ run_id: null })} /> : null}
-      <div data-ui="runtime-recovery-review" className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
-        <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
-        {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
-      </div>
+
       {data?.issues.length ? <div role="alert" data-ui="runtime-diagnostic-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
         <p>{t('admin.evidence.invalid_rows', { count: String(data.issues.length) })}</p>
         <p className="mt-1 break-all text-xs">{data.issues.join(', ')}</p>
@@ -299,20 +297,29 @@ export default function AdminTroubleshootingPage() {
       {data?.totals.providerEvidencePendingRuns ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.pending_evidence_note', { count: String(data.totals.providerEvidencePendingRuns) })}</p> : null}
       {since && data ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.review_scope_note')}</p> : null}
       {data ? (
+        <div data-ui="runtime-period-assessment" className="space-y-2">
+        <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">{t('admin.hierarchy.period_conclusion')}</span>
+          <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+          {!issues.length ? <span className="text-slate-500">{conclusionSummary}</span> : null}
+        </div>
+      <div data-ui="runtime-recovery-review" className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
+        <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
+        {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
+      </div>
         <div data-ui="runtime-diagnostic-summary" className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 text-xs dark:border-slate-800">
         <dl data-ui="runtime-diagnostic-metrics" className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-baseline gap-2"><dt className="text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs')}</dt><dd><Link href={usageStatisticsHref} className="text-base font-semibold text-slate-900 dark:text-white">{formatNumber(data.totals.runs)}</Link></dd></div>
           {[
-            { key: 'provider_coverage', label: t('admin.troubleshooting.provider_coverage'), value: data.totals.providerCallRunCoverageRate },
-            { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate },
+            { key: 'provider_coverage', label: t('admin.troubleshooting.provider_coverage'), value: data.totals.providerCallRunCoverageRate, required: data.totals.providerEvidenceRequiredRuns },
+            { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate, required: data.totals.aiEvidenceRequiredRuns },
           ].map((metric) => <div key={metric.key} data-ui="runtime-data-integrity" className="flex items-center gap-2">
             <dt className="inline-flex items-center text-slate-500 dark:text-slate-400">{metric.label}<AdminHelpTip label={metric.label}>{t('admin.troubleshooting.integrity_note')}</AdminHelpTip></dt>
-            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{data.totals.runs === 0 || (metric.key === 'provider_coverage' ? data.totals.providerEvidenceRequiredRuns === 0 : data.totals.aiEvidenceRequiredRuns === 0) ? '\u2014' : formatRate(metric.value)}</Link></dd>
+            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{metric.required == null || metric.required === 0 ? '\u2014' : formatRate(metric.value)}</Link><span className="ml-2 text-xs text-slate-500">{metric.required == null ? t('admin.troubleshooting.denominator_unknown') : t('admin.troubleshooting.required_runs', { count: formatNumber(metric.required) })}</span></dd>
           </div>)}
         </dl>
-        <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
-          <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-          {!issues.length ? <span className="text-slate-500">{conclusionSummary}</span> : null}
+
         </div>
         </div>
       ) : null}
@@ -368,11 +375,11 @@ export default function AdminTroubleshootingPage() {
               <p className="mt-2 text-xs text-slate-500">{data?.totals.runs === 0 ? t('admin.troubleshooting.no_requests') : t('admin.troubleshooting.review_scope_note')}</p>
             </section> : null}
             {selectedIssue ? <section id="runtime-diagnostic-inspector" key={selectedIssue.code} data-ui="runtime-diagnostic-inspector" aria-label={issueTitle(selectedIssue, t)} className="admin-compact-surface min-w-0 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-              <div data-ui="runtime-inspector-header" className="flex min-h-[var(--admin-compact-row-height)] items-center justify-between gap-3 px-3 py-1.5">
+              <div data-ui="runtime-inspector-header" className="flex min-h-[var(--admin-compact-row-height)] items-center gap-3 px-3 py-1.5">
                 <h2 className="flex min-w-0 items-center text-sm font-semibold">{issueTitle(selectedIssue, t)}<AdminHelpTip label={t('admin.troubleshooting.issue_meaning')}>{issueEvidenceGuidance(selectedIssue, t)}</AdminHelpTip></h2>
                 {selectedIssue.code === 'hosted_model.provider_errors' ? <span data-ui="provider-recovery-status" className="flex shrink-0 items-center text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.recovery_pending')}<AdminHelpTip label={t('admin.troubleshooting.recovery_pending')}>{t('admin.troubleshooting.failure_recovery_unverified')}</AdminHelpTip></span> : <span className="text-xs text-slate-500">{t(selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.unmetered_runs' ? 'admin.troubleshooting.evidence_gap' : 'admin.troubleshooting.recorded_error')}</span>}
               </div>
-              <p data-ui="runtime-issue-impact" className="px-3 pb-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{error ? t('admin.troubleshooting.stale_handling') : issueImpact(selectedIssue, t)}</p>
+              <p data-ui="runtime-issue-impact" className="max-w-[100ch] px-3 pb-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{error ? t('admin.troubleshooting.stale_handling') : issueImpact(selectedIssue, t)}</p>
               <div role="tablist" aria-label={t('admin.troubleshooting.issue_views')} className="mx-3 flex gap-4 border-b border-slate-200 dark:border-slate-800">
                 {panelTabs.map((tab, index) => <button key={tab.id} id={`diagnostic-tab-${tab.id}`} type="button" role="tab"
                   aria-selected={activePanel === tab.id} aria-controls={`diagnostic-panel-${tab.id}`} tabIndex={activePanel === tab.id ? 0 : -1}
@@ -386,8 +393,31 @@ export default function AdminTroubleshootingPage() {
               </div>
               <section id="diagnostic-panel-overview" role="tabpanel" aria-labelledby="diagnostic-tab-overview" hidden={activePanel !== 'overview'} className="p-3">
                 <div data-ui="runtime-diagnostic-overview-grid">
+              <AdminActionGuidance dataUi="runtime-investigation-actions" className="border-b border-slate-200 pb-3 dark:border-slate-800"
+                title={t('admin.troubleshooting.next_action')}
+                evidence={firstFailure ? <>{t('admin.troubleshooting.latest_failure')}: {t(`admin.troubleshooting.failure_reason_${failureReasonKey}`)}</> : undefined}
+                limitation={firstFailure ? t('admin.troubleshooting.sample_action_scope') : undefined}
+                nextStep={firstFailure ? providerFailureAction(firstFailure.reason, t) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}
+                verification={!error && !refreshing ? <p data-ui="runtime-verification-guidance"><span className="font-semibold">{t('admin.troubleshooting.verify_title')}: </span>{issueVerification(selectedIssue, t)}</p> : undefined}
+                actions={<>
+
+                  {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
+                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
+                    : <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records' })}>{t('admin.troubleshooting.inspect_failures')}</button>}
+                  {selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href={scopedHref('/admin/plugin-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_plugin_errors')}</Link> : null}
+                  {selectedIssue.capabilities.includes('knowledge') ? <Link href={scopedHref('/admin/vector-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_knowledge')}</Link> : null}
+                  {selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.provider_errors' ? <Link href="/admin/ai-resources" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_suppliers')}</Link> : null}
+                  <Link href="/admin/runtime-profiles" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
+                  {selectedIssue.code === 'hosted_model.provider_errors' && failures.length ? <button type="button" data-ui="provider-failure-details" className="text-xs text-blue-700 hover:underline dark:text-blue-300" onClick={() => {
+                    const blob = new Blob([JSON.stringify({ ...exportContext, windowHours, generatedAt: data?.generatedAt, recovery: 'unverified', failure_details: { returned: failures.length, may_be_truncated: failures.length >= (data?.displayLimit ?? 25) }, failures }, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+                    link.href = url; link.download = 'runtime-failure-evidence.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}>{t('admin.troubleshooting.failure_export')}</button> : null}
+
+                </>}
+              />
+              {selectedIssue.code === 'hosted_model.provider_errors' && !failures.length ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_unavailable')}</p> : null}
                 <section data-ui="runtime-inspector-summary" className="min-w-0 space-y-2">
-                {firstFailure ? <p className="text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.latest_failure')}: {t(`admin.troubleshooting.failure_reason_${failureReasonKey}`)}</p> : null}
                 <section data-ui="runtime-issue-evidence" className="space-y-2">
                   <h3 className="text-sm font-semibold">{t('admin.troubleshooting.open_evidence')}</h3>
                   {sortedGroups.length ? <div className="overflow-x-auto"><table className="w-full min-w-[var(--admin-diagnostic-table-min-width)] table-fixed text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence')}>
@@ -406,27 +436,7 @@ export default function AdminTroubleshootingPage() {
                   </table></div> : <p className="text-xs text-slate-500">{t('admin.troubleshooting.groups_unavailable')}</p>}
                 </section>
                 </section>
-              <section data-ui="runtime-investigation-actions" className="min-w-0 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                <div className="flex flex-wrap items-baseline gap-3"><h3 className="text-sm font-semibold">{t('admin.troubleshooting.next_action')}</h3><span className="text-xs text-slate-500">{t('admin.troubleshooting.owner_label')}: {issueOwner(selectedIssue, t)}</span></div>
-                {firstFailure ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.sample_action_scope')}</p> : null}
-                <p className="text-sm leading-6">{firstFailure ? providerFailureAction(firstFailure.reason, t) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}</p>
-                {!error && !refreshing ? <p data-ui="runtime-verification-guidance" className="text-xs leading-5 text-slate-600 dark:text-slate-300"><span className="font-semibold">{t('admin.troubleshooting.verify_title')}: </span>{issueVerification(selectedIssue, t)}</p> : null}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
-                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
-                    : <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records' })}>{t('admin.troubleshooting.inspect_failures')}</button>}
-                  {selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href={scopedHref('/admin/plugin-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_plugin_errors')}</Link> : null}
-                  {selectedIssue.capabilities.includes('knowledge') ? <Link href={scopedHref('/admin/vector-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_knowledge')}</Link> : null}
-                  {selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.provider_errors' ? <Link href="/admin/ai-resources" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_suppliers')}</Link> : null}
-                  <Link href="/admin/runtime-profiles" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
-                  {selectedIssue.code === 'hosted_model.provider_errors' && failures.length ? <button type="button" data-ui="provider-failure-details" className="text-xs text-blue-700 hover:underline dark:text-blue-300" onClick={() => {
-                    const blob = new Blob([JSON.stringify({ ...exportContext, windowHours, generatedAt: data?.generatedAt, recovery: 'unverified', failure_details: { returned: failures.length, may_be_truncated: failures.length >= (data?.displayLimit ?? 25) }, failures }, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob); const link = document.createElement('a');
-                    link.href = url; link.download = 'runtime-failure-evidence.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  }}>{t('admin.troubleshooting.failure_export')}</button> : null}
-                </div>
-                {selectedIssue.code === 'hosted_model.provider_errors' && !failures.length ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_unavailable')}</p> : null}
-              </section>
+
                 </div>
               </section>
               <section data-ui="runtime-run-evidence" id="diagnostic-panel-records" role="tabpanel" aria-labelledby="diagnostic-tab-records" hidden={activePanel !== 'records'} className="space-y-2 p-3">

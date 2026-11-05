@@ -1,4 +1,5 @@
 'use client';
+import { supportCustomerLabel, supportSiteLabel } from '@/features/admin/support-requests/display';
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -107,7 +108,7 @@ export default function AdminSupportRequestDetailPage() {
         summaryItems={supportRequest ? [
           { label: t('admin.support_recovery.ticket'), value: supportRequest.request_id },
           { label: t('admin.support_requests_priority', {}, 'Priority'), value: ({ high: t('admin.support_priority_high', {}, 'High'), normal: t('admin.support_priority_normal', {}, 'Normal'), low: t('admin.support_priority_low', {}, 'Low') } as Record<string, string>)[supportRequest.priority] || supportRequest.priority },
-          { label: t('common.account', {}, 'Account'), value: supportRequest.email || supportRequest.account_id },
+          { label: t('common.account', {}, 'Account'), value: supportCustomerLabel(supportRequest, t('admin.accounts.unnamed_customer')) },
           { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
         ] : []}
         summaryAside={
@@ -133,7 +134,7 @@ export default function AdminSupportRequestDetailPage() {
       ) : null}
       {detail?.issues.length ? <div role="alert" className="text-sm" data-ui="support-child-issues">
         <p>{t('admin.support_recovery.child_issues', { count: String(detail.issues.length) })}</p>
-        <p>{detail.issues.join(', ')}</p>
+        <details><summary className="cursor-pointer">{t('admin.readability.invalid_records')}</summary><p className="select-text break-all text-xs">{detail.issues.join(', ')}</p></details>
         <button type="button" className="btn btn-secondary btn-sm" disabled={busy || isLoading} onClick={() => void controller.load()}>{t('common.retry')}</button>
       </div> : null}
       {intent ? <div role="status" className="space-y-2 text-sm" data-ui="support-operation-recovery">
@@ -141,12 +142,28 @@ export default function AdminSupportRequestDetailPage() {
         <p>{t('admin.support_recovery.ticket')}: {intent.request_id}</p>
         <button type="button" className="btn btn-secondary" disabled={busy || storageBlocked} onClick={() => void controller.confirm()}>{t('admin.support_recovery.confirm')}</button>
         <BackofficeDisclosure summary={t('admin.support_recovery.evidence')}>
-          <div className="space-y-1 break-all"><p>{intent.actor_kind}: {intent.actor_ref}</p><p>{intent.operation_id}</p><p>{intent.created_at}</p>
-            <p className="whitespace-pre-wrap">{intent.action === 'message' ? intent.values.body : intent.action === 'status' ? intent.values.status : intent.values.filename} · {intent.values.visibility || ''}</p></div>
+          <dl className="space-y-2 select-text break-all">
+            {[
+              [t('admin.readability.actor_kind'), intent.actor_kind],
+              [t('admin.audit_workspace.actor_ref'), intent.actor_ref],
+              [t('admin.readability.operation_id'), intent.operation_id],
+              [t('admin.readability.occurred_at'), intent.created_at],
+              [t('admin.readability.submitted_values'), JSON.stringify(intent.values, null, 2)],
+            ].map(([label, value]) => <div key={label}><dt className="font-medium">{label}</dt><dd className="whitespace-pre-wrap">{value}</dd></div>)}
+          </dl>
         </BackofficeDisclosure>
       </div> : null}
       {lastReceipt ? <BackofficeDisclosure summary={t('admin.support_recovery.evidence')}>
-        <p className="break-all">{String(lastReceipt.operation_id)} · {String(lastReceipt.actor_ref)} · {String(lastReceipt.event_id)} · {String(lastReceipt.message_id || lastReceipt.attachment_id || '')} · {String(lastReceipt.created_at)}</p>
+        <dl className="space-y-2 select-text break-all">
+          {[
+            [t('admin.readability.operation_id'), lastReceipt.operation_id],
+            [t('admin.audit_workspace.actor_ref'), lastReceipt.actor_ref],
+            [t('admin.audit_workspace.event_id'), lastReceipt.event_id],
+            [t('admin.readability.message_id'), lastReceipt.message_id || '—'],
+            [t('admin.readability.attachment_id'), lastReceipt.attachment_id || '—'],
+            [t('admin.readability.occurred_at'), lastReceipt.created_at],
+          ].map(([label, value]) => <div key={String(label)}><dt className="font-medium">{String(label)}</dt><dd>{String(value ?? '—')}</dd></div>)}
+        </dl>
       </BackofficeDisclosure> : null}
 
       {notice ? (
@@ -163,14 +180,20 @@ export default function AdminSupportRequestDetailPage() {
       {supportRequest ? (
         <BackofficeSectionPanel>
           <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-3">
-            <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportRequest.account_id}</Link>
+            <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportCustomerLabel(supportRequest, t('admin.accounts.unnamed_customer'))}</Link>
             {supportRequest.site_id ? (
-              <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportRequest.site_id}</Link>
+              <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportSiteLabel(supportRequest, t('admin.readability.unnamed_site'))}</Link>
             ) : (
               <span>{t('portal.support_request_no_site', {}, 'Account-level issue')}</span>
             )}
             <span>{t(`portal.support_topic_${supportRequest.topic}`, {}, supportRequest.topic)}</span>
           </div>
+          <details className="mt-3 text-xs"><summary className="cursor-pointer">{t('admin.notices.evidence')}</summary>
+            <dl className="mt-2 space-y-2 select-text break-all">
+              <div><dt>{t('admin.account_id')}</dt><dd>{supportRequest.account_id}</dd></div>
+              <div><dt>{t('admin.audit_workspace.site_id')}</dt><dd>{supportRequest.site_id || '—'}</dd></div>
+            </dl>
+          </details>
         </BackofficeSectionPanel>
       ) : null}
 

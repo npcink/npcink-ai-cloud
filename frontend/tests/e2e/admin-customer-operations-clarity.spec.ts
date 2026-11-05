@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import type { AccountQuotaMetric } from '@/features/admin/accounts/account-credit-evidence';
+import { ledgerSummaryFixture } from '../fixtures/admin-account-evidence';
 import { LONG_ACCOUNT_ID, buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 function quotaResource(key: string, used: number, limit: number, status = 'ok'): AccountQuotaMetric {
-  return { key, used, limit, remaining: Math.max(0, limit - used), usage_ratio: limit > 0 ? used / limit : 0, unlimited: limit <= 0, status, unit: 'site' };
+  return { key, used, limit, remaining: Math.max(0, limit - used), usage_ratio: limit > 0 ? used / limit : 0, unlimited: limit <= 0, status, unit: key === 'ai_credits' ? 'ai_credits' : 'site' };
 }
 
 const healthyResources = [
@@ -19,7 +20,7 @@ const healthyResources = [
 async function openQuotaScenario(page: Page, resources: AccountQuotaMetric[], status = 'ok', credits = quotaResource('ai_credits', 2522, 150000)) {
   await installAdminMocks(page);
   await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`, route => route.fulfill({
-    json: buildAdminApiEnvelope({ status, ai_credits: credits, resource_limits: resources }),
+    json: buildAdminApiEnvelope({ account_id: LONG_ACCOUNT_ID, status, ai_credits: credits, ai_credit_ledger_summary: ledgerSummaryFixture(), resource_limits: resources, internal_limits: [], breakdown: [] }),
   }));
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
   await page.getByRole('tab', { name: /Credits and usage|积分与用量/i }).click();

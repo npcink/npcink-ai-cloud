@@ -64,13 +64,16 @@ type BackofficeSummaryStripProps = {
 
 type BackofficePageHeaderProps = Pick<
   BackofficeHeaderProps,
-  'title' | 'description'
+  'title' | 'description' | 'descriptionDisplay'
 > & {
   summaryItems?: BackofficeMetricItem[];
   primaryAction?: React.ReactNode;
   secondaryAction?: React.ReactNode;
   summaryAside?: React.ReactNode;
   toolbarControls?: React.ReactNode;
+  /** Dynamic scope and freshness are always visible, in either density. */
+  scope?: React.ReactNode;
+  freshness?: React.ReactNode;
 };
 
 type BackofficeConfigurationHeaderProps = BackofficePageHeaderProps & {
@@ -243,12 +246,15 @@ export function BackofficePrimaryPanel({
 export function BackofficePageHeader({
   title,
   description,
+  descriptionDisplay,
   density = 'default',
   summaryItems = [],
   primaryAction,
   secondaryAction,
   summaryAside,
   toolbarControls,
+  scope,
+  freshness,
 }: BackofficePageHeaderProps & { density?: 'default' | 'compact' }) {
   if (density === 'compact') {
     return (
@@ -256,9 +262,10 @@ export function BackofficePageHeader({
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h1>
-            {description ? (
-              <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
-            ) : null}
+            {description ? descriptionDisplay === 'hint'
+              ? <BackofficeInfoHint detail={description} />
+              : <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
+              : null}
           </div>
           {primaryAction || secondaryAction || toolbarControls ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -268,6 +275,7 @@ export function BackofficePageHeader({
             </div>
           ) : null}
         </div>
+        {scope || freshness ? <BackofficePageContext scope={scope} freshness={freshness} /> : null}
         {summaryItems.length ? (
           <BackofficeSummaryStrip items={summaryItems} density="compact" className="pt-1" />
         ) : null}
@@ -294,10 +302,12 @@ export function BackofficePageHeader({
             <h1 className="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-[2rem]">
               {title}
             </h1>
-            {description ? <BackofficeInfoHint detail={description} /> : null}
+            {description && descriptionDisplay !== 'visible' ? <BackofficeInfoHint detail={description} /> : null}
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
+        {description && descriptionDisplay === 'visible' ? <p className="max-w-[80ch] text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p> : null}
+        {scope || freshness ? <BackofficePageContext scope={scope} freshness={freshness} /> : null}
         {summaryItems.length || summaryAside ? (
           <div className="flex flex-col gap-2 border-t border-slate-200/70 pt-2.5 dark:border-slate-800/70 xl:flex-row xl:items-center xl:justify-between">
             {summaryItems.length ? (
@@ -317,6 +327,13 @@ export function BackofficePageHeader({
       </div>
     </section>
   );
+}
+
+function BackofficePageContext({ scope, freshness }: Pick<BackofficePageHeaderProps, 'scope' | 'freshness'>) {
+  return <div data-ui="backoffice-page-context" className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+    {scope ? <div data-ui="backoffice-page-scope" className="min-w-0 break-words">{scope}</div> : null}
+    {freshness ? <div data-ui="backoffice-page-freshness">{freshness}</div> : null}
+  </div>;
 }
 
 export function BackofficeConfigurationHeader(props: BackofficeConfigurationHeaderProps) {

@@ -1,4 +1,5 @@
 'use client';
+import { readableIdentityName, shortIdentity } from '@/lib/identity-display';
 
 import { useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
@@ -121,11 +122,14 @@ export function PortalSiteConnectPanel({
     }
   };
 
-  /** Plain account label for site owners: name, else the signed-in email, never an account ID. */
-  const accountLabel = (account: PortalAddonConnectionAccount, index: number) =>
-    account.name.trim()
-    || (accounts.length === 1 ? signedInEmail : '')
-    || t('portal.bind_account_fallback', { index: String(index + 1) }, `Account ${index + 1}`);
+  // Distinguish duplicate names without exposing administrator-only customer notes.
+  const accountLabel = (account: PortalAddonConnectionAccount, index: number) => {
+    const name = readableIdentityName(account.name, account.account_id);
+    const duplicate = name && accounts.filter(item => readableIdentityName(item.name, item.account_id) === name).length > 1;
+    if (name) return duplicate ? `${name} · ${shortIdentity(account.account_id)}` : name;
+    return (accounts.length === 1 ? signedInEmail : '')
+      || `${t('portal.bind_account_fallback', { index: String(index + 1) }, `Account ${index + 1}`)} · ${shortIdentity(account.account_id)}`;
+  };
   const isBlocked = !hasAddonConnectionContext || (!isLoadingAccounts && !accountsError && accounts.length === 0);
 
   return (
