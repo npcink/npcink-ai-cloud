@@ -377,7 +377,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   — dated evidence for the restrained metadata-only export, focused validation,
   production release, time costs, and explicit non-commercial conclusions
 - [Feedback Data Operations](feedback-data-operations-v1.md)
-- [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
+- [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md) — §10.1 汇总版本/预检、模型与计费、故障分层、反馈和精确清理经验；§16 区分运行变更与纯文档收尾。
 
 ## Operations and Release
 
