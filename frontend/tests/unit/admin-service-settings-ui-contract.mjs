@@ -10,7 +10,7 @@ const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
 assert.match(
   source,
-  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'accounting' \| 'provider-budget' \| 'site-relink' \| 'system';/,
+  /type ServiceSettingsTab = 'portal' \| 'registration' \| 'qq' \| 'email' \| 'payment' \| 'accounting' \| 'provider-budget' \| 'site-relink' \| 'system';/,
   'service settings page must expose one independent configuration group per tab'
 );
 

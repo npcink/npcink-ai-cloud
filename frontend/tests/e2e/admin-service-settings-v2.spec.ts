@@ -40,6 +40,7 @@ async function installSettingsRecoveryHarness(page: Page) {
     releaseSave: undefined as (() => void) | undefined,
     delaySave: false,
     settings: {
+      portal_registration: setting('portal_registration', 'ready', { public_registration_enabled: true, email_allowlist: [] as string[] }),
       portal_public: setting('portal_public', 'ready', { public_base_url: 'https://saved.example.test' }),
       qq_login: setting('portal_qq_login', 'disabled', { client_id: '' }),
       portal_email: setting('portal_email', 'ready', {
@@ -62,6 +63,11 @@ async function installSettingsRecoveryHarness(page: Page) {
       state.writes += 1;
       const payload = route.request().postDataJSON();
       if (state.delaySave) await new Promise<void>((resolve) => { state.releaseSave = resolve; });
+      if (path.endsWith('/portal-registration')) {
+        state.settings.portal_registration.config = payload;
+        await route.fulfill({ json: buildAdminApiEnvelope(state.settings.portal_registration) });
+        return;
+      }
       if (path.endsWith('/portal-public')) state.settings.portal_public.config = { public_base_url: payload.public_base_url };
       await route.fulfill({ json: buildAdminApiEnvelope(state.settings.portal_public) });
     } else if (path.endsWith('/email/preview')) {
@@ -78,6 +84,50 @@ async function installSettingsRecoveryHarness(page: Page) {
   });
   return state;
 }
+
+test('registration access saves a restricted policy and protects unsaved changes', async ({ page }, testInfo) => {
+  const state = await installSettingsRecoveryHarness(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/admin/service-settings?tab=registration');
+  const toggle = page.getByRole('switch', { name: /Open public registration|开放公开注册/ });
+  const emails = page.getByRole('textbox', { name: /Registration email allowlist|注册邮箱白名单/ });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  expect((await emails.boundingBox())?.height).toBeGreaterThanOrEqual(144);
+  await toggle.click();
+  await emails.fill('tester@example.com\nsecond@example.com');
+  await page.getByRole('tab', { name: /QQ/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: /Cancel|取消/ }).click();
+  await expect(emails).toHaveValue('tester@example.com\nsecond@example.com');
+  await page.getByRole('button', { name: /Save registration policy|保存注册策略/ }).click();
+  await expect.poll(() => state.writes).toBe(1);
+  await expect(toggle).toBeEnabled();
+  expect(state.settings.portal_registration.config).toEqual({
+    public_registration_enabled: false, email_allowlist: ['tester@example.com', 'second@example.com'],
+  });
+  await expect(page.getByRole('tab', { name: /Registration access|注册准入/ })).toContainText(/allowlist|白名单/);
+  await page.screenshot({ path: testInfo.outputPath('registration-access-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.getByRole('button', { name: /Save registration policy|保存注册策略/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('registration-access-1280.png'), fullPage: true });
+});
+
+test('registration access keeps saved policy awaiting confirmation after a failed readback', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  await page.goto('/admin/service-settings?tab=registration');
+  const toggle = page.getByRole('switch', { name: /Open public registration|开放公开注册/ });
+  await toggle.click();
+  state.failReads = true;
+  await page.getByRole('button', { name: /Save registration policy|保存注册策略/ }).click();
+  await expect(page.getByRole('status').filter({ hasText: /saved.*latest|已保存.*最新/i })).toBeVisible();
+  await expect(toggle).toBeDisabled();
+  state.failReads = false;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  expect(state.writes).toBe(1);
+});
 
 test('service writes lock the submitted draft and category until the readback completes', async ({ page }) => {
   const state = await installSettingsRecoveryHarness(page);
@@ -152,12 +202,12 @@ test('email preview failure stays inside its dialog and can recover without chan
   expect(state.writes).toBe(0);
 });
 
-test('all eight setting groups keep URL, keyboard, history and PC panel context', async ({ page }, testInfo) => {
+test('all nine setting groups keep URL, keyboard, history and PC panel context', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installSettingsRecoveryHarness(page);
   await page.goto('/admin/service-settings?tab=portal');
   const tabs = page.getByRole('tab');
-  const ids = ['portal', 'qq', 'email', 'payment', 'accounting', 'provider-budget', 'site-relink', 'system'];
+  const ids = ['portal', 'registration', 'qq', 'email', 'payment', 'accounting', 'provider-budget', 'site-relink', 'system'];
   for (let index = 0; index < ids.length; index += 1) {
     await tabs.nth(index).click();
     await expect(page).toHaveURL(new RegExp(`tab=${ids[index]}$`));
@@ -173,10 +223,10 @@ test('all eight setting groups keep URL, keyboard, history and PC panel context'
   await page.keyboard.press('ArrowDown');
   await expect(tabs.nth(1)).toBeFocused();
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
-  await expect(page).toHaveURL(/tab=qq$/);
+  await expect(page).toHaveURL(/tab=registration$/);
   await page.goBack();
   await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
-  await tabs.nth(2).click();
+  await tabs.nth(3).click();
   await page.setViewportSize({ width: 900, height: 1050 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('service-settings-email-900.png'), fullPage: true, animations: 'disabled' });
@@ -388,7 +438,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务设置$/i })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(8);
+  await expect(page.getByRole('tab')).toHaveCount(9);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
   const compactGeometry = await page.evaluate(() => {

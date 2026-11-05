@@ -57,6 +57,10 @@ purchases, credit packs, and the shared 14-day Plus/Pro trial. The three-user
 Free validation remains independent; it is not an access allowlist or a
 prerequisite for paid access. This approved rollout scope is not evidence of
 production deployment or successful real transactions.
+New-account admission can separately use the operator-approved
+[registration switch and email allowlist](docs/portal-registration-access-v1.md).
+The compatibility default is open; this source change does not activate
+restricted registration in production.
 Inspect the current `origin/master`, active tasks, open PRs, and M4 status before
 using a dated closeout record as present truth.
 

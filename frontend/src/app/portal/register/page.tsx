@@ -47,8 +47,10 @@ function RegisterFormContent() {
     email: '',
     code: '',
     step: 'request',
-    status: 'idle',
-    message: '',
+    status: searchParams.get('reason') === 'registration_closed' ? 'error' : 'idle',
+    message: searchParams.get('reason') === 'registration_closed'
+      ? t('portal.register.closed', undefined, 'Internal testing is in progress. Registration is limited to approved email addresses. Existing users can still sign in.')
+      : '',
   });
   const [handoffHref, setHandoffHref] = useState('');
 

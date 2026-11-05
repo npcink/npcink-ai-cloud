@@ -9,7 +9,9 @@ this exception does not authorize production operations or claim Phase 1 complet
 The operator explicitly approved self-serve access for all eligible normal
 accounts: existing Plus/Pro monthly packages (current defaults CNY 15/29),
 existing credit packs, and the shared 14-day Plus/Pro trial. There is no
-invitation list or minimum account age. Account permission, published sales
+invitation list or minimum account age for existing-account purchase/trial eligibility.
+The operator-approved [2026-11-05 registration policy](../portal-registration-access-v1.md)
+may separately restrict new-account creation; it does not gate existing accounts. Account permission, published sales
 status, subscription eligibility and the existing one-trial-per-customer
 checks remain applicable. Plus/Pro share one trial window; upgrading during
 that window does not restart or extend it. Trial credit caps remain 3000/5000.

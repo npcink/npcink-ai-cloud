@@ -6,6 +6,11 @@ from typing import Any
 
 from app.core.models import ServiceSetting
 from app.domain.commercial.currency import SERVICE_SETTING_ACCOUNTING_FX, resolve_accounting_fx_rate
+from app.domain.portal_registration import (
+    SERVICE_SETTING_PORTAL_REGISTRATION,
+    normalize_registration_policy,
+    registration_policy,
+)
 from app.domain.runtime.provider_budget import SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET
 from app.domain.service_settings_values import (
     DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
@@ -20,6 +25,7 @@ from app.domain.service_settings_values import (
     SERVICE_SETTING_PLATFORM_PREFERENCES,
     SERVICE_SETTING_SITE_RELINK_POLICY,
     STATUS_DISABLED,
+    STATUS_ERROR,
     STATUS_MISSING_CONFIG,
     STATUS_READY,
     _dict,
@@ -65,6 +71,29 @@ def serialize(row: ServiceSetting | None, *, setting_id: str = "") -> dict[str, 
         "last_error_message": row.last_error_message or "",
         "credential_value_exposure": "none",
     }
+
+
+def serialize_portal_registration(row: ServiceSetting | None) -> dict[str, Any]:
+    result = serialize(row, setting_id=SERVICE_SETTING_PORTAL_REGISTRATION)
+    result.update(
+        enabled=True,
+        configured=True,
+        status=STATUS_READY,
+        config=registration_policy(row),
+    )
+    if row is not None:
+        try:
+            if not row.enabled:
+                raise ValueError("disabled registration policy")
+            normalize_registration_policy(row.config_json)
+        except (ValueError, TypeError, AttributeError):
+            result.update(
+                configured=False,
+                status=STATUS_ERROR,
+                last_error_code="service_settings.portal_registration_invalid",
+                last_error_message="Registration policy is invalid; new accounts are blocked.",
+            )
+    return result
 
 
 def serialize_site_relink_policy(

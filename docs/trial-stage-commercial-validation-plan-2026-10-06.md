@@ -65,7 +65,7 @@ Status: operator-confirmed three-user free-trial plan; acceptance scope updated 
 
 | 项目 | 本次确认 |
 | --- | --- |
-| 招募 | 首批 3 位定向介绍站长，正常自注册；不做邀请码、白名单或邀请管理 |
+| 招募 | 首批 3 位定向介绍站长，正常自注册；不做邀请码或邀请管理。2026-11-05 操作者允许另用[注册开关与邮箱白名单](portal-registration-access-v1.md)限制新开户，名单由操作者配置，不等同观察队列 |
 | 开户 | 邮箱验证注册或 QQ 首次登录；验证成功即获得账户级 Free |
 | 额度 | 复用现有 Free，不新增试用套餐、周限额或周重置 |
 | 代码基线 | 300 AI credits / 30 天周期，1 个站点；以实际账户权益显示为准 |

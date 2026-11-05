@@ -37,15 +37,17 @@ import {
   type NormalizedServiceSettingsData,
   type PortalPublicForm,
   type QQForm,
+  type RegistrationForm,
   type SavedServiceSettingsForms,
   type ServiceSettingsData,
   type SettingStatus,
   type SiteRelinkPolicyForm,
 } from '@/features/admin/service-settings/service-settings-model';
 
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'provider-budget' | 'site-relink' | 'system';
+type ServiceSettingsTab = 'portal' | 'registration' | 'qq' | 'email' | 'payment' | 'accounting' | 'provider-budget' | 'site-relink' | 'system';
 const SERVICE_SETTINGS_TAB_IDS: readonly ServiceSettingsTab[] = [
   'portal',
+  'registration',
   'qq',
   'email',
   'payment',
@@ -341,6 +343,10 @@ export default function AdminServiceSettingsPage() {
     enabled: true,
     public_base_url: '',
   });
+  const [registrationForm, setRegistrationForm] = useState<RegistrationForm>({
+    public_registration_enabled: true,
+    email_allowlist: '',
+  });
   const [qqForm, setQqForm] = useState<QQForm>({
     enabled: true,
     client_id: '',
@@ -436,6 +442,7 @@ export default function AdminServiceSettingsPage() {
         setEmailConfigExpanded(projection.emailConfigExpanded);
         setPortalPublicForm(nextSavedForms.portal);
         setQqForm(nextSavedForms.qq);
+        setRegistrationForm(nextSavedForms.registration);
         setEmailForm(nextSavedForms.email);
         setAlipayForm(nextSavedForms.payment);
         setAccountingFxForm(nextSavedForms.accounting);
@@ -687,6 +694,14 @@ export default function AdminServiceSettingsPage() {
     void loadEmailPreview();
   }
 
+  function submitRegistration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveJson('/api/admin/service-settings/portal-registration', {
+      public_registration_enabled: registrationForm.public_registration_enabled,
+      email_allowlist: registrationForm.email_allowlist.split('\n').map((email) => email.trim()).filter(Boolean),
+    }, 'portal-registration', t('admin.service_settings.registration_saved', {}, 'Registration policy saved.'));
+  }
+
   function submitPortalPublic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -916,6 +931,7 @@ export default function AdminServiceSettingsPage() {
   const activeGroupDirty = (() => {
     if (!savedForms || !snapshotCurrent) return false;
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
+    if (activeTab === 'registration') return JSON.stringify(registrationForm) !== JSON.stringify(savedForms.registration);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
     if (activeTab === 'site-relink') {
@@ -949,6 +965,12 @@ export default function AdminServiceSettingsPage() {
         }
       } catch {
         issues.push(t('admin.service_settings.validation_public_url', {}, 'Enter a valid HTTP or HTTPS public URL.'));
+      }
+    }
+    if (activeTab === 'registration') {
+      const emails = registrationForm.email_allowlist.split('\n').map((email) => email.trim()).filter(Boolean);
+      if (emails.length > 200 || emails.some((email) => email.includes('*') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+        issues.push(t('admin.service_settings.registration_invalid', {}, 'Enter one valid email address per line, up to 200 entries.'));
       }
     }
     if (activeTab === 'qq' && qqForm.enabled) {
@@ -1093,6 +1115,7 @@ export default function AdminServiceSettingsPage() {
     if (!saved) return;
     if (activeTab === 'portal') setPortalPublicForm(saved.portal);
     if (activeTab === 'qq') setQqForm(saved.qq);
+    if (activeTab === 'registration') setRegistrationForm(saved.registration);
     if (activeTab === 'email') setEmailForm(saved.email);
     if (activeTab === 'payment') setAlipayForm(saved.payment);
     if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
@@ -1168,6 +1191,19 @@ export default function AdminServiceSettingsPage() {
       tone: activeTab === 'portal' && activeGroupDirty
         ? 'attention'
         : settingTone(data?.settings.portal_public.status || 'missing_config'),
+    },
+    {
+      id: 'registration',
+      label: t('admin.service_settings.tab_registration', {}, '注册准入'),
+      description: activeTab === 'registration' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : data?.settings.portal_registration?.status === 'error'
+          ? statusLabel('error', t)
+          : savedForms?.registration.public_registration_enabled
+            ? t('admin.service_settings.registration_open', {}, 'Open registration')
+            : t('admin.service_settings.registration_restricted', {}, 'Email allowlist only'),
+      tone: activeTab === 'registration' && activeGroupDirty ? 'attention'
+        : data?.settings.portal_registration?.status === 'error' ? 'error' : 'neutral',
     },
     {
       id: 'qq',
@@ -1444,6 +1480,56 @@ export default function AdminServiceSettingsPage() {
               </div>
             </form>
           </div>
+      ) : null}
+
+      {activeTab === 'registration' ? (
+        <div id="service-settings-registration" aria-labelledby="service-settings-tab-registration" className="grid gap-3" role="tabpanel">
+          {activeStateNotice}
+          <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+            {t('admin.service_settings.tab_registration', {}, '注册准入')}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {t('admin.service_settings.registration_scope', {}, 'Applies to new accounts. Existing users can still sign in, purchase and start eligible trials.')}
+          </p>
+          {data.settings.portal_registration?.status === 'error' ? (
+            <p role="alert" className="text-sm text-rose-700 dark:text-rose-200">
+              {t('admin.service_settings.registration_policy_error', {}, 'The stored registration policy is invalid. New accounts are blocked until a valid policy is saved.')}
+            </p>
+          ) : null}
+          <form className="grid gap-4" onSubmit={submitRegistration}>
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <button type="button" role="switch"
+                aria-label={t('admin.service_settings.registration_public', {}, 'Open public registration')}
+                aria-checked={registrationForm.public_registration_enabled}
+                className={switchButtonClassName(registrationForm.public_registration_enabled)}
+                onClick={() => setRegistrationForm((current) => ({ ...current, public_registration_enabled: !current.public_registration_enabled }))}>
+                <span className={switchKnobClassName(registrationForm.public_registration_enabled)} />
+              </button>
+              {t('admin.service_settings.registration_public', {}, 'Open public registration')}
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t('admin.service_settings.registration_allowlist', {}, 'Registration email allowlist')}
+              <textarea rows={6} className="input mt-1 w-full resize-y !h-auto !min-h-36"
+                value={registrationForm.email_allowlist}
+                onChange={(event) => setRegistrationForm((current) => ({ ...current, email_allowlist: event.target.value }))}
+                aria-describedby="registration-allowlist-note" />
+            </label>
+            <p id="registration-allowlist-note" className="text-sm text-slate-600 dark:text-slate-300">
+              {t('admin.service_settings.registration_allowlist_note', {}, 'One complete email address per line, up to 200. When public registration is off, only these verified email addresses can create accounts. An empty list blocks all new accounts.')}
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {t('admin.service_settings.registration_qq_note', {}, 'When public registration is off, QQ cannot create new accounts. Register with an approved email address first, then bind QQ from your account. Existing QQ sign-in remains available.')}
+            </p>
+            <div className="flex justify-end">
+              <button type="submit" className="btn btn-primary btn-sm"
+                disabled={saving === 'portal-registration' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                {saving === 'portal-registration'
+                  ? t('admin.service_settings.saving', {}, 'Saving')
+                  : t('admin.service_settings.registration_save', {}, 'Save registration policy')}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {activeTab === 'accounting' ? (
