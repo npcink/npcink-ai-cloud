@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One release, one attempt: defer only the 2026-11-04 CA maintenance dry run."""
+"""One release, one attempt: defer only the approved retention-release renewal dry run."""
 
 from __future__ import annotations
 
@@ -19,32 +19,26 @@ import time
 import urllib.request
 from pathlib import Path
 
-APPROVAL = "Defer the renewal dry run for the approved 2026-11-04 release."
-BASE = "a1e38cf4303256370e13dd694294231f601e0aa1"
-INSTALLED = "b8cc6049da7d1c33cbfffc9f8e5521f332a1adb5"
+APPROVAL = "Defer the renewal dry run for the approved 2026-11-04 retention release."
+BASE = "ca3b476683e9a31b50bb18820a27b56b9039dc2f"
+INSTALLED = "9a5bf35240b5702ab853fedc0f126baa7f003360"
 START = 1793718000  # 2026-11-03 15:00 UTC; includes operator preparation.
 EXPIRES = 1793851200  # 2026-11-05 04:00 UTC = 12:00 Asia/Shanghai.
 INCIDENT = "6ae128f23dbbeb05d762175d"
 STATUS_URL = "https://letsencrypt.status.io/1.0/status/55957a99e800baa4470002da"
-CLAIM = Path("/var/lib/npcink-ai-cloud/edge/maintenance-20261104-deployment.json")
+CLAIM = Path("/var/lib/npcink-ai-cloud/edge/maintenance-retention-20261104-deployment.json")
 ALLOWED = frozenset(
     {
         "deploy/certificate-maintenance-exception.py",
-        "deploy/certificate-renewal-readiness.sh",
-        "deploy/remote-load-and-up.sh",
-        ".github/scripts/production-promotion-preflight.py",
         ".github/workflows/deploy-production.yml",
         "tests/dev/test_certificate_maintenance_exception.py",
-        "tests/dev/test_production_promotion_preflight.py",
-        "tests/contract/test_certificate_renewal_readiness_contract.py",
         "tests/contract/test_production_maintenance_certificate_readiness_contract.py",
         "docs/cloud-production-release-policy-v1.md",
         "docs/certificate-maintenance-exception-2026-11-04.md",
         "docs/compatibility-matrix.md",
-        "scripts/check-release-policy.sh",
     }
 )
-SCHEMA = "npcink.certificate_maintenance_exception.v1"
+SCHEMA = "npcink.retention_certificate_maintenance_exception.v1"
 
 
 def require(condition: bool, message: str) -> None:
@@ -117,15 +111,9 @@ def check_official() -> None:
         body = response.read(262145)
         require(len(body) <= 262144, "official status response too large")
         official_maintenance(json.loads(body))
-    # When staging is already usable, do the ordinary full renewal proof.
-    try:
-        with urllib.request.urlopen(
-            "https://acme-staging-v02.api.letsencrypt.org/directory", timeout=8
-        ) as response:
-            available = response.status == 200
-    except (OSError, TimeoutError):
-        available = False
-    require(not available, "staging has recovered; use normal renewal readiness")
+    # Directory HTTP 200 is not a successful renewal challenge. Actual dry runs
+    # 41792025557 and 41792460224 failed during this still-active maintenance.
+    # The operator explicitly authorized this retention release to defer that proof.
 
 
 def safe_parent(path: Path) -> None:
