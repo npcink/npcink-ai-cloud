@@ -134,6 +134,14 @@ must use the digest-locked candidates recorded in
 The updated digest-locked candidates carry OpenSSL 3.5.9-r0, pcre2 10.49-r0
 and zlib 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
 `api` and `frontend` retain their minimum-version in-image package upgrades.
+The Python `production` target excludes SQLite's APK library and CPython modules;
+the governed production database is PostgreSQL. All other Python base shared-library
+dependencies remain explicitly installed. The `runtime` and `development` targets
+retain SQLite for local fixtures. Production default and zilliz image smoke checks
+verify PostgreSQL DBAPI/app imports and SQLite absence; this does not waive any CVE
+finding or change the empty allowlist. The image smoke also scans the built zilliz
+dependency superset (or the default image when zilliz is explicitly excluded)
+before merge, using the canonical policy. A fresh exact-release scan is still required.
 Retiring exceptions does not establish that any image is fixed or deployed;
 fresh platform-specific scans must verify the exact candidates.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding

@@ -468,6 +468,24 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert '[ "$(id -g)" = "999" ]' in smoke
 
 
+def test_sqlite_removal_is_production_only_and_has_runtime_smoke() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    before, production = dockerfile.split("FROM runtime AS production\n", 1)
+    smoke = (ROOT / "scripts" / "production-python-extras-smoke.sh").read_text()
+
+    assert "FROM runtime AS development" in before
+    assert "apk del --no-network .python-rundeps sqlite-libs" not in before
+    assert "apk add --no-network --virtual .python-production-rundeps" in production
+    assert "apk del --no-network .python-rundeps sqlite-libs" in production
+    assert "--force-broken-world" not in production
+    assert production.rstrip().endswith("USER app")
+    assert 'importlib.util.find_spec("sqlite3") is None' in smoke
+    assert 'PGDialect_psycopg.import_dbapi().__name__ == "psycopg"' in smoke
+    assert 'scripts/scan-production-images.sh"' in smoke
+    assert 'scan_image "${DEFAULT_TAG}"' in smoke
+    assert 'scan_image "${ZILLIZ_TAG}"' in smoke
+
+
 def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
     lock = _lock()
     policy = lock["scan_policy"]

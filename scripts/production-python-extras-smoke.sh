@@ -101,6 +101,32 @@ verify_image() {
 		[ "$(getent group app | cut -d: -f3)" = "999" ]
 		[ "$(stat -c "%u:%g" /var/lib/npcink-ai-cloud/artifacts)" = "999:999" ]
 	'
+	# Exercise the real production interpreter, not just Dockerfile text. The
+	# PostgreSQL DBAPI and unrelated stdlib extensions must survive SQLite removal.
+	docker run --rm --network none -i "${tag}" python - <<'PY'
+import bz2
+import ctypes
+import dbm.gnu
+import importlib.util
+import lzma
+import pathlib
+import readline
+import ssl
+import uuid
+import zlib
+
+from sqlalchemy.dialects.postgresql.psycopg import PGDialect_psycopg
+
+assert importlib.util.find_spec("sqlite3") is None
+assert importlib.util.find_spec("_sqlite3") is None
+assert not list(pathlib.Path("/usr/lib").glob("libsqlite3.so*"))
+assert PGDialect_psycopg.import_dbapi().__name__ == "psycopg"
+assert ssl.OPENSSL_VERSION
+assert zlib.decompress(zlib.compress(b"runtime")) == b"runtime"
+assert bz2.decompress(bz2.compress(b"runtime")) == b"runtime"
+assert lzma.decompress(lzma.compress(b"runtime")) == b"runtime"
+print("PostgreSQL production runtime without SQLite: passed")
+PY
 	docker run --rm -i \
 		--env PYTHONPATH=/app \
 		-v "${expected_requirements}:/tmp/expected-requirements.txt:ro" \
@@ -115,6 +141,15 @@ verify_image() {
 		"${distribution_assertion[@]}"
 }
 
+scan_image() {
+	# The zilliz graph is the production bundle's dependency superset. Check it
+	# before merge so image CVEs are not discovered only after source promotion.
+	bash "${ROOT_DIR}/scripts/scan-production-images.sh" \
+		--image "api=$1" \
+		--platform "${NPCINK_CLOUD_IMAGE_PLATFORM:-linux/amd64}" \
+		--output "${NPCINK_CLOUD_PROD_EXTRAS_SCAN_OUTPUT:-${TMP_DIR}/security}"
+}
+
 require_cmd docker
 require_cmd "${UVX_BIN}"
 verify_pinned_uv
@@ -126,6 +161,7 @@ docker_build "${DEFAULT_TAG}" ""
 verify_image "${DEFAULT_TAG}" "" "forbid" "${EXPECTED_REQUIREMENTS}"
 
 if [ "${NPCINK_CLOUD_PROD_EXTRAS_SKIP_ZILLIZ:-0}" = "1" ]; then
+	scan_image "${DEFAULT_TAG}"
 	ok "Skipping zilliz locked image build because NPCINK_CLOUD_PROD_EXTRAS_SKIP_ZILLIZ=1"
 	exit 0
 fi
@@ -135,5 +171,6 @@ export_locked_requirements "[zilliz]" "${EXPECTED_REQUIREMENTS}"
 ok "Building zilliz production Python image from uv.lock"
 docker_build "${ZILLIZ_TAG}" "[zilliz]"
 verify_image "${ZILLIZ_TAG}" "[zilliz]" "expect" "${EXPECTED_REQUIREMENTS}"
+scan_image "${ZILLIZ_TAG}"
 
 ok "Production Python locked dependency smoke completed successfully."
