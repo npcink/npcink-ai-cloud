@@ -262,6 +262,19 @@ A deterministic transport-preempted fake proves editor recovery only. A real
 Provider-failure experiment requires a separate bounded budget and must not
 corrupt shared credentials or routing.
 
+Label cancellation by layer: dismissing review or abandoning unsaved editor
+state does not prove Cloud execution stopped or credits were waived. Public
+runtime cancellation accepts queue-backed runs; inline and terminal runs are
+not cancellable through that contract. A new Regenerate action is a distinct
+execution; only a replay of the same idempotent request reuses its run and
+metering evidence. Recover from a transport timeout by checking run state
+where correlation is available, not by assuming the Provider never executed.
+
+Keep pricing availability separate from numeric cost: an unpriced local
+Provider is not proven free. The [2026-11-05 verification](history/engineering/2026/core-editor-loop-verification-2026-11-05.md)
+records one bounded real local-model loop, injected recovery, exact run/credit
+and feedback reconciliation, and the remaining production/human limits.
+
 When a paid Provider path and the WordPress save boundary have already passed
 but a later harness-only assertion fails, preserve the exact run, credit,
 event, and cleanup evidence. Correct and replay only the verification seam when

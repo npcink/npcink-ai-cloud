@@ -25,6 +25,7 @@ product work or override the current Phase 1 expansion freeze.
 | 接续A01–E01历史、核销旧PR并查下一步 | [五会话综合对账与接续建议 — 2026-10-30](history/engineering/2026/five-chat-synthesis-and-next-stage-2026-10-30.md) — 精确会话身份、后继交付、证据缺口、价值优先顺序及归档回执；方法见[收尾规范§6](engineering/zero-backlog-closeout-efficiency-standard-v1.md#6-会话历史对账与经验入库)，不是新的生产或功能扩张授权 |
 | 判断是否走偏、哪些开发应暂停、何时恢复 | [Phase 1 编辑价值优先决定（2026-10-27）](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27) — 当前问题、继续维护、新增开发冻结清单与恢复条件；保留既有销售/试用例外，不改变运行可用性 |
 | 查白天模型接入优化的历史处置、真实编辑器证据与经验 | [模型接入与编辑器闭环收尾 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 目录/参考来源、保存反馈、真实 Ollama 与 WordPress、费用和选择检查；保留中文质量及人类价值缺口，不代表生产或全历史清零 |
+| 查标题、摘要、改写的本轮核心链路核验 | [核心编辑链路开发核验 — 2026-11-05](history/engineering/2026/core-editor-loop-verification-2026-11-05.md) — 真实模型采用保存、分层故障/取消恢复、运行积分与反馈去重；保留挂载脏树、生产和自然使用限制 |
 | 接续资源及总规划的有界收尾 | [资源与总规划收尾 — 2026-10-27](history/repository-hygiene/2026/resource-and-planning-closeout-2026-10-27.md) — 两个依赖 PR、冻结规范交付、资源保留/退休条件与外部缺证；不是全仓清空或生产验收 |
 | 接续白天交付后的依赖收尾与资源保留 | [依赖与白天交接收尾 — 2026-10-27](history/repository-hygiene/2026/dependency-and-daytime-handoff-closeout-2026-10-27.md) — React/Vitest 配套、Alembic 暴露的遥测旧断言、实际 coverage、独立证据与保护工作区 |
 | 确认当前设备范围、选择前端检查，避免每次改外观跑全量 | [前端 PC 范围与选择检查](frontend-pc-scope-and-selective-verification-v1.md) — 当前仅 PC；移动/平板暂不适配验收；按改动选择页面、宽度、主题与交互，保留强制 CI 门禁 |
