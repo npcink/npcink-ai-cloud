@@ -183,3 +183,24 @@ RUN set -eu; \
 USER app
 
 FROM runtime AS production
+
+USER root
+
+# Production uses PostgreSQL. Keep SQLite in runtime/development for fixtures,
+# but remove its stdlib extension and APK provider from the shipped image.
+# Preserve every other dependency of the digest-pinned Python base explicitly
+# before removing its original virtual package; never force broken APK deps.
+RUN set -eu; \
+    python_rundeps="$(apk info --no-network --depends .python-rundeps)"; \
+    test "$(printf '%s\n' "${python_rundeps}" | grep -c '^so:libsqlite3.so.0$')" = "1"; \
+    set -- $(printf '%s\n' "${python_rundeps}" | sed -n '/^so:/p' | sed '/^so:libsqlite3.so.0$/d'); \
+    test "$#" -gt 0; \
+    apk add --no-network --virtual .python-production-rundeps "$@"; \
+    apk del --no-network .python-rundeps sqlite-libs; \
+    stdlib="$(python -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"; \
+    rm "${stdlib}"/lib-dynload/_sqlite3*.so; \
+    rm -r "${stdlib}/sqlite3"; \
+    test ! -e /usr/lib/libsqlite3.so.0; \
+    ! apk info --no-network --exists sqlite-libs
+
+USER app
