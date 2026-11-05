@@ -167,7 +167,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
 
   await page.goto('/admin/subscriptions');
-  await expect(page.getByRole('heading', { name: /^Subscription operations$|^订阅运营$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(Subscription operations|订阅运营)( · [\d,]+)?$/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-queue-item"] a[href^="/admin/subscriptions/sub_mvp?"]')).toBeVisible();
   await expect(
     page.locator('[data-ui="backoffice-page-header"]').getByText(/^Critical$|^严重风险$|^嚴重風險$/i)
@@ -315,8 +315,8 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await page.getByText(/Add user|Add customer|添加用户|添加客户|新增使用者/i).click();
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('New Customer');
   await page.getByLabel(/Login email|登录邮箱|登入電子郵件/i).fill('new-customer@example.com');
-  await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
-  await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
+  await page.getByLabel(/Customer label|客户备注名/i).fill('New Customer Display');
+  await page.getByLabel(/Internal note|内部备注/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
   await expect(page).toHaveURL(/\/admin\/accounts\/acct_new_customer_free\?return_to=%2Fadmin%2Faccounts$/);
   await expect(page.getByRole('heading', { name: 'New Customer Display', exact: true })).toBeVisible();
@@ -348,19 +348,21 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await installAdminMocks(page);
 
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
-  await expect(page.getByText('acct_mvp_ent...rimary').first()).toHaveCount(0);
-  await page.getByText(/Customer identifiers|客户标识|客戶標識/i).click();
-  await expect(page.getByText('acct_mvp_ent...rimary').first()).toBeVisible();
+  const customerIdentifiers = page.locator('[data-ui="account-identifiers"]');
+  await expect(customerIdentifiers).not.toHaveAttribute('open', '');
+  await expect(customerIdentifiers.getByText('acct_mvp_ent...rimary')).toBeHidden();
+  await customerIdentifiers.locator(':scope > summary').click();
+  await expect(customerIdentifiers.getByText('acct_mvp_ent...rimary')).toBeVisible();
   await expect(page.getByRole('link', { name: /Open customer subscription|打开客户订阅/i })).toHaveCount(0);
   await expect(page.getByText(/Package and top-up|套餐和加量|方案和加量/i)).toHaveCount(0);
   await expect(page.getByRole('tab', { name: /^Overview|^概况|^概況/i })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tab', { name: /Commercial|商业与套餐|商業與方案/i })).toBeVisible();
   await expect(page.getByRole('tab', { name: /Credits and usage|积分与用量|積分與用量/i })).toBeVisible();
   await page.getByText(/Edit customer info|编辑客户信息|編輯客戶資訊/i).click();
-  const operatorProfileForm = page.locator('form').filter({ hasText: /Operator note|运营备注|營運備註/i }).first();
-  await operatorProfileForm.getByLabel(/Operator note|运营备注|營運備註/i).fill('Updated detail note');
+  const operatorProfileForm = page.locator('form').filter({ hasText: /Internal note|内部备注/i }).first();
+  await operatorProfileForm.getByLabel(/Internal note|内部备注/i).fill('Updated detail note');
   await operatorProfileForm.getByRole('button', { name: /Save|保存|儲存/i }).click();
-  await expect(page.getByText(/Operator note has been saved|运营备注已保存|營運備註已儲存/i)).toBeVisible();
+  await expect(page.getByText(/Customer details have been saved|客户资料已保存/i)).toBeVisible();
   await page.goto('/admin/accounts');
   await expect(page.getByText(/Updated detail note/i).first()).toBeVisible();
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);

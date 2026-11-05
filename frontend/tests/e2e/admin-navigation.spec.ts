@@ -43,7 +43,7 @@ test('all observation pages expose one shared family with the correct parent', a
     await expect(active).toHaveAttribute('href', `${route}${route.includes('?') ? '&' : '?'}window=720&site=site_mvp`);
     await expect(nav.locator('a[href="/admin/plugin-observability?window=720&site=site_mvp"]')).toBeVisible();
     if (route === '/admin/plugin-observability') {
-      await expect(page.getByRole('button', { name: /^近 30 天$|^Last 30 days$/i })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('[data-ui="admin-observation-window"]').getByRole('button', { name: /^30 天$|^30 days$/i })).toHaveAttribute('aria-pressed', 'true');
       await expect.poll(() => pluginRequests.some(url => url.includes('window_hours=720') && url.includes('site_id=site_mvp'))).toBe(true);
     }
     await page.screenshot({ path: testInfo.outputPath(`${route.split('/').at(-1)!.replace('?', '-')}-1440.png`), fullPage: true });
@@ -72,7 +72,7 @@ test('observation navigation wraps on mobile and remains keyboard reachable', as
   page.on('request', request => { if (request.url().includes('/api/admin/plugin-observability?')) requests.push(request.url()); });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/admin/plugin-observability?window=336');
-  await expect(page.getByRole('button', { name: /^近 14 天$|^Last 14 days$/i })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-ui="admin-observation-window"]').getByRole('button', { name: /^14 天$|^14 days$/i })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => requests.some(url => url.includes('window_hours=336'))).toBe(true);
   const nav = page.locator('[data-ui="admin-observability-tabs"]');
   await expect(nav.getByRole('link')).toHaveCount(5);

@@ -1615,6 +1615,7 @@ function AiResourcesContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
+        scope={t('admin.hierarchy.supplier_scope')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         primaryAction={(

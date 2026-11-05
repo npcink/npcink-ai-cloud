@@ -14,7 +14,7 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
-import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -375,9 +375,10 @@ function AdminMediaObservabilityContent() {
 
   return (
     <BackofficePageStack spacing="compact">
-      <AdminObservabilityTabs />
       <BackofficePageHeader
-        density="compact"
+        density="compact" descriptionDisplay="hint"
+        toolbarControls={<AdminObservationWindow />}
+        freshness={data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : undefined}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
         description={t(
           'admin.media_obs.desc',
@@ -402,7 +403,6 @@ function AdminMediaObservabilityContent() {
         <input type="text" value={siteIdInput} aria-label={t('admin.media_obs.site_filter_label', {}, 'Filter by site ID')} onChange={(event) => setSiteIdInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') updateUrl({ site: siteIdInput.trim() || null, focus: null }); }} placeholder={t('admin.media_obs.site_filter', {}, 'Site ID')} className="input h-8 w-44 min-w-0" />
         <button type="button" onClick={() => updateUrl({ site: siteIdInput.trim() || null, focus: null })} className="btn btn-secondary btn-sm justify-center">{t('common.apply', {}, 'Apply')}</button>
         {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm justify-center" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-        {data?.generatedAt ? <p className="ml-auto text-xs text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
         {data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : null}
       </div>
 

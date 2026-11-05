@@ -1,3 +1,4 @@
+import type { SiteDisplay } from '@/lib/identity-display';
 import { readRuntimeTelemetry } from './telemetry-evidence';
 
 export type RuntimeTelemetryAlert = {
@@ -30,6 +31,7 @@ export type RuntimeTelemetrySummary = {
   issues: string[];
   sampleLimited: boolean;
   providerFailures: ProviderFailure[];
+  siteDisplay: SiteDisplay;
   generatedAt: string;
   window: { since: string; until: string };
   evidenceLimits: Record<string, boolean>;
@@ -112,6 +114,7 @@ export function normalizeRuntimeTelemetry(value: unknown, requestKey?: string): 
   const raw = readRuntimeTelemetry(value, requestKey), totals = raw.totals, gaps = raw.governance_gaps;
   return {
     issues: raw.issues,
+    siteDisplay: raw.site_display,
     generatedAt: raw.generated_at,
     window: raw.window,
     evidenceLimits: raw.evidence_limits,

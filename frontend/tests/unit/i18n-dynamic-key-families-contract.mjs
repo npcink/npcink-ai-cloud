@@ -26,6 +26,8 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'admin.readability.':
+    'src/lib/admin-audit-display.ts; bounded own-property event/outcome/worker/task label maps with explicit unknown-code fallback',
   'portal.monitoring.guidance_':
     'src/lib/portal-monitoring-display.ts; bounded CUSTOMER_ISSUE_GUIDANCE kind tokens with title/detail suffixes and explicit unknown fallback',
   'admin.payments.status.':
@@ -85,8 +87,6 @@ export const FAMILY_SOURCES = {
     'src/features/admin/observability/runtimeIssueCatalog.ts; bounded set schema/invalid_request/timeout/unknown from provider failure reasons',
   'admin.plugin_obs_attention_':
     'src/app/admin/plugin-observability/page.tsx attentionCopy; field title/detail with suffixes from attentionCodeSuffix over backend plugin_observability.* attention codes, plus *_default',
-  'admin.plugin_obs_window_':
-    'src/app/admin/plugin-observability/page.tsx; WINDOW_OPTIONS values 24/72/168',
   'admin.plugin_obs_col_':
     'src/app/admin/plugin-observability/page.tsx; problem/site table column key arrays',
   'admin.plugin_obs_severity_':

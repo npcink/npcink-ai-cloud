@@ -6,7 +6,7 @@ const id = z.string().min(1).refine(value => value.trim() === value);
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const date = z.string().refine(value => Number.isFinite(Date.parse(value))).nullish().transform(value => value ?? undefined);
 const row = z.object({
-  request_id: id, account_id: id, email: z.string(),
+  request_id: id, account_id: id, account_name: z.string().optional(), site_name: z.string().optional(), site_url: z.string().optional(), email: z.string(),
   site_id: z.string().optional(), principal_id: z.string().optional(),
   topic: z.enum(['general', 'billing', 'payment', 'site', 'usage', 'account']),
   title: z.string(), description: z.string(), status: supportStatus,

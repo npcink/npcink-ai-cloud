@@ -9,7 +9,7 @@ from sqlalchemy import case, func, select
 
 from app.core.db import get_session
 from app.core.models import PluginObservabilityEvent as Event
-from app.core.models import RunRecord
+from app.core.models import RunRecord, Site
 from app.domain.observability.plugin_event_filters import plugin_event_category_conditions
 
 
@@ -138,9 +138,21 @@ def get_plugin_event_history(
             .mappings()
             .all()
         )
+        site_ids = {row["site_id"] for row in rows if row["site_id"]}
+        sites = (
+            {
+                site.site_id: site
+                for site in session.scalars(select(Site).where(Site.site_id.in_(site_ids)))
+            }
+            if site_ids
+            else {}
+        )
         items = []
         for row in rows:
             item = dict(row)
+            site = sites.get(item["site_id"])
+            item["site_name"] = str(site.name or "") if site else ""
+            item["site_url"] = str(site.site_url or "") if site else ""
             stamp = item["received_at"]
             item["received_at"] = (
                 stamp.replace(tzinfo=UTC).isoformat() if stamp.tzinfo is None else stamp.isoformat()

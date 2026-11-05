@@ -218,18 +218,6 @@ h4,
   }
 }
 
-@media (min-width: 1600px) {
-  [data-ui="runtime-diagnostic-overview-grid"] {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  }
-
-  [data-ui="runtime-diagnostic-overview-grid"] [data-ui="runtime-investigation-actions"] {
-    border-top-width: 0;
-    border-left: 1px solid var(--line);
-    padding-top: 0;
-    padding-left: 1rem;
-  }
-}
 
 /* Diagnostic density tier v2 material tokens (cloud-admin-ui-standard
    §1.1). Scoped to .admin-tier-compact, emitted by
