@@ -1,6 +1,11 @@
 # Admin 信息层级逐页落实台账
 
-Status: active implementation ledger, updated 2026-11-01.
+Status: active implementation ledger, updated 2026-11-05.
+
+2026-11-05 最新批次收口：[通知、身份与共享版式整改收尾](history/admin/2026/admin-layout-notice-readability-closeout-2026-11-05.md)。
+PR #1370 已合并，PR 必需门禁与合并后 master CI/CodeQL 均通过，M4 accepted。
+下方 11 月 4 日的「尚未合并/旧基线待修」是阶段记录，由该收尾接续，不再作为
+当前阻塞；人工验收、偶发测试根因与生产状态仍单列，不能据此声称全历史清零。
 
 本批交付结果见末节「合并版交付核验」。前文保留各阶段当时的状态与证据，
 不能把历史的本地通过、候选或待验收描述当作当前运行身份。

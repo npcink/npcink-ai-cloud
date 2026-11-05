@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 接续后台通知、身份可读性与共享版式整改，确认能否关闭会话 | [整改收尾与经验 — 2026-11-05](history/admin/2026/admin-layout-notice-readability-closeout-2026-11-05.md) — PR #1370、CI/M4、旧截图关闭情况、偶发测试/人工验收及工作树保留例外；长期规则见信息层级规范 §12 |
 | 控制生产日志、旧发布制品与运维数据增长 | [生产保留维护规则](production-retention-maintenance-v1.md) — 保护恢复点、有限保留、分批清理与上线边界 |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
 | 接续 Admin 第1–7批功能审计、人工验收与有限清理 | [跨批次收口与验收交接 — 2026-11-03](history/engineering/2026/admin-functional-audit-batches-1-7-closeout-2026-11-03.md) — 58项修复逐项关联PR、契约和反例；第七批无新缺陷；人工/生产状态、Q01与保留工作树分开记录 |
