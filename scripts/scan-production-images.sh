@@ -522,12 +522,13 @@ if [ "${RELEASE_SCOPE}" = "1" ]; then
 	INDEX_SCOPE="release"
 fi
 write_scan_index() {
+	# Bash 3.2 treats an empty array as unset under nounset.
 	python3 "${ROOT_DIR}/scripts/production-image-supply.py" index \
 		--lock "${LOCK_FILE}" \
 		--scope "${INDEX_SCOPE}" \
 		--expected-platform "${RELEASE_PLATFORM}" \
 		--output "${OUTPUT_DIR}/scan-index.json" \
-		"${EQUIVALENCE_ARGS[@]}" \
+		${EQUIVALENCE_ARGS[@]+"${EQUIVALENCE_ARGS[@]}"} \
 		"${RECEIPTS[@]}"
 }
 
