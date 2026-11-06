@@ -38,6 +38,9 @@ existing Plus/Pro monthly packages and credit packs, and to start the existing
 shared 14-day Plus/Pro trial. No invitation, account-age gate, or three-user
 allowlist is required. Preserve current prices and one-trial-per-customer rules.
 The three-user Free validation runs separately and does not gate this rollout.
+Operator approval on 2026-11-05 adds an optional public-registration switch and
+email allowlist for new accounts only; existing-account access and commercial
+eligibility are unchanged. See [registration access](docs/portal-registration-access-v1.md).
 See the bounded rollout contract in the commercial next-stage document;
 production deployment/configuration and real transaction tests remain separate
 operations requiring explicit authorization.

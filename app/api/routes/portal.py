@@ -1989,6 +1989,15 @@ async def finish_qq_login_callback(
         return portal_json_error(request, status_code=error.status_code,
                                  error_code=error.error_code, message=error.message)
     except CommercialServiceError as error:
+        if (
+            error.error_code == "service.portal_registration_closed"
+            and _portal_prefers_html(request)
+        ):
+            response = RedirectResponse(
+                "/portal/register?reason=registration_closed", status_code=303
+            )
+            _clear_portal_qq_oauth_nonce_cookie(response)
+            return response
         return _service_error_response(error, request=request)
     except httpx.HTTPError as error:
         return portal_json_error(

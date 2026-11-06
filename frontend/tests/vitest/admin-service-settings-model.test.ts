@@ -93,6 +93,28 @@ function response(overrides: Partial<ServiceSettingsData['settings']> = {}): Ser
   };
 }
 
+describe('registration admission projection', () => {
+  it('hydrates restricted registration without treating closed access as a disabled policy', () => {
+    const projection = projectServiceSettingsForms(response({
+      portal_registration: setting('portal_registration', {
+        public_registration_enabled: false,
+        email_allowlist: ['first@example.com', 'second@example.com'],
+      }),
+    }));
+    expect(projection.savedForms.registration).toEqual({
+      public_registration_enabled: false,
+      email_allowlist: 'first@example.com\nsecond@example.com',
+    });
+  });
+  it('does not replace malformed admission data with an open editable default', () => {
+    expect(() => projectServiceSettingsForms(response({
+      portal_registration: setting('portal_registration', {
+        public_registration_enabled: 'false', email_allowlist: [],
+      }),
+    }))).toThrow('Registration policy response is invalid');
+  });
+});
+
 describe('service settings response projection', () => {
   it('hydrates all form groups while keeping secret inputs blank', () => {
     const projection = projectServiceSettingsForms(response());
@@ -100,6 +122,7 @@ describe('service settings response projection', () => {
     expect(projection.savedForms).toEqual({
       portal: { enabled: true, public_base_url: 'https://cloud.example.com' },
       qq: { enabled: true, client_id: '12345', client_secret: '' },
+      registration: { public_registration_enabled: true, email_allowlist: '' },
       email: {
         enabled: true,
         smtp_host: 'smtp.example.com',

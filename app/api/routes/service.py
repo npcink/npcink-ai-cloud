@@ -751,6 +751,13 @@ class PortalPublicServiceSettingsPayload(BaseModel):
     public_base_url: str = Field(max_length=500)
 
 
+class PortalRegistrationServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    public_registration_enabled: bool
+    email_allowlist: list[str] = Field(max_length=200)
+
+
 class QQLoginServiceSettingsPayload(BaseModel):
     enabled: bool = True
     client_id: str = Field(max_length=191)
@@ -4882,6 +4889,53 @@ async def update_admin_portal_public_settings(
     return build_envelope(
         status="ok",
         message="portal public settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/portal-registration")
+async def update_admin_portal_registration_settings(
+    request: Request,
+    payload: PortalRegistrationServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = await run_in_threadpool(ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_portal_registration, payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="portal_registration",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="portal_registration",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="portal registration policy saved",
         data=result,
         revision="m6",
     )

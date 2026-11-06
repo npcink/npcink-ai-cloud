@@ -373,6 +373,20 @@ test('login clears a request cooldown when the visitor changes email', async ({ 
   await expect(page.getByRole('button', { name: /Send verification code|发送验证码/i })).toBeEnabled();
 });
 
+test('restricted registration explains denied email access and the QQ return reason', async ({ page }, testInfo) => {
+  await installLoginFlowMocks(page);
+  await page.goto('/portal/register?reason=registration_closed');
+  await expect(page.getByText(/Internal testing is in progress|当前为内部测试/)).toBeVisible();
+  await page.route('**/register/code/request', async (route) => {
+    await fulfillError(route, 403, 'service.portal_registration_closed');
+  });
+  await page.getByLabel(/Email address|邮箱地址/i).fill('outside@example.com');
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+  await expect(page.getByText(/Internal testing is in progress|当前为内部测试/)).toBeVisible();
+  await expect(page.getByLabel(/Verification code|验证码/i)).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('registration-closed.png'), fullPage: true });
+});
+
 test('registration clears a request cooldown when the visitor changes email', async ({ page }) => {
   await installLoginFlowMocks(page, { initialRateLimitSeconds: 900 });
 
