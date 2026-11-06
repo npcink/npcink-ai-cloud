@@ -169,3 +169,16 @@ M4新候选于2026-11-06T06:31:44Z同步，源码为22cd9c9d+dirty，前端指�
 `/Users/muze/.codex/visualizations/2026/11/05/01a1aada-fa1d-7702-9ce5-b519dd8db5b3/runtime-diagnostic-layout/closeout-20261106/`。
 其中repo-runtime/与frontend-runtime/分别映射原.runtime/与frontend/.runtime/；
 最终PR、CI、M4接受和精确清理的机读回执追加于此目录，不要求保留任务checkout。
+
+### PR #1378 首轮CI返修
+
+首轮CI `42175698157` 的后端静态、三个契约分片及impacted检查通过；前端1153项
+单测中1152通过、1失败。失败为旧目录单测仍要求恢复限制包含在issueVerification
+整句内，而本次已将限制拆为相邻常显段落。修正该测试对行动句和限制句的归属断言，
+保留无新样本/仅任务成功不能证明恢复及WordPress侧确认语义；对应10项单测通过。
+M4缺失调用/供应商失败两项现有浏览器反例复验通过（14.4s），不改页面源码。
+
+完整前端源码契约在本机默认Python3.9下因zip(strict=True)退出；改用任务目录内
+Python3.12入口后全部通过，不修改检查器或系统Python。首次CI失败、环境失败及
+定向重跑分别保留，不称首次全绿。自动OCR工作流为disabled_manually，未启用或
+声称自动评审通过；本轮已完成五轴代码复查及确定性门禁。
