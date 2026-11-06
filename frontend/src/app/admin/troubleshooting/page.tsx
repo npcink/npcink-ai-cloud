@@ -251,6 +251,31 @@ export default function AdminTroubleshootingPage() {
         density="compact"
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         freshness={data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : undefined}
+        scope={siteFilter || capabilityFilter ? (
+          <div className="flex flex-wrap items-center gap-2" data-ui="runtime-diagnostic-scope-filters">
+            {siteFilter ? (
+              <BackofficeFilterPill
+                active
+                tone="info"
+                aria-label={t('admin.troubleshooting.clear_site_filter', {}, 'Clear site filter')}
+                onClick={() => updateUrl({ site: null })}
+              >
+                {t('admin.troubleshooting.site_filter', {}, 'Site')}: {siteIdentity(data?.siteDisplay[siteFilter]?.name, data?.siteDisplay[siteFilter]?.url, siteFilter, t('admin.readability.unnamed_site'))}<span aria-hidden="true"> ×</span>
+              </BackofficeFilterPill>
+            ) : null}
+            {siteFilter ? <details className="text-xs text-slate-500"><summary className="cursor-pointer">{t('admin.readability.site_id')}</summary><code className="select-text break-all">{siteFilter}</code></details> : null}
+            {capabilityFilter ? (
+              <BackofficeFilterPill
+                active
+                tone="info"
+                aria-label={t('admin.troubleshooting.clear_function_filter', {}, 'Clear function filter')}
+                onClick={() => updateUrl({ function: null })}
+              >
+                {t('admin.troubleshooting.function_filter', {}, 'Function')}: {capabilityFilter}<span aria-hidden="true"> ×</span>
+              </BackofficeFilterPill>
+            ) : null}
+          </div>
+        ) : null}
         toolbarControls={<AdminObservationWindow defaultHours={336} />}
         secondaryAction={<div className="flex items-center gap-3">
           <Link className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
@@ -260,32 +285,6 @@ export default function AdminTroubleshootingPage() {
         </div>}
       />
 
-          {siteFilter || capabilityFilter ? (
-            <div className="flex flex-wrap items-center gap-2" data-ui="runtime-diagnostic-scope-filters">
-              {siteFilter ? (
-                <BackofficeFilterPill
-                  active
-                  tone="info"
-                  aria-label={t('admin.troubleshooting.clear_site_filter', {}, 'Clear site filter')}
-                  onClick={() => updateUrl({ site: null })}
-                >
-                  {t('admin.troubleshooting.site_filter', {}, 'Site')}: {siteIdentity(data?.siteDisplay[siteFilter]?.name, data?.siteDisplay[siteFilter]?.url, siteFilter, t('admin.readability.unnamed_site'))}<span aria-hidden="true"> ×</span>
-                </BackofficeFilterPill>
-              ) : null}
-              {siteFilter ? <details className="text-xs text-slate-500"><summary className="cursor-pointer">{t('admin.readability.site_id')}</summary><code className="select-text break-all">{siteFilter}</code></details> : null}
-              {capabilityFilter ? (
-                <BackofficeFilterPill
-                  active
-                  tone="info"
-                  aria-label={t('admin.troubleshooting.clear_function_filter', {}, 'Clear function filter')}
-                  onClick={() => updateUrl({ function: null })}
-                >
-                  {t('admin.troubleshooting.function_filter', {}, 'Function')}: {capabilityFilter}<span aria-hidden="true"> ×</span>
-                </BackofficeFilterPill>
-              ) : null}
-            </div>
-          ) : null}
-
       {searchParams.get('run_id') ? <ExactRuntimeRun runId={searchParams.get('run_id')!} site={siteFilter} windowHours={windowHours} since={since} refreshSignal={refreshSignal} onClear={() => updateUrl({ run_id: null })} /> : null}
 
       {data?.issues.length ? <div role="alert" data-ui="runtime-diagnostic-evidence-issues" className="rounded-lg border border-amber-200 p-3 text-sm dark:border-amber-800">
@@ -293,35 +292,36 @@ export default function AdminTroubleshootingPage() {
         <p className="mt-1 break-all text-xs">{data.issues.join(', ')}</p>
         <button className="btn btn-secondary btn-sm mt-2" onClick={() => setRefreshSignal(value => value + 1)}>{t('common.retry')}</button>
       </div> : null}
-      {data?.sampleLimited ? <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.sample_limited')}</p> : null}
-      {data?.totals.providerEvidencePendingRuns ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.pending_evidence_note', { count: String(data.totals.providerEvidencePendingRuns) })}</p> : null}
-      {since && data ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.review_scope_note')}</p> : null}
       {data ? (
-        <div data-ui="runtime-period-assessment" className="space-y-2">
-        <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">{t('admin.hierarchy.period_conclusion')}</span>
-          <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-          {!issues.length ? <span className="text-slate-500">{conclusionSummary}</span> : null}
-        </div>
-      <div data-ui="runtime-recovery-review" className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
-        <button type="button" className="text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
-        {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
-      </div>
-        <div data-ui="runtime-diagnostic-summary" className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 text-xs dark:border-slate-800">
-        <dl data-ui="runtime-diagnostic-metrics" className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-baseline gap-2"><dt className="text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs')}</dt><dd><Link href={usageStatisticsHref} className="text-base font-semibold text-slate-900 dark:text-white">{formatNumber(data.totals.runs)}</Link></dd></div>
-          {[
-            { key: 'provider_coverage', label: t('admin.troubleshooting.provider_coverage'), value: data.totals.providerCallRunCoverageRate, required: data.totals.providerEvidenceRequiredRuns },
-            { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate, required: data.totals.aiEvidenceRequiredRuns },
-          ].map((metric) => <div key={metric.key} data-ui="runtime-data-integrity" className="flex items-center gap-2">
-            <dt className="inline-flex items-center text-slate-500 dark:text-slate-400">{metric.label}<AdminHelpTip label={metric.label}>{t('admin.troubleshooting.integrity_note')}</AdminHelpTip></dt>
-            <dd><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{metric.required == null || metric.required === 0 ? '\u2014' : formatRate(metric.value)}</Link><span className="ml-2 text-xs text-slate-500">{metric.required == null ? t('admin.troubleshooting.denominator_unknown') : t('admin.troubleshooting.required_runs', { count: formatNumber(metric.required) })}</span></dd>
-          </div>)}
-        </dl>
-
-        </div>
-        </div>
+        <section data-ui="runtime-period-assessment" className="grid items-start gap-x-8 gap-y-3 border-b border-slate-200 pb-3 dark:border-slate-800 min-[1280px]:grid-cols-[minmax(0,1fr)_minmax(24rem,0.85fr)]">
+          <div className="min-w-0 space-y-1.5">
+            <div data-ui="runtime-diagnostic-conclusion" className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">{t('admin.hierarchy.period_conclusion')}</span>
+              <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+              {!issues.length ? <span className="text-xs text-slate-500">{conclusionSummary}</span> : null}
+            </div>
+            <div data-ui="runtime-recovery-review" className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs leading-5 text-slate-500">
+              <span>{since ? t('admin.troubleshooting.review_since', { time: formatDate(since) }) : t('admin.troubleshooting.history_not_recovery')}</span>
+              <button type="button" className="shrink-0 text-blue-700 underline dark:text-blue-300" disabled={!data || refreshInProgress || Boolean(error)} onClick={() => updateUrl({ since: data?.generatedAt || null })}>{t('admin.troubleshooting.start_review')}</button>
+              {since ? <button type="button" className="text-blue-700 underline dark:text-blue-300" onClick={() => updateUrl({ since: null })}>{t('admin.troubleshooting.clear_review')}</button> : null}
+            </div>
+            {data.sampleLimited ? <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.sample_limited')}</p> : null}
+            {data.totals.providerEvidencePendingRuns ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.pending_evidence_note', { count: String(data.totals.providerEvidencePendingRuns) })}</p> : null}
+            {since ? <p role="status" className="text-xs text-slate-500">{t('admin.troubleshooting.review_scope_note')}</p> : null}
+          </div>
+          <div data-ui="runtime-diagnostic-summary" className="min-w-0 text-xs">
+            <dl data-ui="runtime-diagnostic-metrics" className="grid grid-cols-[minmax(4rem,0.65fr)_repeat(2,minmax(0,1fr))] items-start gap-x-4 gap-y-2">
+              <div className="space-y-1"><dt className="text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs')}</dt><dd><Link href={usageStatisticsHref} className="text-base font-semibold text-slate-900 dark:text-white">{formatNumber(data.totals.runs)}</Link></dd></div>
+              {[
+                { key: 'provider_coverage', label: t('admin.troubleshooting.provider_coverage'), value: data.totals.providerCallRunCoverageRate, required: data.totals.providerEvidenceRequiredRuns },
+                { key: 'metering_coverage', label: t('admin.troubleshooting.metering_coverage'), value: data.totals.meteredRunCoverageRate, required: data.totals.aiEvidenceRequiredRuns },
+              ].map((metric) => <div key={metric.key} data-ui="runtime-data-integrity" className="min-w-0 space-y-1">
+                <dt className="inline-flex items-center text-slate-500 dark:text-slate-400">{metric.label}<AdminHelpTip label={metric.label}>{t('admin.troubleshooting.integrity_note')}</AdminHelpTip></dt>
+                <dd className="space-y-0.5"><Link href={usageStatisticsHref} className={`font-semibold hover:underline ${metric.value < 1 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{metric.required == null || metric.required === 0 ? '\u2014' : formatRate(metric.value)}</Link><span className="block text-xs text-slate-500">{metric.required == null ? t('admin.troubleshooting.denominator_unknown') : t('admin.troubleshooting.required_runs', { count: formatNumber(metric.required) })}</span></dd>
+              </div>)}
+            </dl>
+          </div>
+        </section>
       ) : null}
 
       {error ? (
@@ -348,7 +348,7 @@ export default function AdminTroubleshootingPage() {
         </BackofficeSectionPanel>
       ) : (
         <div className="space-y-3">
-          <div data-ui="runtime-diagnostic-issue-grid" data-selected={Boolean(selectedIssue)}>
+          <div data-ui="runtime-diagnostic-issue-grid" data-selected={Boolean(selectedIssue)} className={selectedIssue ? 'min-[900px]:max-[1023px]:grid-cols-[var(--admin-diagnostic-queue-width)_minmax(0,1fr)]' : undefined}>
             <div className="min-w-0 self-start">
               <AdminDataTableFrame title={t('admin.troubleshooting.queue_title')} resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) })} dataUi="runtime-diagnostic-table-frame" density="compact" placement="adjacent">
                 {issues.length ? <div className="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
@@ -377,7 +377,7 @@ export default function AdminTroubleshootingPage() {
             {selectedIssue ? <section id="runtime-diagnostic-inspector" key={selectedIssue.code} data-ui="runtime-diagnostic-inspector" aria-label={issueTitle(selectedIssue, t)} className="admin-compact-surface min-w-0 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
               <div data-ui="runtime-inspector-header" className="flex min-h-[var(--admin-compact-row-height)] items-center gap-3 px-3 py-1.5">
                 <h2 className="flex min-w-0 items-center text-sm font-semibold">{issueTitle(selectedIssue, t)}<AdminHelpTip label={t('admin.troubleshooting.issue_meaning')}>{issueEvidenceGuidance(selectedIssue, t)}</AdminHelpTip></h2>
-                {selectedIssue.code === 'hosted_model.provider_errors' ? <span data-ui="provider-recovery-status" className="flex shrink-0 items-center text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.recovery_pending')}<AdminHelpTip label={t('admin.troubleshooting.recovery_pending')}>{t('admin.troubleshooting.failure_recovery_unverified')}</AdminHelpTip></span> : <span className="text-xs text-slate-500">{t(selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.unmetered_runs' ? 'admin.troubleshooting.evidence_gap' : 'admin.troubleshooting.recorded_error')}</span>}
+                {selectedIssue.code === 'hosted_model.provider_errors' ? <span data-ui="provider-recovery-status" className="shrink-0 text-xs text-amber-700 dark:text-amber-300">{t('admin.troubleshooting.recovery_pending')}</span> : <span className="text-xs text-slate-500">{t(selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.unmetered_runs' ? 'admin.troubleshooting.evidence_gap' : 'admin.troubleshooting.recorded_error')}</span>}
               </div>
               <p data-ui="runtime-issue-impact" className="max-w-[100ch] px-3 pb-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{error ? t('admin.troubleshooting.stale_handling') : issueImpact(selectedIssue, t)}</p>
               <div role="tablist" aria-label={t('admin.troubleshooting.issue_views')} className="mx-3 flex gap-4 border-b border-slate-200 dark:border-slate-800">
@@ -394,16 +394,19 @@ export default function AdminTroubleshootingPage() {
               <section id="diagnostic-panel-overview" role="tabpanel" aria-labelledby="diagnostic-tab-overview" hidden={activePanel !== 'overview'} className="p-3">
                 <div data-ui="runtime-diagnostic-overview-grid">
               <AdminActionGuidance dataUi="runtime-investigation-actions" className="border-b border-slate-200 pb-3 dark:border-slate-800"
-                title={t('admin.troubleshooting.next_action')}
-                evidence={firstFailure ? <>{t('admin.troubleshooting.latest_failure')}: {t(`admin.troubleshooting.failure_reason_${failureReasonKey}`)}</> : undefined}
+                title={firstFailure ? `${t('admin.troubleshooting.latest_failure')}: ${t(`admin.troubleshooting.failure_reason_${failureReasonKey}`)}` : t('admin.troubleshooting.next_action')}
                 limitation={firstFailure ? t('admin.troubleshooting.sample_action_scope') : undefined}
                 nextStep={firstFailure ? providerFailureAction(firstFailure.reason, t) : selectedIssue.code === 'hosted_model.provider_errors' ? t('admin.troubleshooting.action_check_provider_health') : issueAction(selectedIssue, t)}
-                verification={!error && !refreshing ? <p data-ui="runtime-verification-guidance"><span className="font-semibold">{t('admin.troubleshooting.verify_title')}: </span>{issueVerification(selectedIssue, t)}</p> : undefined}
+                verification={!error && !refreshing ? <div data-ui="runtime-verification-guidance" className="space-y-1 pt-1">
+                  <p><span className="font-semibold">{t('admin.troubleshooting.verify_title')}: </span>{issueVerification(selectedIssue, t)}</p>
+                  <p data-ui="runtime-recovery-limits" className="text-slate-500 dark:text-slate-400">{t(selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.unmetered_runs' ? 'admin.troubleshooting.verify_evidence_limits' : 'admin.troubleshooting.verify_outcome_limits')}</p>
+                  {selectedIssue.code !== 'hosted_model.provider_call_gap' && selectedIssue.code !== 'hosted_model.unmetered_runs' ? <p className="text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.verify_wordpress')}</p> : null}
+                </div> : undefined}
                 actions={<>
 
-                  {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
-                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
-                    : <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateUrl({ panel: 'records' })}>{t('admin.troubleshooting.inspect_failures')}</button>}
+                  {selectedIssue.code === 'hosted_model.unmetered_runs' ? <Link href={usageStatisticsHref} className="btn btn-primary btn-sm">{t('admin.troubleshooting.view_metering')}</Link>
+                    : selectedIssue.code === 'hosted_model.provider_call_gap' ? <button type="button" className="btn btn-primary btn-sm" onClick={() => updateUrl({ panel: 'records', evidence: null })}>{t('admin.troubleshooting.inspect_gap_runs')}</button>
+                    : <button type="button" className="btn btn-primary btn-sm" onClick={() => updateUrl({ panel: 'records' })}>{t('admin.troubleshooting.inspect_failures')}</button>}
                   {selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href={scopedHref('/admin/plugin-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_plugin_errors')}</Link> : null}
                   {selectedIssue.capabilities.includes('knowledge') ? <Link href={scopedHref('/admin/vector-observability')} className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_knowledge')}</Link> : null}
                   {selectedIssue.code === 'hosted_model.provider_call_gap' || selectedIssue.code === 'hosted_model.provider_errors' ? <Link href="/admin/ai-resources" className="text-xs text-blue-700 hover:underline dark:text-blue-300">{t('admin.troubleshooting.view_suppliers')}</Link> : null}
@@ -420,7 +423,7 @@ export default function AdminTroubleshootingPage() {
                 <section data-ui="runtime-inspector-summary" className="min-w-0 space-y-2">
                 <section data-ui="runtime-issue-evidence" className="space-y-2">
                   <h3 className="text-sm font-semibold">{t('admin.troubleshooting.open_evidence')}</h3>
-                  {sortedGroups.length ? <div className="overflow-x-auto"><table className="w-full min-w-[var(--admin-diagnostic-table-min-width)] table-fixed text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence')}>
+                  {sortedGroups.length ? <div className="overflow-x-auto"><table className="w-auto min-w-[var(--admin-diagnostic-table-min-width)] text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence')}>
                     <colgroup><col /><col className="w-[var(--admin-diagnostic-number-column)]" />{breakdownMetric ? <col className="w-[var(--admin-diagnostic-number-column)]" /> : null}{selectedIssue.code === 'hosted_model.provider_call_gap' ? <col className="w-[var(--admin-diagnostic-number-column)]" /> : null}</colgroup>
                     <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
                       <th scope="col" className="px-2 py-2">{t('admin.troubleshooting.column_scope')}</th>

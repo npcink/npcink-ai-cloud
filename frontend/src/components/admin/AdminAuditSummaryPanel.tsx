@@ -184,13 +184,6 @@ export function AdminAuditSummaryPanel({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
             {title || t('admin.audit_summary.title', {}, 'Recent audit summary')}
           </p>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {t(
-              'admin.audit_summary.description',
-              {},
-              'Use this bounded summary to decide whether you need deeper raw audit review.'
-            )}
-          </p>
         </div>
         {trailHref && !isLoading && !error && eventTotal > 0 ? (
           <button type="button" className="btn btn-secondary" onClick={() => void openTrail()}>
@@ -217,24 +210,16 @@ export function AdminAuditSummaryPanel({
       ) : (
         <>
           {display === 'table' ? (
-            <table className="mt-4 w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.events', {}, 'Events')}</th>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.succeeded', {}, 'Succeeded')}</th>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.errors', {}, 'Errors')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="py-3 text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(Number(totals.events || 0))}</td>
-                  <td className="py-3 text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(Number(totals.succeeded || 0))}</td>
-                  <td className={`py-3 text-lg font-semibold tabular-nums ${Number(totals.error || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
-                    {formatInteger(Number(totals.error || 0))}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <dl data-ui="audit-summary-totals" className="mt-3 flex flex-wrap gap-x-8 gap-y-3 text-sm">
+              {[
+                { label: t('admin.audit_summary.events', {}, 'Events'), value: totals.events },
+                { label: t('admin.audit_summary.succeeded', {}, 'Succeeded'), value: totals.succeeded },
+                { label: t('admin.audit_summary.errors', {}, 'Errors'), value: totals.error, error: true },
+              ].map(item => <div key={item.label}>
+                <dt className="text-xs text-slate-500 dark:text-slate-400">{item.label}</dt>
+                <dd className={`mt-1 text-lg font-semibold tabular-nums ${item.error && Number(item.value || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>{formatInteger(Number(item.value || 0))}</dd>
+              </div>)}
+            </dl>
           ) : (
             <div className="mt-4">
               <BackofficeMetricStrip
@@ -261,10 +246,10 @@ export function AdminAuditSummaryPanel({
             </div>
           )}
 
-          <div className={display === 'table' ? 'mt-2' : 'mt-4 space-y-3'}>
+          <div className={display === 'table' ? 'mt-2 overflow-x-auto' : 'mt-4 space-y-3'}>
             {groups.length > 0 ? (
               display === 'table' ? (
-                <table className="w-full text-left text-xs">
+                <table data-ui="audit-summary-groups" className="w-auto text-left text-xs [&_th]:pr-6 [&_td]:pr-6 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
                   <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
                       <th className="py-2 font-semibold">{t('admin.audit_summary.event_kind', {}, 'Event')}</th>

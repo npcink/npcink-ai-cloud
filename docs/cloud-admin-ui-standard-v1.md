@@ -126,18 +126,22 @@ second customer directory and must not be merged into the Accounts route.
 `/admin/runtime-profiles` is the accepted PC reference for a
 candidate-chain configuration page:
 
-1. one semantic profile table showing usage, primary model, state, and one
-   configure action; fallback appears as secondary model context;
+1. one semantic profile table showing usage, primary model, fallback model,
+   state, and one configure action; unassigned candidates stay explicit;
 2. one shared wide workbench instead of a route-local dialog;
 3. primary/fallback configuration above the candidate list, with timeout in
    seconds and retry policy inside advanced settings;
 4. one stable supplier/search toolbar;
 5. one semantic candidate table with radio columns for primary and fallback;
 6. an independent dialog draft and immediate save of only the current usage;
-   cancel, Escape, and close discard it; no page-level second save;
+   cancel, Escape, and close discard it from the main workbench; in the compact
+   advanced view, Escape/close returns to the candidate chain and retains the
+   draft; no page-level second save;
 7. contract identity, revision, and other low-frequency evidence outside the
-   default working table; automatic Toolbox candidates start collapsed, while
-   their order, routing rule, and actual-call evidence stay unchanged.
+   default working table; do not duplicate Toolbox candidates already shown in
+   the usage directory. Candidate order, routing rules, and actual-call
+   evidence retain their existing source. Advanced parameters use the named
+   text entry and compact view defined in the information-priority standard §14.
 
 The three primary runtime-configuration routes form one visual family without
 sharing an identical body layout:

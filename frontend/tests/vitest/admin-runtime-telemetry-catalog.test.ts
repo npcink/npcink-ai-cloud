@@ -134,8 +134,13 @@ describe('runtime handling distinguishes outcomes and evidence', () => {
   });
   it('requires fresh business evidence and the relevant recording checks to verify repairs', () => {
     expect(issueVerification({ code: 'hosted_model.provider_errors' }, zh)).toContain('下一次同类自然业务运行');
-    expect(issueVerification({ code: 'hosted_model.failed_runs' }, zh)).toContain('都不能证明已恢复');
-    expect(issueVerification({ code: 'hosted_model.provider_call_gap' }, zh)).toContain('仅有成功状态');
+    expect(issueVerification({ code: 'hosted_model.failed_runs' }, zh)).toContain('核对终态与调用证据');
+    expect(issueVerification({ code: 'hosted_model.provider_call_gap' }, zh)).toContain('应有的调用或用量证据');
+    // The route presents scope limits beside the action, rather than repeating
+    // them inside the catalog's next-step sentence.
+    expect(zh('admin.troubleshooting.verify_outcome_limits')).toContain('均不能证明已恢复');
+    expect(zh('admin.troubleshooting.verify_evidence_limits')).toContain('仅任务成功');
+    expect(zh('admin.troubleshooting.verify_wordpress')).toContain('仍需站点侧确认');
     expect(issueAction({ code: 'hosted_model.failed_runs', suggestedAction: 'unmapped_action' }, zh)).toContain('先查看失败运行的终态和错误码');
   });
 });

@@ -5,12 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminConfigurationRow, AdminConfigurationTable } from '@/components/admin/AdminConfigurationTable';
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
+import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import {
   BackofficeConfigurationHeader,
-  BackofficeDisclosure,
   BackofficeEmptyState,
   BackofficePageStack,
 } from '@/components/backoffice/BackofficeScaffold';
@@ -572,6 +572,10 @@ export default function RuntimeProfilesPage() {
   const drafts = data?.profiles || [];
   const [editingProfile, setEditingProfile] = useState<RuntimeProfile | null>(null);
   const [activeProfileId, setActiveProfileId] = useState('');
+  const [profileAdvancedOpen, setProfileAdvancedOpen] = useState(false);
+  const advancedTriggerRef = useRef<HTMLButtonElement>(null);
+  const advancedTimeoutRef = useRef<HTMLInputElement>(null);
+  const advancedBackRef = useRef<HTMLButtonElement>(null);
   const [providerFilter, setProviderFilter] = useState('');
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -598,6 +602,7 @@ export default function RuntimeProfilesPage() {
   const [mediaRecognitionError, setMediaRecognitionError] = useState('');
   const [mediaRecognitionErrorCode, setMediaRecognitionErrorCode] = useState('');
   const [mediaRecognitionExpanded, setMediaRecognitionExpanded] = useState(false);
+  const [referenceView, setReferenceView] = useState<'' | 'probes' | 'contract'>('');
 
   const applyData = useCallback((next: RuntimeProfilesData) => {
     setData(next);
@@ -708,6 +713,17 @@ export default function RuntimeProfilesPage() {
   );
   const savedEditingProfile = data?.profiles.find((profile) => profile.profile_id === editingProfile?.profile_id);
   const profileDirty = Boolean(editingProfile && profileSnapshot([editingProfile]) !== profileSnapshot(savedEditingProfile ? [savedEditingProfile] : []));
+  const advancedSettingsDirty = Boolean(editingProfile && savedEditingProfile && (
+    editingProfile.timeout_ms !== savedEditingProfile.timeout_ms
+    || editingProfile.allow_fallback !== savedEditingProfile.allow_fallback
+    || editingProfile.max_retries !== savedEditingProfile.max_retries
+  ));
+  const advancedTimeoutMax = (editingProfile?.max_timeout_ms || 120000) / 1000;
+  const advancedValidationError = !editingProfile ? ''
+    : !Number.isInteger(editingProfile.timeout_ms / 1000) || editingProfile.timeout_ms < 1000 || editingProfile.timeout_ms > advancedTimeoutMax * 1000
+      ? copy('advanced_timeout_invalid', 'Enter a whole number of seconds from 1 to {{max}}.', { max: String(advancedTimeoutMax) })
+      : !Number.isInteger(editingProfile.max_retries) || editingProfile.max_retries < 0 || editingProfile.max_retries > 1
+        ? copy('advanced_retries_invalid', 'Enter 0 or 1 retry.') : '';
   const mediaRecognitionDirty = mediaRecognitionPolicySnapshot(mediaRecognitionForm) !== mediaRecognitionBaseline;
   const dirty = profileDirty || mediaRecognitionDirty;
   const activeProfiles = drafts.filter((profile) => profile.availability_state !== 'paused');
@@ -769,12 +785,6 @@ export default function RuntimeProfilesPage() {
         ? 'success'
         : 'disabled';
 
-  useEffect(() => {
-    if (mediaRecognitionError || mediaRecognitionDirty || mediaRecognitionBlocked) {
-      setMediaRecognitionExpanded(true);
-    }
-  }, [mediaRecognitionBlocked, mediaRecognitionDirty, mediaRecognitionError]);
-
   const { confirmNavigation, cancelNavigation } = useAdminNavigationGuard(
     dirty, setPendingNavigationHref, (href) => router.push(href),
   );
@@ -790,8 +800,24 @@ export default function RuntimeProfilesPage() {
     setProviderFilter(new URLSearchParams(window.location.search).get('provider') || '');
     setModelSearch('');
     setProbeError('');
+    setProfileAdvancedOpen(false);
     setEditingProfile({ ...profile, candidate_instance_ids: [...profile.candidate_instance_ids] });
   }
+
+  function openAdvancedSettings() {
+    setProfileAdvancedOpen(true);
+    window.requestAnimationFrame(() => {
+      const timeout = advancedTimeoutRef.current;
+      if (timeout && !timeout.matches(':disabled')) timeout.focus();
+      else advancedBackRef.current?.focus();
+    });
+  }
+
+  function returnToCandidateChain() {
+    setProfileAdvancedOpen(false);
+    window.requestAnimationFrame(() => advancedTriggerRef.current?.focus());
+  }
+
 
   const candidatePool = useMemo(() => {
     if (!editingProfile || !data) return [];
@@ -945,7 +971,9 @@ export default function RuntimeProfilesPage() {
   }
 
   async function saveProfiles() {
+    if (profileAdvancedOpen) { returnToCandidateChain(); return; }
     if (!editingProfile || operationRef.current || loading || profileRecovery === 'pending') return;
+    if (advancedValidationError) { openAdvancedSettings(); return; }
     if (!profileDirty) { setEditingProfile(null); return; }
     const profile = editingProfile;
     if (profile.candidate_instance_ids.some((id) => {
@@ -1066,19 +1094,75 @@ export default function RuntimeProfilesPage() {
     return `${instance.provider_display_name || instance.provider_id} · ${instance.upstream_model_id}`;
   }
 
+  function taskLabel(task: string): string {
+    const labels: Record<string, string> = {
+      content_translation: copy('task_content_translation', 'Translate content'),
+      excerpt_generation: copy('task_excerpt_generation', 'Generate an article excerpt'),
+      image_prompt_generation: copy('task_image_prompt_generation', 'Generate an image prompt'),
+      meta_description: copy('task_meta_description', 'Generate a search description'),
+      slug_generation: copy('task_slug_generation', 'Suggest an article URL slug'),
+      title_generation: copy('task_title_generation', 'Generate an article title'),
+      audio_summary_script: copy('task_audio_summary_script', 'Write an audio summary script'),
+      comment_reply_suggest: copy('task_comment_reply_suggest', 'Suggest a comment reply'),
+      content_rewrite: copy('task_content_rewrite', 'Rewrite content'),
+      content_summary: copy('task_content_summary', 'Summarize content'),
+      editorial_updates: copy('task_editorial_updates', 'Revise content using review notes'),
+      comment_moderation: copy('task_comment_moderation', 'Suggest comment moderation'),
+      content_classification: copy('task_content_classification', 'Suggest content categories and tags'),
+      editorial_notes: copy('task_editorial_notes', 'Suggest editorial improvements'),
+      alt_text_suggest: copy('task_alt_text_suggest', 'Suggest image alternative text'),
+      image_generation: copy('task_image_generation', 'Generate an image'),
+      article_narration: copy('task_article_narration', 'Generate article narration audio'),
+      article_audio_summary: copy('task_article_audio_summary', 'Generate article summary audio'),
+    };
+    return Object.hasOwn(labels, task) ? labels[task] : copy('task_unknown', 'Unrecognized task: {{task}}', { task });
+  }
+
+  const mediaRecognitionFeedback = <>
+          {policyRecovery ? <div role="status" data-ui="media-recognition-write-recovery" className="mt-3 text-sm text-amber-800 dark:text-amber-200">
+            <p>{policyRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p>
+            {policyRecovery === 'pending' ? <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving} onClick={() => void loadMediaRecognitionPolicy()}>{copy('recover_read', 'Read latest state')}</button> : null}
+          </div> : null}
+          {mediaRecognitionError ? (
+            <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-rose-700 dark:text-rose-300">
+              <span>{mediaRecognitionError}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR ? (
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) { setMediaRecognitionExpanded(false); openProfile(mediaRecognitionProfile); } }}>
+                    {copy('media_recognition_configure_profile', 'Configure and verify model')}
+                  </Link>
+                ) : null}
+                <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => void loadMediaRecognitionPolicy({ preserveDraft: mediaRecognitionLoaded })}>
+                  {t('common.retry')}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+    {mediaRecognitionBlocked && !mediaRecognitionDirty && !mediaRecognitionError && !mediaRecognitionExpanded ? <p role="alert" className="mt-2 text-sm text-amber-800 dark:text-amber-200">{copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')}</p> : null}
+          {mediaRecognitionValidationError && mediaRecognitionDirty ? (
+            <p className="mt-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
+              {mediaRecognitionValidationError}
+            </p>
+          ) : null}
+  </>;
+
   if (loading && !data) {
     return <LoadingFallback />;
   }
 
   return (
-    <BackofficePageStack className="space-y-3" data-page-model="configuration">
+    <BackofficePageStack className="space-y-3 [&>[data-ui=backoffice-page-header]>div]:!py-3" data-page-model="configuration">
       <BackofficeConfigurationHeader
         title={copy('title', 'Runtime Profiles')}
         description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.') + ' ' + copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
         secondaryAction={(
-          <Link href="/admin/ai-resources" className="btn btn-secondary">
-            {copy('action_open_suppliers', 'Model suppliers')}
-          </Link>
+          <>
+            <Link href="/admin/ai-resources" className="btn btn-secondary">
+              {copy('action_open_suppliers', 'Model suppliers')}
+            </Link>
+            {data ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReferenceView('contract')}>{copy('action_technical_info', 'Technical information')}</button> : null}
+          </>
         )}
         summaryItems={[
           { label: copy('summary_configured', 'Configured'), value: data ? String(configuredCount) : '—' },
@@ -1086,6 +1170,25 @@ export default function RuntimeProfilesPage() {
           { label: copy('summary_paused', 'Paused'), value: data ? String(pausedCount) : '—' },
           { label: copy('summary_configuration_error', 'Configuration error'), value: data ? String(attentionCount) : '—' },
         ]}
+        summaryAside={data ? (
+          <div data-ui="media-recognition-policy" className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 xl:justify-end">
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{copy('media_recognition_title', 'Site media recognition')}</span>
+                <BackofficeStatusBadge label={mediaRecognitionStatusLabel} status={mediaRecognitionStatusTone} />
+              </div>
+              <div className="flex min-w-0 items-center gap-3">
+                <dl className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <div><dt className="sr-only">{copy('media_recognition_window_short', 'Window')}</dt><dd>{mediaRecognitionLoaded ? `${savedMediaRecognitionPolicy.window_start}-${savedMediaRecognitionPolicy.window_end} · ${savedMediaRecognitionPolicy.timezone}` : '—'}</dd></div>
+                  <div className="shrink-0"><dt className="sr-only">{copy('media_recognition_daily_limit_short', 'Daily limit')}</dt><dd>{mediaRecognitionLoaded ? copy('media_recognition_daily_limit_summary', '{{count}} images/day', { count: savedMediaRecognitionPolicy.daily_limit }) : '—'}</dd></div>
+                </dl>
+                <button type="button" className="btn btn-secondary btn-sm shrink-0" disabled={saving || mediaRecognitionSaving || Boolean(probingInstanceId)} onClick={() => setMediaRecognitionExpanded(true)}>{copy('action_configure', 'Configure')}</button>
+              </div>
+            </div>
+            {mediaRecognitionDirty ? <p role="status" className="mt-2 text-xs text-amber-800 dark:text-amber-200 xl:text-right">{copy('media_recognition_draft_summary', 'Saved settings shown. Your unsaved draft is retained in Configure.')}</p> : null}
+            {!mediaRecognitionExpanded ? mediaRecognitionFeedback : null}
+          </div>
+        ) : null}
       />
 
       {profileRecovery ? (
@@ -1109,42 +1212,54 @@ export default function RuntimeProfilesPage() {
       ) : null}
       {data ? <AdminMutationReceipt receipt={receipt} title={copy('receipt_title', 'Latest profile change')} /> : null}
 
-      {data ? drafts.length === 0 ? (
-        <BackofficeEmptyState
-          title={copy('empty_title', 'No hosted runtime profiles')}
-          description={copy('empty_description', 'The WordPress connector has not projected any Cloud-hosted task profiles.')}
-        />
-      ) : (
+      {data ? (
         <AdminDataTableFrame
           title={copy('directory_title', 'Hosted profile directory')}
           resultLabel={copy('usage_count', '{{count}} usages', { count: String(drafts.length) })}
           dataUi="runtime-profile-table"
+          headerActions={<div className="flex flex-wrap items-center justify-end gap-2">
+            {probeSummaryError ? <span className="text-xs text-rose-700 dark:text-rose-300">{copy('probe_summary_unavailable', 'History unavailable')}</span> : probeSummary?.totals.failed ? <span className="text-xs text-rose-700 dark:text-rose-300">{copy('probe_summary_failed_count', '{{count}} failed verifications', { count: String(probeSummary.totals.failed) })}</span> : null}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReferenceView('probes')}>{copy('action_verification_records', 'Verification records')}</button>
+          </div>}
           density="compact"
         >
+          {drafts.length === 0 ? <BackofficeEmptyState
+            title={copy('empty_title', 'No hosted runtime profiles')}
+            description={copy('empty_description', 'The WordPress connector has not projected any Cloud-hosted task profiles.')}
+          /> : (
           <table className="w-full table-fixed text-left text-sm">
-            <colgroup><col className="w-[28%]" /><col className="w-[38%]" /><col className="w-[20%]" /><col className="w-[14%]" /></colgroup>
+            <colgroup><col className="w-[24%]" /><col className="w-[28%]" /><col className="w-[24%]" /><col className="w-[14%]" /><col className="w-[10%]" /></colgroup>
             <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800">
-              <tr><th className="px-3 py-2">{copy('column_profile', 'Usage')}</th><th className="px-3 py-2">{copy('primary_model', 'Primary model')}</th><th className="px-3 py-2">{t('common.status')}</th><th className="px-3 py-2 text-right">{copy('column_action', 'Action')}</th></tr>
+              <tr><th className="px-3 py-2">{copy('column_profile', 'Usage')}</th><th className="px-3 py-2">{copy('primary_model', 'Primary model')}</th><th className="px-3 py-2">{copy('fallback_model', 'Fallback model')}</th><th className="px-3 py-2">{t('common.status')}</th><th className="px-3 py-2 text-right">{copy('column_action', 'Action')}</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {drafts.map((profile) => {
                 const tone = profileTone(profile, instancesById);
                 const paused = profile.availability_state === 'paused';
                 const primary = instancesById.get(profile.candidate_instance_ids[0] || '');
+                const fallback = instancesById.get(profile.candidate_instance_ids[1] || '');
                 return <tr key={profile.profile_id} data-profile-id={profile.profile_id} data-selected={profile.profile_id === activeProfileId ? 'true' : 'false'}>
                   <th className="px-3 py-3 text-left align-top" scope="row"><span className="block font-semibold">{profileName(profile)}</span><span className="mt-1 block text-xs font-normal text-slate-500">{copy(`${profileLabelKey(profile)}_tasks`, profile.description)}</span></th>
-                  <td className="break-words px-3 py-3 align-top"><span>{instanceLabel(primary)}</span>{profile.candidate_instance_ids[1] ? <span className="mt-1 block text-xs text-slate-500">{copy('fallback_model', 'Fallback')}: {instanceLabel(instancesById.get(profile.candidate_instance_ids[1]))}</span> : null}{primary?.upstream_status === 'missing_from_latest_catalog' ? <span className="block text-xs text-amber-700">{copy('catalog_unconfirmed', 'Catalog unconfirmed')}</span> : null}</td>
+                  <td className="break-words px-3 py-3 align-top"><span>{instanceLabel(primary)}</span>{primary?.upstream_status === 'missing_from_latest_catalog' ? <span className="block text-xs text-amber-700">{copy('catalog_unconfirmed', 'Catalog unconfirmed')}</span> : null}</td>
+                  <td className="break-words px-3 py-3 align-top">{instanceLabel(fallback)}</td>
                   <td className="px-3 py-3 align-top"><BackofficeStatusBadge status={paused ? 'disabled' : tone} label={paused ? copy('status_paused', 'Paused') : !profile.candidate_instance_ids.length ? copy('summary_unconfigured', 'Unconfigured') : tone === 'error' ? copy('summary_configuration_error', 'Configuration error') : copy('status_configured', 'Usage configured')} /></td>
                   <td className="px-3 py-3 text-right align-top"><button type="button" className="btn btn-secondary btn-sm" disabled={saving || mediaRecognitionSaving || Boolean(probingInstanceId)} onClick={() => openProfile(profile)}>{copy('action_configure', 'Configure')}</button></td>
                 </tr>;
               })}
             </tbody>
           </table>
+          )}
         </AdminDataTableFrame>
       ) : null}
 
-      {data ? (
-        <BackofficeDisclosure summary={copy('probe_summary_title', 'Capability verification history')}>
+      <AdminContextDrawer
+        open={Boolean(referenceView)}
+        title={referenceView === 'probes' ? copy('probe_summary_title', 'Capability verification history') : copy('contract_details', 'Hosted runtime contract details')}
+        titleId="runtime-reference-title"
+        closeLabel={t('common.close')}
+        onClose={() => setReferenceView('')}
+      >
+        {referenceView === 'probes' ? <div data-ui="runtime-probe-history">
           {probeSummaryError ? (
             <div><p className="text-sm text-rose-700 dark:text-rose-300">{probeSummaryError}</p><button type="button" className="btn btn-secondary btn-sm mt-2" onClick={() => void loadProbeSummary()}>{t('common.retry')}</button></div>
           ) : probeSummary ? (
@@ -1158,7 +1273,7 @@ export default function RuntimeProfilesPage() {
                 <p className="text-slate-500 dark:text-slate-400">{copy('probe_summary_empty', 'No capability probes have been recorded yet. Verify a selected candidate to start collecting evidence.')}</p>
               ) : (
                 <>
-                  <table className="w-full max-w-3xl text-left text-xs">
+                  <table data-ui="probe-summary-comparison" className="w-auto text-left text-xs [&_th:not(:first-child)]:text-right [&_td]:text-right">
                     <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                       <tr>
                         <th className="py-1.5 pr-3" scope="col">{copy('probe_summary_capability', 'Capability')}</th>
@@ -1192,70 +1307,36 @@ export default function RuntimeProfilesPage() {
           ) : (
             <p className="text-sm text-slate-500 dark:text-slate-400">{copy('probe_summary_loading', 'Loading capability verification history...')}</p>
           )}
-        </BackofficeDisclosure>
-      ) : null}
+        </div> : null}
+        {referenceView === 'contract' && data ? <dl className="grid gap-4 text-sm">
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('contract_version', 'Contract version')}</dt><dd className="mt-1 break-all font-mono text-xs">{data.contract_version}</dd></div>
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('connector', 'Connector')}</dt><dd className="mt-1 break-all font-mono text-xs">{data.connector_id}</dd></div>
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('operation_contract', 'Operation contract')}</dt><dd className="mt-1 break-all font-mono text-xs">{data.operation_contract_version}</dd></div>
+          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('surface', 'Surface')}</dt><dd className="mt-1 break-all font-mono text-xs">{data.surface}</dd></div>
+        </dl> : null}
+      </AdminContextDrawer>
 
-      {data?.read_only_profiles.map((profile) => <details key={profile.profile_id} data-ui="automatic-runtime-profile" className="border-y border-slate-200 px-3 py-4 dark:border-slate-800">
-        <summary className="cursor-pointer text-sm font-semibold">{copy('automatic_title', 'Toolbox content assistance · Automatic model selection')}</summary>
-        <p className="mt-1 text-xs text-slate-500">{copy('automatic_notice', 'text.ai is read-only. These are configured candidates in order, not evidence of a model used in a past call.')}</p>
-        <ol className="mt-2 list-inside list-decimal text-sm">{profile.candidates.map((candidate) => <li key={candidate.instance_id}>{candidate.provider_display_name || candidate.provider_id} · {candidate.upstream_model_id}</li>)}</ol>
-        {!profile.candidates.length ? <p className="mt-2 text-sm">{copy('automatic_empty', 'No configured candidates')}</p> : null}
-        <Link href="/admin/troubleshooting" className="mt-2 inline-block text-sm font-semibold text-blue-700 dark:text-blue-300">{copy('action_view_actual_runs', 'View actual calls')}</Link>
-      </details>)}
-
-      {data ? (
-        <BackofficeDisclosure
-          data-ui="media-recognition-policy"
-          open={mediaRecognitionExpanded}
-          onToggle={(event) => setMediaRecognitionExpanded(event.currentTarget.open)}
-          summary={<div className="ml-2 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-3 gap-y-1 align-middle">
-            <span className="text-base font-semibold text-slate-950 dark:text-white">
-              {copy('media_recognition_title', 'Site media recognition')}
-            </span>
-            <BackofficeStatusBadge label={mediaRecognitionStatusLabel} status={mediaRecognitionStatusTone} />
-            <span className="min-w-0 text-xs font-normal text-slate-500 dark:text-slate-400">
-              {mediaRecognitionPrimary ? instanceLabel(mediaRecognitionPrimary) : copy('model_unassigned', 'Not assigned')}
-              {mediaRecognitionLoaded ? <> / {mediaRecognitionForm.window_start}-{mediaRecognitionForm.window_end} / {copy('media_recognition_daily_limit_summary', '{{count}} images/day', { count: mediaRecognitionForm.daily_limit })}</> : ' / —'}
-            </span>
-          </div>}
-          contentClassName="pt-4"
-        >
-          <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-            <p className="min-w-0 text-sm text-slate-600 dark:text-slate-300">
-              {copy('media_recognition_description', 'Background recognition inherits the Vision understanding candidate chain. Configure only its schedule and daily limit here.')}
-            </p>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm shrink-0"
-              disabled={!mediaRecognitionLoaded || policyRecovery === 'pending' || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId) || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
-              onClick={() => void saveMediaRecognitionPolicy()}
-            >
-              {mediaRecognitionSaving
-                ? copy('media_recognition_saving', 'Saving...')
-                : copy('media_recognition_save', 'Save recognition policy')}
-            </button>
-          </div>
-
-          {policyRecovery ? <div role="status" data-ui="media-recognition-write-recovery" className="mt-3 text-sm text-amber-800 dark:text-amber-200">
-            <p>{policyRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p>
-            {policyRecovery === 'pending' ? <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving} onClick={() => void loadMediaRecognitionPolicy()}>{copy('recover_read', 'Read latest state')}</button> : null}
-          </div> : null}
-          {mediaRecognitionError ? (
-            <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-rose-700 dark:text-rose-300">
-              <span>{mediaRecognitionError}</span>
-              <div className="flex flex-wrap items-center gap-2">
-                {mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR ? (
-                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) openProfile(mediaRecognitionProfile); }}>
-                    {copy('media_recognition_configure_profile', 'Configure and verify model')}
-                  </Link>
-                ) : null}
-                <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => void loadMediaRecognitionPolicy({ preserveDraft: mediaRecognitionLoaded })}>
-                  {t('common.retry')}
-                </button>
-              </div>
-            </div>
-          ) : null}
-
+      <AdminWorkbenchDialog
+        open={mediaRecognitionExpanded}
+        title={copy('media_recognition_title', 'Site media recognition')}
+        titleId="media-recognition-dialog-title"
+        headerAccessory={<BackofficeStatusBadge label={mediaRecognitionStatusLabel} status={mediaRecognitionStatusTone} />}
+        saving={mediaRecognitionSaving || saving || Boolean(probingInstanceId)}
+        closeLabel={t('common.close')}
+        cancelLabel={t('common.close')}
+        saveLabel={copy('media_recognition_save', 'Save recognition policy')}
+        savingLabel={copy('media_recognition_saving', 'Saving...')}
+        footerNotice={copy('media_recognition_draft_notice', 'Closing retains your draft on this page. Save applies this policy immediately.')}
+        footerActions={<div className="flex flex-wrap gap-2">
+          <button type="button" className="btn btn-secondary btn-sm" disabled={mediaRecognitionSaving || saving || Boolean(probingInstanceId)} onClick={() => setMediaRecognitionExpanded(false)}>{t('common.close')}</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!mediaRecognitionLoaded || policyRecovery === 'pending' || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId) || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}>{mediaRecognitionSaving ? copy('media_recognition_saving', 'Saving...') : copy('media_recognition_save', 'Save recognition policy')}</button>
+        </div>}
+        density="compact"
+        onClose={() => setMediaRecognitionExpanded(false)}
+        onSubmit={() => void saveMediaRecognitionPolicy()}
+      >
+          <p className="text-sm text-slate-600 dark:text-slate-300">{copy('media_recognition_description', 'Background recognition inherits the Vision understanding candidate chain. Configure only its schedule and daily limit here.')}</p>
+          {mediaRecognitionFeedback}
           <div className="mt-3">
           {mediaRecognitionLoaded ? (
           <fieldset className="min-w-0" disabled={!mediaRecognitionLoaded || policyRecovery === 'pending' || mediaRecognitionLoading || mediaRecognitionSaving || saving || Boolean(probingInstanceId)}>
@@ -1283,7 +1364,7 @@ export default function RuntimeProfilesPage() {
                     : copy('model_unassigned', 'Not assigned')}
                 detail={<div className="flex flex-wrap items-center gap-2">
                   <span>{copy('media_recognition_model_inherited', 'Inherited from Vision understanding; this policy does not store another model selection.')}</span>
-                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) openProfile(mediaRecognitionProfile); }}>
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai" onClick={(event) => { event.preventDefault(); if (mediaRecognitionProfile) { setMediaRecognitionExpanded(false); openProfile(mediaRecognitionProfile); } }}>
                     {copy('media_recognition_configure_profile', 'Configure and verify model')}
                   </Link>
                 </div>}
@@ -1364,96 +1445,56 @@ export default function RuntimeProfilesPage() {
           </fieldset>
           ) : null}
           </div>
-          {mediaRecognitionValidationError && mediaRecognitionDirty ? (
-            <p className="mt-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
-              {mediaRecognitionValidationError}
-            </p>
-          ) : null}
-        </BackofficeDisclosure>
-      ) : null}
-
-      {data ? <BackofficeDisclosure summary={copy('contract_details', 'Hosted runtime contract details')}>
-        <dl className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('contract_version', 'Contract version')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-950 dark:text-white">{data?.contract_version || '—'}</dd></div>
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('connector', 'Connector')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-950 dark:text-white">{data?.connector_id || '—'}</dd></div>
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('operation_contract', 'Operation contract')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-950 dark:text-white">{data?.operation_contract_version || '—'}</dd></div>
-          <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('surface', 'Surface')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-950 dark:text-white">{data?.surface || '—'}</dd></div>
-        </dl>
-      </BackofficeDisclosure> : null}
+      </AdminWorkbenchDialog>
 
       <AdminWorkbenchDialog
         open={Boolean(editingProfile)}
-        title={copy('dialog_title', 'Configure candidate chain')}
+        title={profileAdvancedOpen ? copy('advanced_settings', 'Advanced settings') : copy('dialog_title', 'Configure candidate chain')}
         titleId="runtime-profile-dialog-title"
         headerAccessory={editingProfile ? (
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            {profileName(editingProfile)}
-          </span>
+          <>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{profileName(editingProfile)}</span>
+            {!profileAdvancedOpen ? <button ref={advancedTriggerRef} data-ui="runtime-profile-advanced-trigger" type="button" className="text-xs font-semibold text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-300" disabled={saving || loading || Boolean(probingInstanceId)} onClick={openAdvancedSettings}>
+              {copy('advanced_settings', 'Advanced settings')}{advancedSettingsDirty ? <span className="ml-1 text-amber-800 dark:text-amber-200">· {copy('advanced_unsaved', 'Unsaved')}</span> : null}
+            </button> : null}
+          </>
         ) : null}
         saving={saving || Boolean(probingInstanceId)}
         closeLabel={t('common.close')}
         cancelLabel={t('common.cancel')}
         saveLabel={copy('action_save_usage', 'Save usage')}
         savingLabel={probingInstanceId ? copy('verifying', '验证中...') : copy('action_saving', 'Saving...')}
-        footerNotice={copy('dialog_save_notice', 'Save applies this usage immediately. Cancel discards changes.')}
-        footerActions={profileRecovery === 'pending' ? (
+        footerNotice={profileAdvancedOpen ? copy('advanced_draft_notice', 'Changes stay in this usage draft. Return to the candidate chain, then Save usage to apply.') : copy('dialog_save_notice', 'Save applies this usage immediately. Cancel discards changes.')}
+        footerActions={profileAdvancedOpen ? <button ref={advancedBackRef} type="submit" className="btn btn-secondary btn-sm" disabled={saving}>{copy('action_back_to_candidates', 'Back to candidate chain')}</button> : profileRecovery === 'pending' ? (
           <button type="button" className="btn btn-secondary btn-sm" disabled={loading || saving} onClick={() => void loadProfiles()}>{copy('recover_read', 'Read latest state')}</button>
         ) : undefined}
         density="compact"
-        contentMode="contained"
-        onClose={() => { setEditingProfile(null); setProbeError(''); }}
+        width={profileAdvancedOpen ? 'compact' : 'wide'}
+        contentMode={profileAdvancedOpen ? 'scroll' : 'contained'}
+        onClose={() => { if (profileAdvancedOpen) { returnToCandidateChain(); return; } setEditingProfile(null); setProbeError(''); }}
         onSubmit={() => void saveProfiles()}
       >
         {profileRecovery ? <p role="status" className="shrink-0 text-sm text-amber-800 dark:text-amber-200">{profileRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p> : null}
+        {advancedValidationError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{advancedValidationError}</p> : null}
+        {probeError ? (
+          <div
+            role="alert"
+            data-ui="runtime-profile-probe-error"
+            className="shrink-0 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
+          >
+            {probeError}
+          </div>
+        ) : null}
         {editingProfile ? (
           <fieldset disabled={saving || loading || profileRecovery === 'pending' || Boolean(probingInstanceId)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
-            <details className="shrink-0 text-xs text-slate-500"><summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary><p className="mt-1 break-words">{editingProfile.tasks.join(' · ')}</p><p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p></details>
-            <div className="shrink-0 max-h-[45vh] overflow-y-auto">
-              <AdminConfigurationTable
-              ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
-                name: profileName(editingProfile),
-              })}
-              itemHeading={copy('configuration_item_heading', 'Setting')}
-              valueHeading={copy('configuration_value_heading', 'Current value')}
-              detailHeading={copy('configuration_detail_heading', 'Action / note')}
-              density="compact"
-            >
-              <AdminConfigurationRow
-                rowId="runtime-primary-model"
-                label={copy('primary_model', 'Primary model')}
-                value={instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[0] || ''))}
-                detail={editingProfile.candidate_instance_ids[0] ? (
-                  <button
-                    type="button"
-                    className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
-                    onClick={() => clearCandidate(editingProfile.profile_id, 0)}
-                  >
-                    {copy('action_clear_primary', 'Clear candidate chain')}
-                  </button>
-                ) : copy('primary_required_note', 'Select one primary model below.')}
-              />
-              <AdminConfigurationRow
-                rowId="runtime-fallback-model"
-                label={copy('fallback_model', 'Fallback model')}
-                value={editingProfile.candidate_instance_ids[1] ? instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[1])) : copy('fallback_unconfigured', 'No fallback configured')}
-                detail={editingProfile.candidate_instance_ids[1] ? (
-                  <button
-                    type="button"
-                    className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
-                    onClick={() => clearCandidate(editingProfile.profile_id, 1)}
-                  >
-                    {copy('action_clear_fallback', 'Clear fallback')}
-                  </button>
-                ) : copy('fallback_optional_note', 'Optional; requires a primary model.')}
-              />
-              </AdminConfigurationTable>
-              <BackofficeDisclosure summary={copy('advanced_settings', 'Advanced settings')}>
+            {profileAdvancedOpen ? (
               <AdminConfigurationTable ariaLabel={copy('advanced_settings', 'Advanced settings')} itemHeading={copy('configuration_item_heading', 'Setting')} valueHeading={copy('configuration_value_heading', 'Current value')} detailHeading={copy('configuration_detail_heading', 'Action / note')} density="compact">
               <AdminConfigurationRow
                 rowId="runtime-timeout"
                 label={copy('timeout', 'Timeout')}
                 value={(
                   <input
+                    ref={advancedTimeoutRef}
                     id="runtime-profile-timeout"
                     type="number"
                     min={1}
@@ -1502,7 +1543,55 @@ export default function RuntimeProfilesPage() {
                 detail={copy('retry_note', 'Bounded to 0 or 1 retry.')}
               />
               </AdminConfigurationTable>
-              </BackofficeDisclosure>
+            ) : null}
+            <div className={profileAdvancedOpen ? 'hidden' : 'contents'}>
+            <details data-ui="runtime-profile-tasks" className="shrink-0 text-xs text-slate-500">
+              <summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary>
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-700 dark:text-slate-300">
+                {editingProfile.tasks.map(task => <li key={task} data-task-id={task} className="break-words">{taskLabel(task)}</li>)}
+              </ul>
+              <p className="mt-2">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p>
+            </details>
+            <div className="shrink-0 max-h-[45vh] overflow-y-auto">
+              <AdminConfigurationTable
+              ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
+                name: profileName(editingProfile),
+              })}
+              itemHeading={copy('configuration_item_heading', 'Setting')}
+              valueHeading={copy('configuration_value_heading', 'Current value')}
+              detailHeading={copy('configuration_detail_heading', 'Action / note')}
+              density="compact"
+            >
+              <AdminConfigurationRow
+                rowId="runtime-primary-model"
+                label={copy('primary_model', 'Primary model')}
+                value={instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[0] || ''))}
+                detail={editingProfile.candidate_instance_ids[0] ? (
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                    onClick={() => clearCandidate(editingProfile.profile_id, 0)}
+                  >
+                    {copy('action_clear_primary', 'Clear candidate chain')}
+                  </button>
+                ) : copy('primary_required_note', 'Select one primary model below.')}
+              />
+              <AdminConfigurationRow
+                rowId="runtime-fallback-model"
+                label={copy('fallback_model', 'Fallback model')}
+                value={editingProfile.candidate_instance_ids[1] ? instanceLabel(instancesById.get(editingProfile.candidate_instance_ids[1])) : copy('fallback_unconfigured', 'No fallback configured')}
+                detail={editingProfile.candidate_instance_ids[1] ? (
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                    onClick={() => clearCandidate(editingProfile.profile_id, 1)}
+                  >
+                    {copy('action_clear_fallback', 'Clear fallback')}
+                  </button>
+                ) : copy('fallback_optional_note', 'Optional; requires a primary model.')}
+              />
+              </AdminConfigurationTable>
+
             </div>
 
             <section className="flex min-h-0 flex-1 flex-col gap-2.5 pt-1">
@@ -1538,15 +1627,7 @@ export default function RuntimeProfilesPage() {
                   {copy('verification_cost_notice', 'Verification sends a real test request to this supplier and may incur a charge. Verify selected models before saving; saving does not start a test.')}
                 </p>
               ) : null}
-              {probeError ? (
-                <div
-                  role="alert"
-                  data-ui="runtime-profile-probe-error"
-                  className="shrink-0 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
-                >
-                  {probeError}
-                </div>
-              ) : null}
+
               {candidates.length ? (
                 <div data-ui="runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
                   {candidateGroups.map((group) => {
@@ -1680,6 +1761,7 @@ export default function RuntimeProfilesPage() {
                 <BackofficeEmptyState title={copy('models_empty_title', 'No matching models')} description={copy('models_empty_description', 'Enable a compatible model in Model suppliers or clear the current filters.')} />
               )}
             </section>
+            </div>
           </fieldset>
         ) : null}
       </AdminWorkbenchDialog>

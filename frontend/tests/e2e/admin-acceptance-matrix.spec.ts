@@ -99,7 +99,7 @@ test.describe('current-master Admin route acceptance matrix', () => {
   test.use({ viewport: acceptanceMatrix.viewport });
 
   for (const route of acceptanceMatrix.routes) {
-    test(`${route.routePattern} is reachable with one page title and no desktop overflow`, async ({ page }) => {
+    test(`${route.routePattern} is reachable with one page title and no desktop overflow`, async ({ page }, testInfo) => {
       const browserFailures = installBrowserFailureCapture(page);
       const unhandledAdminRequests: string[] = [];
       const allowedEmptyAdminRequests = 'allowedEmptyAdminRequests' in route
@@ -111,6 +111,14 @@ test.describe('current-master Admin route acceptance matrix', () => {
       await page.goto(route.smokePath, { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('networkidle');
       await expectDesktopRouteBaseline(page, route);
+
+      // Review evidence, not a golden baseline or an automatic hierarchy pass.
+      const screenshot = testInfo.outputPath(`${route.routePattern.replace(/[^a-zA-Z0-9]+/g, '-')}-pc-overview.png`);
+      await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
+      await testInfo.attach('PC route overview', {
+        path: screenshot,
+        contentType: 'image/png',
+      });
 
       expect(browserFailures(), `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
       expect(unhandledAdminRequests, `${route.routePattern} made unhandled Admin API requests`).toEqual([]);
