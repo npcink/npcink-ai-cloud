@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 核对注册准入是否合并、历史阻塞、分支清理与关闭会话条件 | [注册准入收口与经验 — 2026-11-06](history/portal/2026/registration-access-closeout-2026-11-06.md) — #1380、CI/M4接受、两平台基线、生产等待项与主检出保留；长期规则见[注册准入合同](portal-registration-access-v1.md) |
 | 核对运行诊断/运行配置版式会话是否已交付、能否关闭及资源归属 | [收口审计与经验 — 2026-11-06](history/admin/2026/runtime-diagnostic-layout-closeout-2026-11-06.md) — 历史反馈对账、#1378合并/CI与clean-master M4接受、合并后补验、经验及精确资源清理边界；初次未提交记录保留，不是全状态或生产验收证明 |
 | 接续后台通知、身份可读性与共享版式整改，确认能否关闭会话 | [整改收尾与经验 — 2026-11-05](history/admin/2026/admin-layout-notice-readability-closeout-2026-11-05.md) — PR #1370、CI/M4、旧截图关闭情况、偶发测试/人工验收及工作树保留例外；长期规则见信息层级规范 §12 |
 | 控制生产日志、旧发布制品与运维数据增长 | [生产保留维护规则](production-retention-maintenance-v1.md) — 保护恢复点、有限保留、分批清理与上线边界 |
