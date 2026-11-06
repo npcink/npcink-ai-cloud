@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 核对运行诊断/运行配置版式会话是否已交付、能否关闭及资源归属 | [收口审计与经验 — 2026-11-06](history/admin/2026/runtime-diagnostic-layout-closeout-2026-11-06.md) — 历史反馈对账、本地与M4版本差异、未提交/未合并事实及工作树保留条件；不是已交付或生产验收证明 |
 | 接续后台通知、身份可读性与共享版式整改，确认能否关闭会话 | [整改收尾与经验 — 2026-11-05](history/admin/2026/admin-layout-notice-readability-closeout-2026-11-05.md) — PR #1370、CI/M4、旧截图关闭情况、偶发测试/人工验收及工作树保留例外；长期规则见信息层级规范 §12 |
 | 控制生产日志、旧发布制品与运维数据增长 | [生产保留维护规则](production-retention-maintenance-v1.md) — 保护恢复点、有限保留、分批清理与上线边界 |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |

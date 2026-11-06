@@ -53,7 +53,11 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await expect(page.getByRole('heading', { name: /Budget and usage|预算与用量/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-operational-grid"]')).toBeVisible();
-  await expect(page.getByRole('table')).toHaveCount(4);
+  await expect(page.getByRole('table')).toHaveCount(3);
+  const totals = page.locator('[data-ui="audit-summary-totals"]');
+  await expect(totals.locator('dd')).toHaveText(['4', '3', '1']);
+  await expect(page.locator('[data-ui="audit-summary-groups"] tbody tr')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('subscription-audit-summary-1440.png'), fullPage: true, animations: 'disabled' });
 
   const auditButton = page.getByRole('button', { name: /View 4 audit records|查看 4 条审计记录/i });
   await expect(auditButton).toBeVisible();

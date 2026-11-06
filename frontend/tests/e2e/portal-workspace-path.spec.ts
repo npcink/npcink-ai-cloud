@@ -2695,7 +2695,7 @@ test.describe('portal first-user fault journeys', () => {
   }
 });
 
-test('portal PC tables stay readable across supported desktop widths, themes, and locales', async ({ page }) => {
+test('portal PC tables stay readable across supported desktop widths, themes, and locales', async ({ page }, testInfo) => {
   await installPortalMocks(page);
 
   const variants = [
@@ -2729,6 +2729,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
       variant.theme === 'dark'
     );
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-home.png`), fullPage: true, animations: 'disabled' });
 
     // Usage merged into Package: records live in the per-site 站点用量 dialog.
     await page.goto('/portal/billing');
@@ -2739,16 +2740,19 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
     await expect(usageDialog.locator('[data-portal-usage="records-table"]')).toBeVisible();
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-site-usage.png`), fullPage: true, animations: 'disabled' });
     await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
     await expect(usageDialog).toHaveCount(0);
 
     await page.goto('/portal/audit');
     await expect(page.locator('[data-portal-audit="records-table"]')).toBeVisible();
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-audit.png`), fullPage: true, animations: 'disabled' });
 
     await page.goto('/portal/support');
     await expect(page.locator('[data-portal-support="tickets-table"]')).toBeVisible();
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-support.png`), fullPage: true, animations: 'disabled' });
 
     await page.goto('/portal/billing');
     await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
@@ -2757,6 +2761,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await expect(packageDialog).toBeVisible();
     await expect(packageDialog.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-package-comparison.png`), fullPage: true, animations: 'disabled' });
     await page.keyboard.press('Escape');
     await expect(packageDialog).toHaveCount(0);
 
@@ -2766,6 +2771,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await expect(page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /^Manage package$|^管理套餐$/i })).toHaveCount(0);
     await expectNoPageOverflow();
+    await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-account.png`), fullPage: true, animations: 'disabled' });
   }
 });
 

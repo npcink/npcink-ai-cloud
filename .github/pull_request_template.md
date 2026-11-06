@@ -58,6 +58,8 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 - Destructive action and confirmation:
 - Low-frequency detail moved behind:
 - Content inventory (always visible / on demand / technical evidence / removed duplication):
+- Table intent (compact comparison / record directory / configuration editor; or not applicable):
+- Repeated copy removed and column reading distance checked (same-data before/after screenshots):
 - Core conclusion, blocker, scope and sample limits kept visible:
 - Relocated content and its named destination (including keyboard access):
 - Visual risk tier (`low`, `material`, or `shared`):

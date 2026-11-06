@@ -361,7 +361,7 @@ test('unavailable media policy stays unknown and cannot overwrite saved settings
   const policy = page.locator('[data-ui="media-recognition-policy"]');
   await expect(policy.getByRole('alert')).toBeVisible();
   await expect(policy.getByRole('spinbutton')).toHaveCount(0);
-  await expect(policy.locator('summary')).toContainText(/Unknown|未知/);
+  await expect(policy).toContainText(/Unknown|未知/);
   await expect(policy.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
 });
 
@@ -378,15 +378,38 @@ test('malformed media policy recovers only through GET and the model link opens 
   });
   await page.goto('/admin/runtime-profiles');
   const policy = page.locator('[data-ui="media-recognition-policy"]');
-  await expect(policy.locator('summary')).toContainText(/Unknown|未知/);
+  await expect(policy).toContainText(/Unknown|未知/);
   await expect(policy.getByRole('spinbutton')).toHaveCount(0);
   invalid = false;
   await policy.getByRole('button', { name: /^Retry$|^重试$/i }).click();
-  await expect(policy.getByRole('spinbutton')).toHaveValue('100');
+  await policy.getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  const editor = page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ });
+  await expect(editor.getByRole('spinbutton')).toHaveValue('100');
   expect(methods).toEqual(['GET', 'GET']);
-  await policy.getByRole('link', { name: /Configure and verify model|配置并验证模型/i }).click();
+  await editor.getByRole('link', { name: /Configure and verify model|配置并验证模型/i }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText(/Vision understanding|视觉理解/i);
+});
+
+test('capability history comparison stays compact and preserves counts on PC', async ({ page }, testInfo) => {
+  await installRuntimeProfilesHarness(page);
+  await page.route('**/api/admin/runtime-profiles/capability-probes/summary**', route => route.fulfill({ json: envelope({
+    window_minutes: 10080, generated_at: '2026-11-05T00:00:00Z',
+    totals: { attempts: 10, verified: 7, failed: 3, success_rate: 0.7 },
+    by_capability: [{ capability: 'text', attempts: 10, verified: 7, failed: 3, success_rate: 0.7 }],
+    by_instance: [], recent_failures: [],
+  }) }));
+  await page.goto('/admin/runtime-profiles');
+  await page.getByRole('button', { name: /Verification records|验证记录/ }).click();
+  const summary = page.getByRole('dialog', { name: /Capability verification history|能力验证历史/i });
+  const table = page.locator('[data-ui="probe-summary-comparison"]');
+  await expect(table.locator('tbody td')).toHaveText(['10', '7', '3']);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect((await table.boundingBox())!.width).toBeLessThan(600);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`probe-summary-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
 });
 
 test('retrying a failed profile read preserves the already loaded probe summary', async ({ page }) => {
@@ -402,8 +425,8 @@ test('retrying a failed profile read preserves the already loaded probe summary'
   await summaryReady;
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect(page.locator('[data-ui="runtime-profile-table"]')).toBeVisible();
-  const summary = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /Capability verification history|能力验证历史/i }) });
-  await summary.locator('summary').click();
+  await page.getByRole('button', { name: /Verification records|验证记录/ }).click();
+  const summary = page.getByRole('dialog', { name: /Capability verification history|能力验证历史/i });
   await expect(summary).toContainText(/No capability probes|还没有能力验证/i);
   await expect(summary).not.toContainText(/0%/);
 });
@@ -416,8 +439,8 @@ test('malformed probe history stays unavailable and retries independently of con
     await route.fulfill({ json: envelope({}) });
   });
   await page.goto('/admin/runtime-profiles');
-  const summary = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /Capability verification history|能力验证历史/i }) });
-  await summary.locator('summary').click();
+  await page.getByRole('button', { name: /Verification records|验证记录/ }).click();
+  const summary = page.getByRole('dialog', { name: /Capability verification history|能力验证历史/i });
   await expect(summary).toContainText(/unavailable|无法加载/i);
   await expect(summary).not.toContainText('0%');
   invalid = false;
@@ -433,11 +456,12 @@ test('hosted runtime profiles are URL-backed, boundary-focused, and fit a narrow
   await expect(page.getByRole('heading', { name: /Runtime Profiles|运行配置/i })).toBeVisible();
   await expect(profileRow(page, 'route.short_text')).toBeVisible();
   await expect(page.getByText('Text Provider · text-model-v1').first()).toBeVisible();
-  await expect(page.locator('main input')).toHaveCount(3);
+  await expect(page.locator('main input')).toHaveCount(0);
   const mediaRecognitionDisclosure = page.locator('[data-ui="media-recognition-policy"]');
-  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
-  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Site media recognition|站内媒体识别/i);
-  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/01:00-06:00/i);
+  await expect(page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ })).toHaveCount(0);
+  await expect(mediaRecognitionDisclosure.locator('xpath=ancestor::*[@data-ui="backoffice-page-header"]')).toHaveCount(1);
+  await expect(mediaRecognitionDisclosure).toContainText(/Site media recognition|站内媒体识别/i);
+  await expect(mediaRecognitionDisclosure).toContainText(/01:00-06:00/i);
   await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).not.toBeVisible();
   const pageScreenshotPath = testInfo.outputPath('admin-runtime-profiles-page-pc.png');
   await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
@@ -445,14 +469,16 @@ test('hosted runtime profiles are URL-backed, boundary-focused, and fit a narrow
     path: pageScreenshotPath,
     contentType: 'image/png',
   });
-  await mediaRecognitionDisclosure.locator('summary').click();
-  await expect(mediaRecognitionDisclosure).toHaveAttribute('open', '');
+  await mediaRecognitionDisclosure.getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ })).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).toHaveValue('100');
   await expect(page.getByRole('switch', { name: /Enable background media recognition|启用后台媒体识别/i })).toBeDisabled();
   await expect(page.getByText(/Configure and verify the Vision understanding profile|请先配置并验证“视觉理解”模型/i)).toBeVisible();
-  await page.getByText(/Hosted runtime contract details|托管运行合同详情/i).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /Technical information|技术信息/i }).click();
   await expect(page.getByText(/Operation contract|操作合同/i)).toBeVisible();
   await expect(page.getByText('wordpress_operation.v1')).toBeVisible();
+  await page.keyboard.press('Escape');
 
   await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i }).click();
   await expect(page).toHaveURL(/profile=route\.classification/);
@@ -735,8 +761,8 @@ test('enabled models missing from the latest upstream catalog remain visible for
   await expect(reopenedDialog).toHaveCount(0);
 
   const mediaRecognitionDisclosure = page.locator('[data-ui="media-recognition-policy"]');
-  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
-  await mediaRecognitionDisclosure.locator('summary').click();
+  await expect(page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ })).toHaveCount(0);
+  await mediaRecognitionDisclosure.getByRole('button', { name: /^Configure$|^配置$/ }).click();
   const recognitionSwitch = page.getByRole('switch', { name: /Enable background media recognition|启用后台媒体识别/i });
   await expect(recognitionSwitch).toBeEnabled();
   await expect(page.locator('[data-configuration-row="media-recognition-timezone"]')).toContainText(/Platform timezone|平台时区/i);
@@ -746,8 +772,8 @@ test('enabled models missing from the latest upstream catalog remain visible for
   const savePolicy = page.getByRole('button', { name: /Save recognition policy|保存识别策略/i });
   failNextPolicySave = true;
   await savePolicy.click();
-  await expect(mediaRecognitionDisclosure).toHaveAttribute('open', '');
-  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Needs verification|需验证/i);
+  await expect(page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ })).toBeVisible();
+  await expect(mediaRecognitionDisclosure).toContainText(/Needs verification|需验证/i);
   await expect(page.getByText(/has not passed vision capability verification|尚未通过识图能力验证/i)).toBeVisible();
   await expect(page.getByRole('link', { name: /Configure and verify model|配置并验证模型/i }).first()).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).toHaveValue('25');
@@ -761,9 +787,9 @@ test('enabled models missing from the latest upstream catalog remain visible for
   });
   expect(policyWrites[1]).not.toHaveProperty('model_id');
   expect(policyWrites[1]).not.toHaveProperty('timezone');
-  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
-  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Enabled|已启用/i);
-  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/25 images\/day|每日 25 张/i);
+  await expect(page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ })).toHaveCount(0);
+  await expect(mediaRecognitionDisclosure).toContainText(/Enabled|已启用/i);
+  await expect(mediaRecognitionDisclosure).toContainText(/25 images\/day|25 张\/日/i);
 });
 
 test('candidate editing saves only the current usage with an auditable PATCH receipt', async ({ page }, testInfo) => {
@@ -905,15 +931,23 @@ test('cancel and close discard only the dialog draft without writing', async ({ 
   await expect(page).toHaveURL(/\/admin\/ai-resources$/);
 });
 
-test('runtime profile table and workbench keep the accepted PC density', async ({ page }) => {
+test('runtime profile table and workbench keep the accepted PC density', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await installRuntimeProfilesHarness(page);
+  const densityProfiles = structuredClone(initialProfiles);
+  densityProfiles[0].candidate_instance_ids = ['text.primary', 'text.backup'];
+  densityProfiles[0].tasks = ['content_translation', 'excerpt_generation', 'image_prompt_generation', 'meta_description', 'slug_generation', 'title_generation', 'audio_summary_script'];
+  await installRuntimeProfilesHarness(page, { profiles: densityProfiles });
   await page.goto('/admin/runtime-profiles?profile=route.classification');
 
   const profileTable = page.locator('[data-ui="runtime-profile-table"]');
   await expect(profileTable).toBeVisible();
-  await expect(profileTable.getByRole('columnheader')).toHaveCount(4);
+  await expect(profileTable.getByRole('columnheader')).toHaveCount(5);
+  await expect(profileTable.getByRole('columnheader').nth(2)).toHaveText(/Fallback model|兜底模型/i);
+  await expect(profileRow(page, 'route.short_text').getByRole('cell').nth(0)).toHaveText('Text Provider · text-model-v1');
+  await expect(profileRow(page, 'route.short_text').getByRole('cell').nth(1)).toHaveText('Text Backup · text-model-v2');
+  await expect(profileRow(page, 'route.classification').getByRole('cell').nth(1)).toHaveText(/Not assigned|未分配/i);
+  await profileTable.screenshot({ path: testInfo.outputPath('runtime-profile-table-1440.png'), animations: 'disabled' });
   await expect(profileTable).toHaveScreenshot('admin-runtime-profiles-table-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -966,6 +1000,42 @@ test('runtime profile table and workbench keep the accepted PC density', async (
     caret: 'hide',
     maxDiffPixelRatio: 0.015,
   });
+  await page.keyboard.press('Escape');
+  for (const width of [1056, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(profileRow(page, 'route.short_text').getByRole('button')).toBeInViewport();
+    await profileTable.screenshot({ path: testInfo.outputPath(`runtime-profile-table-${width}.png`), animations: 'disabled' });
+  }
+  const longModel = 'npcink-text:qwen35-9b-instruct-32k-v1';
+  const longLabelProjection = projection(densityProfiles);
+  longLabelProjection.available_instances.text[1] = { ...fallbackInstance, model_id: longModel };
+  await page.route('**/api/admin/runtime-profiles', route => route.fulfill({ json: envelope(longLabelProjection) }));
+  await page.reload();
+  const fallbackCell = profileRow(page, 'route.short_text').getByRole('cell').nth(1);
+  await expect(fallbackCell).toHaveText(`Text Backup · ${longModel}`);
+  expect(await fallbackCell.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await profileTable.screenshot({ path: testInfo.outputPath('runtime-profile-table-long-model-900.png'), animations: 'disabled' });
+  await profileRow(page, 'route.short_text').getByRole('button').click();
+  const tasks = page.locator('[data-ui="runtime-profile-tasks"]');
+  await tasks.locator('summary').click();
+  await expect(tasks.getByRole('listitem')).toHaveCount(7);
+  for (const name of [/Translate content|翻译正文内容/, /Generate an article excerpt|生成文章摘要/, /Generate an image prompt|生成图片提示词/, /Generate a search description|生成搜索摘要/, /Suggest an article URL slug|生成文章网址别名/, /Generate an article title|生成文章标题/, /Write an audio summary script|生成音频摘要文稿/]) {
+    await expect(tasks.getByRole('listitem').filter({ hasText: name })).toHaveCount(1);
+  }
+  await expect(tasks).not.toContainText('audio_summary_script');
+  for (const width of [900, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('dialog').screenshot({ path: testInfo.outputPath(`runtime-task-names-${width}.png`), animations: 'disabled' });
+  }
+  await page.keyboard.press('Escape');
+  longLabelProjection.profiles[1].tasks = ['custom_future_task'];
+  await page.reload();
+  await profileRow(page, 'route.classification').getByRole('button').click();
+  await tasks.locator('summary').click();
+  await expect(tasks).toContainText(/Unrecognized task: custom_future_task|未识别的任务：custom_future_task/);
 });
 
 // Saving text must never dispatch an unrelated, previously failed media probe.
@@ -1024,6 +1094,7 @@ test('failed usage save keeps input and successful save survives reload without 
   await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
   await dialog.getByText(/Advanced settings|高级设置/, { exact: true }).click();
   await dialog.getByRole('spinbutton', { name: /Timeout|超时/ }).fill('40');
+  await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
   await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ })).toBeChecked();
@@ -1034,13 +1105,8 @@ test('failed usage save keeps input and successful save survives reload without 
   await page.reload();
   await expect(profileRow(page, 'route.classification')).toContainText('text-model-v2');
   await expect(profileRow(page, 'route.short_text')).not.toContainText('text-model-v2');
-  const automatic = page.locator('[data-ui="automatic-runtime-profile"]');
-  await expect(automatic).toContainText(/Automatic model selection|自动选模/);
-  await expect(automatic).not.toHaveAttribute('open', '');
-  await expect(automatic.getByRole('listitem').first()).toBeHidden();
-  await automatic.locator('summary').click();
-  await expect(automatic.getByRole('listitem')).toHaveText(['Text Provider · text-model-v1', 'Text Backup · text-model-v2']);
-  await expect(automatic.getByRole('button')).toHaveCount(0);
+  await expect(page.locator('[data-ui="automatic-runtime-profile"]')).toHaveCount(0);
+  await expect(page.getByText(/Automatic model selection|自动选模/)).toHaveCount(0);
 });
 
 test('text usage can choose an image-input text model without starting capability verification', async ({ page }) => {
@@ -1155,11 +1221,15 @@ for (const failure of ['network', 'timeout', 'malformed'] as const) {
     await dialog.getByText(/Advanced settings|高级设置/, { exact: true }).click();
     const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
     await timeout.fill('40');
+    await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
     await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
     const recover = dialog.getByRole('button', { name: /Read latest state|读取最新状态/ });
     await expect(recover).toBeEnabled({ timeout: 18000 });
+    await dialog.getByRole('button', { name: /Advanced settings|高级设置/ }).click();
     await expect(timeout).toHaveValue('40');
     await expect(timeout).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ })).toBeFocused();
+    await page.keyboard.press('Escape');
     await recover.click();
     await expect.poll(() => reads).toBe(3);
     await expect(recover).toBeEnabled();
@@ -1167,8 +1237,10 @@ for (const failure of ['network', 'timeout', 'malformed'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`runtime-recovery-${failure}.png`) });
     failReads = false;
     await recover.click();
+    await dialog.getByRole('button', { name: /Advanced settings|高级设置/ }).click();
     await expect(timeout).toBeEnabled();
     await expect(timeout).toHaveValue('40');
+    await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
     await expect(dialog).toContainText(/Latest state read|已读取最新状态/);
     await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
     await expect(dialog).toHaveCount(0);
@@ -1194,8 +1266,8 @@ test('policy recovery only reads, retains its draft, and validates each required
       : envelope({ settings: { media_recognition_policy: policy, platform_preferences: { config: { timezone: 'Asia/Shanghai' } } } }) });
   });
   await page.goto('/admin/runtime-profiles');
-  const section = page.locator('[data-ui="media-recognition-policy"]');
-  await section.locator('summary').click();
+  await page.locator('[data-ui="media-recognition-policy"]').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  const section = page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ });
   const start = section.getByLabel(/Window start|开始时间/);
   const end = section.getByLabel(/Window end|结束时间/);
   const save = section.getByRole('button', { name: /Save recognition policy|保存识别策略/ });
@@ -1219,6 +1291,12 @@ test('policy recovery only reads, retains its draft, and validates each required
   await expect(recover).toBeEnabled();
   expect(writes).toBe(1);
   await page.screenshot({ path: testInfo.outputPath('policy-recovery.png'), fullPage: true });
+  await page.keyboard.press('Escape');
+  const overview = page.locator('[data-ui="media-recognition-policy"]');
+  await expect(overview).toContainText(/Unknown|未知/);
+  await expect(overview).toContainText(/save result is unknown|保存结果待确认/);
+  await overview.getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(start).toHaveValue('02:00');
   failReads = false;
   await recover.click();
   await expect(start).toBeEnabled();
@@ -1241,10 +1319,162 @@ test('runtime explicit rejection retains an editable draft without reconciliatio
   await dialog.getByText(/Advanced settings|高级设置/, { exact: true }).click();
   const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
   await timeout.fill('40');
+  await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await dialog.getByRole('button', { name: /Advanced settings|高级设置/ }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
   await expect(timeout).toBeEnabled();
   await expect(timeout).toHaveValue('40');
   await expect(page.locator('[data-ui="runtime-profile-write-recovery"]')).toHaveCount(0);
   expect(writes).toBe(1);
+});
+
+
+test('runtime secondary entries preserve context and the media draft across PC panels', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installRuntimeProfilesHarness(page);
+  await page.goto('/admin/runtime-profiles');
+  const media = page.locator('[data-ui="media-recognition-policy"]');
+  const configure = media.getByRole('button', { name: /^Configure$|^配置$/ });
+  for (const width of [1440, 1056, 900, 1912]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await expect(media).toContainText('01:00-06:00');
+    await expect(media).toContainText('Asia/Shanghai');
+    await expect(media).not.toContainText('text-model-v1');
+    const [valuesBox, configureBox] = await Promise.all([media.locator('dl').boundingBox(), configure.boundingBox()]);
+    expect(Math.abs(valuesBox!.y + valuesBox!.height / 2 - configureBox!.y - configureBox!.height / 2)).toBeLessThan(2);
+
+    await expect(media).toContainText(/100 images\/day|100 张\/日/);
+    await expect(page.locator('main details')).toHaveCount(0);
+    await expect(page.getByRole('tab')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`runtime-entries-${width}.png`), animations: 'disabled', fullPage: true });
+  }
+  const records = page.getByRole('button', { name: /Verification records|验证记录/ });
+  await records.focus();
+  await page.keyboard.press('Enter');
+  const history = page.getByRole('dialog', { name: /Capability verification history|能力验证历史/ });
+  await expect(history).toContainText(/No capability probes|还没有能力验证/);
+  await page.keyboard.press('Shift+Tab');
+  await expect(history.getByRole('button', { name: /Close|关闭/ })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(records).toBeFocused();
+  const technical = page.getByRole('button', { name: /Technical information|技术信息/ });
+  await technical.click();
+  await expect(page.getByRole('dialog')).toContainText('wordpress_operation.v1');
+  await page.keyboard.press('Escape');
+  await expect(technical).toBeFocused();
+  await configure.click();
+  const editor = page.getByRole('dialog', { name: /Site media recognition|站内媒体识别/ });
+  const limit = editor.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/ });
+  await limit.fill('25');
+  await page.keyboard.press('Escape');
+  await expect(configure).toBeFocused();
+  await expect(media).toContainText(/Unsaved|未保存/);
+  await expect(media).toContainText(/100 images\/day|100 张\/日/);
+  await expect(media).not.toContainText(/25 images\/day|25 张\/日/);
+  await configure.click();
+  await expect(limit).toHaveValue('25');
+  await page.setViewportSize({ width: 1056, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath('media-editor-draft-1056.png'), animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await expect(media).toContainText(/Unsaved|未保存/);
+  await configure.click();
+  await limit.fill('0');
+  await page.keyboard.press('Escape');
+  await expect(media.getByRole('alert')).toContainText(/1 to 10000|1–10000|1 到 10000/);
+  await configure.click();
+  await expect(limit).toHaveValue('0');
+});
+
+
+test('an empty usage directory retains its independent evidence entries', async ({ page }) => {
+  await installRuntimeProfilesHarness(page, { profiles: [] });
+  await page.goto('/admin/runtime-profiles');
+  await expect(page.getByText(/No hosted runtime profiles|暂无托管运行配置/)).toBeVisible();
+  await page.getByRole('button', { name: /Verification records|验证记录/ }).click();
+  await expect(page.getByRole('dialog')).toContainText(/No capability probes|还没有能力验证/);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /View candidate models|查看候选模型/ })).toHaveCount(0);
+});
+
+test('advanced settings use a compact dialog and return to the candidate draft without writing', async ({ page }, testInfo) => {
+  const evidence = observeAdminBrowserEvidence(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const writes = await installRuntimeProfilesHarness(page);
+  await page.goto('/admin/runtime-profiles');
+  await profileRow(page, 'route.short_text').getByRole('button').click();
+  const dialog = page.getByRole('dialog');
+  const trigger = dialog.getByRole('button', { name: /Advanced settings|高级设置/ });
+  const timeout = dialog.getByRole('spinbutton', { name: /Timeout|超时/ });
+  const retries = dialog.getByRole('spinbutton', { name: /Retries|重试次数/ });
+  const search = dialog.getByRole('searchbox', { name: /Search models|搜索模型/ });
+  await search.fill('text-model-v2');
+  await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
+  await expect(dialog.locator('summary').filter({ hasText: /Advanced settings|高级设置/ })).toHaveCount(0);
+  for (const width of [1440, 1056, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    await dialog.screenshot({ path: testInfo.outputPath(`candidate-text-action-${width}.png`), animations: 'disabled' });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expect(timeout).toBeFocused();
+    expect((await dialog.locator('[data-width="compact"]').boundingBox())!.width).toBeLessThanOrEqual(960);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await dialog.screenshot({ path: testInfo.outputPath(`advanced-settings-${width}.png`), animations: 'disabled' });
+    await timeout.fill('40');
+    await retries.fill('1');
+    await dialog.getByRole('checkbox').uncheck();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveAccessibleName(/Configure candidate chain|配置候选链/);
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toContainText(/Unsaved|未保存/);
+    await expect(search).toHaveValue('text-model-v2');
+    await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ })).toBeChecked();
+    expect(writes).toHaveLength(0);
+  }
+  await trigger.click();
+  await expect(timeout).toHaveValue('40');
+  await expect(retries).toHaveValue('1');
+  await expect(dialog.getByRole('checkbox')).not.toBeChecked();
+  await timeout.fill('0');
+  await page.keyboard.press('Escape');
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+  await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
+  expect(writes).toHaveLength(0);
+  await timeout.fill('40');
+  await retries.fill('2');
+  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+  await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
+  expect(writes).toHaveLength(0);
+  await retries.fill('1');
+  await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
+  await expect(trigger).toBeFocused();
+  await dialog.getByRole('button', { name: /Cancel|取消/ }).click();
+  expect(writes).toHaveLength(0);
+  await profileRow(page, 'route.short_text').getByRole('button').click();
+  await trigger.click();
+  await expect(timeout).toHaveValue(String(initialProfiles[0].timeout_ms / 1000));
+  await timeout.fill('40');
+  await retries.fill('1');
+  await dialog.getByRole('checkbox').uncheck();
+  await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
+  await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body.profiles).toEqual([expect.objectContaining({ timeout_ms: 40000, max_retries: 1, allow_fallback: false })]);
+  expect(evidence.consoleErrors).toEqual([]);
+  writeFileSync(testInfo.outputPath('advanced-settings-review.json'), JSON.stringify({
+    route: '/admin/runtime-profiles', page_model: 'configuration',
+    source_revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    source_dirty: true, data_mode: 'mocked', viewports: [1440, 1056, 900],
+    tested_states: ['candidate draft', 'advanced dialog', 'Escape return', 'invalid hidden fields', 'cancel discards', 'single usage PATCH'],
+    results: { one_dialog: 'pass', focus_return: 'pass', no_overflow: 'pass', draft_preserved: 'pass', invalid_save_blocked: 'pass' },
+    console_errors: evidence.consoleErrors, network_failures: evidence.networkFailures,
+    human_acceptance: 'pending',
+  }, null, 2));
 });

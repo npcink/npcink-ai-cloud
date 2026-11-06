@@ -481,7 +481,7 @@ function AdminVectorObservabilityContent() {
             </div>
           </section> : (failureTotal || !guidance) ? <p className="text-xs text-slate-500 dark:text-slate-400">{failureTotal ? c('存在失败，但当前没有返回可展示的分组；请刷新或查看运行诊断。', 'Failures exist, but no groups were returned. Refresh or inspect runtime diagnostics.') : !data.failureCountsKnown ? c('失败记录尚未核实，请先核对上方证据。', 'Failure records are unverified; check the evidence above first.') : c('所选时段没有索引或搜索失败。', 'No index or search failures in this period.')}</p> : null}
 
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div data-ui="vector-trend-grid" className="grid items-start gap-3 xl:grid-cols-2">
             <section className="admin-tier-card overflow-hidden p-3">
               <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
                 {t('admin.vector_obs.search_trend', {}, 'Searches and no-hit')}
