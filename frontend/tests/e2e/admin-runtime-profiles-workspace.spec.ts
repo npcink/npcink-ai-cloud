@@ -1436,6 +1436,7 @@ test('advanced settings use a compact dialog and return to the candidate draft w
     expect(writes).toHaveLength(0);
   }
   await trigger.click();
+  await expect(timeout).toBeFocused();
   await expect(timeout).toHaveValue('40');
   await expect(retries).toHaveValue('1');
   await expect(dialog.getByRole('checkbox')).not.toBeChecked();
@@ -1444,20 +1445,25 @@ test('advanced settings use a compact dialog and return to the candidate draft w
   await expect(dialog.getByRole('alert')).toBeVisible();
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
   await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
+  await expect(timeout).toBeFocused();
   expect(writes).toHaveLength(0);
   await timeout.fill('40');
   await retries.fill('2');
   await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
   await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
+  await expect(timeout).toBeFocused();
   expect(writes).toHaveLength(0);
   await retries.fill('1');
+  await expect(timeout).toHaveValue('40');
+  await expect(retries).toHaveValue('1');
   await dialog.getByRole('button', { name: /Back to candidate chain|返回候选链/ }).click();
   await expect(trigger).toBeFocused();
   await dialog.getByRole('button', { name: /Cancel|取消/ }).click();
   expect(writes).toHaveLength(0);
   await profileRow(page, 'route.short_text').getByRole('button').click();
   await trigger.click();
+  await expect(timeout).toBeFocused();
   await expect(timeout).toHaveValue(String(initialProfiles[0].timeout_ms / 1000));
   await timeout.fill('40');
   await retries.fill('1');
