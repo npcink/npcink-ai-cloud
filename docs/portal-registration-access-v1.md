@@ -71,3 +71,22 @@ Deployment and changing production settings require separate explicit operator
 authorization. This change does not itself close production registration.
 Rollback source by reverting this focused change; operational reopening, when
 authorized, uses the same policy editor with public registration enabled.
+
+## Maintenance and verification
+
+Changes to account admission must test issuance and account creation against
+the current saved policy separately, including outstanding codes, malformed
+policy, empty allowlist and existing-account recovery. Missing configuration
+compatibility must not become a fallback for malformed saved configuration.
+Keep provider profile claims separate from locally verified mailbox proof.
+
+Reuse the settings editor's draft and saved-but-unconfirmed readback guards.
+When adding a directory entry, run the existing workbench screenshot scenario
+as well as the new feature scenarios; the directory can change a golden even
+when the default form is unchanged. Review actual/diff for every tracked
+platform and obtain required visual acceptance before updating baselines under
+the existing Admin UI standard.
+
+Delivery evidence and failure corrections are recorded in the
+[2026-11-06 closeout](history/portal/2026/registration-access-closeout-2026-11-06.md).
+That dated record does not authorize production activation.
