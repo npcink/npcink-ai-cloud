@@ -88,3 +88,20 @@ dump and failure marker. Do not create a dummy `current`, erase a failure
 marker, refresh a receipt to bypass investigation, or restart the old host.
 After application writes begin, a dump restore is a separate authorized
 whole-recovery operation; source rollback alone is not database recovery.
+
+Operational readiness requests include the worker/cadence/provider projections
+and can take longer than a cheap dependency check over public cross-region RDS.
+Their per-request timeout defaults to 30 seconds and may be set with
+`NPCINK_CLOUD_OPERATIONAL_READY_REQUEST_TIMEOUT_SECONDS` (integer 1–60).
+Dependency readiness retains its 5-second request timeout. This changes the
+request budget only: fresh post-cutover heartbeats, stable exact containers,
+strict operational checks and the provider-degradation policy still apply.
+Thirty attempts remain bounded to about 16 minutes at the default request
+budget, including retry sleeps; a stalled projection still fails closed.
+
+On a failed activation with no previous release, recovery stops and removes
+the candidate project containers, including Redis, before restoring image-tag
+absence. Container volumes are retained. This avoids Docker refusing to remove
+the last tag of an image still used by a candidate. An ambiguous stop/removal
+or tag proof retains the deploy lock and failure evidence; this order does not
+authorize unlocking an already-failed deployment or restoring a database.

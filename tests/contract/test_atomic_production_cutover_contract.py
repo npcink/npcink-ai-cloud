@@ -1210,7 +1210,13 @@ def test_stage_only_rejects_env_before_ssh(tmp_path: Path) -> None:
     assert "SSH target is not reachable" not in completed.stderr
 
 
-def test_internal_readiness_probe_uses_production_trusted_host(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("endpoint", "expected_timeout"),
+    [("/health/ready", 5), ("/health/operational-ready", 30)],
+)
+def test_internal_readiness_probe_uses_production_trusted_host(
+    tmp_path: Path, endpoint: str, expected_timeout: int,
+) -> None:
     capture_path = tmp_path / "request-headers.json"
     sitecustomize = r"""
 from __future__ import annotations
@@ -1231,7 +1237,7 @@ class Response:
 def urlopen(request, timeout=0):
     headers = {key.lower(): value for key, value in request.header_items()}
     with open(os.environ["PROBE_CAPTURE"], "w", encoding="utf-8") as handle:
-        json.dump(headers, handle)
+        json.dump({"headers": headers, "timeout": timeout}, handle)
     return Response()
 
 urllib.request.urlopen = urlopen
@@ -1250,7 +1256,7 @@ npcink_ai_cloud_compose() {
     "${PROBE_PYTHON}" "$@"
 }
 npcink_ai_cloud_wait_for_internal_endpoint \
-    "$PWD" "/health/ready" "probe passed"
+    "$PWD" "${PROBE_ENDPOINT}" "probe passed"
 """
     env = os.environ.copy()
     env.update(
@@ -1259,6 +1265,8 @@ npcink_ai_cloud_wait_for_internal_endpoint \
             "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST": "wrong.example",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "internal-test-token",
             "PROBE_CAPTURE": str(capture_path),
+            "PROBE_ENDPOINT": endpoint,
+            "NPCINK_CLOUD_OPERATIONAL_READY_REQUEST_TIMEOUT_SECONDS": "30",
             "PROBE_PYTHON": sys.executable,
             "PYTHONPATH": str(tmp_path),
         }
@@ -1273,25 +1281,42 @@ npcink_ai_cloud_wait_for_internal_endpoint \
     )
 
     assert completed.returncode == 0, completed.stderr
-    received_headers = json.loads(capture_path.read_text(encoding="utf-8"))
-    assert received_headers == {
+    received = json.loads(capture_path.read_text(encoding="utf-8"))
+    assert received["timeout"] == expected_timeout
+    assert received["headers"] == {
         "host": "cloud.npc.ink",
         "x-npcink-internal-token": "internal-test-token",
     }
 
 
 @pytest.mark.parametrize(
-    ("heartbeat_time", "change_container_ids", "expected_error"),
+    (
+        "heartbeat_time", "change_container_ids", "request_timeout",
+        "simulated_latency", "expected_error",
+    ),
     [
         (
             "2026-07-20T00:00:00.500000Z",
             False,
+            "30",
+            0,
             "New worker heartbeat proof did not pass",
         ),
         (
             "2026-07-20T00:00:02.500000Z",
             True,
+            "30",
+            0,
             "Worker container changed during the stability window",
+        ),
+        ("2026-07-20T00:00:02.500000Z", False, "30", 16, ""),
+        (
+            "2026-07-20T00:00:02.500000Z", False, "5", 16,
+            "New worker heartbeat proof did not pass",
+        ),
+        (
+            "2026-07-20T00:00:02.500000Z", False, "61", 0,
+            "Operational readiness request timeout must be an integer from 1 to 60",
         ),
     ],
 )
@@ -1299,6 +1324,8 @@ def test_cutover_worker_proof_rejects_stale_heartbeat_or_replaced_container(
     tmp_path: Path,
     heartbeat_time: str,
     change_container_ids: bool,
+    request_timeout: str,
+    simulated_latency: int,
     expected_error: str,
 ) -> None:
     release = tmp_path / "release-next"
@@ -1391,7 +1418,12 @@ class Response:
             }
         ).encode("utf-8")
 
-urllib.request.urlopen = lambda *_args, **_kwargs: Response()
+def urlopen(_request, timeout=0):
+    if timeout < int(os.environ["SIMULATED_LATENCY"]):
+        raise TimeoutError("simulated cross-region projection timeout")
+    return Response()
+
+urllib.request.urlopen = urlopen
 """
     _write(tmp_path / "sitecustomize.py", sitecustomize)
 
@@ -1404,6 +1436,8 @@ urllib.request.urlopen = lambda *_args, **_kwargs: Response()
             "ID_CALL_DIR": str(tmp_path),
             "CHANGE_CONTAINER_IDS": "1" if change_container_ids else "0",
             "HEARTBEAT_TIME": heartbeat_time,
+            "SIMULATED_LATENCY": str(simulated_latency),
+            "NPCINK_CLOUD_OPERATIONAL_READY_REQUEST_TIMEOUT_SECONDS": request_timeout,
             "NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL": "1",
             "NPCINK_CLOUD_WORKER_READINESS_ATTEMPTS": "1",
             "NPCINK_CLOUD_WORKER_READINESS_SLEEP_SECONDS": "0",
@@ -1424,9 +1458,13 @@ urllib.request.urlopen = lambda *_args, **_kwargs: Response()
         check=False,
     )
 
+    if not expected_error:
+        assert completed.returncode == 0, completed.stderr
+        assert "operationally ready before public traffic" in completed.stdout
+        return
     assert completed.returncode != 0
     assert expected_error in completed.stderr
-    if not change_container_ids:
+    if heartbeat_time.endswith("00.500000Z"):
         assert "runtime_queue" in completed.stderr
 
 

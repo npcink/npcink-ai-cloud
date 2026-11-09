@@ -27,6 +27,8 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
+OPERATIONAL_REQUEST_TIMEOUT="$(npcink_ai_cloud_operational_request_timeout)"
+
 if [ "${NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL:-0}" = "1" ]; then
 	npcink_ai_cloud_require_cmd docker
 	npcink_ai_cloud_require_release_tool_python "${RELEASE_TOOL_PYTHON}"
@@ -127,7 +129,8 @@ PY
 	npcink_ai_cloud_compose "${ROOT_DIR}" exec -T api python - \
 		"${WORKER_CUTOFF}" \
 		"${NPCINK_CLOUD_WORKER_READINESS_ATTEMPTS:-30}" \
-		"${NPCINK_CLOUD_WORKER_READINESS_SLEEP_SECONDS:-2}" <<'PY'
+		"${NPCINK_CLOUD_WORKER_READINESS_SLEEP_SECONDS:-2}" \
+		"${OPERATIONAL_REQUEST_TIMEOUT}" <<'PY'
 from __future__ import annotations
 
 from datetime import datetime
@@ -141,7 +144,7 @@ import urllib.request
 
 from app.core.runtime_config import production_runtime_enabled, read_internal_auth_token
 
-cutoff_raw, attempts_raw, sleep_raw = sys.argv[1:]
+cutoff_raw, attempts_raw, sleep_raw, request_timeout_raw = sys.argv[1:]
 required_workers = {"runtime_queue", "callback_dispatch", "ops_cadence"}
 
 def parse_timestamp(value: str) -> datetime:
@@ -151,6 +154,7 @@ try:
     cutoff = parse_timestamp(cutoff_raw)
     attempts = int(attempts_raw)
     sleep_seconds = float(sleep_raw)
+    request_timeout_seconds = int(request_timeout_raw)
 except (TypeError, ValueError) as exc:
     raise SystemExit(f"[fail] Invalid worker readiness timing configuration: {exc}") from exc
 if attempts < 1 or sleep_seconds < 0:
@@ -186,7 +190,7 @@ request = urllib.request.Request(
 last_error = "no response"
 for attempt in range(attempts):
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=request_timeout_seconds) as response:
             payload = json.load(response)
         items = payload.get("data", {}).get("workers", {}).get("items", [])
         observed: dict[str, datetime] = {}
@@ -312,6 +316,8 @@ printf '%s\n%s\n%s\n' \
 chmod 0600 "${REQUEST_HEADERS}"
 unset INTERNAL_AUTH_TOKEN READINESS_HOST READINESS_FORWARD_PROTO
 curl -fsS \
+	--connect-timeout 5 \
+	--max-time "${OPERATIONAL_REQUEST_TIMEOUT}" \
 	--header "@${REQUEST_HEADERS}" \
 	"${BASE_URL%/}/health/operational-ready" >/dev/null
 if ! rm -f -- "${REQUEST_HEADERS}"; then
