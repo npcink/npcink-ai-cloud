@@ -94,6 +94,11 @@ test('registration access saves a restricted policy and protects unsaved changes
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   expect((await emails.boundingBox())?.height).toBeGreaterThanOrEqual(144);
   await toggle.click();
+  await emails.fill('invalid-email');
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', { name: /Save registration policy|保存注册策略/ }).click();
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toBeVisible();
+  expect(state.writes).toBe(0);
   await emails.fill('tester@example.com\nsecond@example.com');
   await page.getByRole('tab', { name: /QQ/ }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -468,8 +473,10 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   const baseUrlInput = page.getByRole('textbox', { name: /Base URL|基础 URL/i });
   const saveBaseUrl = page.getByRole('button', { name: /Save base URL|保存基础地址/i });
   await baseUrlInput.fill('not-a-url');
+  await expect(page.getByText(/valid HTTP or HTTPS|有效的 HTTP 或 HTTPS/i)).toHaveCount(0);
+  await saveBaseUrl.click();
   await expect(page.getByText(/valid HTTP or HTTPS|有效的 HTTP 或 HTTPS/i)).toBeVisible();
-  await expect(saveBaseUrl).toBeDisabled();
+  await expect(saveBaseUrl).toBeEnabled();
 
   await baseUrlInput.fill('https://new.example.test');
   await expect(page.getByText(/Unsaved changes|存在未保存更改/i)).toBeVisible();
@@ -517,6 +524,8 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await page.getByRole('switch', { name: /Enable QQ quick login|启用 QQ 快捷登录/i }).click();
   await page.getByRole('textbox', { name: 'App ID' }).fill('qq-app-e2e');
   await expect(page.getByRole('button', { name: /Check QQ settings|检查 QQ 配置/i })).toBeDisabled();
+  await expect(page.getByText(/Enter the QQ App Secret|请输入 QQ App Secret/i)).toHaveCount(0);
+  await page.locator('#service-settings-qq button[type=submit]').click();
   await expect(page.getByText(/Enter the QQ App Secret|请输入 QQ App Secret/i)).toBeVisible();
   await page.getByRole('button', { name: /Restore saved values|恢复已保存值/i }).click();
 
@@ -759,7 +768,8 @@ test('payment configuration stays disabled until the operator saves a public bas
     /will not use the current browser address|不会使用当前浏览器地址/i
   );
   await page.getByRole('switch', { name: /Enable Alipay payment|启用支付宝支付/i }).click();
-  await expect(page.getByRole('button', { name: /Save Alipay configuration|保存支付宝配置/i })).toBeDisabled();
+  await page.getByRole('button', { name: /Save Alipay configuration|保存支付宝配置/i }).click();
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toBeVisible();
   await expect(page.locator('#service-settings-payment input[readonly]').first()).toHaveValue('');
 });
 
@@ -819,20 +829,32 @@ test('Provider budget dropdown uses runtime IDs and retains unavailable saved en
     }})});
   });
   await page.goto('/admin/service-settings?tab=provider-budget');
-  await page.getByRole('tab', { name: /Provider.*budget|Provider.*预算/i }).click();
-  await page.locator('[data-ui="provider-budget-provider-list"] > summary').click();
-  const first = page.getByRole('combobox', {name: 'Provider ID 1', exact: true});
+  await page.getByRole('tab', { name: /AI budget|AI 估算预算/i }).click();
+  const first = page.getByRole('combobox', {name: /^(Supplier|服务商) 1$/, exact: true});
   await expect(first).toHaveValue('retired-provider');
   await expect(first.locator('option[value="retired-provider"]')).toContainText(/unavailable|不可用/);
   await first.selectOption('openai');
   await expect(first).toHaveValue('openai');
   await expect(first.locator('option[value="openai"]')).toHaveCount(1);
   await expect(first.locator('option[value="openai"]')).toContainText('Npcink Cloud / Backup (openai)');
-  await page.getByRole('button', {name: /Add Provider|添加 Provider/i}).click();
-  const second = page.getByRole('combobox', {name: 'Provider ID 2', exact: true});
-  await expect(second.locator('option[value="openai"]')).toHaveJSProperty('disabled', true);
-  await second.selectOption('deepseek');
+  await page.getByRole('button', {name: /Add supplier|添加服务商/i}).click();
+  let addDialog = page.getByRole('dialog', { name: /Add supplier budget|添加服务商预算/i });
+  await expect(addDialog).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+  await addDialog.getByRole('button', { name: /Cancel|取消/i, exact: true }).click();
+  await expect(addDialog).toHaveCount(0);
+  await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', {name: /Add supplier|添加服务商/i}).click();
+  addDialog = page.getByRole('dialog', { name: /Add supplier budget|添加服务商预算/i });
+  await expect(addDialog).toBeVisible();
+  await addDialog.getByRole('button', { name: /Add supplier|添加服务商/i, exact: true }).click();
+  await expect(addDialog.getByRole('alert')).toContainText(/Select a supplier|请先选择服务商/);
+  await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+  await addDialog.getByRole('combobox', {name: /^(Supplier|服务商)$/i}).selectOption('deepseek');
+  await addDialog.getByRole('button', { name: /Add supplier|添加服务商/i, exact: true }).click();
+  const second = page.getByRole('combobox', {name: /^(Supplier|服务商) 2$/, exact: true});
   await expect(second).toHaveValue('deepseek');
+  await expect(addDialog).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -903,8 +925,10 @@ for (const group of ['qq', 'email', 'payment'] as const) {
     await panel.getByRole('button', { name: /Replace credential|替换凭据/ }).first().click();
     const credential = panel.locator('[data-ui="admin-credential-field"] input, [data-ui="admin-credential-field"] textarea').first();
     await credential.fill('   ');
+    await expect(panel).not.toContainText(/cannot contain only whitespace|不能只有空白字符/);
+    await panel.locator('button[type="submit"]').click();
     await expect(panel).toContainText(/cannot contain only whitespace|不能只有空白字符/);
-    await expect(panel.locator('button[type="submit"]')).toBeDisabled();
+    await expect(panel.locator('button[type="submit"]')).toBeEnabled();
     expect(state.writes).toBe(0);
     if (group === 'email') {
       await credential.fill('fixture-replacement');
@@ -941,7 +965,7 @@ for (const invalid of ['connections', 'items'] as const) {
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/admin/service-settings');
     await expect(page.getByRole('textbox', { name: /^Base URL$|^基础 URL$/i })).toBeEnabled();
-    await page.getByRole('tab', { name: /Provider.*budget|Provider.*预算/i }).click();
+    await page.getByRole('tab', { name: /AI budget|AI 估算预算/i }).click();
     const warning = page.locator('[data-ui="provider-budget-runtime-unavailable"]');
     await expect(warning).toBeVisible();
     const threshold = page.getByRole('spinbutton').first();
@@ -993,4 +1017,266 @@ test('service explicit rejection retains an editable draft without reconciliatio
   await expect(base).toHaveValue('https://rejected.example.test');
   expect(state.reads).toBe(1);
   expect(state.writes).toBe(1);
+});
+
+for (const locale of ['zh-CN', 'en'] as const) {
+  test(`estimated budget keeps limits visible and saves collapsed advanced settings in ${locale}`, async ({ page }, testInfo) => {
+    const evidence = observeAdminBrowserEvidence(page);
+    await page.addInitScript((value) => {
+      localStorage.setItem('locale', value);
+      localStorage.setItem('theme', value === 'en' ? 'dark' : 'light');
+    }, locale);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const state = await installSettingsRecoveryHarness(page);
+    const budget = {
+      ...setting('provider_account_spend_budget', 'ready', {
+        warning_ratio: 0.8, conservative_unpriced_cost_usd: 0.05, require_provider_configuration: false,
+        providers: [{ provider_id: 'siliconflow', account_class: 'paid', daily_usd: 0.5, monthly_usd: 2.5 }],
+      }),
+      runtime: { status: 'ok', warning_ratio: 0.8, configured_provider_count: 1, missing_provider_ids: [],
+        generated_at: '', period_timezone: 'UTC',
+        connections: [
+          { provider_id: 'siliconflow', connection_id: 'siliconflow', display_name: 'SiliconFlow', enabled: true },
+          { provider_id: 'deepseek', connection_id: 'deepseek', display_name: 'DeepSeek', enabled: true },
+        ],
+        items: ['day', 'month'].map((period_kind) => ({ provider_id: 'siliconflow', account_class: 'paid', period_kind,
+          period_start_at: '', period_end_at: '', limit_cost_usd: period_kind === 'day' ? 0.5 : 2.5,
+          reserved_cost_usd: 0.12, remaining_cost_usd: period_kind === 'day' ? 0.38 : 2.38,
+          utilization_ratio: period_kind === 'day' ? 0.24 : 0.048, warning: false, exceeded: false })),
+      },
+    };
+    let submitted: unknown;
+    let rejectSave = true;
+    await page.route('**/api/admin/service-settings**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: buildAdminApiEnvelope({ settings: { ...state.settings, provider_budget: budget } }) });
+      } else if (rejectSave) {
+        await route.fulfill({ status: 400, json: buildAdminApiErrorEnvelope('Budget configuration rejected', 'service_settings.provider_budget_invalid') });
+      } else {
+        submitted = route.request().postDataJSON();
+        budget.config = route.request().postDataJSON();
+        await route.fulfill({ json: buildAdminApiEnvelope(budget) });
+      }
+    });
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.goto('/admin/service-settings?tab=provider-budget');
+    const panel = page.getByRole('tabpanel');
+    const daily = page.getByRole('spinbutton', { name: /^(Daily estimate limit \(USD\)|每日估算上限（USD）) 1$/ });
+    const advanced = page.locator('[data-ui="provider-budget-advanced"]');
+    const help = page.locator('[data-ui="provider-budget-help"]');
+    await expect(daily).toBeVisible();
+    await expect(page.getByRole('cell', { name: '$0.1200 / $0.5000', exact: true })).toBeVisible();
+    await expect(panel).toContainText(/Actual charges follow your API supplier bill|实际扣费以 API 厂商账单为准/);
+    await expect(advanced).not.toHaveAttribute('open', '');
+    await expect(advanced.locator('summary')).toContainText(/may call without this limit|允许调用，不受此预算限制/);
+    const addProviderButton = page.getByRole('button', { name: /Add supplier|添加服务商/i });
+    await addProviderButton.click();
+    const addProviderDialog = page.getByRole('dialog', { name: /Add supplier budget|添加服务商预算/i });
+    await expect(addProviderDialog).toBeVisible();
+    await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+    const addSupplier = addProviderDialog.getByRole('combobox', { name: /^(Supplier|服务商)$/ });
+    const confirmAdd = addProviderDialog.getByRole('button', { name: /Add supplier|添加服务商/i, exact: true });
+    await expect(addProviderDialog.getByRole('alert')).toHaveCount(0);
+    await expect(addSupplier.locator('option[value="siliconflow"]')).toHaveJSProperty('disabled', true);
+    await expect(page.getByRole('button', { name: /Save estimated budget|保存估算预算/ })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-add-dialog-${locale}.png`), fullPage: true });
+    await confirmAdd.click();
+    await expect(addProviderDialog.getByRole('alert')).toContainText(/Select a supplier before adding|请先选择服务商/);
+    await expect(page.locator('main').getByRole('alert')).toHaveCount(0);
+    await addSupplier.selectOption('deepseek');
+    await addProviderDialog.getByRole('spinbutton', { name: /Daily estimate limit|每日估算上限/ }).fill('0');
+    await confirmAdd.click();
+    await expect(addProviderDialog.getByRole('alert')).toContainText(/positive daily and monthly|每日和每月估算上限必须大于 0/);
+    await page.keyboard.press('Escape');
+    await expect(addProviderDialog).toHaveCount(0);
+    await expect(addProviderButton).toBeFocused();
+    await expect(page.getByRole('button', { name: /Save estimated budget|保存估算预算/ })).toBeDisabled();
+    await expect(panel.getByRole('combobox', { name: /^(Supplier|服务商) 2$/ })).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-${locale}-1440.png`), fullPage: true });
+    await panel.screenshot({ path: testInfo.outputPath(`estimated-budget-panel-${locale}.png`) });
+    await help.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(help).toHaveAttribute('open', '');
+    await expect(help).toContainText('$0.40');
+    await expect(help).toContainText(/08:00/);
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-help-${locale}.png`), fullPage: true });
+    await help.locator('summary').click();
+    await advanced.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    const reserve = page.getByRole('spinbutton', { name: /Reserve per call without a price|无参考价格时，每次预留/ });
+    await reserve.fill('0');
+    await expect(page.locator('[data-ui="service-settings-active-state"]')).not.toHaveAttribute('role', 'alert');
+    const save = page.getByRole('button', { name: /Save estimated budget|保存估算预算/ });
+    await expect(save).toBeEnabled();
+    await advanced.locator('summary').click();
+    await expect(page.locator('main').getByRole('alert')).toBeVisible();
+    await advanced.locator('summary').click();
+    await reserve.fill('0.08');
+    await page.getByRole('switch', { name: /Block suppliers without a budget|未设置预算的服务商禁止调用/ }).click();
+    await advanced.locator('summary').click();
+    await expect(advanced.locator('summary')).toContainText(/are blocked|禁止调用/);
+    await daily.fill('0.6');
+    await addProviderButton.click();
+    await expect(addSupplier).toHaveValue('');
+    await expect(addProviderDialog.getByRole('alert')).toHaveCount(0);
+    await addSupplier.selectOption('deepseek');
+    await addProviderDialog.getByRole('spinbutton', { name: /Daily estimate limit|每日估算上限/ }).fill('0.7');
+    await addProviderDialog.getByRole('spinbutton', { name: /Monthly estimate limit|每月估算上限/ }).fill('3.5');
+    await page.setViewportSize({ width: 1056, height: 800 });
+    expect(await addProviderDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-add-filled-${locale}-1056.png`), fullPage: true });
+    await addProviderDialog.getByRole('button', { name: /Cancel|取消/, exact: true }).click();
+    await expect(daily).toHaveValue('0.6');
+    await expect(panel.getByRole('combobox', { name: /^(Supplier|服务商) 2$/ })).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await addProviderButton.click();
+    await addSupplier.selectOption('deepseek');
+    await addProviderDialog.getByRole('spinbutton', { name: /Daily estimate limit|每日估算上限/ }).fill('0.7');
+    await addProviderDialog.getByRole('spinbutton', { name: /Monthly estimate limit|每月估算上限/ }).fill('3.5');
+    await addProviderDialog.getByRole('button', { name: /Close|关闭/, exact: true }).focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(confirmAdd).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(addProviderDialog.getByRole('button', { name: /Close|关闭/, exact: true })).toBeFocused();
+    await confirmAdd.click();
+    await expect(addProviderDialog).toHaveCount(0);
+    await expect(panel.getByRole('combobox', { name: /^(Supplier|服务商) 2$/ })).toHaveValue('deepseek');
+    expect(submitted).toBeUndefined();
+    await page.getByRole('tab', { name: /QQ/ }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: /Cancel|取消/, exact: true }).click();
+    await expect(daily).toHaveValue('0.6');
+    await save.click();
+    await expect(page.locator('main').getByRole('alert')).toBeVisible();
+    await expect(daily).toBeEnabled();
+    await expect(daily).toHaveValue('0.6');
+    await expect(advanced).not.toHaveAttribute('open', '');
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-save-error-${locale}.png`), fullPage: true });
+    rejectSave = false;
+    await save.click();
+    await expect(save).toBeDisabled();
+    expect(submitted).toEqual({ enabled: true, warning_ratio: 0.8, conservative_unpriced_cost_usd: 0.08,
+      require_provider_configuration: true,
+      providers: [
+        { provider_id: 'siliconflow', account_class: 'paid', daily_usd: 0.6, monthly_usd: 2.5 },
+        { provider_id: 'deepseek', account_class: 'paid', daily_usd: 0.7, monthly_usd: 3.5 },
+      ] });
+    await expect(daily).toBeEnabled();
+    await page.getByRole('button', { name: 'Close notification' }).click();
+    await page.setViewportSize({ width: 1056, height: 800 });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expect(daily).toBeVisible();
+    await advanced.locator('summary').click();
+    await expect(reserve).toHaveValue('0.08');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath(`estimated-budget-advanced-${locale}-1056.png`), fullPage: true });
+    await advanced.locator('summary').click();
+    await writeAdminVisualReceipt({ page, testInfo, route: '/admin/service-settings', pageModel: 'configuration',
+      testedStates: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'], pageTitle: page.getByRole('heading', { name: /Service Settings|服务设置/, level: 1 }),
+      workingSurface: page.locator('[data-ui="admin-settings-workbench"]'), browserEvidence: evidence,
+      environment: 'local', dataMode: 'mocked', expectedConsoleErrors: [/400 \(Bad Request\)/], artifactId: `estimated-budget-${locale.toLowerCase()}`,
+      routeRuleResults: [
+        { id: 'single-primary-action', status: 'pass', evidence: 'One save action; supplier add/remove are secondary.' },
+        { id: 'textual-status', status: 'pass', evidence: 'Budget state and unconfigured-supplier policy remain visible while details are closed.' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'Supplier limits and controls are visible together without disclosure.' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'Saved button disabled; keyboard opens named disclosures; dirty state survives cancellation.' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Add dialog contains Tab focus; Escape restores trigger focus; cancelling keeps the original page draft.' },
+        { id: 'context-stability', status: 'pass', evidence: 'Collapsed advanced edits reach the unchanged PATCH payload and survive readback.' },
+      ],
+      interactionResults: [{ id: 'budget-save', status: 'pass', evidence: 'Exact budget payload, advanced disclosure, keyboard help, supplier add dialog Escape recovery and 1056px overflow verified.' }],
+    });
+    expect(evidence.consoleErrors.filter((error) => !/400 \(Bad Request\)/.test(error))).toEqual([]);
+  });
+}
+
+
+test('field validation waits for blur or submit without exposing untouched sibling errors', async ({ page }, info) => {
+  const state = await installSettingsRecoveryHarness(page);
+  state.settings.qq_login.enabled = true;
+  state.settings.qq_login.status = 'missing_config';
+  await page.setViewportSize({ width: 1056, height: 800 });
+  await page.goto('/admin/service-settings?tab=qq');
+  const panel = page.getByRole('tabpanel');
+  const appId = page.getByRole('textbox', { name: 'App ID', exact: true });
+  const save = panel.locator('button[type=submit]');
+  await expect(page.getByRole('tab', { name: /QQ.*Not configured|QQ.*未配置/ })).toBeVisible();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await appId.fill('draft');
+  await appId.clear();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.getByRole('heading').click();
+  await expect(panel.getByRole('alert')).toContainText(/Enter the QQ App ID|请输入 QQ App ID/);
+  await expect(panel).not.toContainText(/Enter the QQ App Secret|请输入 QQ App Secret/);
+  await appId.fill('draft');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await save.click();
+  await expect(panel.getByRole('alert')).toContainText(/Enter the QQ App Secret|请输入 QQ App Secret/);
+  expect(state.writes).toBe(0);
+  await panel.screenshot({ path: info.outputPath('qq-validation-on-submit-1056.png') });
+  await page.getByRole('button', { name: /Restore saved values|恢复已保存值/ }).click();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+});
+
+test('test-account limits distinguish blank from zero and hidden reserve limits block writes', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  Object.assign(state.settings, { provider_budget: {
+    ...setting('provider_account_spend_budget', 'disabled', {
+      warning_ratio: 0.8, conservative_unpriced_cost_usd: 0.05,
+      require_provider_configuration: true, providers: [],
+    }),
+    runtime: { status: 'disabled', warning_ratio: 0.8, configured_provider_count: 0,
+      missing_provider_ids: [], generated_at: '', period_timezone: 'UTC', items: [],
+      connections: [{ provider_id: 'test-supplier', display_name: 'Test supplier', provider_type: 'openai', enabled: true }],
+    },
+  } });
+  await page.goto('/admin/service-settings?tab=provider-budget');
+  await page.getByRole('button', { name: /Add supplier|添加服务商/, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: /^(Supplier|服务商)$/ }).selectOption('test-supplier');
+  await dialog.getByRole('combobox', { name: /Account type|账户类型/ }).selectOption('test');
+  const draftDaily = dialog.getByRole('spinbutton', { name: /Daily estimate limit|每日估算上限/ });
+  await draftDaily.clear();
+  await dialog.getByRole('button', { name: /Add supplier|添加服务商/, exact: true }).click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await draftDaily.fill('0');
+  await dialog.getByRole('spinbutton', { name: /Monthly estimate limit|每月估算上限/ }).fill('0');
+  await dialog.getByRole('button', { name: /Add supplier|添加服务商/, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const daily = page.getByRole('spinbutton', { name: /^(Daily estimate limit.*|每日估算上限.*) 1$/ });
+  await expect(daily).toHaveValue('0');
+  await daily.clear();
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toHaveCount(0);
+  const save = page.getByRole('button', { name: /Save estimated budget|保存估算预算/ });
+  await save.click();
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toBeVisible();
+  expect(state.writes).toBe(0);
+  await daily.fill('0');
+  const advanced = page.locator('[data-ui="provider-budget-advanced"]');
+  await advanced.locator('summary').click();
+  await page.getByRole('spinbutton', { name: /Reserve per call without a price|无参考价格时，每次预留/ }).fill('1001');
+  await advanced.locator('summary').click();
+  await save.click();
+  await expect(page.getByRole('tabpanel').getByRole('alert')).toContainText(/1000/);
+  expect(state.writes).toBe(0);
+});
+
+test('accounting rate keeps its minimum while input feedback waits for submit', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  Object.assign(state.settings, { accounting_fx: setting('accounting_fx', 'ready', {
+    usd_cny_rate: 7, effective_date: '2026-11-01', source: 'Operator reference', note: '',
+  }) });
+  await page.goto('/admin/service-settings?tab=accounting');
+  const panel = page.getByRole('tabpanel');
+  const rate = page.locator('[data-configuration-row="accounting-fx-rate"] input');
+  await rate.fill('0.0000001');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.locator('button[type="submit"]').click();
+  await expect(panel.getByRole('alert')).toContainText(/0\.000001/);
+  expect(state.writes).toBe(0);
+  await rate.fill('7.1');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
 });

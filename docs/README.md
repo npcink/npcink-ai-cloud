@@ -81,6 +81,7 @@ product work or override the current Phase 1 expansion freeze.
 | 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
 | 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
 | 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract) — 常显/按需/技术证据/去重；§8–11 归纳历批 27 路由取舍、状态保护、来源与布局选型，供后续 AI 防回退；[逐页落实台账](admin-information-hierarchy-implementation-ledger.md) 记录每项处置和证据；[2026-10-29 逐页审查](history/admin/2026/records/admin-information-hierarchy-audit-2026-10-29.md) 是定点建议，不是已完成的界面改造 |
+| 修复表单提示过早或优化新增填写 | [表单提示与弹窗规则 §15](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-form-feedback-contract) — 字段离开/提交校验、真实异常常显、独立新增草稿与取消语义、范围绑定、完整提交守卫及定向验证；[本次修复记录](admin-information-hierarchy-implementation-ledger.md#表单提示时机与新增账单录入2026-11-09) 区分本地、M4候选和待验收状态 |
 | 维护套餐参数并发、草稿及未知结果 | [CAS 契约](admin-plan-parameters-concurrency-v1.md)、[原操作证据与草稿恢复](admin-plan-parameter-evidence-drafts-v1.md) — 现有九字段编辑器；1A 已集成，1B 验证状态单列 |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
 | 查工程债与暂缓清理队列 | [工程跟进队列](engineering-follow-up-queue-v1.md) — 低收益项的触发条件与已完成整改索引 |

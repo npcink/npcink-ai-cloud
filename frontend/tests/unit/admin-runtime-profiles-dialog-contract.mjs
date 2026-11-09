@@ -283,7 +283,7 @@ assert.match(pageSource, /onSubmit=\{\(\) => void saveProfiles\(\)\}/, 'the usag
 assert.match(saveSource, /if \(profileAdvancedOpen\) \{ returnToCandidateChain\(\); return; \}/, 'submitting advanced settings returns to the draft without a request');
 assert.doesNotMatch(pageSource, /<BackofficeDisclosure summary=\{copy\('advanced_settings'/, 'advanced settings must not restore the large disclosure bar');
 assert.match(pageSource, /data-ui="runtime-profile-advanced-trigger"[\s\S]*onClick=\{openAdvancedSettings\}/, 'advanced settings use a named text action beside the dialog title');
-assert.match(saveSource, /if \(advancedValidationError\) \{ openAdvancedSettings\(\); return; \}/, 'invalid hidden advanced values must be corrected before any save request');
+assert.match(saveSource, /if \(advancedValidationError\) \{ setAdvancedValidationAttempted\(true\); openAdvancedSettings\(\); return; \}/, 'invalid hidden advanced values must be corrected before any save request');
 
 assert.match(
   pageSource,
