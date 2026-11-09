@@ -641,8 +641,10 @@ and release tooling must fail closed unless all of the following are true:
   root-owned first-install helper;
 - `complete` carries `database_contract=pg18_empty_initialization.v1` and the
   SHA-256 of the exact protected runtime configuration;
-- the candidate API image loads that protected configuration, resolves the RDS
-  hostname only to approved private addresses, verifies TLS with the stored CA,
+- the candidate API image loads that protected configuration, uses private RDS
+  transport by default or the explicitly configured existing-installation
+  [public RDS transport](public-rds-transport-v1.md), verifies TLS with the stored CA
+  and the unchanged certificate hostname using `verify-full`,
   observes PostgreSQL major version 18, and proves exactly one current Alembic
   revision at the candidate head or one of its known ancestors before old
   writers are stopped;
