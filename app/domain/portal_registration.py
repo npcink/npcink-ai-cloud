@@ -42,7 +42,7 @@ def registration_policy(row: ServiceSetting | None) -> dict[str, Any]:
     try:
         if not row.enabled:
             raise ValueError("registration policy disabled")
-        return normalize_registration_policy(row.config_json)
+        return normalize_registration_policy(row.config_json or {})
     except (ValueError, TypeError, AttributeError):
         return {"public_registration_enabled": False, "email_allowlist": []}
 
