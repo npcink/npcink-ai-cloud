@@ -20,6 +20,74 @@ def test_metadata_list_and_missing_breaks() -> None:
     assert format_structure(result["candidate"])["candidate"] == result["candidate"]
 
 
+@pytest.mark.parametrize("marker", ["*", "-", "+", "•"])
+@pytest.mark.parametrize("ending", ["能", "。", "！", "）", "”"])
+def test_matching_repeated_markers_restore_missing_break(marker: str, ending: str) -> None:
+    text = f"功能<br>{marker} 第一项<br>{marker} 第二项{ending}{marker} 第三项"
+    result = format_structure(paragraph(text))
+    expected = text.replace(f"{ending}{marker} 第三项", f"{ending}<br>{marker} 第三项")
+    assert result["candidate"] == paragraph(expected)
+    assert result["structural_changes"] == 1
+    assert format_structure(result["candidate"])["candidate"] == result["candidate"]
+
+
+def test_explicit_metadata_lines_become_native_items_without_text_changes() -> None:
+    rows = [
+        ' 官网：<a href="/中文AI?x=1&amp;y=2" title="原属性">中文AI</a> ',
+        "价格：229 元 ",
+        "授权： 单站点",
+    ]
+    result = format_structure(paragraph("<br />".join(rows)))
+    assert result["structural_changes"] == 1
+    assert result["candidate"].count("<!-- wp:list-item -->") == 3
+    assert all(f"<li>{row}</li>" in result["candidate"] for row in rows)
+    assert "<br" not in result["candidate"]
+    assert format_structure(result["candidate"])["candidate"] == result["candidate"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "数值 2- 3<br>- 第一项<br>- 第二项",
+        "功能<br>- 第一项<br>+ 第二项- 第三项",
+        "功能<br>* 第一项<br>* 第二项<br>- 第一项<br>- 第二项* 第三项",
+        '功能<br>- 第一项<br>- 第二项<a href="/x">正文- 链接</a>',
+        "来源：甲<br>价格：229 元",  # Only two fields.
+        "来源：甲<br>来源：乙<br>来源：丙",  # Duplicate labels.
+        "正文第一段<br>价格：229 元<br>授权：单站点",
+        "来源：甲。下一句<br>价格：229 元<br>授权：单站点",
+        "来源：甲&#12290;下一句<br>价格：229 元<br>授权：单站点",
+        '来源：<a href="/x">第一句。下一句</a><br>价格：229 元<br>授权：单站点',
+        '来源：<a href="/x">' + "甲" * 121 + "</a><br>价格：229 元<br>授权：单站点",
+        '来源：甲<br class="keep">价格：229 元<br>授权：单站点',
+        "来源：甲<br>价格：229 元<br>授权：单站点<br>",
+        "来源：甲<br>价格：<code>229</code><br>授权：单站点",
+    ],
+)
+def test_new_structure_cases_abstain_from_ambiguous_or_attributed_text(text: str) -> None:
+    source = paragraph(text)
+    result = format_structure(source)
+    assert result["candidate"] == source
+    assert result["structural_changes"] == 0
+
+
+def test_metadata_repairs_keep_protected_siblings_and_nested_layout() -> None:
+    body = "来源：甲<br>价格：229 元<br>授权：单站点"
+    protected = (
+        '<!-- wp:image --><figure class="wp-block-image"><img src="/中文AI.png" '
+        'alt="中文AI"/></figure><!-- /wp:image -->'
+        "<!-- wp:group -->" + paragraph(body) + "<!-- /wp:group -->"
+    )
+    source = protected + paragraph(body)
+    result = format_structure(source)
+    assert result["candidate"].startswith(protected)
+    assert result["status"] == "PARTIAL"
+    assert result["structural_changes"] == 1
+    attributed = '<!-- wp:paragraph {"align":"center"} --><p class="has-text-align-center">'
+    attributed += body + "</p><!-- /wp:paragraph -->"
+    assert format_structure(attributed)["candidate"] == attributed
+
+
 @pytest.mark.parametrize(
     "body",
     [

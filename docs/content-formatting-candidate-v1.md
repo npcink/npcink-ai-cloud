@@ -173,3 +173,31 @@ Rollback removes the formatting dispatch and module and restores the prior
 dependency manifest/lock from reviewed Git. No database migration or WordPress
 data rollback is needed. M4 rollback requires the governed candidate operation
 from the known-good source; source restoration alone does not restore its image.
+
+### Bounded explicit-list maintenance — 2026-11-09
+
+Within the unchanged v2 envelope, missing BR repair also accepts consistent
+repeated `-`, `+` and `•` markers alongside `*`, and a glued marker after Chinese
+sentence punctuation/closing quotes. At least two existing BR-delimited markers
+of the same kind establish context; multiple repeated styles abstain. Only
+unlinked text spans are eligible, and every literal marker remains visible.
+Numbers, formulas, isolated markers and protected linked text do not qualify.
+
+A plain paragraph containing at least three explicit BR-delimited `标签：值`
+rows may become a native unordered list. Every Chinese label must be distinct
+and 2–16 characters; each value must be nonempty, single-line, no more than 120
+visible characters and free of sentence terminators. Existing balanced links,
+attributes, entity spellings and all row whitespace remain exact source slices.
+Attributed BR, code/unsupported markup, empty rows and free-form prose abstain.
+The same existing `structural_changes` counts one list conversion or each
+restored BR. The long-paragraph heuristic and v1 compatibility are unchanged.
+
+References checked for this maintenance:
+[pangu.js protected DOM spans](https://github.com/vinta/pangu.js/blob/999a58e990adfa7c46ece881d57d4e828f66e06e/src/browser/dom/dom-walker.ts)
+and [CommonMark explicit markers / hard versus soft breaks](https://github.com/commonmark/commonmark-spec/blob/8a5f7646e9f67c3004f023d262b3e6b596afc2ed/spec.txt).
+Adopt explicit structural evidence and protected-source handling; do not load
+browser auto-spacing, convert arbitrary HTML as Markdown, delete literal text,
+normalize punctuation, or introduce a third-party runtime dependency.
+Toolbox owns compact result feedback, before/after block counts, independent
+preservation validation and Undo. This source change grants no WordPress write,
+M4 host mutation or production deployment authority.
