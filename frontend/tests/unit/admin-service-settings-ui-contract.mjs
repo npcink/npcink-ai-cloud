@@ -16,7 +16,7 @@ assert.match(
 
 assert.match(
   source,
-  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_accounting', \{\}, '成本核算'\)[\s\S]*label: t\('admin\.service_settings\.tab_provider_budget', \{\}, 'Provider 预算'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)[\s\S]*label: t\('admin\.service_settings\.tab_system', \{\}, 'System settings'\)/,
+  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_accounting', \{\}, '成本核算'\)[\s\S]*label: t\('admin\.service_settings\.tab_provider_budget', \{\}, 'AI 估算预算'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)[\s\S]*label: t\('admin\.service_settings\.tab_system', \{\}, 'System settings'\)/,
   'service settings group navigation must use task-specific Chinese operator labels'
 );
 
@@ -92,7 +92,7 @@ assert.doesNotMatch(source, /window\.confirm/, 'service settings must not use a 
 
 assert.match(
   source,
-  /activeValidationIssues = \(\(\) =>[\s\S]*validation_public_url[\s\S]*validation_qq_app_id[\s\S]*validation_email_host[\s\S]*validation_payment_app_id/,
+  /activeValidationDetails = \(\(\) =>[\s\S]*validation_public_url[\s\S]*validation_qq_app_id[\s\S]*validation_email_host[\s\S]*validation_payment_app_id/,
   'each configuration group must expose contextual client validation'
 );
 
@@ -197,6 +197,32 @@ assert.match(
   /AdminWorkbenchDialog[\s\S]*open=\{emailPreviewOpen\}[\s\S]*titleId="email-preview-drawer-title"[\s\S]*density="compact"/,
   'email template preview must reuse the compact shared workbench instead of route-local dialog code'
 );
+
+assert.match(
+  source,
+  /function addProviderBudgetRow\(\)[\s\S]*setProviderBudgetAddOpen\(true\)/,
+  'adding a supplier must open a dialog instead of inserting an incomplete row into the page draft'
+);
+
+assert.match(
+  source,
+  /AdminWorkbenchDialog[\s\S]*open=\{providerBudgetAddOpen\}[\s\S]*titleId="provider-budget-add-dialog-title"[\s\S]*onSubmit=\{submitProviderBudgetAdd\}/,
+  'supplier budget creation must use the shared dialog and submit only after the modal form is complete'
+);
+
+assert.match(
+  source,
+  /function submitProviderBudgetAdd\(_formData: FormData\)[\s\S]*setProviderBudgetAddError[\s\S]*providerBudgetForm\.providers\.some[\s\S]*setProviderBudgetForm[\s\S]*closeProviderBudgetAdd/,
+  'supplier budget dialog validation must stay local and append only a valid row'
+);
+
+for (const providerBudgetDialogCopy of [
+  "'admin.service_settings.provider_budget_add_title': '添加服务商预算'",
+  "'admin.service_settings.provider_budget_add_footer': '这里只会加入当前页面草稿；要真正应用，请再点击页面上的“保存估算预算”。'",
+  "'admin.service_settings.provider_budget_add_provider_required': '请先选择服务商，再添加预算。'",
+]) {
+  assert.ok(i18nSource.includes(providerBudgetDialogCopy), `provider-budget add dialog copy is registered: ${providerBudgetDialogCopy}`);
+}
 
 assert.match(
   source,

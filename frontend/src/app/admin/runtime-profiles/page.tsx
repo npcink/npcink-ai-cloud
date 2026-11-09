@@ -572,6 +572,9 @@ export default function RuntimeProfilesPage() {
   const drafts = data?.profiles || [];
   const [editingProfile, setEditingProfile] = useState<RuntimeProfile | null>(null);
   const [activeProfileId, setActiveProfileId] = useState('');
+  const [advancedValidationAttempted, setAdvancedValidationAttempted] = useState(false);
+  const [mediaEditingField, setMediaEditingField] = useState('');
+  const [advancedEditingField, setAdvancedEditingField] = useState('');
   const [profileAdvancedOpen, setProfileAdvancedOpen] = useState(false);
   const advancedTriggerRef = useRef<HTMLButtonElement>(null);
   const advancedTimeoutRef = useRef<HTMLInputElement>(null);
@@ -719,11 +722,12 @@ export default function RuntimeProfilesPage() {
     || editingProfile.max_retries !== savedEditingProfile.max_retries
   ));
   const advancedTimeoutMax = (editingProfile?.max_timeout_ms || 120000) / 1000;
-  const advancedValidationError = !editingProfile ? ''
+  const advancedValidationField = !editingProfile ? ''
     : !Number.isInteger(editingProfile.timeout_ms / 1000) || editingProfile.timeout_ms < 1000 || editingProfile.timeout_ms > advancedTimeoutMax * 1000
-      ? copy('advanced_timeout_invalid', 'Enter a whole number of seconds from 1 to {{max}}.', { max: String(advancedTimeoutMax) })
-      : !Number.isInteger(editingProfile.max_retries) || editingProfile.max_retries < 0 || editingProfile.max_retries > 1
-        ? copy('advanced_retries_invalid', 'Enter 0 or 1 retry.') : '';
+      ? 'timeout' : !Number.isInteger(editingProfile.max_retries) || editingProfile.max_retries < 0 || editingProfile.max_retries > 1 ? 'retries' : '';
+  const advancedValidationError = advancedValidationField === 'timeout'
+    ? copy('advanced_timeout_invalid', 'Enter a whole number of seconds from 1 to {{max}}.', { max: String(advancedTimeoutMax) })
+    : advancedValidationField === 'retries' ? copy('advanced_retries_invalid', 'Enter 0 or 1 retry.') : '';
   const mediaRecognitionDirty = mediaRecognitionPolicySnapshot(mediaRecognitionForm) !== mediaRecognitionBaseline;
   const dirty = profileDirty || mediaRecognitionDirty;
   const activeProfiles = drafts.filter((profile) => profile.availability_state !== 'paused');
@@ -745,6 +749,10 @@ export default function RuntimeProfilesPage() {
     : undefined;
   const mediaRecognitionDailyLimit = Number(mediaRecognitionForm.daily_limit);
   const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const mediaValidationField = !clockPattern.test(mediaRecognitionForm.window_start) ? 'window_start'
+    : !clockPattern.test(mediaRecognitionForm.window_end) ? 'window_end'
+      : mediaRecognitionForm.window_start === mediaRecognitionForm.window_end ? (mediaEditingField === 'window_start' ? 'window_start' : 'window_end')
+      : !Number.isInteger(mediaRecognitionDailyLimit) || mediaRecognitionDailyLimit < 1 || mediaRecognitionDailyLimit > 10000 ? 'daily_limit' : '';
   const mediaRecognitionValidationError = mediaRecognitionForm.enabled && !mediaRecognitionModelReady
     ? copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')
     : !clockPattern.test(mediaRecognitionForm.window_start)
@@ -801,6 +809,8 @@ export default function RuntimeProfilesPage() {
     setModelSearch('');
     setProbeError('');
     setProfileAdvancedOpen(false);
+    setAdvancedEditingField('');
+    setAdvancedValidationAttempted(false);
     setEditingProfile({ ...profile, candidate_instance_ids: [...profile.candidate_instance_ids] });
   }
 
@@ -814,6 +824,7 @@ export default function RuntimeProfilesPage() {
   }
 
   function returnToCandidateChain() {
+    setAdvancedEditingField('');
     setProfileAdvancedOpen(false);
     window.requestAnimationFrame(() => advancedTriggerRef.current?.focus());
   }
@@ -973,7 +984,7 @@ export default function RuntimeProfilesPage() {
   async function saveProfiles() {
     if (profileAdvancedOpen) { returnToCandidateChain(); return; }
     if (!editingProfile || operationRef.current || loading || profileRecovery === 'pending') return;
-    if (advancedValidationError) { openAdvancedSettings(); return; }
+    if (advancedValidationError) { setAdvancedValidationAttempted(true); openAdvancedSettings(); return; }
     if (!profileDirty) { setEditingProfile(null); return; }
     const profile = editingProfile;
     if (profile.candidate_instance_ids.some((id) => {
@@ -1140,7 +1151,7 @@ export default function RuntimeProfilesPage() {
           ) : null}
 
     {mediaRecognitionBlocked && !mediaRecognitionDirty && !mediaRecognitionError && !mediaRecognitionExpanded ? <p role="alert" className="mt-2 text-sm text-amber-800 dark:text-amber-200">{copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')}</p> : null}
-          {mediaRecognitionValidationError && mediaRecognitionDirty ? (
+          {mediaRecognitionValidationError && mediaRecognitionDirty && (!mediaRecognitionExpanded || (mediaRecognitionForm.enabled && !mediaRecognitionModelReady) || mediaEditingField !== mediaValidationField) ? (
             <p className="mt-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
               {mediaRecognitionValidationError}
             </p>
@@ -1402,6 +1413,8 @@ export default function RuntimeProfilesPage() {
                     aria-label={copy('media_recognition_window_start', 'Window start')}
                     className="input w-full"
                     type="time"
+                    onFocus={() => setMediaEditingField('window_start')}
+                    onBlur={() => setMediaEditingField('')}
                     value={mediaRecognitionForm.window_start}
                     onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, window_start: event.target.value }))}
                   />
@@ -1409,6 +1422,8 @@ export default function RuntimeProfilesPage() {
                     aria-label={copy('media_recognition_window_end', 'Window end')}
                     className="input w-full"
                     type="time"
+                    onFocus={() => setMediaEditingField('window_end')}
+                    onBlur={() => setMediaEditingField('')}
                     value={mediaRecognitionForm.window_end}
                     onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, window_end: event.target.value }))}
                   />
@@ -1425,6 +1440,8 @@ export default function RuntimeProfilesPage() {
                   min={1}
                   max={10000}
                   step={1}
+                  onFocus={() => setMediaEditingField('daily_limit')}
+                  onBlur={() => setMediaEditingField('')}
                   value={mediaRecognitionForm.daily_limit}
                   onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, daily_limit: event.target.value }))}
                 />}
@@ -1475,7 +1492,7 @@ export default function RuntimeProfilesPage() {
         onSubmit={() => void saveProfiles()}
       >
         {profileRecovery ? <p role="status" className="shrink-0 text-sm text-amber-800 dark:text-amber-200">{profileRecovery === 'pending' ? copy('write_unknown', 'The save result is unknown. Your draft is retained; saving is paused until the latest state can be read. Recovery only reads.') : copy('write_recovered', 'Latest state read. Your draft is retained for comparison; recovery did not submit another save.')}</p> : null}
-        {advancedValidationError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{advancedValidationError}</p> : null}
+        {advancedValidationError && (advancedValidationAttempted || advancedEditingField !== advancedValidationField) ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{advancedValidationError}</p> : null}
         {probeError ? (
           <div
             role="alert"
@@ -1496,12 +1513,14 @@ export default function RuntimeProfilesPage() {
                   <input
                     ref={advancedTimeoutRef}
                     id="runtime-profile-timeout"
+                    onFocus={() => setAdvancedEditingField('timeout')}
+                    onBlur={() => setAdvancedEditingField('')}
                     type="number"
                     min={1}
                     max={(editingProfile.max_timeout_ms || 120000) / 1000}
                     step={1}
                     value={editingProfile.timeout_ms / 1000}
-                    onChange={(event) => updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) * 1000 })}
+                    onChange={(event) => { setAdvancedValidationAttempted(false); updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) * 1000 }); }}
                     className="input w-36"
                     aria-label={copy('timeout', 'Timeout')}
                   />
@@ -1531,11 +1550,13 @@ export default function RuntimeProfilesPage() {
                 value={(
                   <input
                     id="runtime-profile-retries"
+                    onFocus={() => setAdvancedEditingField('retries')}
+                    onBlur={() => setAdvancedEditingField('')}
                     type="number"
                     min={0}
                     max={1}
                     value={editingProfile.max_retries}
-                    onChange={(event) => updateProfile(editingProfile.profile_id, { max_retries: Number(event.target.value) })}
+                    onChange={(event) => { setAdvancedValidationAttempted(false); updateProfile(editingProfile.profile_id, { max_retries: Number(event.target.value) }); }}
                     className="input w-24"
                     aria-label={copy('retries', 'Retries')}
                   />

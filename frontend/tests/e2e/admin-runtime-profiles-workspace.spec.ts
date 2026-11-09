@@ -768,7 +768,12 @@ test('enabled models missing from the latest upstream catalog remain visible for
   await expect(page.locator('[data-configuration-row="media-recognition-timezone"]')).toContainText(/Platform timezone|平台时区/i);
   await expect(page.locator('[data-configuration-row="media-recognition-timezone"] a')).toHaveAttribute('href', '/admin/service-settings?tab=system');
   await recognitionSwitch.click();
-  await page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i }).fill('25');
+  const dailyLimit = page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i });
+  await dailyLimit.clear();
+  await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+  await page.getByRole('dialog').getByRole('heading').click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await dailyLimit.fill('25');
   const savePolicy = page.getByRole('button', { name: /Save recognition policy|保存识别策略/i });
   failNextPolicySave = true;
   await savePolicy.click();
@@ -1272,10 +1277,14 @@ test('policy recovery only reads, retains its draft, and validates each required
   const end = section.getByLabel(/Window end|结束时间/);
   const save = section.getByRole('button', { name: /Save recognition policy|保存识别策略/ });
   await start.fill('');
+  await expect(section.getByRole('alert')).toHaveCount(0);
+  await end.focus();
   await expect(save).toBeDisabled();
   await expect(section).toContainText(/start time in HH:mm|HH:mm 格式的开始时间/);
   await start.fill('02:00');
   await end.fill('');
+  await expect(section.getByRole('alert')).toHaveCount(0);
+  await start.focus();
   await expect(save).toBeDisabled();
   await expect(section).toContainText(/end time in HH:mm|HH:mm 格式的结束时间/);
   await end.fill('02:00');
@@ -1441,6 +1450,9 @@ test('advanced settings use a compact dialog and return to the candidate draft w
   await expect(retries).toHaveValue('1');
   await expect(dialog.getByRole('checkbox')).not.toBeChecked();
   await timeout.fill('0');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await retries.focus();
+  await expect(dialog.getByRole('alert')).toContainText(/whole number|整数/);
   await page.keyboard.press('Escape');
   await expect(dialog.getByRole('alert')).toBeVisible();
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
@@ -1449,6 +1461,9 @@ test('advanced settings use a compact dialog and return to the candidate draft w
   expect(writes).toHaveLength(0);
   await timeout.fill('40');
   await retries.fill('2');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await timeout.focus();
+  await expect(dialog.getByRole('alert')).toBeVisible();
   await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
   await expect(dialog).toHaveAccessibleName(/Advanced settings|高级设置/);
