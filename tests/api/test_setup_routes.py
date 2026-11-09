@@ -773,6 +773,44 @@ def test_install_rejects_public_origin_that_differs_from_bootstrap_origin(
     assert "migrate" not in validator.events
 
 
+@pytest.mark.parametrize("endpoint", ("/setup/v1/database/test", "/setup/v1/install"))
+def test_setup_api_cannot_enable_operator_only_public_database_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    validator = FakeDatabaseValidator()
+    service = _service(tmp_path, validator)
+    client = _client(monkeypatch, service)
+    session = client.post(
+        "/setup/v1/session",
+        json={"setup_code": SETUP_CODE},
+        headers={"X-Real-IP": "10.0.0.8"},
+    )
+    assert session.status_code == 200
+    database = _database_payload(_ca_pem())
+    database["public_host"] = "rm-test-public.pg.rds.aliyuncs.com"
+    payload: dict[str, object] = database
+    if endpoint.endswith("/install"):
+        payload = {
+            "cloud_name": "Test Cloud",
+            "public_base_url": "https://testserver",
+            "database": database,
+        }
+
+    response = client.post(
+        endpoint,
+        json=payload,
+        headers={"Idempotency-Key": "public-transport-not-in-setup"},
+    )
+
+    assert response.status_code == 422
+    assert not validator.events
+    assert service.store.read_state().installation_state == "pending"
+    assert not service.store.runtime_config_path.exists()
+    assert "database-secret" not in response.text
+
+
 def test_database_failure_response_does_not_expose_credentials(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

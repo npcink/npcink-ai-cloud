@@ -89,6 +89,8 @@ except RuntimeConfigError as error:
         "runtime database hostname could not be resolved",
         "runtime database hostname resolution is invalid",
         "runtime database hostname must resolve only to private addresses",
+        "runtime database hostname must resolve only to public addresses",
+        "runtime public database hosts must be Alibaba RDS hostnames",
     }:
         raise SystemExit(18)
     raise SystemExit(10)

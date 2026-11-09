@@ -251,9 +251,15 @@ The first external target is Alibaba Cloud RDS PostgreSQL 18 Basic Edition
   `pool_recycle=1800`, `connect_timeout=5`, and `pool_pre_ping=true`;
 - private VPC endpoint and TLS `verify-full`;
 - every API/worker process re-resolves the RDS hostname, rejects any non-private
-  answer, and passes the approved private `hostaddr` while retaining the
+  answer by default, and passes the approved `hostaddr` while retaining the
   hostname for TLS identity verification;
 - automatic backups with at least seven days retention.
+
+For an existing installation, the operator-approved 2026-11-09
+[public RDS transport](public-rds-transport-v1.md) adds an explicit protected
+`database.public_host` option. Only that path accepts globally routable DNS
+answers. It keeps the original `database.host` as the TLS identity and does not
+change the private-only first-install API or permit environment overrides.
 
 The local/CI PostgreSQL 18 proof establishes schema and database semantics. It
 does not prove RDS TLS, private networking, backup, restart, availability, or
@@ -271,7 +277,7 @@ A successful fresh install commits
 `database_contract=pg18_empty_initialization.v1` together with the exact raw
 `runtime-config.json` digest. Subsequent ordinary deployments validate that
 evidence and use the candidate release image to prove protected-config loading,
-private TLS PostgreSQL 18 reachability, and current Alembic head before stopping
+the configured RDS transport, TLS PostgreSQL 18 reachability, and current Alembic head before stopping
 writers. For this explicitly pre-user reset, only the locked host helper may
 turn an empty protected tree into a fresh `pending` state. A `complete` state
 without the PG18 marker is unsupported and fails closed; the database refactor

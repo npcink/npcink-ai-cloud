@@ -326,6 +326,106 @@ def test_completed_runtime_rechecks_private_rds_dns(
         load_runtime_settings_values(store.config_dir)
 
 
+def test_public_transport_preserves_tls_identity_and_pins_resolved_address(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, payload = _complete_store(tmp_path)
+    database = payload["database"]
+    assert isinstance(database, dict)
+    database["public_host"] = "rm-test-public.pg.rds.aliyuncs.com"
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+    resolved_hosts: list[str] = []
+
+    def public_dns(host: str, *_args: object, **_kwargs: object) -> list[tuple]:
+        resolved_hosts.append(host)
+        return [(2, 1, 6, "", ("8.8.8.8", 5432))]
+
+    monkeypatch.setattr(runtime_config_module.socket, "getaddrinfo", public_dns)
+
+    url = make_url(str(load_runtime_settings_values(store.config_dir)["database_url"]))
+
+    assert resolved_hosts == [database["public_host"]]
+    assert url.host == database["host"]
+    assert url.query["hostaddr"] == "8.8.8.8"
+    assert url.query["sslmode"] == "verify-full"
+    assert url.query["sslrootcert"] == str(store.config_dir / "rds-ca.pem")
+    assert url.password == database["password"]
+
+
+@pytest.mark.parametrize(
+    "address",
+    ("10.0.0.10", "127.0.0.1", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::1", "fe80::1"),
+)
+def test_public_transport_rejects_any_non_public_dns_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    address: str,
+) -> None:
+    store, payload = _complete_store(tmp_path)
+    database = payload["database"]
+    assert isinstance(database, dict)
+    database["public_host"] = "rm-test-public.pg.rds.aliyuncs.com"
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+    monkeypatch.setattr(
+        runtime_config_module.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, "", ("8.8.8.8", 5432)),
+            (2, 1, 6, "", (address, 5432)),
+        ],
+    )
+
+    with pytest.raises(RuntimeConfigError, match="public addresses"):
+        load_runtime_settings_values(store.config_dir)
+
+
+@pytest.mark.parametrize(
+    "public_host",
+    (
+        None,
+        "",
+        False,
+        "8.8.8.8",
+        "db.example.com",
+        "https://rm-test.rds.aliyuncs.com",
+        " db.rds.aliyuncs.com",
+    ),
+)
+def test_invalid_public_transport_opt_in_does_not_fall_back_to_private(
+    tmp_path: Path,
+    public_host: object,
+) -> None:
+    store, payload = _complete_store(tmp_path)
+    database = payload["database"]
+    assert isinstance(database, dict)
+    database["public_host"] = public_host
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+
+    with pytest.raises(RuntimeConfigError):
+        load_runtime_settings_values(store.config_dir)
+
+
+def test_public_transport_requires_rds_tls_identity_and_config_digest(tmp_path: Path) -> None:
+    store, payload = _complete_store(tmp_path)
+    database = payload["database"]
+    assert isinstance(database, dict)
+    database["public_host"] = "rm-test-public.pg.rds.aliyuncs.com"
+    store.write_runtime_config(payload)
+
+    with pytest.raises(RuntimeConfigError, match="digest"):
+        load_runtime_settings_values(store.config_dir)
+
+    database["host"] = "unrelated.example.com"
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+    with pytest.raises(RuntimeConfigError, match="Alibaba RDS hostnames"):
+        load_runtime_settings_values(store.config_dir)
+
+
 def test_admin_key_rotation_transition_accepts_only_old_or_new_runtime_digest(
     tmp_path: Path,
 ) -> None:

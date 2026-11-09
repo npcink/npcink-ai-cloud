@@ -393,6 +393,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   promotion, Addon release, consumer paths, and review corrections; not future
   production authorization
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
+- [Existing-installation Public RDS Transport](public-rds-transport-v1.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
 - [Issue #406 Production Validation Preparation Retrospective](history/engineering/2026/issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
   — dated evidence; canary/browser completion is not production validation
