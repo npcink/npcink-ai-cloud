@@ -1263,3 +1263,20 @@ test('test-account limits distinguish blank from zero and hidden reserve limits 
   await expect(page.getByRole('tabpanel').getByRole('alert')).toContainText(/1000/);
   expect(state.writes).toBe(0);
 });
+
+test('accounting rate keeps its minimum while input feedback waits for submit', async ({ page }) => {
+  const state = await installSettingsRecoveryHarness(page);
+  Object.assign(state.settings, { accounting_fx: setting('accounting_fx', 'ready', {
+    usd_cny_rate: 7, effective_date: '2026-11-01', source: 'Operator reference', note: '',
+  }) });
+  await page.goto('/admin/service-settings?tab=accounting');
+  const panel = page.getByRole('tabpanel');
+  const rate = page.locator('[data-configuration-row="accounting-fx-rate"] input');
+  await rate.fill('0.0000001');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.locator('button[type="submit"]').click();
+  await expect(panel.getByRole('alert')).toContainText(/0\.000001/);
+  expect(state.writes).toBe(0);
+  await rate.fill('7.1');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+});

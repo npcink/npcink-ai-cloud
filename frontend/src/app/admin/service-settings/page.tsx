@@ -1103,12 +1103,12 @@ export default function AdminServiceSettingsPage() {
     }
     if (activeTab === 'accounting') {
       const rate = Number(accountingFxForm.usd_cny_rate);
-      if (!Number.isFinite(rate) || rate <= 0 || rate > 20) {
+      if (!Number.isFinite(rate) || rate < 0.000001 || rate > 20) {
         addIssue('usd_cny_rate',
           t(
             'admin.service_settings.validation_accounting_fx_rate',
             {},
-            'Enter a USD/CNY rate greater than 0 and no greater than 20.'
+            'Enter a USD/CNY rate from 0.000001 to 20.'
           )
         );
       }
