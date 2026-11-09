@@ -903,6 +903,7 @@ def _run_remote_cutover(
                     ),
                     "REFRESH_PROVIDERS": "1",
                     "WITH_OPERATIONAL_READY": "0",
+                    "REPLACEMENT_HOST_RECOVERY_APPROVAL": "",
                     "FIRST_INSTALL_PENDING_REPAIR": "1" if pending_repair else "0",
                     "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": (
                         "Approved for first-install pending repair by operator."

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,8 +15,8 @@ DOCKERFILE = ROOT / "Dockerfile"
 
 def _payload() -> str:
     source = PREFLIGHT.read_text(encoding="utf-8")
-    start = source.index("from alembic.config import Config")
-    end = source.index("\nPY' >/dev/null 2>&1", start)
+    start = source.index("import sys")
+    end = source.index("\nPY' preflight", start)
     return source[start:end]
 
 
@@ -66,6 +67,7 @@ def _execute_payload(
     monkeypatch: pytest.MonkeyPatch,
     *,
     server_version_num: int = 180000,
+    recovery_head: str = "",
     revisions: set[str] | None = None,
     settings_error: Exception | None = None,
     connection_error: Exception | None = None,
@@ -111,6 +113,7 @@ def _execute_payload(
 
     monkeypatch.setattr(config_module, "get_settings", fake_get_settings)
     monkeypatch.setattr(db_module, "get_engine", fake_get_engine)
+    monkeypatch.setattr(sys, "argv", ["preflight", recovery_head])
     monkeypatch.chdir(ROOT)
     exec(compile(_payload(), str(PREFLIGHT), "exec"), {"__name__": "__main__"})
     return observed
@@ -190,7 +193,7 @@ def test_preflight_shell_binds_real_payload_to_exact_candidate_image_and_redacts
     assert "from app.core.config import get_settings" in _payload()
     assert "from app.core.db import get_engine" in _payload()
     assert "require_upgradeable_revisions" in _payload()
-    assert "PY' >/dev/null 2>&1" in source
+    assert 'PY\' preflight "${NPCINK_CLOUD_RECOVERY_ALEMBIC_HEAD:-}" >/dev/null 2>&1' in source
     assert "preflight_status=$?" in source
     for marker in (
         '10) preflight_reason="protected_runtime_config_invalid"',
@@ -209,7 +212,20 @@ def test_preflight_shell_binds_real_payload_to_exact_candidate_image_and_redacts
 def test_production_api_image_contains_candidate_revision_gate_helper() -> None:
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert (
-        "COPY scripts/alembic_revision_gate.py "
-        "./scripts/alembic_revision_gate.py" in dockerfile
-    )
+    assert "COPY scripts/alembic_revision_gate.py ./scripts/alembic_revision_gate.py" in dockerfile
+
+
+def test_replacement_host_preflight_requires_exact_existing_head(monkeypatch):
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
+    head = scripts.get_heads()[0]
+    ancestor = scripts.get_revision(head).down_revision
+    assert isinstance(ancestor, str)
+    _execute_payload(monkeypatch, recovery_head=head)
+    with pytest.raises(SystemExit) as caught:
+        _execute_payload(monkeypatch, recovery_head=head, revisions={ancestor})
+    assert caught.value.code == 13
+    # The ordinary installed-host lane still permits a known ancestor.
+    _execute_payload(monkeypatch, revisions={ancestor})

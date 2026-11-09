@@ -47,6 +47,9 @@ endpoint presenting another instance's certificate must fail verification.
 This is a separately authorized operator operation, not an ordinary env edit.
 For a replacement host, prepare a protected offhost copy of the existing
 configuration before restoring it through the governed recovery/release path.
+An empty replacement host uses the explicit
+[same-database recovery lane](replacement-host-recovery-v1.md); ordinary deployment
+must not invent a previous active release or acceptance sentinel.
 
 1. Confirm the endpoint belongs to the existing authoritative RDS. Preserve
    current RDS data; a dated database dump must not replace newer writes.
