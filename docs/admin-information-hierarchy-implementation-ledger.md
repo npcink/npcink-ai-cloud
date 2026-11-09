@@ -2281,3 +2281,15 @@ M4验收与任务清理；不包含生产部署。前一节保留为授权前的
 操作者；按UI Standard等待明确人工视觉确认后才提交golden。Linux同名变体需用
 原生Linux实际图独立核对，不能复制Darwin图。PR可先保持draft收集CI证据；不在
 视觉门禁未解决时启用自动合并。后续状态应追加实际结果，不能将此检查点写成已合并。
+
+本轮实际收尾结果：代码与文档已提交为`c1b7a748`并推送，创建
+[draft PR #1383](https://github.com/npcink/npcink-ai-cloud/pull/1383)，未启用自动合并。
+完整`check:admin-ui:visual`执行246项，245通过，唯一失败为上述341像素的预算名称
+旧基线差异（4.9分钟）；差异框与前次一致，没有自动更新或复制golden。失败项停在
+截图断言，不能将之后的行为断言算作本次通过；此前独立功能回归结果仍见上文。
+完整日志及actual/diff/trace保存在任务`closeout-visual.log`、
+`closeout-visual-evidence/`。M4最新只读状态为同分支dirty candidate、前端/API健康，
+源码hash为`a66620ed465919ebacb4de05ffa525783861357fcad17ac5916b8c31ca57ca8a`；
+浏览器再次确认新增弹窗初开无错误、取消不增加记录且恢复触发按钮焦点，未提交真实
+配置，证据为`m4-review-add-dialog.png`。PR CI、Linux截图、人工确认、合并、
+clean-master M4 accepted及任务分支/worktree清理仍需按顺序完成。
