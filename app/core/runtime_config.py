@@ -23,6 +23,9 @@ SETUP_REVISION = "first-install-v1"
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _PRINCIPAL_ID_PATTERN = re.compile(r"^prn_[0-9a-f]{32}$")
+_RDS_HOST_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+rds\.aliyuncs\.com$"
+)
 _PRODUCTION_ENVIRONMENTS = {"production", "prod", "staging"}
 _PRODUCTION_RUNTIME_ENV_KEYS = {
     "NPCINK_CLOUD_DATABASE_URL",
@@ -44,6 +47,22 @@ class RuntimeConfigError(RuntimeError):
 
 
 def resolve_private_database_address(host: str, port: int) -> str:
+    return _resolve_database_address(host, port, public=False)
+
+
+def resolve_runtime_database_address(database: dict[str, Any]) -> str:
+    host = _required_string(database, "host")
+    port = _required_int(database, "port", minimum=1, maximum=65535)
+    if "public_host" not in database:
+        return resolve_private_database_address(host, port)
+    public_host = _required_string(database, "public_host")
+    if any(_RDS_HOST_PATTERN.fullmatch(name) is None for name in (host, public_host)):
+        raise RuntimeConfigError("runtime public database hosts must be Alibaba RDS hostnames")
+    # Only the transport changes. The URL host remains the configured TLS identity.
+    return _resolve_database_address(public_host, port, public=True)
+
+
+def _resolve_database_address(host: str, port: int, *, public: bool) -> str:
     try:
         candidates = socket.getaddrinfo(
             host,
@@ -63,7 +82,7 @@ def resolve_private_database_address(host: str, port: int) -> str:
         except ValueError as error:
             raise RuntimeConfigError("runtime database hostname resolution is invalid") from error
         if (
-            not address.is_private
+            (not address.is_global if public else not address.is_private)
             or address.is_loopback
             or address.is_link_local
             or address.is_multicast
@@ -71,7 +90,9 @@ def resolve_private_database_address(host: str, port: int) -> str:
             or address.is_reserved
         ):
             raise RuntimeConfigError(
-                "runtime database hostname must resolve only to private addresses"
+                "runtime database hostname must resolve only to public addresses"
+                if public
+                else "runtime database hostname must resolve only to private addresses"
             )
         parsed.append(address)
     return parsed[0].compressed
@@ -222,9 +243,7 @@ def load_runtime_settings_values(
 
     if _required_string(database, "ssl_mode") != "verify-full":
         raise RuntimeConfigError("runtime database TLS mode is invalid")
-    database_host = _required_string(database, "host")
-    database_port = _required_int(database, "port", minimum=1, maximum=65535)
-    database_hostaddr = resolve_private_database_address(database_host, database_port)
+    database_hostaddr = resolve_runtime_database_address(database)
     configured_ca_digest = _required_string(database, "ca_sha256")
     ca_bytes = _read_protected_bytes(
         rds_ca_path(directory),
