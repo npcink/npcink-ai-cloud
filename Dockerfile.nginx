@@ -1,0 +1,5 @@
+FROM nginx:1.30-alpine-slim@sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7
+
+# Alpine publishes the fix before the official image is rebuilt. Preserve the
+# upstream entrypoint, command, user and paths; scan the resulting built image.
+RUN apk add --no-cache --upgrade 'zlib>=1.4-r0'

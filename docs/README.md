@@ -18,12 +18,16 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 核对注册准入是否合并、历史阻塞、分支清理与关闭会话条件 | [注册准入收口与经验 — 2026-11-06](history/portal/2026/registration-access-closeout-2026-11-06.md) — #1380、CI/M4接受、两平台基线、生产等待项与主检出保留；长期规则见[注册准入合同](portal-registration-access-v1.md) |
+| 核对运行诊断/运行配置版式会话是否已交付、能否关闭及资源归属 | [收口审计与经验 — 2026-11-06](history/admin/2026/runtime-diagnostic-layout-closeout-2026-11-06.md) — 历史反馈对账、#1378合并/CI与clean-master M4接受、合并后补验、经验及精确资源清理边界；初次未提交记录保留，不是全状态或生产验收证明 |
+| 接续后台通知、身份可读性与共享版式整改，确认能否关闭会话 | [整改收尾与经验 — 2026-11-05](history/admin/2026/admin-layout-notice-readability-closeout-2026-11-05.md) — PR #1370、CI/M4、旧截图关闭情况、偶发测试/人工验收及工作树保留例外；长期规则见信息层级规范 §12 |
 | 控制生产日志、旧发布制品与运维数据增长 | [生产保留维护规则](production-retention-maintenance-v1.md) — 保护恢复点、有限保留、分批清理与上线边界 |
 | 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
 | 接续 Admin 第1–7批功能审计、人工验收与有限清理 | [跨批次收口与验收交接 — 2026-11-03](history/engineering/2026/admin-functional-audit-batches-1-7-closeout-2026-11-03.md) — 58项修复逐项关联PR、契约和反例；第七批无新缺陷；人工/生产状态、Q01与保留工作树分开记录 |
 | 接续A01–E01历史、核销旧PR并查下一步 | [五会话综合对账与接续建议 — 2026-10-30](history/engineering/2026/five-chat-synthesis-and-next-stage-2026-10-30.md) — 精确会话身份、后继交付、证据缺口、价值优先顺序及归档回执；方法见[收尾规范§6](engineering/zero-backlog-closeout-efficiency-standard-v1.md#6-会话历史对账与经验入库)，不是新的生产或功能扩张授权 |
 | 判断是否走偏、哪些开发应暂停、何时恢复 | [Phase 1 编辑价值优先决定（2026-10-27）](engineering/phase-1-scope.md#value-first-development-decision-2026-10-27) — 当前问题、继续维护、新增开发冻结清单与恢复条件；保留既有销售/试用例外，不改变运行可用性 |
 | 查白天模型接入优化的历史处置、真实编辑器证据与经验 | [模型接入与编辑器闭环收尾 — 2026-10-27](history/engineering/2026/model-provider-flow-closeout-and-lessons-2026-10-27.md) — 目录/参考来源、保存反馈、真实 Ollama 与 WordPress、费用和选择检查；保留中文质量及人类价值缺口，不代表生产或全历史清零 |
+| 查标题、摘要、改写的本轮核心链路核验 | [核心编辑链路开发核验 — 2026-11-05](history/engineering/2026/core-editor-loop-verification-2026-11-05.md) — 真实模型采用保存、分层故障/取消恢复、运行积分与反馈去重；保留挂载脏树、生产和自然使用限制 |
 | 接续资源及总规划的有界收尾 | [资源与总规划收尾 — 2026-10-27](history/repository-hygiene/2026/resource-and-planning-closeout-2026-10-27.md) — 两个依赖 PR、冻结规范交付、资源保留/退休条件与外部缺证；不是全仓清空或生产验收 |
 | 接续白天交付后的依赖收尾与资源保留 | [依赖与白天交接收尾 — 2026-10-27](history/repository-hygiene/2026/dependency-and-daytime-handoff-closeout-2026-10-27.md) — React/Vitest 配套、Alembic 暴露的遥测旧断言、实际 coverage、独立证据与保护工作区 |
 | 确认当前设备范围、选择前端检查，避免每次改外观跑全量 | [前端 PC 范围与选择检查](frontend-pc-scope-and-selective-verification-v1.md) — 当前仅 PC；移动/平板暂不适配验收；按改动选择页面、宽度、主题与交互，保留强制 CI 门禁 |
@@ -77,6 +81,7 @@ product work or override the current Phase 1 expansion freeze.
 | 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
 | 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
 | 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-content-priority-contract) — 常显/按需/技术证据/去重；§8–11 归纳历批 27 路由取舍、状态保护、来源与布局选型，供后续 AI 防回退；[逐页落实台账](admin-information-hierarchy-implementation-ledger.md) 记录每项处置和证据；[2026-10-29 逐页审查](history/admin/2026/records/admin-information-hierarchy-audit-2026-10-29.md) 是定点建议，不是已完成的界面改造 |
+| 修复表单提示过早或优化新增填写 | [表单提示与弹窗规则 §15](cloud-admin-visual-information-architecture-review-standard-v1.md#admin-form-feedback-contract) — 字段离开/提交校验、真实异常常显、独立新增草稿与取消语义、范围绑定、完整提交守卫及定向验证；[本次修复记录](admin-information-hierarchy-implementation-ledger.md#表单提示时机与新增账单录入2026-11-09) 区分本地、M4候选和待验收状态 |
 | 维护套餐参数并发、草稿及未知结果 | [CAS 契约](admin-plan-parameters-concurrency-v1.md)、[原操作证据与草稿恢复](admin-plan-parameter-evidence-drafts-v1.md) — 现有九字段编辑器；1A 已集成，1B 验证状态单列 |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
 | 查工程债与暂缓清理队列 | [工程跟进队列](engineering-follow-up-queue-v1.md) — 低收益项的触发条件与已完成整改索引 |
@@ -375,7 +380,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   — dated evidence for the restrained metadata-only export, focused validation,
   production release, time costs, and explicit non-commercial conclusions
 - [Feedback Data Operations](feedback-data-operations-v1.md)
-- [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
+- [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md) — §10.1 汇总版本/预检、模型与计费、故障分层、反馈和精确清理经验；§16 区分运行变更与纯文档收尾。
 
 ## Operations and Release
 
@@ -388,6 +393,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   promotion, Addon release, consumer paths, and review corrections; not future
   production authorization
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
+- [Existing-installation Public RDS Transport](public-rds-transport-v1.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
 - [Issue #406 Production Validation Preparation Retrospective](history/engineering/2026/issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
   — dated evidence; canary/browser completion is not production validation

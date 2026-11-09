@@ -169,7 +169,7 @@ test('credit packs retain missing focus, block stale edits, and isolate modal sh
   await page.getByRole('button', { name: /Discard draft and leave|放弃草稿并离开/ }).click();
   harness.failNextRequest();
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: /Showing the last|当前展示最近一次成功加载/ })).toBeVisible();
   await expect(page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/ })).toBeDisabled();
   expect(harness.getPatchCount()).toBe(0);
   await page.getByRole('button', { name: /^Retry$|^重试$/ }).click();

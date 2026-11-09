@@ -21,7 +21,9 @@ preflight_status=0
 set +e
 npcink_ai_cloud_compose_run_with_image_proof \
 	"${ROOT_DIR}" api npcink-ai-cloud-api:prod "${EXPECTED_API_IMAGE_ID}" \
-	sh -ceu 'python - <<'"'"'PY'"'"'
+	sh -ceu 'python - "$1" <<'"'"'PY'"'"'
+import sys
+
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
@@ -54,12 +56,13 @@ try:
 except Exception:
     raise SystemExit(11)
 try:
-    require_upgradeable_revisions(
-        ScriptDirectory.from_config(Config("alembic.ini")), observed
-    )
+    scripts = ScriptDirectory.from_config(Config("alembic.ini"))
+    require_upgradeable_revisions(scripts, observed)
+    if sys.argv[1] and (set(scripts.get_heads()) != {sys.argv[1]} or observed != {sys.argv[1]}):
+        raise ValueError("replacement recovery requires the existing exact schema head")
 except ValueError:
     raise SystemExit(13)
-PY' >/dev/null 2>&1
+PY' preflight "${NPCINK_CLOUD_RECOVERY_ALEMBIC_HEAD:-}" >/dev/null 2>&1
 preflight_status=$?
 set -e
 

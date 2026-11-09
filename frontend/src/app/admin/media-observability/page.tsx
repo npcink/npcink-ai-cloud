@@ -14,7 +14,8 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
-import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
+import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -375,9 +376,10 @@ function AdminMediaObservabilityContent() {
 
   return (
     <BackofficePageStack spacing="compact">
-      <AdminObservabilityTabs />
       <BackofficePageHeader
-        density="compact"
+        density="compact" descriptionDisplay="hint"
+        toolbarControls={<AdminObservationWindow />}
+        freshness={data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : undefined}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
         description={t(
           'admin.media_obs.desc',
@@ -402,7 +404,6 @@ function AdminMediaObservabilityContent() {
         <input type="text" value={siteIdInput} aria-label={t('admin.media_obs.site_filter_label', {}, 'Filter by site ID')} onChange={(event) => setSiteIdInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') updateUrl({ site: siteIdInput.trim() || null, focus: null }); }} placeholder={t('admin.media_obs.site_filter', {}, 'Site ID')} className="input h-8 w-44 min-w-0" />
         <button type="button" onClick={() => updateUrl({ site: siteIdInput.trim() || null, focus: null })} className="btn btn-secondary btn-sm justify-center">{t('common.apply', {}, 'Apply')}</button>
         {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm justify-center" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-        {data?.generatedAt ? <p className="ml-auto text-xs text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
         {data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : null}
       </div>
 
@@ -414,8 +415,20 @@ function AdminMediaObservabilityContent() {
         <section data-ui="media-delivery-evidence" className="border-y border-slate-200 py-3 dark:border-slate-800">
           <h2 className="text-sm font-semibold">{c('媒体交付', 'Media delivery')}</h2>
           <p className="mt-1 text-xs text-slate-500">{targetFormat ? c('当前格式仅统计关联衍生任务的交付；普通图片交付不在此格式范围。', 'This format includes only deliveries linked to derivative jobs; ordinary image delivery is outside this format scope.') : c('按交付开始时间统计所选时段，包含各类媒体操作；与衍生任务数不是同一口径。', 'Selected-period deliveries by start time across media operations; this differs from derivative job counts.')} {c('流完成与客户端收件只证明传输，不证明 WordPress 保存或采纳。', 'Stream completion and client receipt prove transfer, not WordPress saving or adoption.')}</p>
-          <p className="mt-2 text-sm">{c('已开始 / 流完成 / 收件验证', 'Started / stream complete / receipt verified')}: {data.totals.deliveryStartedCount} / {data.totals.deliveryStreamCompletedCount} / {data.totals.deliveryAcknowledgedCount}</p>
-          {data.deliveriesByOperation.length ? <div className="mt-2 overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr><th className="py-2">{c('操作', 'Operation')}</th><th>{c('已开始', 'Started')}</th><th>{c('流完成', 'Stream complete')}</th><th>{c('收件验证', 'Receipt verified')}</th></tr></thead><tbody>{data.deliveriesByOperation.map(item => <tr key={item.operation}><td className="py-2 font-mono break-all">{item.operation}</td><td>{item.started}</td><td>{item.completed}</td><td>{item.acknowledged}</td></tr>)}</tbody></table></div> : <p className="mt-1 text-xs text-slate-500">{data.totals.deliveryStartedCount ? c('当前响应未提供操作分组。', 'Operation breakdown is unavailable in this response.') : c('所选范围没有交付开始记录。', 'No delivery starts in this scope.')}</p>}
+          {data.deliveriesByOperation.length ? <div className="mt-2 overflow-x-auto">
+            <table data-ui="media-delivery-comparison" className="w-auto text-left text-xs [&_th]:py-2 [&_th]:pr-6 [&_td]:py-2 [&_td]:pr-6 [&_th:not(:first-child)]:text-right [&_td]:text-right">
+              <thead className="border-b border-slate-200 dark:border-slate-800"><tr><th scope="col">{c('操作', 'Operation')}</th><th scope="col">{c('已开始', 'Started')}</th><th scope="col">{c('流完成', 'Stream complete')}</th><th scope="col">{c('收件验证', 'Receipt verified')}</th></tr></thead>
+              <tbody>{data.deliveriesByOperation.map(item => <tr key={item.operation}><th scope="row" className="font-mono font-normal break-all">{item.operation}</th><td>{item.started}</td><td>{item.completed}</td><td>{item.acknowledged}</td></tr>)}</tbody>
+              <tfoot className="border-t border-slate-200 font-semibold tabular-nums dark:border-slate-800"><tr><th scope="row">{c('所选范围合计', 'Scope total')}</th><td>{data.totals.deliveryStartedCount}</td><td>{data.totals.deliveryStreamCompletedCount}</td><td>{data.totals.deliveryAcknowledgedCount}</td></tr></tfoot>
+            </table>
+          </div> : <dl data-ui="media-delivery-totals" className="mt-2 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+            {[
+              { label: c('已开始', 'Started'), count: data.totals.deliveryStartedCount },
+              { label: c('流完成', 'Stream complete'), count: data.totals.deliveryStreamCompletedCount },
+              { label: c('收件验证', 'Receipt verified'), count: data.totals.deliveryAcknowledgedCount },
+            ].map(item => <div key={item.label}><dt className="text-xs text-slate-500">{item.label}</dt><dd className="mt-1 font-semibold tabular-nums">{item.count}</dd></div>)}
+          </dl>}
+          {!data.deliveriesByOperation.length ? <p className="mt-1 text-xs text-slate-500">{data.totals.deliveryStartedCount ? c('当前响应未提供操作分组。', 'Operation breakdown is unavailable in this response.') : c('所选范围没有交付开始记录。', 'No delivery starts in this scope.')}</p> : null}
           <p className="mt-2 text-xs text-slate-500">{c('当前衍生工件存量（未过期且未清理，非时段增量）', 'Current derivative artifacts (unexpired and unpurged, not period additions)')}: {data.totals.activeArtifactCount} · {formatBytes(data.totals.activeArtifactBytes)} · {c('快照', 'Snapshot')}: {formatDate(data.generatedAt)}</p>
         </section>
       </> : null}
@@ -430,7 +443,7 @@ function AdminMediaObservabilityContent() {
         />
       ) : (
         <>
-          <p className="text-xs text-slate-500">{c('以下为所选时段的衍生处理历史；体积变化正值表示节省、负值表示增大。小样本 P95 使用排序后 floor((N−1)×0.95) 的值。', 'Derivative processing history for the selected period. Positive size change means savings; negative means growth. Small-sample P95 uses the sorted floor((N−1)×0.95) value.')} N={data.totals.jobsTotal} · {t('admin.media_obs.queue_wait')}: {formatNumber(data.totals.avgQueueWaitMs)}ms</p>
+          <p className="text-xs text-slate-500">{c('衍生处理历史；体积变化正值为节省、负值为增大。小样本 P95 仅供参考。', 'Derivative history; positive size change means savings, negative means growth. Small-sample P95 is indicative only.')} N={data.totals.jobsTotal} · {t('admin.media_obs.queue_wait')}: {formatNumber(data.totals.avgQueueWaitMs)}ms <AdminHelpTip label={c('P95 计算方法', 'P95 calculation')}>{c('按处理耗时排序，取 floor((N−1)×0.95) 对应的值。', 'Sort processing durations and take the value at floor((N−1)×0.95).')}</AdminHelpTip></p>
           <div data-ui="media-observability-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-6">
             {[
               { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },

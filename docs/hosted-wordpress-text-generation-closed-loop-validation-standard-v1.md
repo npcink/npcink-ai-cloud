@@ -262,11 +262,55 @@ A deterministic transport-preempted fake proves editor recovery only. A real
 Provider-failure experiment requires a separate bounded budget and must not
 corrupt shared credentials or routing.
 
+Label cancellation by layer: dismissing review or abandoning unsaved editor
+state does not prove Cloud execution stopped or credits were waived. Public
+runtime cancellation accepts queue-backed runs; inline and terminal runs are
+not cancellable through that contract. A new Regenerate action is a distinct
+execution; only a replay of the same idempotent request reuses its run and
+metering evidence. Recover from a transport timeout by checking run state
+where correlation is available, not by assuming the Provider never executed.
+
+Keep pricing availability separate from numeric cost: an unpriced local
+Provider is not proven free. The [2026-11-05 verification](history/engineering/2026/core-editor-loop-verification-2026-11-05.md)
+records one bounded real local-model loop, injected recovery, exact run/credit
+and feedback reconciliation, and the remaining production/human limits.
+
 When a paid Provider path and the WordPress save boundary have already passed
 but a later harness-only assertion fails, preserve the exact run, credit,
 event, and cleanup evidence. Correct and replay only the verification seam when
 that answers the risk question; do not issue new paid calls solely to turn the
 combined command green.
+
+### 10.1 Reusable checkpoint lessons
+
+The [2026-11-05 checkpoint](history/engineering/2026/core-editor-loop-verification-2026-11-05.md)
+supports the following procedure. Its recorded versions and outcomes remain
+dated evidence; reuse the method after checking the next task's actual state.
+
+| Observed trap | Required practice |
+| --- | --- |
+| A clean Cloud HEAD does not identify the PHP source mounted by WordPress. | Resolve plugin symlinks and record each mounted HEAD and dirty diff. Preserve other owners' edits; a passing dirty combination is not a clean release combination. |
+| General readiness can pass while the browser capability snapshot has expired. | Run both prerequisites. Refresh expired capability through the existing signed connection/entitlement read; never rewrite its timestamp to make preflight green. |
+| A local text model can still invoke a paid embedding fallback. | Inspect all reachable text and context/embedding candidates before dispatch. If temporary local-only routing is authorized, bound every reachable route and restore it afterward. |
+| A visible suggestion, editor adoption and stored content are different states. | Prove review, dirty editor state, zero pre-save fixture writes, explicit save and database readback separately. Label a fixture autosave lock instead of generalizing it to ordinary editor behavior. |
+| A non-null input container or numeric zero cost can produce a false conclusion. | Inspect nonempty input fields, storage policy and pricing availability separately. Reconcile run, Provider calls, meters and ledger rows by exact Cloud run ID; empty input JSON is not a stored body, and unpriced is not free. |
+| Local complete feedback does not prove Cloud ingestion or deduplication. | Match the fixture's site-keyed object/task hash locally, upload only its metadata events, check accepted/stored/duplicate counts and read back the same run IDs. Do not rewrite raw browser optional-assertion flags when separate queries supply evidence. |
+| Runtime discovery or a wrapper failure can leave a fixture or acquired lock behind. | Resolve the intended PHP/socket, Node/Playwright and Python runtimes first. Enter cleanup protection immediately after acquiring shared state; restore exact owned settings and remove only owned drafts, sessions, plugins, buffer entries and locks. |
+| GitHub API access can work while Git transport fails or a remembered proxy port is stale. | Verify the current transport and configured proxy, use a working override only for the command, and follow the bounded retry rule. Do not change repository policy or repeat model calls to repair a publishing problem. |
+
+For every scenario, name its injection layer and what it cannot prove. A fake
+transport failure, discarded unsaved edit, runtime replay and real Provider
+execution answer different questions; retain the cancellation and metering
+distinctions above. Report ledger components as well as totals when explaining
+credits. In this dated sample, ledger v2 charged three run units plus five
+per-call token units (each rounded up to 1,000 tokens), totaling eight credits;
+this is an example to reconcile, not a fixed price for future title tasks.
+
+At closeout, retain one indexed receipt, the reusable rules here and explicit
+next triggers. Keep quality correction and natural Free-user observation as
+separate work with their own authority and evidence; synthetic success must
+not fill their sample counts. Do not create a new framework, ADR or duplicate
+runbook solely to summarize a completed checkpoint.
 
 ## 11. Post-merge M4 acceptance
 
@@ -468,9 +512,11 @@ measured and unmeasured fields. It cannot claim `production validated` or
 [ ] Run, Provider call, usage, credit, fallback, and error correlated
 [ ] Focused gates reported exactly, including partial failures
 [ ] Exact files staged and reviewed; required PR checks passed
-[ ] Clean current master promoted and stable accepted status verified
+[ ] Runtime changes: clean current master promoted and stable accepted status verified
+[ ] Documentation-only changes: M4 promotion marked not applicable
 [ ] Production and human acceptance reported separately
-[ ] All task ownership, budgets, fixtures, sessions, tunnels, and locks released
+[ ] Task-only budgets, fixtures, sessions, overrides, tunnels, and locks released/restored
+[ ] Required primary/runtime/operations checkouts retained with owner and release condition
 ```
 
 ## 17. Related records

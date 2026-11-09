@@ -5,6 +5,9 @@ Status: operator runbook for the validation environment.
 This runbook implements
 [Cloud First Install Contract v1](cloud-first-install-contract-v1.md). It does
 not authorize a production cutover while any independent release gate is red.
+For moving an existing installation while retaining its RDS across regions,
+use the separately approved [public transport procedure](public-rds-transport-v1.md).
+The fresh-install Setup flow below remains private-only.
 
 ## 1. Preconditions
 

@@ -108,13 +108,13 @@ WORKDIR /app
 
 # The digest-pinned Alpine base predates the fixed openssl/zlib releases;
 # install minimum-version floors (Alpine main: openssl 3.5.9-r0, zlib
-# 1.3.2-r1) so the scan-relevant fixes are guaranteed while a newer -rX
+# 1.4-r0) so the scan-relevant fixes are guaranteed while a newer -rX
 # build still satisfies the layer; the floor is replaced by an upstream
 # base re-pin when one lands.
 RUN apk add --no-cache --upgrade \
     'libcrypto3>=3.5.9-r0' \
     'libssl3>=3.5.9-r0' \
-    'zlib>=1.3.2-r1'
+    'zlib>=1.4-r0'
 
 # The pinned Alpine base reserves GID 999 as an empty `ping` group. Fail closed on
 # that exact base state, then rename it so artifact volumes keep stable 999:999 ownership.
@@ -183,3 +183,24 @@ RUN set -eu; \
 USER app
 
 FROM runtime AS production
+
+USER root
+
+# Production uses PostgreSQL. Keep SQLite in runtime/development for fixtures,
+# but remove its stdlib extension and APK provider from the shipped image.
+# Preserve every other dependency of the digest-pinned Python base explicitly
+# before removing its original virtual package; never force broken APK deps.
+RUN set -eu; \
+    python_rundeps="$(apk info --no-network --depends .python-rundeps)"; \
+    test "$(printf '%s\n' "${python_rundeps}" | grep -c '^so:libsqlite3.so.0$')" = "1"; \
+    set -- $(printf '%s\n' "${python_rundeps}" | sed -n '/^so:/p' | sed '/^so:libsqlite3.so.0$/d'); \
+    test "$#" -gt 0; \
+    apk add --no-network --virtual .python-production-rundeps "$@"; \
+    apk del --no-network .python-rundeps sqlite-libs; \
+    stdlib="$(python -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"; \
+    rm "${stdlib}"/lib-dynload/_sqlite3*.so; \
+    rm -r "${stdlib}/sqlite3"; \
+    test ! -e /usr/lib/libsqlite3.so.0; \
+    ! apk info --no-network --exists sqlite-libs
+
+USER app

@@ -144,8 +144,8 @@ test('slow development guidance retains time and scoped diagnostic action on PC'
   });
   await page.goto('/admin/vector-observability?window=336&site=site_mvp');
   const guidance = page.locator('[data-ui="vector-handling-guidance"]');
-  await expect(guidance).toContainText(/Slow development searches|开发检索较慢/);
-  await expect(guidance).toContainText(/does not establish the current runtime|不代表当前运行配置/);
+  await expect(guidance).toContainText(/Slow (?:development searches|searches in this period)|开发检索较慢|所选时段检索较慢/);
+  await expect(guidance).toContainText(/does not establish (?:the current runtime|a model or vector database failure)|不代表当前运行配置|不能证明模型或向量数据库故障/);
   await expect(guidance).toContainText(/Last search|最近检索/);
   await expect(guidance.getByRole('link')).toHaveAttribute('href', '/admin/troubleshooting?window=336&site=site_mvp');
   for (const width of [1440, 900]) {
@@ -156,7 +156,7 @@ test('slow development guidance retains time and scoped diagnostic action on PC'
   }
   await page.getByRole('button', { name: /Language|语言/ }).click();
   await page.getByRole('option', { name: 'English' }).click();
-  await expect(guidance).toContainText('Slow development searches');
+  await expect(guidance).toContainText(/Slow (?:development searches|searches in this period)/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.screenshot({ path: '/tmp/admin-vector-slow-en-900.png' });
   await page.emulateMedia({ colorScheme: 'dark' });

@@ -38,6 +38,9 @@ existing Plus/Pro monthly packages and credit packs, and to start the existing
 shared 14-day Plus/Pro trial. No invitation, account-age gate, or three-user
 allowlist is required. Preserve current prices and one-trial-per-customer rules.
 The three-user Free validation runs separately and does not gate this rollout.
+Operator approval on 2026-11-05 adds an optional public-registration switch and
+email allowlist for new accounts only; existing-account access and commercial
+eligibility are unchanged. See [registration access](docs/portal-registration-access-v1.md).
 See the bounded rollout contract in the commercial next-stage document;
 production deployment/configuration and real transaction tests remain separate
 operations requiring explicit authorization.
@@ -124,6 +127,11 @@ PC 浏览器证据；文档或静态契约通过不等于视觉验收。
 新增字段、TAB、弹窗或 drawer 也须核对规范第 8–11 节的页面场景、历史功能修复约束、
 来源和布局选型；既有未知/陈旧/待确认、草稿保护及暂停边界不得在视觉整理时回退。
 不得恢复已去重的内容、隐藏判断事实，或以更新截图基线代替视觉审查。
+表格先声明「短比较 / 记录目录 / 配置编辑」用途，按信息层级规范第 13 节核对
+重复文案与逐列阅读距离；禁止为填满页面拉宽短表或全局收窄记录表。截图须覆盖
+实际修改区域与相关 PC 宽度，路由扫描/空态/有数据/失败/M4/人工验收分别记账。
+连续折叠与 Tab 选型按同规范第 14 节先核对任务归属；配置摘要区分已保存值和草稿，
+详情关闭后仍须保留异常、待确认及草稿恢复入口。
 
 当前项目仅做 **PC 端开发与界面验收**（公共站点、Portal、登录及 Admin）；
 移动端和平板端不在当前适配/优化/验收范围。PC 窄窗口仍属 PC 范围。

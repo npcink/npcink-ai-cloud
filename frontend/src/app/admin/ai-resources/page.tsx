@@ -199,6 +199,8 @@ function providerConnectionTestResultFromError(error: unknown): ProviderConnecti
 
 type AiResourcesTranslate = (key: string, fallback: string, params?: Record<string, string>) => string;
 
+type ProviderAdvancedPanel = '' | 'image' | 'runtime';
+
 function providerModelHealthStatusMeta(status: string): { token: string; labelKey: string; fallback: string } {
   const normalized = status.trim().toLowerCase();
   if (normalized === 'healthy') {
@@ -453,6 +455,10 @@ function AiResourcesContent() {
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models' | 'references'>('connection');
+  const [providerAdvancedPanel, setProviderAdvancedPanel] = useState<ProviderAdvancedPanel>('');
+  const providerImageAdvancedTriggerRef = useRef<HTMLButtonElement>(null);
+  const providerRuntimeAdvancedTriggerRef = useRef<HTMLButtonElement>(null);
+  const providerAdvancedBackRef = useRef<HTMLButtonElement>(null);
   const deletePreflightRequestRevision = useRef(0);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -1151,6 +1157,7 @@ function AiResourcesContent() {
     setImageDeliveryProbeResult(null);
     setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
+    setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
     dispatchProviderWorkbench({
       type: 'open_create',
@@ -1170,6 +1177,7 @@ function AiResourcesContent() {
     setImageDeliveryProbeResult(null);
     setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
+    setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
@@ -1185,12 +1193,29 @@ function AiResourcesContent() {
 
   function closeProviderForm() {
     if (saveInFlight.current) return;
+    if (providerAdvancedPanel) {
+      const panel = providerAdvancedPanel;
+      setProviderAdvancedPanel('');
+      window.requestAnimationFrame(() => (panel === 'image' ? providerImageAdvancedTriggerRef : providerRuntimeAdvancedTriggerRef).current?.focus());
+      return;
+    }
     invalidateCatalogRequest();
     setImageDeliveryProbeResult(null);
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
     setMessage('');
     setError('');
+  }
+
+  function openProviderAdvancedPanel(panel: Exclude<ProviderAdvancedPanel, ''>) {
+    setProviderAdvancedPanel(panel);
+    window.requestAnimationFrame(() => providerAdvancedBackRef.current?.focus());
+  }
+
+  function returnToProviderConnection() {
+    const panel = providerAdvancedPanel;
+    setProviderAdvancedPanel('');
+    window.requestAnimationFrame(() => (panel === 'image' ? providerImageAdvancedTriggerRef : providerRuntimeAdvancedTriggerRef).current?.focus());
   }
 
   function updateProviderConnectionForm(patch: Partial<ProviderConnectionForm>) {
@@ -1615,6 +1640,7 @@ function AiResourcesContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
+        scope={t('admin.hierarchy.supplier_scope')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         primaryAction={(
@@ -1668,7 +1694,11 @@ function AiResourcesContent() {
 
         <ProviderConnectionDialog
           open={providerFormOpen && !modelTestTarget}
-          title={providerDialogTitle}
+          title={providerAdvancedPanel === 'image'
+            ? aiText('image_advanced_settings_title', 'Image delivery settings')
+            : providerAdvancedPanel === 'runtime'
+              ? aiText('advanced_settings_title', 'Advanced runtime settings')
+              : providerDialogTitle}
           titleId="provider-channel-dialog-title"
           message={message}
           error={directoryStale ? aiText('directory_stale', 'The directory could not be refreshed. The list below is stale; current status is unknown. Retry before making changes.') : error}
@@ -1678,19 +1708,20 @@ function AiResourcesContent() {
           saveLabel={aiText('action_save_supplier', 'Save supplier')}
           savingLabel={aiText('saving', 'Saving...')}
           headerAccessory={<AdminHelpTip label={aiText('save_help', 'About saving')}>{aiText('save_supplier_notice', 'Saves the connection and enabled models, then fetches the account catalog again to update runtime models. Capability verification is separate.')}</AdminHelpTip>}
-          footerNotice={providerWorkbenchSection === 'references' ? aiText('reference_panel_note', 'Reference information is read-only; it does not change enabled models or routing.') : aiText('save_supplier_short', 'Save connection and enabled models')}
-          footerActions={directoryStale ? <button type="button" className="btn btn-secondary" onClick={closeProviderForm}>{aiText('action_close_dialog', 'Close')}</button> : providerWorkbenchSection === 'references' ? <div key="reference-actions" className="flex flex-wrap gap-2">
+          footerNotice={providerAdvancedPanel ? aiText('advanced_draft_notice', 'Changes stay in this supplier draft. Return to the connection settings, then Save supplier to apply.') : providerWorkbenchSection === 'references' ? aiText('reference_panel_note', 'Reference information is read-only; it does not change enabled models or routing.') : aiText('save_supplier_short', 'Save connection and enabled models')}
+          footerActions={providerAdvancedPanel ? <button ref={providerAdvancedBackRef} type="button" className="btn btn-secondary" disabled={isSavingConnection} onClick={returnToProviderConnection}>{aiText('action_back_to_connection', 'Back to connection settings')}</button> : directoryStale ? <button type="button" className="btn btn-secondary" onClick={closeProviderForm}>{aiText('action_close_dialog', 'Close')}</button> : providerWorkbenchSection === 'references' ? <div key="reference-actions" className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary" disabled={isSavingConnection} onClick={closeProviderForm}>{aiText('action_cancel', 'Cancel')}</button>
             <button type="button" className="btn btn-secondary" onClick={(event) => { event.preventDefault(); setProviderWorkbenchSection('models'); }}>{aiText('action_manage_models', 'Manage models')}</button>
           </div> : undefined}
           density="compact"
-          contentMode={providerWorkbenchSection === 'models' ? 'contained' : 'scroll'}
+          width={providerAdvancedPanel ? 'compact' : 'wide'}
+          contentMode={providerAdvancedPanel ? 'scroll' : providerWorkbenchSection === 'models' ? 'contained' : 'scroll'}
           onClose={closeProviderForm}
-          onSubmit={() => { if (providerWorkbenchSection !== 'references') void saveProviderConnection(); }}
+          onSubmit={() => { if (!providerAdvancedPanel && providerWorkbenchSection !== 'references') void saveProviderConnection(); }}
         >
           <fieldset disabled={isSavingConnection || directoryStale} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col gap-2 border-0 p-0">
                 {disabledModelUsages.length ? <div role="alert" className="mb-2 text-sm text-amber-800 dark:text-amber-200">{aiText('model_disable_impact', 'Saving will make models unavailable to: {{profiles}}. Update these usages to avoid interruption.', { profiles: [...new Set(disabledModelUsages.map((usage) => usageName(usage.profile_id)))].join(', ') })} <Link className="font-semibold underline" href={`/admin/runtime-profiles?provider=${encodeURIComponent(providerConnectionForm.providerId)}`}>{aiText('action_configure_usage', 'Configure usage')}</Link></div> : null}
-                <div
+                {!providerAdvancedPanel ? <div
                   role="tablist"
                   aria-label={aiText('provider_workbench_sections', 'Provider workspace sections')}
                   onKeyDown={(event) => {
@@ -1740,17 +1771,86 @@ function AiResourcesContent() {
                     onClick={() => setProviderWorkbenchSection('references')}>
                     {aiText('reference_browse_title', 'Reference information')}
                   </button>
-                </div>
-                <div role="tabpanel" id={`provider-panel-${providerWorkbenchSection}`} aria-labelledby={`provider-tab-${providerWorkbenchSection}`} tabIndex={0}
-                  className={providerWorkbenchSection === 'models' ? 'flex min-h-0 flex-1 flex-col gap-2' : undefined}>
-                <p data-ui="supplier-onboarding-step" className={providerFormMode === 'edit' ? 'sr-only' : 'text-xs text-slate-500 dark:text-slate-400'}>
+                </div> : null}
+                <div role={providerAdvancedPanel ? undefined : 'tabpanel'} id={providerAdvancedPanel ? undefined : `provider-panel-${providerWorkbenchSection}`} aria-labelledby={providerAdvancedPanel ? undefined : `provider-tab-${providerWorkbenchSection}`} tabIndex={0}
+                  className={providerAdvancedPanel ? 'flex min-h-0 flex-1 flex-col gap-2' : providerWorkbenchSection === 'models' ? 'flex min-h-0 flex-1 flex-col gap-2' : undefined}>
+                {!providerAdvancedPanel ? <p data-ui="supplier-onboarding-step" className={providerFormMode === 'edit' ? 'sr-only' : 'text-xs text-slate-500 dark:text-slate-400'}>
                   {providerFormMode === 'edit'
                     ? aiText('editing_supplier_hint', 'Connection settings and enabled models are saved together. List filters only change the view.')
                     : providerWorkbenchSection === 'connection'
                     ? aiText('onboarding_connection', '1. Enter the supplier address and API Key, then open model management.')
                     : aiText('onboarding_models', '2. Get account models and enable the ones you need. Save the supplier, then configure usage.')}
-                </p>
-                {providerWorkbenchSection === 'references' ? (
+                </p> : null}
+                {providerAdvancedPanel === 'image' ? (
+                  <AdminConfigurationTable ariaLabel={aiText('image_advanced_settings', 'Image delivery · Advanced settings')} itemHeading={aiText('configuration_item_heading', 'Setting')} valueHeading={aiText('configuration_value_heading', 'Current value')} detailHeading={aiText('configuration_detail_heading', 'Action / note')} density="compact">
+                    <AdminConfigurationRow
+                      rowId="image-response-format"
+                      label={aiText('field_image_response_format', 'Provider image response')}
+                      value={(
+                        <select
+                          className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          value={providerConnectionForm.imageResponseFormat}
+                          onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
+                          aria-label={aiText('field_image_response_format', 'Provider image response')}
+                        >
+                          <option value="">{aiText('image_response_provider_default', 'Provider / model default')}</option>
+                          <option value="url">{aiText('image_response_url', 'Image URL')}</option>
+                          <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
+                        </select>
+                      )}
+                      detail={aiText('image_response_override_note', 'Usually keep the default. Override only when required by the provider; model-specific settings take precedence.')}
+                    />
+                    {providerConnectionForm.imageResponseFormat === 'url' ? (
+                      <AdminConfigurationRow
+                        rowId="image-output-hosts"
+                        label={aiText('field_image_output_hosts_advanced', 'Manual exact hosts (advanced)')}
+                        value={(
+                          <input
+                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            value={providerConnectionForm.imageOutputHosts}
+                            onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                            placeholder="images.provider.example, assets.provider.example"
+                            aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
+                          />
+                        )}
+                        detail={aiText('image_delivery_manual_host_note', 'Normally use the image delivery test. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.')}
+                      />
+                    ) : null}
+                  </AdminConfigurationTable>
+                ) : providerAdvancedPanel === 'runtime' ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_connection_id', 'Connection ID')}
+                      <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.connectionId} onChange={(event) => updateProviderConnectionForm({ connectionId: event.target.value })} placeholder="openai_primary" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_provider_id', 'Provider ID')}
+                      <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.providerId} onChange={(event) => updateProviderConnectionForm({ providerId: event.target.value })} placeholder="openai" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_kind', 'Kind')}
+                      <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.kind} onChange={(event) => updateProviderConnectionForm({ kind: event.target.value })}>
+                        <option value="openai_compatible">openai_compatible</option><option value="anthropic">anthropic</option><option value="litellm_gateway">litellm_gateway</option><option value="vllm">vllm</option><option value="tei">tei</option><option value="openrouter">openrouter</option><option value="siliconflow">siliconflow</option><option value="minimax">minimax</option><option value="audio_provider">audio_provider</option><option value="web_search_provider">web_search_provider</option><option value="image_source_provider">image_source_provider</option><option value="embedding_provider">embedding_provider</option><option value="rerank_provider">rerank_provider</option><option value="vector_store_provider">vector_store_provider</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_source_role', 'Source role')}
+                      <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.sourceRole} onChange={(event) => updateProviderConnectionForm({ sourceRole: event.target.value })}>
+                        <option value="execution_source">execution_source</option><option value="runtime_metadata">runtime_metadata</option><option value="diagnostic_source">diagnostic_source</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_capabilities', 'Capabilities')}
+                      <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.capabilityIds} onChange={(event) => updateProviderConnectionForm({ capabilityIds: event.target.value })} placeholder="text_generation, image_generation" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      {aiText('field_profiles', 'Runtime configurations')}
+                      <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" value={providerConnectionForm.runtimeProfileIds} onChange={(event) => updateProviderConnectionForm({ runtimeProfileIds: event.target.value })} placeholder="text.ai" />
+                    </label>
+                    <p className="text-xs leading-5 text-slate-500 dark:text-slate-400 md:col-span-2">{aiText('advanced_settings_desc', 'These values are kept for runtime metadata and diagnostics. They do not edit prompts, router rules, abilities, or WordPress writes.')}</p>
+                  </div>
+                ) : null}
+                {!providerAdvancedPanel && providerWorkbenchSection === 'references' ? (
                   <ModelReferencePanel key={modelReferenceProviderId} references={modelReferences}
                     catalogPreview={providerCatalogPreview} selectedModelIds={selectedProviderModelIds}
                     providerId={modelReferenceProviderId} namespacePrefix={modelNamespacePrefix}
@@ -1763,7 +1863,7 @@ function AiResourcesContent() {
                     onProviderChange={(providerId) => dispatchProviderWorkbench({ type: 'set_reference_provider', providerId })}
                   />
                 ) : null}
-                {providerWorkbenchSection === 'connection' ? (
+                {!providerAdvancedPanel && providerWorkbenchSection === 'connection' ? (
                 <>
                 <AdminConfigurationTable
                   ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
@@ -1932,6 +2032,15 @@ function AiResourcesContent() {
                           <span className="text-xs text-slate-500 dark:text-slate-400">
                             {aiText('image_delivery_probe_cost_notice', 'Generates one test image and may incur a small provider charge.')}
                           </span>
+                          <button
+                            ref={providerImageAdvancedTriggerRef}
+                            data-ui="image-delivery-advanced-trigger"
+                            type="button"
+                            className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                            onClick={() => openProviderAdvancedPanel('image')}
+                          >
+                            {aiText('image_advanced_settings', 'Image delivery · Advanced settings')}
+                          </button>
                         </span>
                         {providerFormMode !== 'edit' || providerDraftDirty ? (
                           <span className="text-xs text-amber-700 dark:text-amber-300">
@@ -1971,53 +2080,29 @@ function AiResourcesContent() {
                     )}
                   />
                 ) : null}
-                </AdminConfigurationTable>
-                {providerUsesImageGeneration ? (
-                  <BackofficeDisclosure summary={aiText('image_advanced_settings', 'Image delivery · Advanced settings')}>
-                    <AdminConfigurationTable ariaLabel={aiText('image_advanced_settings', 'Image delivery · Advanced settings')} itemHeading={aiText('configuration_item_heading', 'Setting')} valueHeading={aiText('configuration_value_heading', 'Current value')} detailHeading={aiText('configuration_detail_heading', 'Action / note')} density="compact">
-                      <AdminConfigurationRow
-                        rowId="image-response-format"
-                        label={aiText('field_image_response_format', 'Provider image response')}
-                        value={(
-                          <select
-                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            value={providerConnectionForm.imageResponseFormat}
-                            onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
-                            aria-label={aiText('field_image_response_format', 'Provider image response')}
-                          >
-                            <option value="">{aiText('image_response_provider_default', 'Provider / model default')}</option>
-                            <option value="url">{aiText('image_response_url', 'Image URL')}</option>
-                            <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
-                          </select>
-                        )}
-                        detail={aiText('image_response_override_note', 'Usually keep the default. Override only when required by the provider; model-specific settings take precedence.')}
-                      />
-                      {providerConnectionForm.imageResponseFormat === 'url' ? (
-                        <AdminConfigurationRow
-                          rowId="image-output-hosts"
-                          label={aiText('field_image_output_hosts_advanced', 'Manual exact hosts (advanced)')}
-                          value={(
-                            <input
-                              className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                              value={providerConnectionForm.imageOutputHosts}
-                              onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
-                              placeholder="images.provider.example, assets.provider.example"
-                              aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
-                            />
-                          )}
-                          detail={aiText(
-                            'image_delivery_manual_host_note',
-                            'Normally use the image delivery test. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.'
-                          )}
-                        />
-                      ) : null}
-                    </AdminConfigurationTable>
-                  </BackofficeDisclosure>
+                {providerUsesCustomRuntimeFields ? (
+                  <AdminConfigurationRow
+                    rowId="advanced-runtime-settings"
+                    label={aiText('advanced_settings_title', 'Advanced runtime settings')}
+                    value={aiText('advanced_settings_summary', 'Custom metadata')}
+                    detail={(
+                      <button
+                        ref={providerRuntimeAdvancedTriggerRef}
+                        data-ui="advanced-runtime-settings-trigger"
+                        type="button"
+                        className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                        onClick={() => openProviderAdvancedPanel('runtime')}
+                      >
+                        {aiText('advanced_settings_action', 'Edit advanced settings')}
+                      </button>
+                    )}
+                  />
                 ) : null}
+                </AdminConfigurationTable>
                 </>
                 ) : null}
 
-                {providerWorkbenchSection === 'models' ? (
+                {!providerAdvancedPanel && providerWorkbenchSection === 'models' ? (
                 <section className="flex min-h-0 flex-1 flex-col">
                   <div className="flex min-h-0 flex-1 flex-col gap-3">
                     <div className="flex shrink-0 items-center justify-between gap-3">
@@ -2362,89 +2447,6 @@ function AiResourcesContent() {
                 </section>
                 ) : null}
 
-                {providerWorkbenchSection === 'connection' && providerUsesCustomRuntimeFields ? (
-                  <details className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <summary className="cursor-pointer text-sm font-semibold text-slate-900 dark:text-white">
-                      {aiText('advanced_settings_title', 'Advanced runtime settings')}
-                    </summary>
-                    <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                      {aiText('advanced_settings_desc', 'These values are kept for runtime metadata and diagnostics. They do not edit prompts, router rules, abilities, or WordPress writes.')}
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_connection_id', 'Connection ID')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.connectionId}
-                          onChange={(event) => updateProviderConnectionForm({ connectionId: event.target.value })}
-                          placeholder="openai_primary"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_provider_id', 'Provider ID')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.providerId}
-                          onChange={(event) => updateProviderConnectionForm({ providerId: event.target.value })}
-                          placeholder="openai"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_kind', 'Kind')}
-                        <select
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.kind}
-                          onChange={(event) => updateProviderConnectionForm({ kind: event.target.value })}
-                        >
-                          <option value="openai_compatible">openai_compatible</option>
-                          <option value="anthropic">anthropic</option>
-                          <option value="litellm_gateway">litellm_gateway</option>
-                          <option value="vllm">vllm</option>
-                          <option value="tei">tei</option>
-                          <option value="openrouter">openrouter</option>
-                          <option value="siliconflow">siliconflow</option>
-                          <option value="minimax">minimax</option>
-                          <option value="audio_provider">audio_provider</option>
-                          <option value="web_search_provider">web_search_provider</option>
-                          <option value="image_source_provider">image_source_provider</option>
-                          <option value="embedding_provider">embedding_provider</option>
-                          <option value="rerank_provider">rerank_provider</option>
-                          <option value="vector_store_provider">vector_store_provider</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_source_role', 'Source role')}
-                        <select
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.sourceRole}
-                          onChange={(event) => updateProviderConnectionForm({ sourceRole: event.target.value })}
-                        >
-                          <option value="execution_source">execution_source</option>
-                          <option value="runtime_metadata">runtime_metadata</option>
-                          <option value="diagnostic_source">diagnostic_source</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_capabilities', 'Capabilities')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.capabilityIds}
-                          onChange={(event) => updateProviderConnectionForm({ capabilityIds: event.target.value })}
-                          placeholder="text_generation, image_generation"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_profiles', 'Runtime configurations')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.runtimeProfileIds}
-                          onChange={(event) => updateProviderConnectionForm({ runtimeProfileIds: event.target.value })}
-                          placeholder="text.ai"
-                        />
-                      </label>
-                    </div>
-                  </details>
-                ) : null}
                 </div>
           </fieldset>
         </ProviderConnectionDialog>

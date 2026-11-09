@@ -1,0 +1,5 @@
+FROM redis:7-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af
+
+# Alpine publishes the fix before the official image is rebuilt. Preserve the
+# upstream entrypoint, command, user and paths; scan the resulting built image.
+RUN apk add --no-cache --upgrade 'zlib>=1.4-r0'

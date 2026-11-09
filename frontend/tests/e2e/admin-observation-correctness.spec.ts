@@ -1,3 +1,4 @@
+import { buildRuntimeRunsFixture } from './helpers/runtime-telemetry-fixture';
 import { expect, test, type Page } from '@playwright/test';
 import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
@@ -9,7 +10,12 @@ const vector = {
   sites: [{ site_id: 'index-only', document_count: 10, chunk_count: 20, queries_total: 0, index_jobs_total: 1, index_failed_total: 1, captured_at: '2026-10-01T12:17:00Z' }],
   failure_groups: [{ kind: 'index', error_code: '', count: 1, last_seen_at: generated_at }, { kind: 'search', error_code: 'search.timeout', count: 1, last_seen_at: generated_at }],
   failure_groups_truncated: true,
-  timeline: [{ bucket_start_at: '2026-10-01T12:17:00Z', bucket_end_at: '2026-10-02T18:17:00Z', indexed_chunks_total: 2000, search_queries_total: 1, no_hit_total: 0, failed_total: 2 }],
+  timeline: Array.from({ length: 24 }, (_, index) => ({
+    bucket_start_at: new Date(Date.parse('2026-10-01T12:17:00Z') + index * 86_400_000).toISOString(),
+    bucket_end_at: new Date(Date.parse('2026-10-01T12:17:00Z') + (index + 1) * 86_400_000).toISOString(),
+    indexed_chunks_total: index === 0 ? 2000 : 0, search_queries_total: index === 0 ? 1 : 0,
+    no_hit_total: 0, failed_total: index === 0 ? 2 : 0,
+  })),
 };
 const media = {
   generated_at, window, health: { status: 'ok', score: 100 }, totals: { jobs_total: 5, succeeded_total: 5, success_rate: 1, failed_total: 0, active_artifact_count: 1, active_artifact_bytes: 1024, delivery_started_count: 2, delivery_stream_completed_count: 2, delivery_acknowledged_count: 1 },
@@ -42,6 +48,18 @@ test('vector totals include every failure and absent focus never selects another
   await page.locator('[data-ui="vector-error-item"]').first().click();
   await expect(page).toHaveURL(/focus=index%3A/);
   await expect(page.locator('#vector-error-inspector')).toContainText(/未提供错误码|No error code provided/);
+  await page.getByText(/查看区间与计数|View intervals and counts/, { exact: true }).first().click();
+  const panels = page.locator('[data-ui="vector-trend-grid"] > section');
+  expect((await panels.first().boundingBox())!.height).toBeLessThan(800);
+  const scroll = page.locator('[data-ui="observation-interval-scroll"]').first();
+  await expect(scroll.locator('tbody tr')).toHaveCount(24);
+  expect(await scroll.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await scroll.press('End');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await scroll.press('Home');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  expect((await panels.last().boundingBox())!.height).toBeLessThan(500);
+  await capture(page, testInfo.outputPath('vector-independent-panels-1440.png'));
   await page.getByText(/查看区间与计数|View intervals and counts/, { exact: true }).last().click();
   const intervals = page.getByRole('table', { name: /趋势区间与计数|Trend intervals and counts/ }).last();
   await expect(intervals).toContainText('2,000');
@@ -67,13 +85,19 @@ test('media preserves requested run, normal success tone and delivery in empty h
   await expect(page.locator('[data-ui="media-delivery-evidence"]')).toContainText('image.generate.v1');
   await page.getByText(/查看区间与计数|View intervals and counts/, { exact: true }).click();
   await expect(page.getByRole('table', { name: /趋势区间与计数|Trend intervals and counts/ })).toContainText('2026');
+  await page.getByRole('button', { name: /P95 计算方法|P95 calculation/ }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('floor');
+  await page.keyboard.press('Escape');
+  const delivery = page.locator('[data-ui="media-delivery-comparison"]');
+  await expect(delivery.locator('tfoot td')).toHaveText(['2', '2', '1']);
+  expect((await delivery.boundingBox())!.width).toBeLessThan(650);
   await capture(page, testInfo.outputPath('media-light-1440.png'));
   await page.emulateMedia({ colorScheme: 'dark' });
   await capture(page, testInfo.outputPath('media-dark-1440.png'));
   empty = true;
   await page.getByRole('button', { name: /^刷新$|^Refresh$/ }).click();
   await expect(page.getByRole('heading', { name: /暂无衍生处理历史|No derivative processing history/ })).toBeVisible();
-  await expect(page.locator('[data-ui="media-delivery-evidence"]')).toContainText('2 / 2 / 1');
+  await expect(page.locator('[data-ui="media-delivery-comparison"] tfoot td')).toHaveText(['2', '2', '1']);
   await expect(page.locator('[data-ui="media-history-scope"]')).toContainText(/已暂停|are paused/);
   await page.setViewportSize({ width: 900, height: 1050 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -95,7 +119,7 @@ test('plugin problem history keeps exact conditions through paging and links the
     const url = new URL(route.request().url()); historyRequests.push(url);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ items: [{ id: Number(url.searchParams.get('page')), event_id: 'fixture-event', site_id: 'site_mvp', plugin_slug: 'npcink-cloud-addon', event_kind: 'unknown.event', error_code: 'unknown.reason', status: 'failed', received_at: generated_at, run_id: 'target-run' }], page: Number(url.searchParams.get('page')), pages: 2, total: 32, totals: { events: 32, failed: 32, succeeded: 0 }, snapshot: { at: generated_at, id: 80 } })) });
   });
-  await reply(page, '**/api/admin/runtime-telemetry/runs?*', { items: [{ run_id: 'target-run', site_id: 'site_mvp', ability_name: 'fixture-ability', status: 'failed', error_code: 'unknown.reason', started_at: generated_at, finished_at: generated_at, duration_ms: 1, provider_call_count: 0, has_meter_event: false }] });
+  await reply(page, '**/api/admin/runtime-telemetry/runs?*', buildRuntimeRunsFixture({ items: [{ run_id: 'target-run', site_id: 'site_mvp', ability_name: 'fixture-ability', ability_family: 'text', profile_id: 'text.ai', status: 'failed', error_code: 'unknown.reason', started_at: generated_at, finished_at: generated_at, duration_ms: 1, provider_call_count: 0, has_meter_event: false }] }));
   await page.goto('/admin/plugin-observability?window=720');
   const problems = page.locator('[data-ui="plugin-problems"]');
   await expect(problems).toContainText('unknown.reason');
@@ -124,7 +148,7 @@ test('exact run lookup distinguishes absent evidence from source failure', async
   let fail = false;
   await page.route('**/api/admin/runtime-telemetry/runs?*', route => {
     const exact = new URL(route.request().url()).searchParams.has('run_id');
-    return route.fulfill({ status: fail && exact ? 503 : 200, contentType: 'application/json', body: JSON.stringify(fail && exact ? buildAdminApiErrorEnvelope('fixture unavailable') : buildAdminApiEnvelope({ items: [] })) });
+    return route.fulfill({ status: fail && exact ? 503 : 200, contentType: 'application/json', body: JSON.stringify(fail && exact ? buildAdminApiErrorEnvelope('fixture unavailable') : buildAdminApiEnvelope(buildRuntimeRunsFixture({ items: [] }))) });
   });
   await page.goto('/admin/troubleshooting?window=720&site=site_mvp&run_id=absent');
   const panel = page.locator('[data-ui="runtime-exact-run"]');

@@ -5,7 +5,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 const page = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 const i18n = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
-assert.match(page, /const activeStateNotice = \(activeGroupDirty \|\| activeValidationIssues\.length > 0 \|\| error\)/, 'dirty, validation, and failure state must share one active-group notice');
+assert.match(page, /const activeStateNotice = \(activeGroupDirty \|\| visibleValidationIssues\.length > 0 \|\| error\)/, 'dirty, validation, and failure state must share one active-group notice');
 for (const panel of ['portal', 'qq', 'email', 'payment']) {
   const start = page.indexOf(`id="service-settings-${panel}"`);
   assert.ok(start >= 0, `${panel} panel must exist`);

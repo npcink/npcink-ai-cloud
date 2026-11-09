@@ -1,4 +1,5 @@
 'use client';
+import { siteIdentity } from '@/lib/identity-display';
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
@@ -49,6 +50,7 @@ interface SiteDetail {
   site_id: string;
   account_id: string;
   site_name: string;
+  site_url?: string;
   status: string;
   created_at: string;
   key_count: number;
@@ -274,7 +276,8 @@ function SiteDetailContent() {
         const normalizedSite: SiteDetail = {
           site_id: String(rawSite.site_id),
           account_id: String(rawSite.account_id || ''),
-          site_name: String(rawSite.name || rawSite.site_id || siteId),
+          site_name: String(rawSite.name || ''),
+          site_url: typeof rawSite.site_url === 'string' ? rawSite.site_url : '',
           status: String(rawSite.status),
           created_at: String(rawSite.created_at || ''),
           key_count: siteKeys.length,
@@ -562,7 +565,8 @@ function SiteDetailContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
-        title={site.site_name || site.site_id}
+        title={siteIdentity(site.site_name, site.site_url, site.site_id, t('admin.readability.unnamed_site'))}
+        scope={site.site_url || undefined}
         description={c('查看站点覆盖、运行与归属证据。', 'Inspect site coverage, runtime and ownership evidence.')}
         primaryAction={site.status === 'provisioning' ? (
               <button

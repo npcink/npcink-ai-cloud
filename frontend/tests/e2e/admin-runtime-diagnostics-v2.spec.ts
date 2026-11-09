@@ -71,7 +71,7 @@ test('missing-call investigation separates comparison records and retains recove
   await expect(page.getByRole('main')).toContainText(/no requests|没有运行|暂无请求|尚无请求|没有请求|未发现运行/i);
   await page.reload();
   await expect(absent).toBeVisible();
-  await expect(page.getByRole('link', { name: /Usage statistics|使用统计/, exact: true })).toHaveAttribute('href', /since=/);
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/, exact: true })).toHaveAttribute('href', /since=/);
   await page.getByRole('button', { name: /Return to full period|返回完整时段/, exact: true }).click();
   await expect(page).not.toHaveURL(/since=/);
   await expect(page.locator('#runtime-diagnostic-inspector')).toBeVisible();
@@ -209,6 +209,7 @@ test('runtime diagnostics shows evidence in three tabs with default selection an
   await page.keyboard.press('Escape');
   await expect(sourceError.getByRole('button')).toBeFocused();
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
+  await expect(inspector.locator('.btn-primary')).toHaveCount(1);
   await writeAdminVisualReceipt({
     page, testInfo, route: '/admin/troubleshooting', pageModel: 'diagnostic',
     testedStates: ['ready', 'selected', 'partial_error', 'disclosure'], dataMode: 'mocked', humanAcceptance: 'pending',
@@ -216,7 +217,7 @@ test('runtime diagnostics shows evidence in three tabs with default selection an
     workingSurface: page.locator('[data-ui="runtime-diagnostic-table-frame"]'), browserEvidence,
     expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
     routeRuleResults: [
-      { id: 'single-primary-action', status: 'not_applicable', evidence: 'read-only diagnostics with one recommended navigation action' },
+      { id: 'single-primary-action', status: 'pass', evidence: 'selected issue has exactly one highlighted investigation action' },
       { id: 'textual-status', status: 'pass', evidence: 'record availability and errors are visible without expansion' },
       { id: 'action-object-proximity', status: 'pass', evidence: 'records and next action sit alongside the selected anomaly' },
       { id: 'distinct-interaction-states', status: 'pass', evidence: 'aria-pressed marks selection separately from keyboard focus' },
@@ -248,7 +249,17 @@ test('editorial quality detail remains available on the dedicated statistics vie
   await expect(qualityPanel).toContainText(/Exact adoption|精确采纳率/i);
   await expect(qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]')).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
+  let releaseTask!: () => void;
+  const taskPending = new Promise<void>(resolve => { releaseTask = resolve; });
+  await page.route('**/api/admin/editor-assist-quality?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('task_key') === 'content_summary') await taskPending;
+    await route.fallback();
+  });
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
+  await expect(qualityPanel.locator('[data-ui="editor-assist-quality-export"]')).toBeDisabled();
+  await expect(page).toHaveURL(/task=content_summary/);
+  releaseTask();
+  await expect(qualityPanel.locator('[data-ui="editor-assist-quality-export"]')).toBeEnabled();
   const qualityReference = qualityPanel.locator('[data-ui="editor-quality-reference"]');
   await expect(qualityReference).not.toHaveAttribute('open', '');
   await qualityReference.locator('summary').press('Enter');
@@ -453,11 +464,13 @@ test('provider failure details explain cause, export evidence and keep recovery 
     }))) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
-  await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
-  await expect(page.locator('[data-ui="runtime-inspector-summary"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
+  await expect(page.locator('[data-ui="runtime-investigation-actions"]')).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
   await expect(page.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
   await expect(page.locator('[data-ui="runtime-verification-guidance"]')).toContainText(/next natural business run|下一次同类自然业务运行/);
+  await expect(page.locator('[data-ui="runtime-recovery-limits"]')).toBeVisible();
+  await expect(page.locator('[data-ui="runtime-recovery-limits"]')).toContainText(/success elsewhere|其他功能成功/);
   await selectPanel(page, 'records');
   await expect(page.locator('[data-ui="runtime-run-evidence"]')).toContainText('site-alpha');
   await expect(page.locator('[data-ui="provider-recovery-status"]')).toContainText(/恢复待验证|Recovery unverified/i);
@@ -523,7 +536,7 @@ test('inherited scope filters stay visible at the scope row and clear independen
   await expect(sitePill).toBeVisible();
   await expect(sitePill).toContainText(/site-alpha/);
   await expect(functionPill).toBeVisible();
-  await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting&group=sites&site=site-alpha&function=text');
+  await expect(page.getByRole('main').getByRole('link', { name: /Runtime observation|运行观测/ })).toHaveAttribute('href', '/admin/usage-statistics?window=336&from=troubleshooting&group=sites&site=site-alpha&function=text');
   await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toHaveCount(0);
 
   await sitePill.click();
@@ -582,6 +595,11 @@ test('issue evidence ignores display-group limits, isolates failures, and retrie
   await page.goto('/admin/troubleshooting?site=site-alpha');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(3);
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-three-issues.png'), animations: 'disabled' });
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(page.locator('[data-ui="runtime-investigation-actions"] .btn-primary')).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(900);
+  await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-three-issues-narrow.png'), animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   const gap = page.getByRole('button', { name: /Call records missing|调用记录缺失/ });
   await gap.focus();
   await gap.press('Enter');
@@ -744,7 +762,7 @@ test('task tabs support keyboard, help is optional, and navigation retains suppo
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-for (const width of [1280, 1440, 1920]) {
+for (const width of [900, 1280, 1440, 1920]) {
   test(`diagnostic geometry aligns adjacent panels and uses available width at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await installAdminMocks(page);
@@ -756,7 +774,8 @@ for (const width of [1280, 1440, 1920]) {
     const inspectorBox = (await inspector.boundingBox())!;
     expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(2);
     expect(queueBox.width).toBe(320);
-    expect(queueBox.y).toBeLessThan(220);
+    if (width >= 1024) expect(queueBox.y).toBeLessThan(300);
+    await expect(queue).toBeInViewport();
     const leftTitle = (await queue.getByRole('heading', { level: 2 }).boundingBox())!;
     const rightTitle = (await inspector.getByRole('heading', { level: 2 }).boundingBox())!;
     expect(Math.abs(leftTitle.y + leftTitle.height / 2 - rightTitle.y - rightTitle.height / 2)).toBeLessThanOrEqual(1);
@@ -766,20 +785,44 @@ for (const width of [1280, 1440, 1920]) {
     expect(Math.abs(title.y + title.height / 2 - window.y - window.height / 2)).toBeLessThanOrEqual(1);
     const metrics = (await page.locator('[data-ui="runtime-diagnostic-metrics"]').boundingBox())!;
     const conclusion = (await page.locator('[data-ui="runtime-diagnostic-conclusion"]').boundingBox())!;
-    expect(Math.abs(metrics.y + metrics.height / 2 - conclusion.y - conclusion.height / 2)).toBeLessThanOrEqual(1);
+    const recovery = (await page.locator('[data-ui="runtime-recovery-review"]').boundingBox())!;
+    expect(recovery.y).toBeGreaterThanOrEqual(conclusion.y + conclusion.height);
+    if (width >= 1280) {
+      expect(Math.abs(conclusion.y - metrics.y)).toBeLessThanOrEqual(1);
+      expect(metrics.x).toBeGreaterThan(conclusion.x + conclusion.width);
+    } else {
+      expect(metrics.y).toBeGreaterThan(recovery.y + recovery.height);
+    }
     const summary = (await inspector.locator('[data-ui="runtime-inspector-summary"]').boundingBox())!;
     const actions = (await inspector.locator('[data-ui="runtime-investigation-actions"]').boundingBox())!;
-    if (width >= 1600) {
-      expect(actions.x).toBeGreaterThan(summary.x + summary.width);
-      expect(Math.abs(actions.y - summary.y)).toBeLessThanOrEqual(1);
-    } else {
-      expect(actions.y).toBeGreaterThan(summary.y + summary.height);
-    }
+    expect(actions.y + actions.height).toBeLessThanOrEqual(summary.y);
+    expect(Math.abs(actions.x - summary.x)).toBeLessThanOrEqual(1);
+    const investigate = inspector.locator('[data-ui="runtime-investigation-actions"] button').first();
+    await expect(investigate).toBeInViewport();
+    await expect(inspector.locator('.btn-primary')).toHaveCount(1);
     const table = inspector.locator('[data-ui="runtime-issue-evidence"] table');
     await expect(table.getByRole('columnheader').nth(1)).toHaveCSS('text-align', 'right');
     await expect(table.locator('tbody td').first()).toHaveCSS('text-align', 'right');
+    // Small capability comparisons must not stretch their labels and numbers
+    // across the entire inspector at wide PC sizes.
+    const tableBox = (await table.boundingBox())!;
+    expect(tableBox.width).toBeLessThanOrEqual(640);
+    const scopeCell = (await table.locator('tbody th').first().boundingBox())!;
+    const totalCell = (await table.locator('tbody td').first().boundingBox())!;
+    expect(totalCell.x - scopeCell.x).toBeLessThanOrEqual(224);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     await page.screenshot({ path: testInfo.outputPath(`runtime-diagnostics-geometry-${width}.png`), animations: 'disabled' });
+    await page.goto('/admin/troubleshooting?site=site-alpha');
+    await expect(inspector).toBeVisible();
+    await expect(header.locator('[data-ui="runtime-diagnostic-scope-filters"]')).toBeVisible();
+    await expect(investigate).toBeInViewport();
+    if (width >= 1280) {
+      const scope = (await header.locator('[data-ui="backoffice-page-scope"]').boundingBox())!;
+      const freshness = (await header.locator('[data-ui="backoffice-page-freshness"]').boundingBox())!;
+      expect(Math.abs(scope.y + scope.height / 2 - freshness.y - freshness.height / 2)).toBeLessThanOrEqual(8);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await page.screenshot({ path: testInfo.outputPath(`runtime-diagnostics-scoped-${width}.png`), animations: 'disabled' });
   });
 }
 
@@ -850,6 +893,8 @@ test('mixed call failures keep successful outcomes and per-record handling disti
   const inspector = page.locator('#runtime-diagnostic-inspector');
   await expect(inspector.locator('[data-ui="runtime-issue-impact"]')).toContainText(/task may still have succeeded|任务可能通过其他尝试完成/);
   await expect(inspector.locator('[data-ui="runtime-investigation-actions"]')).toContainText(/latest returned failure sample|最近返回的失败样本/);
+  await expect(inspector.locator('[data-ui="runtime-investigation-actions"]').getByRole('heading')).toHaveText(/Latest failure: Model service timed out|最新失败: 模型服务响应超时/i);
+  await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toContainText(/WordPress receipt or adoption|WordPress 是否收到或采用/);
   for (const width of [1440, 900]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(inspector.locator('[data-ui="runtime-verification-guidance"]')).toBeVisible();

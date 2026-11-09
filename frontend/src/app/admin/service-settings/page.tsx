@@ -37,15 +37,17 @@ import {
   type NormalizedServiceSettingsData,
   type PortalPublicForm,
   type QQForm,
+  type RegistrationForm,
   type SavedServiceSettingsForms,
   type ServiceSettingsData,
   type SettingStatus,
   type SiteRelinkPolicyForm,
 } from '@/features/admin/service-settings/service-settings-model';
 
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'provider-budget' | 'site-relink' | 'system';
+type ServiceSettingsTab = 'portal' | 'registration' | 'qq' | 'email' | 'payment' | 'accounting' | 'provider-budget' | 'site-relink' | 'system';
 const SERVICE_SETTINGS_TAB_IDS: readonly ServiceSettingsTab[] = [
   'portal',
+  'registration',
   'qq',
   'email',
   'payment',
@@ -105,8 +107,8 @@ function statusTone(status: SettingStatus): string {
 }
 
 function providerBudgetRuntimeStatus(status: string, t: Translator): string {
-  if (status === 'ok') return t('admin.service_settings.provider_budget_runtime_ok', {}, '正常');
-  if (status === 'warning') return t('admin.service_settings.provider_budget_runtime_warning', {}, '接近上限');
+  if (status === 'ok') return t('admin.service_settings.provider_budget_runtime_ok', {}, 'Within estimated budget');
+  if (status === 'warning') return t('admin.service_settings.provider_budget_runtime_warning', {}, 'Near estimated limit');
   if (status === 'exceeded') return t('admin.service_settings.provider_budget_runtime_exceeded', {}, '已停止新调用');
   if (status === 'missing_config') return t('admin.service_settings.provider_budget_runtime_missing', {}, '待配置');
   return t('admin.service_settings.status_disabled', {}, '未启用');
@@ -306,6 +308,9 @@ export default function AdminServiceSettingsPage() {
     if (typeof window === 'undefined') return 'portal';
     return serviceSettingsTabFromQuery(new URLSearchParams(window.location.search).get('tab'));
   });
+  const [validatedFields, setValidatedFields] = useState<Record<string, boolean>>({});
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [editingField, setEditingField] = useState('');
   const [pendingTab, setPendingTab] = useState<ServiceSettingsTab | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
   const [providerBudgetDisableConfirmOpen, setProviderBudgetDisableConfirmOpen] = useState(false);
@@ -340,6 +345,10 @@ export default function AdminServiceSettingsPage() {
   const [portalPublicForm, setPortalPublicForm] = useState<PortalPublicForm>({
     enabled: true,
     public_base_url: '',
+  });
+  const [registrationForm, setRegistrationForm] = useState<RegistrationForm>({
+    public_registration_enabled: true,
+    email_allowlist: '',
   });
   const [qqForm, setQqForm] = useState<QQForm>({
     enabled: true,
@@ -388,6 +397,15 @@ export default function AdminServiceSettingsPage() {
     require_provider_configuration: true,
     providers: [],
   });
+  const [providerBudgetAddOpen, setProviderBudgetAddOpen] = useState(false);
+  const [providerBudgetAddForm, setProviderBudgetAddForm] = useState<ProviderBudgetProviderForm>({
+    row_id: '',
+    provider_id: '',
+    account_class: 'paid',
+    daily_usd: '5',
+    monthly_usd: '100',
+  });
+  const [providerBudgetAddError, setProviderBudgetAddError] = useState('');
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
@@ -433,9 +451,12 @@ export default function AdminServiceSettingsPage() {
       savedFormsRef.current = nextSavedForms;
       setSavedForms(nextSavedForms);
       if (!preserveDraft) {
+        setValidatedFields({});
+        setValidationAttempted(false);
         setEmailConfigExpanded(projection.emailConfigExpanded);
         setPortalPublicForm(nextSavedForms.portal);
         setQqForm(nextSavedForms.qq);
+        setRegistrationForm(nextSavedForms.registration);
         setEmailForm(nextSavedForms.email);
         setAlipayForm(nextSavedForms.payment);
         setAccountingFxForm(nextSavedForms.accounting);
@@ -507,7 +528,7 @@ export default function AdminServiceSettingsPage() {
       ['alipay_payment', t('admin.service_settings.metric_payment', {}, 'Payment')],
       ['accounting_fx', t('admin.service_settings.metric_accounting_fx', {}, 'Accounting FX')],
       ['site_relink_policy', t('admin.service_settings.metric_site_relink', {}, 'Site relink')],
-      ['provider_budget', t('admin.service_settings.metric_provider_budget', {}, 'Provider budget')],
+      ['provider_budget', t('admin.service_settings.metric_provider_budget', {}, 'AI budget')],
     ] as const;
     const attention = groups.filter(([id]) => {
       const status = data.settings[id].status;
@@ -687,10 +708,24 @@ export default function AdminServiceSettingsPage() {
     void loadEmailPreview();
   }
 
+  function submitRegistration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setValidationAttempted(true);
+      setEditingField('');
+      return;
+    }
+    void saveJson('/api/admin/service-settings/portal-registration', {
+      public_registration_enabled: registrationForm.public_registration_enabled,
+      email_allowlist: registrationForm.email_allowlist.split('\n').map((email) => email.trim()).filter(Boolean),
+    }, 'portal-registration', t('admin.service_settings.registration_saved', {}, 'Registration policy saved.'));
+  }
+
   function submitPortalPublic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     void saveJson(
@@ -704,7 +739,8 @@ export default function AdminServiceSettingsPage() {
   function submitSiteRelinkPolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     void saveJson(
@@ -725,7 +761,8 @@ export default function AdminServiceSettingsPage() {
   function submitPlatformPreferences(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     void saveJson(
@@ -739,7 +776,8 @@ export default function AdminServiceSettingsPage() {
   function submitAccountingFx(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     void saveJson(
@@ -756,19 +794,47 @@ export default function AdminServiceSettingsPage() {
   }
 
   function addProviderBudgetRow() {
+    setProviderBudgetAddForm({
+      row_id: `provider-budget-row-new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      provider_id: '',
+      account_class: 'paid',
+      daily_usd: '5',
+      monthly_usd: '100',
+    });
+    setProviderBudgetAddError('');
+    setProviderBudgetAddOpen(true);
+  }
+
+  function closeProviderBudgetAdd() {
+    setProviderBudgetAddOpen(false);
+    setProviderBudgetAddError('');
+  }
+
+  function submitProviderBudgetAdd(_formData: FormData) {
+    const providerId = providerBudgetAddForm.provider_id.trim();
+    const daily = Number(providerBudgetAddForm.daily_usd);
+    const monthly = Number(providerBudgetAddForm.monthly_usd);
+    if (!providerId) {
+      setProviderBudgetAddError(t('admin.service_settings.provider_budget_add_provider_required', {}, 'Select a supplier before adding it.'));
+      return;
+    }
+    if (providerBudgetForm.providers.some((provider) => provider.provider_id.trim() === providerId)) {
+      setProviderBudgetAddError(t('admin.service_settings.provider_budget_add_duplicate', {}, 'This supplier already has a budget row.'));
+      return;
+    }
+    if (!providerBudgetAddForm.daily_usd.trim() || !providerBudgetAddForm.monthly_usd.trim() || !Number.isFinite(daily) || daily < 0 || !Number.isFinite(monthly) || monthly < 0) {
+      setProviderBudgetAddError(t('admin.service_settings.provider_budget_add_limits_invalid', {}, 'Enter non-negative daily and monthly estimated limits.'));
+      return;
+    }
+    if (providerBudgetAddForm.account_class === 'paid' && (daily <= 0 || monthly <= 0)) {
+      setProviderBudgetAddError(t('admin.service_settings.provider_budget_add_paid_limits_invalid', {}, 'Paid suppliers need positive daily and monthly estimated limits.'));
+      return;
+    }
     setProviderBudgetForm((current) => ({
       ...current,
-      providers: [
-        ...current.providers,
-        {
-          row_id: `provider-budget-row-new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          provider_id: '',
-          account_class: 'paid',
-          daily_usd: '5',
-          monthly_usd: '100',
-        },
-      ],
+      providers: [...current.providers, { ...providerBudgetAddForm, provider_id: providerId }],
     }));
+    closeProviderBudgetAdd();
   }
 
   function updateProviderBudgetRow(
@@ -806,14 +872,15 @@ export default function AdminServiceSettingsPage() {
         })),
       },
       'provider-budget',
-      t('admin.service_settings.provider_budget_saved', {}, 'Provider budget saved.')
+      t('admin.service_settings.provider_budget_saved', {}, 'Estimated AI budget saved.')
     );
   }
 
   function submitProviderBudget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     if (savedForms?.providerBudget.enabled && !providerBudgetForm.enabled) {
@@ -826,7 +893,8 @@ export default function AdminServiceSettingsPage() {
   function submitQq(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     if (!qqRedirectUri) {
@@ -850,7 +918,8 @@ export default function AdminServiceSettingsPage() {
   function submitEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     if (emailForm.smtp_use_ssl && emailForm.smtp_use_starttls) {
@@ -881,7 +950,8 @@ export default function AdminServiceSettingsPage() {
   async function submitAlipay(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
-      setError(activeValidationIssues[0]);
+      setValidationAttempted(true);
+      setEditingField('');
       return;
     }
     const alipayPublicBaseUrl = savedPortalPublicBaseUrl;
@@ -916,6 +986,7 @@ export default function AdminServiceSettingsPage() {
   const activeGroupDirty = (() => {
     if (!savedForms || !snapshotCurrent) return false;
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
+    if (activeTab === 'registration') return JSON.stringify(registrationForm) !== JSON.stringify(savedForms.registration);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
     if (activeTab === 'site-relink') {
@@ -933,14 +1004,18 @@ export default function AdminServiceSettingsPage() {
     return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
   })();
 
-  const activeValidationIssues = (() => {
-    const issues: string[] = [];
+  const activeValidationDetails = (() => {
+    const issues: Array<{ field: string; message: string }> = [];
+    const addIssue = (field: string, message: string) => issues.push({ field, message });
     const replacements = activeTab === 'qq' ? [qqForm.client_secret]
       : activeTab === 'email' ? [emailForm.smtp_password]
         : activeTab === 'payment' ? [alipayForm.private_key, alipayForm.public_key] : [];
-    if (replacements.some((value) => value.length > 0 && !value.trim())) {
-      issues.push(t('admin.service_settings.validation_secret_blank', {}, 'A replacement credential cannot contain only whitespace. Cancel replacement to keep the saved credential.'));
-    }
+    replacements.forEach((value, index) => {
+      if (value.length > 0 && !value.trim()) {
+        const field = activeTab === 'qq' ? 'client_secret' : activeTab === 'email' ? 'smtp_password' : index === 0 ? 'private_key' : 'public_key';
+        addIssue(field, t('admin.service_settings.validation_secret_blank', {}, 'A replacement credential cannot contain only whitespace. Cancel replacement to keep the saved credential.'));
+      }
+    });
     if (activeTab === 'portal') {
       try {
         const parsed = new URL(portalPublicForm.public_base_url.trim());
@@ -948,60 +1023,66 @@ export default function AdminServiceSettingsPage() {
           throw new Error('unsupported protocol');
         }
       } catch {
-        issues.push(t('admin.service_settings.validation_public_url', {}, 'Enter a valid HTTP or HTTPS public URL.'));
+        addIssue('public_base_url', t('admin.service_settings.validation_public_url', {}, 'Enter a valid HTTP or HTTPS public URL.'));
+      }
+    }
+    if (activeTab === 'registration') {
+      const emails = registrationForm.email_allowlist.split('\n').map((email) => email.trim()).filter(Boolean);
+      if (emails.length > 200 || emails.some((email) => email.includes('*') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+        addIssue('email_allowlist', t('admin.service_settings.registration_invalid', {}, 'Enter one valid email address per line, up to 200 entries.'));
       }
     }
     if (activeTab === 'qq' && qqForm.enabled) {
       if (!qqForm.client_id.trim()) {
-        issues.push(t('admin.service_settings.validation_qq_app_id', {}, 'Enter the QQ App ID.'));
+        addIssue('client_id', t('admin.service_settings.validation_qq_app_id', {}, 'Enter the QQ App ID.'));
       }
       if (!secretConfigured.qq && !qqForm.client_secret.trim()) {
-        issues.push(t('admin.service_settings.validation_qq_secret', {}, 'Enter the QQ App Secret.'));
+        addIssue('client_secret', t('admin.service_settings.validation_qq_secret', {}, 'Enter the QQ App Secret.'));
       }
       if (!qqRedirectUri) {
-        issues.push(t('admin.service_settings.validation_qq_redirect', {}, 'Save a valid Portal public URL before enabling QQ login.'));
+        addIssue('saved-dependency', t('admin.service_settings.validation_qq_redirect', {}, 'Save a valid Portal public URL before enabling QQ login.'));
       }
     }
     if (activeTab === 'email' && emailForm.enabled) {
       const port = Number(emailForm.smtp_port);
       const timeout = Number(emailForm.smtp_timeout_seconds);
       if (!emailForm.smtp_host.trim()) {
-        issues.push(t('admin.service_settings.validation_email_host', {}, 'Enter the SMTP server.'));
+        addIssue('smtp_host', t('admin.service_settings.validation_email_host', {}, 'Enter the SMTP server.'));
       }
       if (!emailForm.from_email.includes('@')) {
-        issues.push(t('admin.service_settings.validation_email_sender', {}, 'Enter a valid sender email address.'));
+        addIssue('from_email', t('admin.service_settings.validation_email_sender', {}, 'Enter a valid sender email address.'));
       }
       if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-        issues.push(t('admin.service_settings.validation_email_port', {}, 'Enter a valid SMTP port from 1 to 65535.'));
+        addIssue('smtp_port', t('admin.service_settings.validation_email_port', {}, 'Enter a valid SMTP port from 1 to 65535.'));
       }
       if (!Number.isFinite(timeout) || timeout <= 0) {
-        issues.push(t('admin.service_settings.validation_email_timeout', {}, 'Enter a positive SMTP timeout.'));
+        addIssue('smtp_timeout_seconds', t('admin.service_settings.validation_email_timeout', {}, 'Enter a positive SMTP timeout.'));
       }
       if (emailForm.smtp_use_ssl && emailForm.smtp_use_starttls) {
-        issues.push(t('admin.service_settings.error_tls_mode_invalid', {}, 'SSL and STARTTLS cannot be enabled at the same time.'));
+        addIssue('saved-dependency', t('admin.service_settings.error_tls_mode_invalid', {}, 'SSL and STARTTLS cannot be enabled at the same time.'));
       }
       const username = emailForm.smtp_username_same_as_from_email
         ? emailForm.from_email.trim()
         : emailForm.smtp_username.trim();
       if (username && !secretConfigured.email && !emailForm.smtp_password.trim()) {
-        issues.push(t('admin.service_settings.validation_email_password', {}, 'Enter the SMTP password for the configured username.'));
+        addIssue('smtp_password', t('admin.service_settings.validation_email_password', {}, 'Enter the SMTP password for the configured username.'));
       }
       if (!username && emailForm.smtp_password.trim()) {
-        issues.push(t('admin.service_settings.validation_email_username', {}, 'Enter the SMTP username before entering a password.'));
+        addIssue('smtp_username', t('admin.service_settings.validation_email_username', {}, 'Enter the SMTP username before entering a password.'));
       }
     }
     if (activeTab === 'payment' && alipayForm.enabled) {
       if (!savedPortalPublicBaseUrl) {
-        issues.push(t('admin.service_settings.validation_payment_public_url', {}, 'Save a public URL before enabling Alipay.'));
+        addIssue('saved-dependency', t('admin.service_settings.validation_payment_public_url', {}, 'Save a public URL before enabling Alipay.'));
       }
       if (!alipayForm.app_id.trim()) {
-        issues.push(t('admin.service_settings.validation_payment_app_id', {}, 'Enter the Alipay App ID.'));
+        addIssue('app_id', t('admin.service_settings.validation_payment_app_id', {}, 'Enter the Alipay App ID.'));
       }
       if (!secretConfigured.alipayPrivateKey && !alipayForm.private_key.trim()) {
-        issues.push(t('admin.service_settings.validation_payment_private_key', {}, 'Enter the Alipay application private key.'));
+        addIssue('private_key', t('admin.service_settings.validation_payment_private_key', {}, 'Enter the Alipay application private key.'));
       }
       if (!secretConfigured.alipayPublicKey && !alipayForm.public_key.trim()) {
-        issues.push(t('admin.service_settings.validation_payment_public_key', {}, 'Enter the Alipay public key.'));
+        addIssue('public_key', t('admin.service_settings.validation_payment_public_key', {}, 'Enter the Alipay public key.'));
       }
     }
     if (activeTab === 'site-relink') {
@@ -1011,7 +1092,7 @@ export default function AdminServiceSettingsPage() {
         cooldownDays < 90 ||
         cooldownDays > 365
       ) {
-        issues.push(
+        addIssue('cooldown_days',
           t(
             'admin.service_settings.validation_site_relink_days',
             {},
@@ -1022,17 +1103,17 @@ export default function AdminServiceSettingsPage() {
     }
     if (activeTab === 'accounting') {
       const rate = Number(accountingFxForm.usd_cny_rate);
-      if (!Number.isFinite(rate) || rate <= 0 || rate > 20) {
-        issues.push(
+      if (!Number.isFinite(rate) || rate < 0.000001 || rate > 20) {
+        addIssue('usd_cny_rate',
           t(
             'admin.service_settings.validation_accounting_fx_rate',
             {},
-            'Enter a USD/CNY rate greater than 0 and no greater than 20.'
+            'Enter a USD/CNY rate from 0.000001 to 20.'
           )
         );
       }
       if (!accountingFxForm.effective_date) {
-        issues.push(
+        addIssue('effective_date',
           t(
             'admin.service_settings.validation_accounting_fx_date',
             {},
@@ -1041,7 +1122,7 @@ export default function AdminServiceSettingsPage() {
         );
       }
       if (!accountingFxForm.source.trim()) {
-        issues.push(
+        addIssue('source',
           t(
             'admin.service_settings.validation_accounting_fx_source',
             {},
@@ -1054,45 +1135,72 @@ export default function AdminServiceSettingsPage() {
       const warningRatio = Number(providerBudgetForm.warning_ratio);
       const conservativeCost = Number(providerBudgetForm.conservative_unpriced_cost_usd);
       if (!Number.isFinite(warningRatio) || warningRatio < 1 || warningRatio > 100) {
-        issues.push(t('admin.service_settings.validation_provider_budget_warning_ratio', {}, '预警比例必须在 1% 到 100% 之间。'));
+        addIssue('warning_ratio', t('admin.service_settings.validation_provider_budget_warning_ratio', {}, '预警比例必须在 1% 到 100% 之间。'));
       }
-      if (!Number.isFinite(conservativeCost) || conservativeCost <= 0) {
-        issues.push(t('admin.service_settings.validation_provider_budget_conservative_cost', {}, '未定价模型的保守预留成本必须大于 0。'));
+      if (!Number.isFinite(conservativeCost) || conservativeCost < 0.000001 || conservativeCost > 1000) {
+        addIssue('conservative_unpriced_cost_usd', t('admin.service_settings.validation_provider_budget_conservative_cost', {}, 'Enter a per-call reserve from 0.000001 to 1000 USD.'));
       }
       const seen = new Set<string>();
       providerBudgetForm.providers.forEach((provider) => {
         const providerId = provider.provider_id.trim();
         const daily = Number(provider.daily_usd);
         const monthly = Number(provider.monthly_usd);
-        if (!providerId) issues.push(t('admin.service_settings.validation_provider_budget_provider_id', {}, '每个预算行都需要 Provider ID。'));
+        if (!providerId) addIssue(`provider-${provider.row_id}-provider_id`, t('admin.service_settings.validation_provider_budget_provider_id', {}, 'Select a supplier for each budget row.'));
         if (providerId) {
-          if (seen.has(providerId)) issues.push(t('admin.service_settings.validation_provider_budget_duplicate', {}, 'Provider ID 不能重复。'));
+          if (seen.has(providerId)) addIssue(`provider-${provider.row_id}-provider_id`, t('admin.service_settings.validation_provider_budget_duplicate', {}, 'Each supplier can have only one budget row.'));
           seen.add(providerId);
         }
-        if (!Number.isFinite(daily) || daily < 0 || !Number.isFinite(monthly) || monthly < 0) {
-          issues.push(t('admin.service_settings.validation_provider_budget_limits', {}, '日上限和月上限必须是非负数字。'));
-        }
-        if (provider.account_class === 'paid' && (daily <= 0 || monthly <= 0)) {
-          issues.push(t('admin.service_settings.validation_provider_budget_paid_limits', {}, '付费 Provider 必须同时填写正数日上限和月上限。'));
+        for (const [field, value] of [['daily_usd', daily], ['monthly_usd', monthly]] as const) {
+          if (!provider[field].trim() || !Number.isFinite(value) || value < 0) {
+            addIssue(`provider-${provider.row_id}-${field}`, t('admin.service_settings.validation_provider_budget_limits', {}, 'Daily and monthly estimated limits must be non-negative numbers.'));
+          } else if (provider.account_class === 'paid' && value <= 0) {
+            addIssue(`provider-${provider.row_id}-${field}`, t('admin.service_settings.validation_provider_budget_paid_limits', {}, 'Paid suppliers need positive daily and monthly estimated limits.'));
+          }
         }
       });
       if (providerBudgetForm.enabled && providerBudgetForm.providers.length === 0) {
-        issues.push(t('admin.service_settings.validation_provider_budget_provider_required', {}, '启用保护前至少添加一个 Provider 预算。'));
+        addIssue('saved-dependency', t('admin.service_settings.validation_provider_budget_provider_required', {}, 'Add at least one supplier budget before enabling protection.'));
       }
     }
     if (activeTab === 'system') {
       if (!platformPreferencesForm.timezone) {
-        issues.push(t('admin.service_settings.validation_platform_timezone', {}, 'Select a platform timezone.'));
+        addIssue('timezone', t('admin.service_settings.validation_platform_timezone', {}, 'Select a platform timezone.'));
       }
     }
     return issues;
   })();
+
+  const activeValidationIssues = activeValidationDetails.map((issue) => issue.message);
+  const visibleValidationIssues = Array.from(new Set(activeValidationDetails.filter(({ field }) =>
+    field !== editingField && (field === 'saved-dependency' || validationAttempted || validatedFields[`${activeTab}:${field}`])
+  ).map((issue) => issue.message)));
+
+  useEffect(() => {
+    setValidatedFields({});
+    setValidationAttempted(false);
+    setEditingField('');
+  }, [activeTab]);
+
+  function validationField(target: EventTarget) {
+    return target instanceof HTMLElement ? target.closest<HTMLElement>('[data-validation-field]')?.dataset.validationField || '' : '';
+  }
+
+  function handleValidationInput(event: React.SyntheticEvent<HTMLFormElement>) {
+    setEditingField(validationField(event.target));
+  }
+
+  function handleValidationBlur(event: React.FocusEvent<HTMLFormElement>) {
+    const field = validationField(event.target);
+    setEditingField('');
+    if (field) setValidatedFields((current) => ({ ...current, [`${activeTab}:${field}`]: true }));
+  }
 
   const restoreActiveGroup = useCallback(() => {
     const saved = savedFormsRef.current;
     if (!saved) return;
     if (activeTab === 'portal') setPortalPublicForm(saved.portal);
     if (activeTab === 'qq') setQqForm(saved.qq);
+    if (activeTab === 'registration') setRegistrationForm(saved.registration);
     if (activeTab === 'email') setEmailForm(saved.email);
     if (activeTab === 'payment') setAlipayForm(saved.payment);
     if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
@@ -1107,6 +1215,8 @@ export default function AdminServiceSettingsPage() {
     }
     setError('');
     setWriteRecoveryNotice(false);
+    setValidatedFields({});
+    setValidationAttempted(false);
   }, [activeTab]);
 
   function requestTabChange(nextTab: ServiceSettingsTab) {
@@ -1170,6 +1280,19 @@ export default function AdminServiceSettingsPage() {
         : settingTone(data?.settings.portal_public.status || 'missing_config'),
     },
     {
+      id: 'registration',
+      label: t('admin.service_settings.tab_registration', {}, '注册准入'),
+      description: activeTab === 'registration' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : data?.settings.portal_registration?.status === 'error'
+          ? statusLabel('error', t)
+          : savedForms?.registration.public_registration_enabled
+            ? t('admin.service_settings.registration_open', {}, 'Open registration')
+            : t('admin.service_settings.registration_restricted', {}, 'Email allowlist only'),
+      tone: activeTab === 'registration' && activeGroupDirty ? 'attention'
+        : data?.settings.portal_registration?.status === 'error' ? 'error' : 'neutral',
+    },
+    {
       id: 'qq',
       label: t('admin.service_settings.tab_qq', {}, 'QQ 登录'),
       description: activeTab === 'qq' && activeGroupDirty
@@ -1211,7 +1334,7 @@ export default function AdminServiceSettingsPage() {
     },
     {
       id: 'provider-budget',
-      label: t('admin.service_settings.tab_provider_budget', {}, 'Provider 预算'),
+      label: t('admin.service_settings.tab_provider_budget', {}, 'AI 估算预算'),
       description: activeTab === 'provider-budget' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.provider_budget.status || 'disabled', t),
@@ -1267,13 +1390,13 @@ export default function AdminServiceSettingsPage() {
       label: t('admin.service_settings.email_preview_test', {}, '测试邮件'),
     },
   ];
-  const activeStateNotice = (activeGroupDirty || activeValidationIssues.length > 0 || error) && snapshotCurrent ? (
+  const activeStateNotice = (activeGroupDirty || visibleValidationIssues.length > 0 || error) && snapshotCurrent ? (
     <div
       data-ui="service-settings-active-state"
-      role={error || activeValidationIssues.length > 0 ? 'alert' : 'status'}
+      role={error || visibleValidationIssues.length > 0 ? 'alert' : 'status'}
       className={cn(
         'flex flex-col gap-3 border-l-2 px-3 py-2 text-sm sm:flex-row sm:items-start sm:justify-between',
-        error || activeValidationIssues.length > 0
+        error || visibleValidationIssues.length > 0
           ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200'
           : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200'
       )}
@@ -1282,14 +1405,14 @@ export default function AdminServiceSettingsPage() {
         <p className="font-semibold">
           {error
             ? t('admin.service_settings.action_failed_title', {}, 'This configuration action failed')
-            : activeValidationIssues.length > 0
+            : visibleValidationIssues.length > 0
               ? t('admin.service_settings.validation_title', {}, 'Resolve these fields before saving')
               : t('admin.service_settings.unsaved_title', {}, 'Unsaved changes')}
         </p>
         {error ? <p className="mt-1">{error}</p> : null}
-        {activeValidationIssues.length > 0 ? (
+        {visibleValidationIssues.length > 0 ? (
           <ul className="mt-2 list-disc space-y-1 pl-5">
-            {activeValidationIssues.map((issue) => <li key={issue}>{issue}</li>)}
+            {visibleValidationIssues.map((issue, index) => <li key={`${index}:${issue}`}>{issue}</li>)}
           </ul>
         ) : activeGroupDirty ? (
           <p className="mt-1">
@@ -1379,7 +1502,9 @@ export default function AdminServiceSettingsPage() {
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid gap-3" onSubmit={submitPortalPublic}>
+            <form className="grid gap-3" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitPortalPublic}>
               <AdminConfigurationTable
                 ariaLabel={t('admin.service_settings.portal_public_title', {}, 'Portal public URL')}
                 itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
@@ -1392,7 +1517,7 @@ export default function AdminServiceSettingsPage() {
                   label={t('admin.service_settings.base_url_label', {}, 'Base URL')}
                   value={<input
                   className="input w-full"
-                  value={portalPublicForm.public_base_url}
+                  data-validation-field="public_base_url" value={portalPublicForm.public_base_url}
                   onChange={(event) => setPortalPublicForm((current) => ({ ...current, public_base_url: event.target.value }))}
                   placeholder="https://cloud.example.com"
                   disabled={loading}
@@ -1435,7 +1560,7 @@ export default function AdminServiceSettingsPage() {
                 <button
                   type="submit"
                   className="btn btn-primary btn-sm"
-                  disabled={saving === 'portal-public' || !activeGroupDirty || activeValidationIssues.length > 0}
+                  disabled={saving === 'portal-public' || !activeGroupDirty}
                 >
                   {saving === 'portal-public'
                     ? t('admin.service_settings.saving', {}, 'Saving')
@@ -1444,6 +1569,58 @@ export default function AdminServiceSettingsPage() {
               </div>
             </form>
           </div>
+      ) : null}
+
+      {activeTab === 'registration' ? (
+        <div id="service-settings-registration" aria-labelledby="service-settings-tab-registration" className="grid gap-3" role="tabpanel">
+          {activeStateNotice}
+          <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+            {t('admin.service_settings.tab_registration', {}, '注册准入')}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {t('admin.service_settings.registration_scope', {}, 'Applies to new accounts. Existing users can still sign in, purchase and start eligible trials.')}
+          </p>
+          {data.settings.portal_registration?.status === 'error' ? (
+            <p role="alert" className="text-sm text-rose-700 dark:text-rose-200">
+              {t('admin.service_settings.registration_policy_error', {}, 'The stored registration policy is invalid. New accounts are blocked until a valid policy is saved.')}
+            </p>
+          ) : null}
+          <form className="grid gap-4" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitRegistration}>
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <button type="button" role="switch"
+                aria-label={t('admin.service_settings.registration_public', {}, 'Open public registration')}
+                aria-checked={registrationForm.public_registration_enabled}
+                className={switchButtonClassName(registrationForm.public_registration_enabled)}
+                onClick={() => setRegistrationForm((current) => ({ ...current, public_registration_enabled: !current.public_registration_enabled }))}>
+                <span className={switchKnobClassName(registrationForm.public_registration_enabled)} />
+              </button>
+              {t('admin.service_settings.registration_public', {}, 'Open public registration')}
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t('admin.service_settings.registration_allowlist', {}, 'Registration email allowlist')}
+              <textarea rows={6} className="input mt-1 w-full resize-y !h-auto !min-h-36"
+                data-validation-field="email_allowlist" value={registrationForm.email_allowlist}
+                onChange={(event) => setRegistrationForm((current) => ({ ...current, email_allowlist: event.target.value }))}
+                aria-describedby="registration-allowlist-note" />
+            </label>
+            <p id="registration-allowlist-note" className="text-sm text-slate-600 dark:text-slate-300">
+              {t('admin.service_settings.registration_allowlist_note', {}, 'One complete email address per line, up to 200. When public registration is off, only these verified email addresses can create accounts. An empty list blocks all new accounts.')}
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {t('admin.service_settings.registration_qq_note', {}, 'When public registration is off, QQ cannot create new accounts. Register with an approved email address first, then bind QQ from your account. Existing QQ sign-in remains available.')}
+            </p>
+            <div className="flex justify-end">
+              <button type="submit" className="btn btn-primary btn-sm"
+                disabled={saving === 'portal-registration' || !activeGroupDirty}>
+                {saving === 'portal-registration'
+                  ? t('admin.service_settings.saving', {}, 'Saving')
+                  : t('admin.service_settings.registration_save', {}, 'Save registration policy')}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {activeTab === 'accounting' ? (
@@ -1461,7 +1638,9 @@ export default function AdminServiceSettingsPage() {
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid gap-3" onSubmit={submitAccountingFx}>
+            <form className="grid gap-3" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitAccountingFx}>
               <AdminConfigurationTable
                 ariaLabel={t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
                 itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
@@ -1478,7 +1657,7 @@ export default function AdminServiceSettingsPage() {
                     min="0.000001"
                     max="20"
                     step="0.000001"
-                    value={accountingFxForm.usd_cny_rate}
+                    data-validation-field="usd_cny_rate" value={accountingFxForm.usd_cny_rate}
                     onChange={(event) => setAccountingFxForm((current) => ({
                       ...current,
                       usd_cny_rate: event.target.value,
@@ -1496,7 +1675,7 @@ export default function AdminServiceSettingsPage() {
                   value={<input
                     className="input w-full"
                     type="date"
-                    value={accountingFxForm.effective_date}
+                    data-validation-field="effective_date" value={accountingFxForm.effective_date}
                     onChange={(event) => setAccountingFxForm((current) => ({
                       ...current,
                       effective_date: event.target.value,
@@ -1510,7 +1689,7 @@ export default function AdminServiceSettingsPage() {
                   value={<input
                     className="input w-full"
                     maxLength={128}
-                    value={accountingFxForm.source}
+                    data-validation-field="source" value={accountingFxForm.source}
                     onChange={(event) => setAccountingFxForm((current) => ({
                       ...current,
                       source: event.target.value,
@@ -1528,7 +1707,7 @@ export default function AdminServiceSettingsPage() {
                   value={<input
                     className="input w-full"
                     maxLength={500}
-                    value={accountingFxForm.note}
+                    data-validation-field="note" value={accountingFxForm.note}
                     onChange={(event) => setAccountingFxForm((current) => ({
                       ...current,
                       note: event.target.value,
@@ -1553,8 +1732,7 @@ export default function AdminServiceSettingsPage() {
                   className="btn btn-primary btn-sm"
                   disabled={
                     saving === 'accounting-fx' ||
-                    !activeGroupDirty ||
-                    activeValidationIssues.length > 0
+                    !activeGroupDirty
                   }
                 >
                   {saving === 'accounting-fx'
@@ -1568,18 +1746,20 @@ export default function AdminServiceSettingsPage() {
 
       {activeTab === 'provider-budget' ? (
           <div id="service-settings-provider-budget" aria-labelledby="service-settings-tab-provider-budget" className="grid gap-3" role="tabpanel">
-            <div className="flex min-w-0 items-baseline gap-3">
+            <div className="grid gap-1">
               <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
-                {t('admin.service_settings.provider_budget_title', {}, 'Provider 账户预算')}
+                {t('admin.service_settings.provider_budget_title', {}, 'AI call estimated budget')}
               </h2>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                {t('admin.service_settings.provider_budget_desc', {}, '控制 Cloud 发起的 Provider 调用总额；不改变套餐价格或用户积分。')}
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t('admin.service_settings.provider_budget_desc', {}, 'Costs are estimated from model prices and usage. Actual charges follow your API supplier bill; this limit cannot guarantee the same cap on actual charges.')}
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid gap-3" onSubmit={submitProviderBudget}>
+            <form className="grid gap-3" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitProviderBudget}>
               <AdminConfigurationTable
-                ariaLabel={t('admin.service_settings.provider_budget_title', {}, 'Provider 账户预算')}
+                ariaLabel={t('admin.service_settings.provider_budget_title', {}, 'AI call estimated budget')}
                 itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
                 valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
                 detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
@@ -1587,14 +1767,14 @@ export default function AdminServiceSettingsPage() {
               >
                 <AdminConfigurationRow
                   rowId="provider-budget-enabled"
-                  label={t('admin.service_settings.provider_budget_enabled_label', {}, '预算保护')}
+                  label={t('admin.service_settings.provider_budget_enabled_label', {}, 'Limit calls by estimated cost')}
                   value={providerBudgetForm.enabled
                     ? t('common.enabled', {}, 'Enabled')
                     : t('common.disabled', {}, 'Disabled')}
                   detail={<button
                     type="button"
                     role="switch"
-                    aria-label={t('admin.service_settings.provider_budget_toggle_label', {}, '启用 Provider 预算保护')}
+                    aria-label={t('admin.service_settings.provider_budget_toggle_label', {}, 'Enable estimated budget protection')}
                     aria-checked={providerBudgetForm.enabled}
                     className={switchButtonClassName(providerBudgetForm.enabled)}
                     disabled={loading}
@@ -1605,7 +1785,7 @@ export default function AdminServiceSettingsPage() {
                 />
                 <AdminConfigurationRow
                   rowId="provider-budget-warning-ratio"
-                  label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, '预警比例')}
+                  label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, 'Warn at')}
                   value={<div className="flex items-center gap-2">
                     <input
                       className="input w-full"
@@ -1613,81 +1793,44 @@ export default function AdminServiceSettingsPage() {
                       min="1"
                       max="100"
                       step="1"
-                      value={providerBudgetForm.warning_ratio}
-                      aria-label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, '预警比例')}
+                      data-validation-field="warning_ratio" value={providerBudgetForm.warning_ratio}
+                      aria-label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, 'Warn at')}
                       onChange={(event) => setProviderBudgetForm((current) => ({ ...current, warning_ratio: event.target.value }))}
                     />
                     <span className="text-xs text-slate-500">%</span>
                   </div>}
-                  detail={t('admin.service_settings.provider_budget_warning_ratio_detail', {}, '达到此比例后在后台提示，默认 80%。')}
-                />
-                <AdminConfigurationRow
-                  rowId="provider-budget-conservative-cost"
-                  label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, '未定价模型预留')}
-                  value={<div className="flex items-center gap-2">
-                    <input
-                      className="input w-full"
-                      type="number"
-                      min="0.000001"
-                      max="1000"
-                      step="0.000001"
-                      value={providerBudgetForm.conservative_unpriced_cost_usd}
-                      aria-label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, '未定价模型预留')}
-                      onChange={(event) => setProviderBudgetForm((current) => ({ ...current, conservative_unpriced_cost_usd: event.target.value }))}
-                    />
-                    <span className="text-xs text-slate-500">USD</span>
-                  </div>}
-                  detail={t('admin.service_settings.provider_budget_conservative_cost_detail', {}, '模型没有价格资料时，按这个保守金额预留。')}
-                />
-                <AdminConfigurationRow
-                  rowId="provider-budget-require-configuration"
-                  label={t('admin.service_settings.provider_budget_require_configuration_label', {}, '缺少配置时停止')}
-                  value={providerBudgetForm.require_provider_configuration
-                    ? t('common.enabled', {}, 'Enabled')
-                    : t('common.disabled', {}, 'Disabled')}
-                  detail={<button
-                    type="button"
-                    role="switch"
-                    aria-label={t('admin.service_settings.provider_budget_require_configuration_toggle', {}, '缺少配置时停止 Provider 调用')}
-                    aria-checked={providerBudgetForm.require_provider_configuration}
-                    className={switchButtonClassName(providerBudgetForm.require_provider_configuration)}
-                    disabled={loading}
-                    onClick={() => setProviderBudgetForm((current) => ({ ...current, require_provider_configuration: !current.require_provider_configuration }))}
-                  >
-                    <span className={switchKnobClassName(providerBudgetForm.require_provider_configuration)} />
-                  </button>}
+                  detail={t('admin.service_settings.provider_budget_warning_ratio_detail', {}, 'Warn when daily or monthly budget occupancy reaches this percentage. Calls can continue if the next estimate fits.')}
                 />
               </AdminConfigurationTable>
 
-              <AdminSettingsDisclosure
-                dataUi="provider-budget-provider-list"
-                title={t('admin.service_settings.provider_budget_provider_list_title', {}, 'Provider 上限')}
-                description={t('admin.service_settings.provider_budget_provider_list_desc', {}, '付费连接必须同时填写日上限和月上限；这里不保存或显示 Provider 密钥。')}
-                statusLabel={`${providerBudgetForm.providers.length} ${t('admin.service_settings.provider_budget_provider_count', {}, '个')}`}
-                statusTone={providerBudgetForm.providers.length > 0 ? 'configured' : 'attention'}
-              >
+              <section data-ui="provider-budget-provider-list" className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{t('admin.service_settings.provider_budget_provider_list_title', {}, 'Supplier limits')}</h3>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{`${providerBudgetForm.providers.length} ${t('admin.service_settings.provider_budget_provider_count', {}, '个')}`}</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_provider_list_desc', {}, 'Paid suppliers need both limits. With protection enabled, a new call is blocked if its estimate would exceed either limit.')}</p>
                 <div className="flex justify-end">
                   <button type="button" className="btn btn-secondary btn-sm" onClick={addProviderBudgetRow}>
-                    {t('admin.service_settings.provider_budget_add_provider', {}, '添加 Provider')}
+                    {t('admin.service_settings.provider_budget_add_provider', {}, 'Add supplier')}
                   </button>
                 </div>
                 {providerBudgetForm.providers.length === 0 ? (
                   <div className="text-sm text-slate-500 dark:text-slate-400">
-                    {t('admin.service_settings.provider_budget_empty', {}, '还没有 Provider 预算。启用保护前先添加一行。')}
+                    {t('admin.service_settings.provider_budget_empty', {}, 'No supplier budgets yet. Add one before enabling protection.')}
                   </div>
                 ) : (
                   <div className="grid gap-3">
                     {providerBudgetForm.providers.map((provider, index) => (
                       <div key={provider.row_id} className="grid gap-3 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0 dark:border-slate-800 lg:grid-cols-[1.2fr_0.8fr_1fr_1fr_auto] lg:items-end">
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}
+                          {t('admin.service_settings.provider_budget_provider_id', {}, 'Supplier')}
                           <select
                             className="input mt-1 w-full"
-                            value={provider.provider_id}
-                            aria-label={`${t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')} ${index + 1}`}
+                            data-validation-field={`provider-${provider.row_id}-provider_id`} value={provider.provider_id}
+                            aria-label={`${t('admin.service_settings.provider_budget_provider_id', {}, 'Supplier')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { provider_id: event.target.value })}
                           >
-                            <option value="">{t('admin.service_settings.provider_budget_select_provider', {}, 'Select a Provider')}</option>
+                            <option value="">{t('admin.service_settings.provider_budget_select_provider', {}, 'Select a supplier')}</option>
                             {provider.provider_id && !data?.settings.provider_budget.runtime?.connections.some((connection) => connection.provider_id === provider.provider_id) ? (
                               <option value={provider.provider_id}>{provider.provider_id} ({t('admin.service_settings.provider_budget_unlisted_provider', {}, 'connection unavailable')})</option>
                             ) : null}
@@ -1699,11 +1842,11 @@ export default function AdminServiceSettingsPage() {
                           </select>
                         </label>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t('admin.service_settings.provider_budget_account_class', {}, '账户类型')}
+                          {t('admin.service_settings.provider_budget_account_class', {}, 'Account type')}
                           <select
                             className="input mt-1 w-full"
-                            value={provider.account_class}
-                            aria-label={`${t('admin.service_settings.provider_budget_account_class', {}, '账户类型')} ${index + 1}`}
+                            data-validation-field={`provider-${provider.row_id}-account_class`} value={provider.account_class}
+                            aria-label={`${t('admin.service_settings.provider_budget_account_class', {}, 'Account type')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { account_class: event.target.value as 'paid' | 'test' })}
                           >
                             <option value="paid">{t('admin.service_settings.provider_budget_paid', {}, '付费')}</option>
@@ -1711,26 +1854,26 @@ export default function AdminServiceSettingsPage() {
                           </select>
                         </label>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t('admin.service_settings.provider_budget_daily_limit', {}, '日上限 USD')}
+                          {t('admin.service_settings.provider_budget_daily_limit', {}, 'Daily estimate limit (USD)')}
                           <input
                             className="input mt-1 w-full"
                             type="number"
                             min="0"
                             step="0.01"
-                            value={provider.daily_usd}
-                            aria-label={`${t('admin.service_settings.provider_budget_daily_limit', {}, '日上限 USD')} ${index + 1}`}
+                            data-validation-field={`provider-${provider.row_id}-daily_usd`} value={provider.daily_usd}
+                            aria-label={`${t('admin.service_settings.provider_budget_daily_limit', {}, 'Daily estimate limit (USD)')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { daily_usd: event.target.value })}
                           />
                         </label>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t('admin.service_settings.provider_budget_monthly_limit', {}, '月上限 USD')}
+                          {t('admin.service_settings.provider_budget_monthly_limit', {}, 'Monthly estimate limit (USD)')}
                           <input
                             className="input mt-1 w-full"
                             type="number"
                             min="0"
                             step="0.01"
-                            value={provider.monthly_usd}
-                            aria-label={`${t('admin.service_settings.provider_budget_monthly_limit', {}, '月上限 USD')} ${index + 1}`}
+                            data-validation-field={`provider-${provider.row_id}-monthly_usd`} value={provider.monthly_usd}
+                            aria-label={`${t('admin.service_settings.provider_budget_monthly_limit', {}, 'Monthly estimate limit (USD)')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { monthly_usd: event.target.value })}
                           />
                         </label>
@@ -1741,7 +1884,7 @@ export default function AdminServiceSettingsPage() {
                     ))}
                   </div>
                 )}
-              </AdminSettingsDisclosure>
+              </section>
 
               {providerBudgetRuntimeUnavailable ? (
                 <div role="status" data-ui="provider-budget-runtime-unavailable" className="border-l-2 border-amber-300 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -1749,13 +1892,12 @@ export default function AdminServiceSettingsPage() {
                   <button type="button" className="btn btn-secondary btn-sm mt-2" disabled={providerBudgetRuntimeLoading} onClick={() => void loadProviderBudgetRuntime()}>{t('common.retry')}</button>
                 </div>
               ) : null}
-              <AdminSettingsDisclosure
-                dataUi="provider-budget-runtime-state"
-                title={t('admin.service_settings.provider_budget_runtime_title', {}, '当前周期使用情况')}
-                description={t('admin.service_settings.provider_budget_runtime_desc', {}, '只读显示当前 UTC 日/月的预留金额；修改上限不会清除已经发生的使用。')}
-                statusLabel={providerBudgetRuntimeUnavailable ? t('admin.service_settings.awaiting_read', {}, 'Awaiting confirmation') : providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}
-                statusTone={providerBudgetRuntimeUnavailable ? 'attention' : providerBudgetRuntimeTone(data?.settings.provider_budget.runtime?.status)}
-              >
+              <section data-ui="provider-budget-runtime-state" className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{t('admin.service_settings.provider_budget_runtime_title', {}, 'Current budget occupancy')}</h3>
+                  <span className={`text-xs font-medium ${providerBudgetRuntimeUnavailable || providerBudgetRuntimeTone(data?.settings.provider_budget.runtime?.status) === 'attention' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>{providerBudgetRuntimeUnavailable ? t('admin.service_settings.awaiting_read', {}, 'Awaiting confirmation') : providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_runtime_desc', {}, 'Includes reconciled call costs and outstanding reservations, not the supplier bill. Limits use UTC day/month periods; changing a limit does not reset occupancy.')}</p>
                 {data?.settings.provider_budget.runtime?.missing_provider_ids?.length ? (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
                     {t('admin.service_settings.provider_budget_missing_detail', { ids: data.settings.provider_budget.runtime.missing_provider_ids.join(', ') }, '以下启用连接还没有预算：{{ids}}')}
@@ -1766,18 +1908,18 @@ export default function AdminServiceSettingsPage() {
                     <table className="w-full text-left text-xs">
                       <thead className="text-slate-500 dark:text-slate-400">
                         <tr>
-                          <th className="py-2 pr-3 font-medium">{t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}</th>
+                          <th className="py-2 pr-3 font-medium">{t('admin.service_settings.provider_budget_provider_id', {}, 'Supplier')}</th>
                           <th className="py-2 pr-3 font-medium">{t('admin.service_settings.provider_budget_period', {}, '周期')}</th>
-                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_used', {}, '已预留')}</th>
-                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_remaining', {}, '剩余')}</th>
-                          <th className="py-2 text-right font-medium">{t('admin.service_settings.provider_budget_utilization', {}, '使用率')}</th>
+                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_used', {}, 'Occupied / limit (USD)')}</th>
+                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_remaining', {}, 'Remaining (USD)')}</th>
+                          <th className="py-2 text-right font-medium">{t('admin.service_settings.provider_budget_utilization', {}, 'Budget occupancy')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.settings.provider_budget.runtime.items.map((item) => (
                           <tr key={`${item.provider_id}-${item.period_kind}`} className="border-t border-slate-100 dark:border-slate-800">
                             <td className="py-2 pr-3 font-medium text-slate-800 dark:text-slate-100">{item.provider_id}</td>
-                            <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{item.period_kind === 'day' ? t('admin.service_settings.provider_budget_day', {}, '日') : t('admin.service_settings.provider_budget_month', {}, '月')}</td>
+                            <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{item.period_kind === 'day' ? t('admin.service_settings.provider_budget_day', {}, 'Today (UTC)') : t('admin.service_settings.provider_budget_month', {}, 'This month (UTC)')}</td>
                             <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${providerBudgetUsd(item.reserved_cost_usd)} / ${providerBudgetUsd(item.limit_cost_usd)}</td>
                             <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${providerBudgetUsd(item.remaining_cost_usd)}</td>
                             <td className={`py-2 text-right font-semibold ${item.exceeded ? 'text-rose-700 dark:text-rose-300' : item.warning ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{providerBudgetPercent(item.utilization_ratio)}</td>
@@ -1787,18 +1929,87 @@ export default function AdminServiceSettingsPage() {
                     </table>
                   </div>
                 ) : providerBudgetRuntimeUnavailable ? null : (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_runtime_empty', {}, '当前周期还没有 Provider 预算使用记录。')}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_runtime_empty', {}, 'No current-period budget counters are available. This does not establish that the supplier charged nothing.')}</p>
                 )}
+              </section>
+
+              <AdminSettingsDisclosure
+                dataUi="provider-budget-advanced"
+                title={t('admin.service_settings.provider_budget_advanced_title', {}, 'Advanced budget settings')}
+                description={providerBudgetForm.require_provider_configuration
+                  ? t('admin.service_settings.provider_budget_unconfigured_blocked', {}, 'With protection enabled, suppliers without a budget are blocked.')
+                  : t('admin.service_settings.provider_budget_unconfigured_allowed', {}, 'With protection enabled, suppliers without a budget may call without this limit.')}
+              >
+                <AdminConfigurationTable
+                  ariaLabel={t('admin.service_settings.provider_budget_advanced_title', {}, 'Advanced budget settings')}
+                  itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+                  valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+                  detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+                  density="compact"
+                >
+                  <AdminConfigurationRow
+                    rowId="provider-budget-conservative-cost"
+                    label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, 'Reserve per call without a price')}
+                    value={<div className="flex items-center gap-2">
+                      <input
+                        className="input w-full"
+                        type="number"
+                        min="0.000001"
+                        max="1000"
+                        step="0.000001"
+                        data-validation-field="conservative_unpriced_cost_usd" value={providerBudgetForm.conservative_unpriced_cost_usd}
+                        aria-label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, 'Reserve per call without a price')}
+                        onChange={(event) => setProviderBudgetForm((current) => ({ ...current, conservative_unpriced_cost_usd: event.target.value }))}
+                      />
+                      <span className="text-xs text-slate-500">USD</span>
+                    </div>}
+                    detail={t('admin.service_settings.provider_budget_conservative_cost_detail', {}, 'Temporarily occupy this amount per attempt when no positive cost estimate is available. This is not an API supplier charge.')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="provider-budget-require-configuration"
+                    label={t('admin.service_settings.provider_budget_require_configuration_label', {}, 'Block suppliers without a budget')}
+                    value={providerBudgetForm.require_provider_configuration
+                      ? t('common.enabled', {}, 'Enabled')
+                      : t('common.disabled', {}, 'Disabled')}
+                    detail={<div className="grid gap-1">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label={t('admin.service_settings.provider_budget_require_configuration_toggle', {}, 'Block suppliers without a budget')}
+                        aria-checked={providerBudgetForm.require_provider_configuration}
+                        className={switchButtonClassName(providerBudgetForm.require_provider_configuration)}
+                        disabled={loading}
+                        onClick={() => setProviderBudgetForm((current) => ({ ...current, require_provider_configuration: !current.require_provider_configuration }))}
+                      >
+                        <span className={switchKnobClassName(providerBudgetForm.require_provider_configuration)} />
+                      </button>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_require_configuration_detail', {}, 'Applies when protection is enabled. Turning this off does not bypass configured limits.')}</p>
+                    </div>}
+                  />
+                </AdminConfigurationTable>
               </AdminSettingsDisclosure>
 
               <div className="flex justify-end">
-                <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'provider-budget' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'provider-budget' || !activeGroupDirty}>
                   {saving === 'provider-budget'
                     ? t('admin.service_settings.saving', {}, 'Saving')
-                    : t('admin.service_settings.provider_budget_save', {}, '保存 Provider 预算')}
+                    : t('admin.service_settings.provider_budget_save', {}, 'Save estimated budget')}
                 </button>
               </div>
             </form>
+            <AdminSettingsDisclosure
+              dataUi="provider-budget-help"
+              title={t('admin.service_settings.provider_budget_help_title', {}, 'How estimated budgets work')}
+              description={t('admin.service_settings.provider_budget_help_desc', {}, 'Calculation, example and period boundaries. Customer prices and credits are unchanged.')}
+            >
+              <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                <li>{t('admin.service_settings.provider_budget_help_before', {}, 'Before a call: estimate the cost from the configured model prices and expected usage, then reserve budget. If no positive estimate is available, use the per-call reserve in advanced settings.')}</li>
+                <li>{t('admin.service_settings.provider_budget_help_after', {}, 'After a call: recalculate from returned usage when available and replace the reservation, without counting it twice. Tokens multiplied by model prices are still an estimate, not confirmed supplier charges.')}</li>
+                <li>{t('admin.service_settings.provider_budget_help_unknown', {}, 'If a timeout or incomplete cost data leaves the charge unknown, the reserve remains occupied. Remaining budget is the limit minus total occupancy; it is not your API account balance.')}</li>
+              </ol>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.service_settings.provider_budget_help_example', {}, 'Example: with daily $0.50, monthly $2.50 and an 80% warning, warn at $0.40 today or $2.00 this month. With protection enabled, block a call that would take either estimate over its limit, even if the other still has room.')}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.service_settings.provider_budget_help_period', {}, 'Periods follow UTC: a new day starts at 00:00 UTC and a new month at 00:00 UTC on the first. In Beijing time, these are 08:00 daily and 08:00 on the first of each month.')}</p>
+            </AdminSettingsDisclosure>
           </div>
       ) : null}
 
@@ -1821,7 +2032,9 @@ export default function AdminServiceSettingsPage() {
                 </p>
               </div>
               {activeStateNotice}
-              <form className="space-y-5" onSubmit={submitSiteRelinkPolicy}>
+              <form className="space-y-5" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitSiteRelinkPolicy}>
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
                   <div className="rounded-xl border border-slate-200 px-4 py-4 dark:border-slate-800">
                     <div className="flex items-start justify-between gap-4">
@@ -1875,7 +2088,7 @@ export default function AdminServiceSettingsPage() {
                       max={365}
                       step={1}
                       className={fieldClassName()}
-                      value={siteRelinkPolicyForm.cooldown_days}
+                      data-validation-field="cooldown_days" value={siteRelinkPolicyForm.cooldown_days}
                       onChange={(event) =>
                         setSiteRelinkPolicyForm((current) => ({
                           ...current,
@@ -1899,8 +2112,7 @@ export default function AdminServiceSettingsPage() {
                     className="btn btn-primary btn-sm"
                     disabled={
                       saving === 'site-relink-policy' ||
-                      !activeGroupDirty ||
-                      activeValidationIssues.length > 0
+                      !activeGroupDirty
                     }
                   >
                     {saving === 'site-relink-policy'
@@ -1927,7 +2139,9 @@ export default function AdminServiceSettingsPage() {
             </p>
           </div>
           {activeStateNotice}
-          <form className="grid gap-3" onSubmit={submitPlatformPreferences}>
+          <form className="grid gap-3" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitPlatformPreferences}>
             <AdminConfigurationTable
               ariaLabel={t('admin.service_settings.system_title', {}, 'Platform preferences')}
               itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
@@ -1940,7 +2154,7 @@ export default function AdminServiceSettingsPage() {
                 label={t('admin.service_settings.platform_timezone', {}, 'Platform timezone')}
                 value={<select
                   className="input w-full"
-                  value={platformPreferencesForm.timezone}
+                  data-validation-field="timezone" value={platformPreferencesForm.timezone}
                   onChange={(event) => setPlatformPreferencesForm((current) => ({ ...current, timezone: event.target.value }))}
                 >
                   {Array.from(new Set([platformPreferencesForm.timezone, 'Asia/Shanghai', 'UTC', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'])).map((timezone) => (
@@ -1951,7 +2165,7 @@ export default function AdminServiceSettingsPage() {
               />
             </AdminConfigurationTable>
             <div className="flex justify-end">
-              <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'platform-preferences' || !activeGroupDirty || activeValidationIssues.length > 0}>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'platform-preferences' || !activeGroupDirty}>
                 {saving === 'platform-preferences'
                   ? t('admin.service_settings.saving', {}, 'Saving')
                   : t('admin.service_settings.save_platform_preferences', {}, 'Save system settings')}
@@ -1970,12 +2184,15 @@ export default function AdminServiceSettingsPage() {
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" onSubmit={submitQq}>
+            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitQq}>
               <label className={labelClassName()}>
                 App ID
-                <input className={fieldClassName()} value={qqForm.client_id} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, client_id: event.target.value }))} />
+                <input className={fieldClassName()} data-validation-field="client_id" value={qqForm.client_id} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, client_id: event.target.value }))} />
               </label>
-              <AdminCredentialField
+              <div className="contents" data-validation-field="client_secret">
+<AdminCredentialField
                 mode={secretConfigured.qq ? 'edit' : 'create'}
                 revealed={qqCredentialRevealed}
                 value={qqForm.client_secret}
@@ -1994,6 +2211,7 @@ export default function AdminServiceSettingsPage() {
                   setQqForm((current) => ({ ...current, client_secret: '' }));
                 }}
               />
+              </div>
               <div className="md:col-span-2">
                 <div className={labelClassName()}>
                   {t('admin.service_settings.redirect_uri_label', {}, 'Redirect URL')}
@@ -2036,7 +2254,7 @@ export default function AdminServiceSettingsPage() {
                   <button type="button" className="btn btn-secondary" disabled={saving === 'qq-test' || activeGroupDirty || activeValidationIssues.length > 0} onClick={() => postJson('/api/admin/service-settings/qq-login/test', {}, 'qq-test', t('admin.service_settings.qq_test_done', {}, 'QQ login configuration check completed.'))}>
                     {t('admin.service_settings.check_qq', {}, 'Check QQ settings')}
                   </button>
-                  <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'qq-login' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'qq-login' || !activeGroupDirty}>
                     {saving === 'qq-login'
                       ? t('admin.service_settings.saving', {}, 'Saving')
                       : t('admin.service_settings.save_qq', {}, '保存 QQ 配置')}
@@ -2114,14 +2332,16 @@ export default function AdminServiceSettingsPage() {
               </div>
 
               {emailConfigExpanded ? (
-            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" onSubmit={submitEmail}>
+            <form className="grid min-w-0 gap-4 md:grid-cols-2 [&_label]:min-w-0" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={submitEmail}>
               <label className={labelClassName()}>
                 {t('admin.service_settings.smtp_host_label', {}, 'SMTP server')}
-                <input className={fieldClassName()} value={emailForm.smtp_host} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_host: event.target.value }))} />
+                <input className={fieldClassName()} data-validation-field="smtp_host" value={emailForm.smtp_host} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_host: event.target.value }))} />
               </label>
               <label className={labelClassName()}>
                 {t('admin.service_settings.smtp_port_label', {}, 'SMTP port')}
-                <input className={fieldClassName()} value={emailForm.smtp_port} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_port: event.target.value }))} />
+                <input className={fieldClassName()} data-validation-field="smtp_port" value={emailForm.smtp_port} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_port: event.target.value }))} />
               </label>
               <label className={labelClassName()}>
                 <span className="flex items-center justify-between gap-3">
@@ -2147,6 +2367,7 @@ export default function AdminServiceSettingsPage() {
                 </span>
                 <input
                   className={fieldClassName()}
+                  data-validation-field="smtp_username"
                   value={
                     emailForm.smtp_username_same_as_from_email
                       ? emailForm.from_email
@@ -2166,7 +2387,8 @@ export default function AdminServiceSettingsPage() {
                   }
                 />
               </label>
-              <AdminCredentialField
+              <div className="contents" data-validation-field="smtp_password">
+<AdminCredentialField
                 mode={secretConfigured.email ? 'edit' : 'create'}
                 revealed={emailCredentialRevealed}
                 value={emailForm.smtp_password}
@@ -2185,11 +2407,12 @@ export default function AdminServiceSettingsPage() {
                   setEmailForm((current) => ({ ...current, smtp_password: '' }));
                 }}
               />
+              </div>
               <label className={labelClassName()}>
                 {t('admin.service_settings.from_email_label', {}, 'Sender email')}
                 <input
                   className={fieldClassName()}
-                  value={emailForm.from_email}
+                  data-validation-field="from_email" value={emailForm.from_email}
                   disabled={loading}
                   onChange={(event) =>
                     setEmailForm((current) => ({
@@ -2206,7 +2429,7 @@ export default function AdminServiceSettingsPage() {
 	                {t('admin.service_settings.from_name_label', {}, 'Sender name')}
 	                <input
 	                  className={fieldClassName()}
-	                  value={emailForm.from_name}
+	                  data-validation-field="from_name" value={emailForm.from_name}
 	                  disabled={loading}
 	                  onChange={(event) =>
 	                    setEmailForm((current) => ({
@@ -2243,11 +2466,11 @@ export default function AdminServiceSettingsPage() {
 	              </label>
               <label className={labelClassName()}>
                 {t('admin.service_settings.reply_to_label', {}, 'Reply-to email')}
-                <input className={fieldClassName()} value={emailForm.reply_to} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, reply_to: event.target.value }))} />
+                <input className={fieldClassName()} data-validation-field="reply_to" value={emailForm.reply_to} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, reply_to: event.target.value }))} />
               </label>
               <label className={labelClassName()}>
                 {t('admin.service_settings.timeout_seconds_label', {}, 'Timeout (seconds)')}
-                <input className={fieldClassName()} value={emailForm.smtp_timeout_seconds} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_timeout_seconds: event.target.value }))} />
+                <input className={fieldClassName()} data-validation-field="smtp_timeout_seconds" value={emailForm.smtp_timeout_seconds} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_timeout_seconds: event.target.value }))} />
               </label>
               <div className="flex flex-wrap items-center gap-5 text-sm text-slate-700 dark:text-slate-200">
                 <label className="inline-flex items-center gap-2">
@@ -2264,7 +2487,7 @@ export default function AdminServiceSettingsPage() {
                 </label>
               </div>
               <div className="flex justify-end">
-                <button type="submit" className="btn btn-primary" disabled={saving === 'email' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                <button type="submit" className="btn btn-primary" disabled={saving === 'email' || !activeGroupDirty}>
                   {saving === 'email'
                     ? t('admin.service_settings.saving', {}, 'Saving')
                     : t('common.save', {}, 'Save')}
@@ -2479,12 +2702,14 @@ export default function AdminServiceSettingsPage() {
                 </p>
               </div>
 
-              <form className="grid gap-4 lg:grid-cols-2" onSubmit={(event) => void submitAlipay(event)}>
+              <form className="grid gap-4 lg:grid-cols-2" noValidate
+              onFocusCapture={handleValidationInput} onInputCapture={handleValidationInput}
+              onBlurCapture={handleValidationBlur} onSubmit={(event) => void submitAlipay(event)}>
                 <label className={labelClassName()}>
                   App ID
                   <input
                     className={fieldClassName()}
-                    value={alipayForm.app_id}
+                    data-validation-field="app_id" value={alipayForm.app_id}
                     disabled={loading}
                     onChange={(event) => setAlipayForm((current) => ({ ...current, app_id: event.target.value }))}
                   />
@@ -2558,7 +2783,8 @@ export default function AdminServiceSettingsPage() {
                   </div>
                 </section>
 
-                <AdminCredentialField
+                <div className="contents" data-validation-field="private_key">
+<AdminCredentialField
                   mode={secretConfigured.alipayPrivateKey ? 'edit' : 'create'}
                   revealed={alipayPrivateKeyRevealed}
                   value={alipayForm.private_key}
@@ -2578,7 +2804,9 @@ export default function AdminServiceSettingsPage() {
                     setAlipayForm((current) => ({ ...current, private_key: '' }));
                   }}
                 />
-                <AdminCredentialField
+              </div>
+                <div className="contents" data-validation-field="public_key">
+<AdminCredentialField
                   mode={secretConfigured.alipayPublicKey ? 'edit' : 'create'}
                   revealed={alipayPublicKeyRevealed}
                   value={alipayForm.public_key}
@@ -2598,6 +2826,7 @@ export default function AdminServiceSettingsPage() {
                     setAlipayForm((current) => ({ ...current, public_key: '' }));
                   }}
                 />
+              </div>
 
                 <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 lg:col-span-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -2625,7 +2854,7 @@ export default function AdminServiceSettingsPage() {
                         ? t('admin.service_settings.checking', {}, 'Checking')
                         : t('admin.service_settings.check_alipay', {}, '检查支付宝配置')}
                     </button>
-                    <button type="submit" className="btn btn-primary" disabled={saving === 'alipay-payment' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                    <button type="submit" className="btn btn-primary" disabled={saving === 'alipay-payment' || !activeGroupDirty}>
                       {saving === 'alipay-payment'
                         ? t('admin.service_settings.saving', {}, 'Saving')
                         : t('admin.service_settings.save_alipay', {}, '保存支付宝配置')}
@@ -2639,6 +2868,99 @@ export default function AdminServiceSettingsPage() {
 
       </AdminSettingsWorkbench>
       </fieldset>
+
+      <AdminWorkbenchDialog
+        open={providerBudgetAddOpen}
+        error={providerBudgetAddError}
+        title={t('admin.service_settings.provider_budget_add_title', {}, 'Add supplier budget')}
+        titleId="provider-budget-add-dialog-title"
+        saving={false}
+        closeLabel={t('common.close', {}, 'Close')}
+        cancelLabel={t('admin.service_settings.provider_budget_add_cancel', {}, 'Cancel')}
+        saveLabel={t('admin.service_settings.provider_budget_add_save', {}, 'Add supplier')}
+        savingLabel={t('admin.service_settings.provider_budget_add_save', {}, 'Add supplier')}
+        footerNotice={t(
+          'admin.service_settings.provider_budget_add_footer',
+          {},
+          'This adds the row to the current draft. Click Save estimated budget on the page to apply it.'
+        )}
+        width="compact"
+        density="compact"
+        onClose={closeProviderBudgetAdd}
+        onSubmit={submitProviderBudgetAdd}
+      >
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {t('admin.service_settings.provider_budget_add_desc', {}, 'Choose a connected supplier and set the estimated daily and monthly limits before adding it to this draft.')}
+        </p>
+        <label className={labelClassName()}>
+          {t('admin.service_settings.provider_budget_provider_id', {}, 'Supplier')}
+          <select
+            className={fieldClassName()}
+            value={providerBudgetAddForm.provider_id}
+            aria-label={t('admin.service_settings.provider_budget_provider_id', {}, 'Supplier')}
+            onChange={(event) => {
+              setProviderBudgetAddError('');
+              setProviderBudgetAddForm((current) => ({ ...current, provider_id: event.target.value }));
+            }}
+          >
+            <option value="">{t('admin.service_settings.provider_budget_select_provider', {}, 'Select a supplier')}</option>
+            {providerBudgetOptions(data?.settings.provider_budget.runtime?.connections || []).map((option) => (
+              <option
+                key={option.value}
+                value={option.value}
+                disabled={providerBudgetForm.providers.some((provider) => provider.provider_id === option.value)}
+              >
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={labelClassName()}>
+          {t('admin.service_settings.provider_budget_account_class', {}, 'Account type')}
+          <select
+            className={fieldClassName()}
+            value={providerBudgetAddForm.account_class}
+            aria-label={t('admin.service_settings.provider_budget_account_class', {}, 'Account type')}
+            onChange={(event) => {
+              setProviderBudgetAddError('');
+              setProviderBudgetAddForm((current) => ({ ...current, account_class: event.target.value as 'paid' | 'test' }));
+            }}
+          >
+            <option value="paid">{t('admin.service_settings.provider_budget_paid', {}, 'Paid')}</option>
+            <option value="test">{t('admin.service_settings.provider_budget_test', {}, 'Test')}</option>
+          </select>
+        </label>
+        <label className={labelClassName()}>
+          {t('admin.service_settings.provider_budget_daily_limit', {}, 'Daily estimate limit (USD)')}
+          <input
+            className={fieldClassName()}
+            type="number"
+            min="0"
+            step="0.01"
+            value={providerBudgetAddForm.daily_usd}
+            aria-label={t('admin.service_settings.provider_budget_daily_limit', {}, 'Daily estimate limit (USD)')}
+            onChange={(event) => {
+              setProviderBudgetAddError('');
+              setProviderBudgetAddForm((current) => ({ ...current, daily_usd: event.target.value }));
+            }}
+          />
+        </label>
+        <label className={labelClassName()}>
+          {t('admin.service_settings.provider_budget_monthly_limit', {}, 'Monthly estimate limit (USD)')}
+          <input
+            className={fieldClassName()}
+            type="number"
+            min="0"
+            step="0.01"
+            value={providerBudgetAddForm.monthly_usd}
+            aria-label={t('admin.service_settings.provider_budget_monthly_limit', {}, 'Monthly estimate limit (USD)')}
+            onChange={(event) => {
+              setProviderBudgetAddError('');
+              setProviderBudgetAddForm((current) => ({ ...current, monthly_usd: event.target.value }));
+            }}
+          />
+        </label>
+      </AdminWorkbenchDialog>
 
       <ConfirmModal
         isOpen={pendingTab !== null}

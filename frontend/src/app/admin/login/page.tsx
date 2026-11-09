@@ -124,7 +124,7 @@ function AdminLoginPageContent() {
             {t('admin.login_title', {}, 'Sign in to admin')}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t('admin.login_desc', {}, 'For platform operators only. Enter the current Cloud admin key.')}
+            {t('admin.login_desc', {}, 'For platform administrators only. Enter the current Cloud admin key.')}
           </p>
         </div>
 

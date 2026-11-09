@@ -32,6 +32,9 @@ Current home / density layout Spec (incl. preview self-check gate):
 - [10月18日生产部署与未完成验收交接](../../production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)
   - 后续关键回归已实现、冻结4a已部署；旧会话归档后仍由当前会话跟进正式smoke、Addon与真实写作
 
+- [注册准入开发收口与经验 — 2026-11-06](registration-access-closeout-2026-11-06.md)
+  - #1380、准入与已有账号边界、CI/M4分层、基线失败更正、生产等待及分支/主检出清理边界
+
 These records preserve their original status, commands, revisions, production
 evidence, and acceptance limits. Recheck current source and active standards
 before using a historical route model or verification claim.

@@ -374,7 +374,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['PATCH'],
-    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy|accounting-fx|platform-preferences|media-recognition-policy|provider-account-spend-budget)$/,
+    pattern: /^service-settings\/(?:portal-public|portal-registration|qq-login|email|alipay-payment|site-relink-policy|accounting-fx|platform-preferences|media-recognition-policy|provider-account-spend-budget)$/,
     namespace: 'admin',
   },
   {

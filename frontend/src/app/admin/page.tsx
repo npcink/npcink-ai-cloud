@@ -841,19 +841,22 @@ function AdminOverviewContent() {
           </Link>
         )}
         summaryItems={primaryMetrics.map((item) => ({ ...item, detail: undefined }))}
-        summaryAside={(
-          <span className={cn('inline-flex rounded-full border px-2.5 py-1 font-semibold', readinessClasses)}>
-            {readinessLabel} · {overview.operationalReadiness.generatedAt
-              ? formatDate(overview.operationalReadiness.generatedAt)
-              : overview.generatedAt
-                ? formatDate(overview.generatedAt)
-                : t('common.unknown')}
-          </span>
-        )}
+        scope={<div className="space-y-2">
+          <p role="status" data-ui="admin-overview-conclusion" className="text-sm text-slate-700 dark:text-slate-200">{platformConclusion}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{t('admin.hierarchy.readiness_scope')}</span>
+            <span className={cn('inline-flex rounded-full border px-2.5 py-1 font-semibold', readinessClasses)}>
+              {readinessLabel} · {overview.operationalReadiness.generatedAt
+                ? formatDate(overview.operationalReadiness.generatedAt)
+                : overview.generatedAt
+                  ? formatDate(overview.generatedAt)
+                  : t('common.unknown')}
+            </span>
+          </div>
+          {Object.values(overview.totals).some((value) => value === null) || Object.values(overview.recentUsage).some((value) => value === null) ? <p role="status">{t('admin.overview_metrics_unknown', {}, 'Some metrics are unavailable; — means unknown.')}</p> : null}
+        </div>}
       />
-      <p role="status" data-ui="admin-overview-conclusion" className="text-sm text-slate-700 dark:text-slate-200">{platformConclusion}</p>
       {error ? <BackofficeDiagnosticNotice message={`${t('admin.overview_stale_notice', {}, 'Refresh failed. Showing the previous snapshot.')} ${error}`} retryLabel={t('common.retry')} onRetry={() => void loadOverview()} /> : null}
-      {Object.values(overview.totals).some((value) => value === null) || Object.values(overview.recentUsage).some((value) => value === null) ? <p role="status">{t('admin.overview_metrics_unknown', {}, 'Some metrics are unavailable; — means unknown.')}</p> : null}
       <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-attention">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

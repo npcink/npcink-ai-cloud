@@ -109,8 +109,8 @@ for (const [surface, source] of [
 
 assert.match(
   serviceSettingsSource,
-  /role=\{error \|\| activeValidationIssues\.length > 0 \? 'alert' : 'status'\}/,
-  'service settings validation and request errors must expose alert semantics'
+  /role=\{error \|\| visibleValidationIssues\.length > 0 \? 'alert' : 'status'\}/,
+  'service settings visible validation and request errors must expose alert semantics'
 );
 assert.match(
   serviceSettingsSource,

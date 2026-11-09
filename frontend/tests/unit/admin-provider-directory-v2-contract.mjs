@@ -159,7 +159,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /contentMode=\{providerWorkbenchSection === 'models' \? 'contained' : 'scroll'\}[\s\S]*model-visibility-directory" className="flex min-h-0 flex-1 flex-col[\s\S]*min-h-0 flex-1 overflow-auto overscroll-contain/,
+  /contentMode=\{providerAdvancedPanel \? 'scroll' : providerWorkbenchSection === 'models' \? 'contained' : 'scroll'\}[\s\S]*model-visibility-directory" className="flex min-h-0 flex-1 flex-col[\s\S]*min-h-0 flex-1 overflow-auto overscroll-contain/,
   'Model management must keep one bounded table scrollbar instead of nesting it inside a scrolling dialog body'
 );
 
@@ -183,9 +183,14 @@ assert.match(
 
 assert.match(
   pageSource,
-  /rowId="image-delivery"[\s\S]*imageDeliveryStatusLabel[\s\S]*image_delivery_test_not_proof_compact[\s\S]*rowId="image-response-format"[\s\S]*rowId="image-output-hosts"/,
+  /rowId="image-delivery"[\s\S]*imageDeliveryStatusLabel[\s\S]*image_delivery_test_not_proof_compact/,
   'Image delivery must use concise configuration rows while retaining the separate-delivery-test boundary'
 );
+assert.match(pageSource, /rowId="image-response-format"[\s\S]*rowId="image-output-hosts"/);
+assert.match(pageSource, /data-ui="image-delivery-advanced-trigger"[\s\S]*openProviderAdvancedPanel\('image'\)/);
+assert.match(pageSource, /data-ui="advanced-runtime-settings-trigger"[\s\S]*openProviderAdvancedPanel\('runtime'\)/);
+assert.doesNotMatch(pageSource, /<BackofficeDisclosure summary=\{aiText\('image_advanced_settings'/);
+assert.match(pageSource, /onSubmit=\{\(\) => \{ if \(!providerAdvancedPanel && providerWorkbenchSection !== 'references'\)/);
 
 assert.match(
   pageSource,

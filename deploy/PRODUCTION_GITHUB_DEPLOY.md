@@ -541,6 +541,13 @@ current release project.
 
 ## First Installation
 
+An empty replacement host that retains an existing completed PG18 database
+must use the separately approved [replacement-host recovery](../docs/replacement-host-recovery-v1.md).
+Neither ordinary deploy nor Setup is an implicit migration path. The recovery
+approval is a protected workstation process input; ordinary workflow dispatch
+does not enable it. All image, certificate and exact-source authorization gates
+remain in effect, and new-target finalization is separate from activation.
+
 A host with missing or `pending` installation state takes the bounded first-
 install path. Before remote mkdir, upload, deployment lock, image, container, or
 database mutation, the deploy helper reads the protected state with
@@ -615,7 +622,8 @@ project name. Ordinary production deployment also requires an existing managed
 `current` release; it is not a host-bootstrap path. Before image mutation it
 proves `complete`, `database_contract=pg18_empty_initialization.v1`, and the
 exact protected runtime-config digest. After exact images load and before old
-writers stop, the candidate API proves private RDS resolution, TLS
+writers stop, the candidate API proves private RDS resolution by default (or
+the explicit protected [public RDS transport](../docs/public-rds-transport-v1.md)), TLS
 `verify-full`, PostgreSQL major 18, and one known Alembic revision that is the
 candidate head or its ancestor. After migration the exact sole candidate head
 is required. The retired

@@ -26,6 +26,15 @@ assert.match(enSource, /'admin\.runtime_profiles\.profile_vision_understanding':
 assert.match(zhSource, /'admin\.runtime_profiles\.profile_vision_understanding': '视觉理解'/);
 assert.match(pageSource, /'vision\.ai': 'profile_vision_understanding'/);
 
+const routingSource = readFileSync(fromFrontendRoot('../app/domain/wordpress_ai_connector/routing_profiles.py'), 'utf8');
+const profileTaskBlocks = [...routingSource.matchAll(/tasks=\(([\s\S]*?)\),/g)];
+assert.equal(profileTaskBlocks.length, 6, 'task-name coverage must inspect all six hosted profile specifications');
+for (const task of new Set(profileTaskBlocks.flatMap(match => [...match[1].matchAll(/"([^"]+)"/g)].map(item => item[1])))) {
+  assert.ok(pageSource.includes(`${task}: copy('task_${task}',`), `${task} must have an operator-readable localized task name`);
+}
+assert.doesNotMatch(pageSource, /editingProfile\.tasks\.join\(/, 'applicable tasks must not render a raw identifier string');
+assert.match(pageSource, /Object\.hasOwn\(labels, task\)[\s\S]*task_unknown[\s\S]*\{ task \}/, 'unrecognized tasks must remain identifiable without inventing a known meaning');
+
 assert.doesNotMatch(
   i18nSource,
   /admin\.nav_ability_models|admin\.ai_resources\.ability_model_|配置能力模型路由|Configure ability-model route/,

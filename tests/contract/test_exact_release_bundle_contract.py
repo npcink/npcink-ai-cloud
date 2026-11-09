@@ -873,9 +873,7 @@ def test_v2_bundle_binds_exact_production_release_plan(
     (preflight / "deploy").mkdir(parents=True)
     (preflight / "scripts").mkdir()
     deploy_source = (ROOT / "deploy/deploy-to-ssh-host.sh").read_text(encoding="utf-8")
-    upload_start = deploy_source.index(
-        'npcink_ai_cloud_run_timed "upload deploy bundle preflight"'
-    )
+    upload_start = deploy_source.index('npcink_ai_cloud_run_timed "upload deploy bundle preflight"')
     upload_end = deploy_source.index('if [ "${STAGE_ONLY}" != "1" ]; then', upload_start)
     uploaded = subprocess.run(
         ["bash", "-s"],
@@ -886,8 +884,7 @@ def test_v2_bundle_binds_exact_production_release_plan(
             "SSH_TARGET=fixture-host\n"
             "SCP_ARGS=(-q)\n"
             'npcink_ai_cloud_run_timed() { shift; "$@"; }\n'
-            'scp() { shift; cp "$1" "${2#*:}"; }\n'
-            + deploy_source[upload_start:upload_end]
+            'scp() { shift; cp "$1" "${2#*:}"; }\n' + deploy_source[upload_start:upload_end]
         ),
         env={
             **os.environ,
@@ -1473,6 +1470,112 @@ def test_finalize_image_records_requires_a_complete_passed_release_index(
         assert completed.returncode == 1, label
         assert "finalization" in completed.stderr, label
         assert not rejected_output.exists(), label
+
+
+def test_patched_service_outputs_finalize_with_their_own_scanned_identity(
+    exact_bundle_fixture: tuple[Path, Path, Path],
+    tmp_path: Path,
+) -> None:
+    helper = load_helper_module()
+    source, bundle, records = exact_bundle_fixture
+    lock = image_lock()
+    old_externals = helper.external_images(lock)
+    lock["production_inputs"] = []
+    for item in old_externals:
+        lock["application_outputs"].append(
+            {
+                "key": f"external_{item['key']}",
+                "reference": item["release_reference"],
+                "dockerfile": f"Dockerfile.{item['key']}",
+                "scan_by_default": True,
+            }
+        )
+    lock_path = bundle / "deploy/image-lock/production-images.json"
+    lock_path.write_text(json.dumps(lock) + "\n")
+    assert helper.external_images(lock) == []
+    assert {item["key"] for item in helper.application_images(lock)} == {
+        "api",
+        "frontend",
+        "external_redis",
+        "external_nginx",
+    }
+    index = json.loads((bundle / "release/image-scan/scan-index.json").read_text())
+    index["lock_sha256"] = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    raw_records = records.read_text()
+    for item in old_externals:
+        key = item["key"]
+        scan = next(record for record in index["images"] if record["image_key"] == key)
+        scan["image_key"] = f"external_{key}"
+        scan["requested_reference"] = item["release_reference"]
+        raw_records = raw_records.replace(item["reference"], item["release_reference"])
+    index["required_image_keys"] = sorted(record["image_key"] for record in index["images"])
+    index_path = tmp_path / "patched-index.json"
+    index_path.write_text(json.dumps(index) + "\n")
+    patched_records = tmp_path / "patched-input.tsv"
+    patched_records.write_text(raw_records)
+    output = tmp_path / "patched-finalized.tsv"
+    completed = run_helper(
+        "finalize-image-records",
+        "--image-lock",
+        str(lock_path),
+        "--scan-index",
+        str(index_path),
+        "--input",
+        str(patched_records),
+        "--output",
+        str(output),
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert output.read_text() == raw_records
+
+    # Rebuild the complete offline fixture with local service scan receipts.
+    # This exercises archive verification as well as record finalization, while
+    # all other tests continue to exercise legacy upstream-digest bundles.
+    scan_root = bundle / "release/image-scan"
+    lock_digest = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    for item in old_externals:
+        old_key = item["key"]
+        key = f"external_{old_key}"
+        for suffix in ("image-inspect.json", "syft.json", "sbom.cdx.json", "grype.json"):
+            (scan_root / f"{old_key}.{suffix}").rename(scan_root / f"{key}.{suffix}")
+        old_receipt_path = scan_root / f"{old_key}.receipt.json"
+        receipt = json.loads(old_receipt_path.read_text())
+        old_receipt_path.unlink()
+        receipt.update(
+            image_key=key,
+            requested_reference=item["release_reference"],
+            repo_digests=[],
+        )
+        receipt_path = scan_root / f"{key}.receipt.json"
+        receipt_path.write_text(json.dumps(receipt) + "\n")
+        for base in (source, bundle):
+            write(base / f"Dockerfile.{old_key}", f"FROM {item['reference']}\n")
+    for scan in index["images"]:
+        receipt_path = scan_root / f"{scan['image_key']}.receipt.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["lock_sha256"] = lock_digest
+        receipt_path.write_text(json.dumps(receipt) + "\n")
+        scan["receipt_sha256"] = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+    index["images"].sort(key=lambda scan: scan["image_key"])
+    (scan_root / "scan-index.json").write_text(json.dumps(index) + "\n")
+    write(source / "deploy/image-lock/production-images.json", lock_path.read_text())
+    subprocess.run(["git", "add", "."], cwd=source, check=True)
+    completed = run_helper(
+        "create", "--source-root", str(source), "--bundle-root", str(bundle),
+        "--revision", "a" * 40, "--tree", "b" * 40, "--branch", "codex/fixture",
+        "--image-platform", "linux/amd64", "--gzip-level", "1",
+        "--frontend-included", "1", "--external-images-included", "1",
+        "--image-lock", "deploy/image-lock/production-images.json",
+        "--image-records", str(output),
+    )
+    assert completed.returncode == 0, completed.stderr
+    completed = run_helper("verify-directory", "--root", str(bundle))
+    assert completed.returncode == 0, completed.stderr
+    lock["application_outputs"] = [
+        item for item in lock["application_outputs"] if item["key"] != "external_nginx"
+    ]
+    with pytest.raises(helper.BundleError, match="no compose_external"):
+        helper.external_images(lock)
 
 
 def test_gzip_payload_limit_is_enforced_while_streaming(

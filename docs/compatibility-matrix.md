@@ -26,6 +26,8 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 
 | Cloud 发布标识(SHA/tag) | 活跃契约名 | 推荐 Addon≥ | 推荐 Toolbox≥ | WP 地板 | 发布顺序备注 | 更新日期 |
 | --- | --- | --- | --- | --- | --- | --- |
+| Cloud #1385 / `82311b02` 公网 RDS 支持（master 已合入、M4 accepted；非生产） | `wordpress_operation.v1`; `cloud_connector_runtime.v1`; `ai_task_contract.v1` 不变；已有安装可由受保护配置选择公网传输，仍校验原证书主机名及 CA | **0.4.4** | **0.6.0** | **WP ≥ 7.0** | **Cloud** 独立发布；Setup 仍只支持私网首次安装，不新增迁移。需正式 AMD64 包、新鲜扫描、替换主机恢复及精确镜像原生 TLS/schema 验证。保留原权威 RDS 与全部运行密钥；工作站隧道和 M4 结果不等于新机生产验收。见[公网传输契约](public-rds-transport-v1.md)。 | 2026-11-09 |
+| Cloud `codex/production-sqlite-runtime-20261105` candidate（非生产） | `wordpress_operation.v1`; `cloud_connector_runtime.v1`; `ai_task_contract.v1` 不变；仅生产 Python 镜像排除 SQLite，保留 PostgreSQL 及开发 SQLite | **0.4.4** | **0.6.0** | **WP ≥ 7.0** | 无迁移或 WordPress 契约变化；需精确镜像构建、启动/DBAPI smoke 和新鲜安全扫描。旧证书暂缓绑定原冻结树，不适用于本镜像修复；生产和服务器目标另验。 | 2026-11-05 |
 | Cloud 本次保留规则续期演练例外（工具候选；待发布） | 现行应用契约不变；冻结 #1368 / #1369，无新增迁移 | **0.4.4** | **0.6.0** | **WP ≥ 7.0** | **Cloud** 独立发布；仅本次暂缓证书续期演练，新建单次claim，旧claim不复用；线上TLS、精确镜像、回滚及健康门禁保留。2026-11-05 12:00北京时间到期，实际上线另记。见[限时契约](certificate-maintenance-exception-2026-11-04.md)。 | 2026-11-04 |
 | Cloud #1368 / `80620142` 运维保留规则（master 已合入；待生产发布） | 现行应用契约不变；无新增迁移 | **0.4.4** | **0.6.0** | **WP ≥ 7.0** | **Cloud** 独立发布；健康历史至少30天、成功Worker心跳至少90天，每小时分批清理并保留最后状态；容器日志3×20MiB。系统日志限额及一次性历史清理已实施，自动数据库保留和容器轮转须以实际部署回执为准。见[保留维护规则](production-retention-maintenance-v1.md)。 | 2026-11-04 |
 | Cloud `codex/certificate-maintenance-exception-20261104`（发布工具候选；非生产） | 现行应用契约不变 | **0.4.4** | **0.6.0** | **WP ≥ 7.0** | 冻结 #1365 应用树；仅本次证书维护例外，2026-11-05 12:00 北京时间到期；完整 TLS/镜像/数据库门禁和最终部署授权仍必需。见[限时契约](certificate-maintenance-exception-2026-11-04.md)。 | 2026-11-04 |

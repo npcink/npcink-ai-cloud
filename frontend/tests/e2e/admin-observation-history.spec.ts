@@ -83,3 +83,31 @@ test('dimension lines differ and retained history pages keep a snapshot', async 
     { id: 'context-stability', status: 'pass', evidence: 'snapshot retained on pagination; filter and time changes reset old rows' },
   ], interactionResults: [{ id: 'comparison-and-history', status: 'pass', evidence: 'distinct series, metric selection, group drill-down, server paging, failure/retry and scope reset exercised' }] });
 });
+
+test('plugin retained records show readable source and site with complete labeled evidence', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  await page.route('**/api/admin/plugin-observability/history?*', route => route.fulfill({ json: buildAdminApiEnvelope({
+    items: [{ id: 7, site_id: 'site_readable', site_name: '编辑站点', site_url: 'https://editorial.example.test', plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.monitoring.state_projected', received_at: '2026-11-04T01:00:00Z', events: 1, failed: 1, status: 'failed', run_id: 'run_exact', error_code: 'provider.unavailable', event_id: 'event_exact' },
+      { id: 8, site_id: 'site_readable', plugin_slug: '__proto__', event_kind: 'runtime_request', received_at: '2026-11-04T01:00:00Z', events: 1, failed: 0, status: 'ok' }],
+    page: 1, pages: 1, total: 2, totals: { events: 2, failed: 1, succeeded: 1 }, snapshot: { at: '2026-11-04T01:00:00Z', id: 8 },
+  }) }));
+  await page.goto('/admin/usage-statistics');
+  await page.getByRole('link', { name: /插件运行记录|Plugin activity records/ }).click();
+  const table = page.locator('[data-ui="usage-recent-activity"]');
+  await table.getByLabel('记录展示', { exact: true }).selectOption('events');
+  await expect(table).toContainText('provider.unavailable');
+  await expect(table).toContainText('编辑站点');
+  await expect(table).toContainText('Npcink Cloud Addon');
+  await expect(table).toContainText('插件 · __proto__');
+  const namedRow = table.locator('tbody tr').filter({ hasText: 'Npcink Cloud Addon' });
+  await expect(namedRow.getByText('site_readable', { exact: true })).toBeHidden();
+  await namedRow.getByText('插件状态同步', { exact: true }).click();
+  await expect(namedRow.getByText('site_readable', { exact: true })).toBeVisible();
+  await expect(table).toContainText('运行编号');
+  await expect(table).toContainText('run_exact');
+  await expect(table).toContainText('错误码');
+  await expect(table).toContainText('provider.unavailable');
+  await page.screenshot({ path: testInfo.outputPath('plugin-readable-evidence-1440.png'), fullPage: true });
+});

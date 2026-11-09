@@ -721,16 +721,30 @@ for (const locale of ['en', 'zh-CN']) {
     await page.keyboard.press('Escape');
     await configure.click();
     await expect(delivery.getByRole('status')).toContainText(/Verified|已验证/i);
-    await dialog.getByText(/Image delivery · Advanced settings|图片交付 · 高级设置/i, { exact: true }).click();
+    await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     const format = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
     await format.selectOption('url');
+    await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
+    await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
     await expect(generate).toBeDisabled();
     await expect(delivery.getByRole('status')).not.toContainText(/Verified|已验证/i);
-    await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
-    await format.selectOption('b64_json');
+    await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
+    const reopenedFormat = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
+    await reopenedFormat.selectOption('b64_json');
+    await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
     await expect(generate).toBeEnabled();
     expect(calls).toBe(2);
-    await dialog.getByText(/Image delivery · Advanced settings|图片交付 · 高级设置/i, { exact: true }).click();
+    for (const notification of await page.getByRole('button', { name: 'Close notification', exact: true }).all()) await notification.click();
+    await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
+    await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('url');
+    for (const width of [1440, 1056, 900]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`image-advanced-${locale}-${width}.png`) });
+    }
+    await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
+    await expect(dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i })).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath(`image-connection-${locale}-900.png`) });
     await writeAdminVisualReceipt({
       page, testInfo, route: '/admin/ai-resources', pageModel: 'queue', dataMode: 'mocked',
       testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog', 'unverified', 'unsaved', 'failed', 'retry', 'verified', 'advanced', locale],
@@ -844,12 +858,13 @@ test('editing a provider separates dense connection settings from model manageme
   await expect(configurationTable).toBeVisible();
   await expect(configurationTable.locator('tbody tr')).toHaveCount(7);
   await expect(dialog.locator('[data-configuration-row="image-response-format"]')).not.toBeVisible();
-  await dialog.getByText(/Image delivery · Advanced settings|图片交付 · 高级设置/i, { exact: true }).click();
+  await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
   await expect(dialog.locator('[data-configuration-row="image-response-format"]')).toBeVisible();
   await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toHaveCount(0);
   await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('url');
   await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
   await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('b64_json');
+    await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
   await expect(dialog.getByLabel(/Provider type|服务商类型/i)).toHaveCount(0);
   await expect(dialog.locator('details[data-ui="provider-connection-settings"]')).toHaveCount(0);
   await expect(dialog.locator('details[data-ui="image-delivery-settings"]')).toHaveCount(0);
@@ -891,6 +906,44 @@ test('editing a provider separates dense connection settings from model manageme
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
+});
+
+test('low-frequency provider settings open as compact panels and retain the draft', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1056, height: 800 });
+  await installProviderDirectoryHarness(page);
+  const writes: string[] = [];
+  page.on('request', request => {
+    if (request.url().includes('/api/admin/provider-connections') && ['POST', 'PATCH', 'DELETE'].includes(request.method())) writes.push(request.url());
+  });
+  await page.goto('/admin/ai-resources');
+
+  await page.getByRole('button', { name: /Add model supplier|添加模型供应商/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(/Provider type|服务商类型/i).selectOption('custom');
+  const trigger = dialog.getByRole('button', { name: /Edit advanced settings|编辑高级设置/i });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(dialog.locator('.admin-workbench-dialog-compact')).toHaveCSS('max-width', '960px');
+  await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toBeVisible();
+  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot(), contentType: 'image/png' });
+  await dialog.getByLabel(/Connection ID|连接 ID/i).fill('custom_runtime');
+  await dialog.getByLabel(/Connection ID|连接 ID/i).press('Enter');
+  await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveValue('custom_runtime');
+  for (const width of [1440, 1056, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`runtime-advanced-${width}.png`) });
+  }
+  await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
+  await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /Edit advanced settings|编辑高级设置/i })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('runtime-connection-900.png') });
+  await dialog.getByRole('button', { name: /Edit advanced settings|编辑高级设置/i }).click();
+  await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveValue('custom_runtime');
+  await page.keyboard.press('Escape');
+  await expect(dialog.getByRole('button', { name: /Edit advanced settings|编辑高级设置/i })).toBeFocused();
+  expect(writes).toEqual([]);
 });
 
 test('large model directories render one bounded page and reset pagination when searched', async ({ page }) => {

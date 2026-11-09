@@ -131,9 +131,21 @@ must use the digest-locked candidates recorded in
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
 `frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
 2026-10-25 and were retired on 2026-10-27. The canonical CVE allowlist is empty.
-The updated digest-locked candidates carry OpenSSL 3.5.9-r0, pcre2 10.49-r0
-and zlib 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
-`api` and `frontend` retain their minimum-version in-image package upgrades.
+The locked upstream bases carry OpenSSL 3.5.9-r0, pcre2 10.49-r0 and zlib
+1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
+The [bounded service-image patch contract](patched-service-images-v1.md)
+builds Redis/NGINX outputs with the available `zlib>=1.4-r0` fix and scans
+those exact built outputs. Upstream digest evidence is not substituted for
+the patched output identity. `api` and `frontend` retain their minimum-version
+in-image package upgrades.
+The Python `production` target excludes SQLite's APK library and CPython modules;
+the governed production database is PostgreSQL. All other Python base shared-library
+dependencies remain explicitly installed. The `runtime` and `development` targets
+retain SQLite for local fixtures. Production default and zilliz image smoke checks
+verify PostgreSQL DBAPI/app imports and SQLite absence; this does not waive any CVE
+finding or change the empty allowlist. The image smoke also scans the built zilliz
+dependency superset (or the default image when zilliz is explicitly excluded)
+before merge, using the canonical policy. A fresh exact-release scan is still required.
 Retiring exceptions does not establish that any image is fixed or deployed;
 fresh platform-specific scans must verify the exact candidates.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
@@ -633,8 +645,10 @@ and release tooling must fail closed unless all of the following are true:
   root-owned first-install helper;
 - `complete` carries `database_contract=pg18_empty_initialization.v1` and the
   SHA-256 of the exact protected runtime configuration;
-- the candidate API image loads that protected configuration, resolves the RDS
-  hostname only to approved private addresses, verifies TLS with the stored CA,
+- the candidate API image loads that protected configuration, uses private RDS
+  transport by default or the explicitly configured existing-installation
+  [public RDS transport](public-rds-transport-v1.md), verifies TLS with the stored CA
+  and the unchanged certificate hostname using `verify-full`,
   observes PostgreSQL major version 18, and proves exactly one current Alembic
   revision at the candidate head or one of its known ancestors before old
   writers are stopped;
@@ -694,6 +708,16 @@ state, missing or ambiguous live network evidence, or mismatched failure
 evidence fails closed before image, container, migration, or WordPress
 mutation. This exception repairs release lifecycle evidence only; it does not
 authorize Admin, provider, database, product, or infrastructure expansion.
+
+An empty replacement host retaining an existing completed PG18 database may
+instead use the explicit [same-database replacement-host recovery](replacement-host-recovery-v1.md).
+It requires an operator-confirmed old-host writer fence, a fresh matched dump,
+preserved original protected configuration/roots, an exact-source protected
+recovery receipt and the separate exact recovery approval. It accepts only a
+full release and the already-current exact schema head, retains all normal
+image/TLS/release gates, and never fabricates a previous release or historical
+completion sentinel. New-target acceptance remains a separate finalize step.
+This bounded trusted-workstation recovery is not an ordinary deployment bypass.
 
 After installation, the ordinary deployment order is:
 

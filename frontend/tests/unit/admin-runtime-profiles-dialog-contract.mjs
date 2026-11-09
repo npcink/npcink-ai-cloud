@@ -42,14 +42,30 @@ assert.doesNotMatch(pageSource, /\bfetch\s*\(/, 'hosted runtime profiles must no
 
 assert.match(
   pageSource,
-  /mediaRecognitionExpanded[\s\S]*mediaRecognitionError \|\| mediaRecognitionDirty \|\| mediaRecognitionBlocked[\s\S]*setMediaRecognitionExpanded\(true\)/,
-  'media recognition settings must default closed and expand when blocked, dirty, or failed'
+  /data-ui="media-recognition-policy"[\s\S]*mediaRecognitionStatusLabel[\s\S]*savedMediaRecognitionPolicy.window_start[\s\S]*media_recognition_daily_limit_summary/,
+  'the permanent media summary must retain status and saved window and daily-limit context'
 );
 
 assert.match(
   pageSource,
-  /BackofficeDisclosure[\s\S]*data-ui="media-recognition-policy"[\s\S]*open=\{mediaRecognitionExpanded\}[\s\S]*mediaRecognitionStatusLabel[\s\S]*media_recognition_daily_limit_summary/,
-  'collapsed media recognition settings must retain status, model, window, and daily-limit context'
+  /summaryAside=\{data \? \([\s\S]*data-ui="media-recognition-policy"[\s\S]*setMediaRecognitionExpanded\(true\)/,
+  'the media policy summary must live in the page-header aside with a nearby configure action'
+);
+assert.doesNotMatch(
+  pageSource.split('summaryAside={data ? (')[1].split('{profileRecovery ? (')[0],
+  /mediaRecognitionPrimary|media_recognition_model_short/,
+  'the compact policy summary must not duplicate model names from the usage directory and policy editor'
+);
+assert.doesNotMatch(
+  pageSource,
+  /<section data-ui="media-recognition-policy"/,
+  'the media policy must not return as a separate full-width section below the directory'
+);
+
+assert.match(
+  pageSource,
+  /!mediaRecognitionExpanded \? mediaRecognitionFeedback[\s\S]*<AdminWorkbenchDialog[\s\S]*open=\{mediaRecognitionExpanded\}[\s\S]*media_recognition_draft_notice[\s\S]*mediaRecognitionFeedback/,
+  'media feedback must follow its active surface and closing the editor must retain the draft'
 );
 
 assert.match(
@@ -86,6 +102,12 @@ assert.match(
   pageSource,
   /operation_contract_version[\s\S]*Operation contract/,
   'hosted runtime profile contract details must label the operation contract identity'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /data-ui="automatic-runtime-profile"|setReferenceView\('automatic'\)|action_view_candidates/,
+  'automatic candidate metadata must not reappear as a separate runtime-profile section'
 );
 
 assert.match(
@@ -180,6 +202,12 @@ assert.match(
 
 assert.match(
   pageSource,
+  /<th className="px-3 py-2">\{copy\('primary_model', 'Primary model'\)\}<\/th><th className="px-3 py-2">\{copy\('fallback_model', 'Fallback model'\)\}<\/th>[\s\S]*const fallback = instancesById\.get\(profile\.candidate_instance_ids\[1\] \|\| ''\)[\s\S]*<td className="break-words px-3 py-3 align-top">\{instanceLabel\(fallback\)\}<\/td>/,
+  'the runtime profile directory must expose the configured fallback model as its own column'
+);
+
+assert.match(
+  pageSource,
   /<AdminWorkbenchDialog[\s\S]*<AdminConfigurationTable[\s\S]*data-ui="runtime-profile-model-toolbar"[\s\S]*data-ui="runtime-profile-candidate-table"[\s\S]*type="radio"[\s\S]*name=\{`runtime-primary-[\s\S]*type="radio"[\s\S]*name=\{`runtime-fallback-/,
   'the shared workbench must use configuration and candidate tables with primary and fallback radio columns'
 );
@@ -204,7 +232,7 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[760px\] table-auto[\s\S]*w-\[18%\][\s\S]*w-\[36%\][\s\S]*w-\[14%\][\s\S]*w-\[10%\][\s\S]*w-\[10%\][\s\S]*w-\[12%\][\s\S]*whitespace-nowrap/,
+  /contentMode=\{profileAdvancedOpen \? 'scroll' : 'contained'\}[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[760px\] table-auto[\s\S]*w-\[18%\][\s\S]*w-\[36%\][\s\S]*w-\[14%\][\s\S]*w-\[10%\][\s\S]*w-\[10%\][\s\S]*w-\[12%\][\s\S]*whitespace-nowrap/,
   'candidate context and self-labelled compact controls must share one balanced toolbar above the workbench sole vertical scroll region'
 );
 
@@ -236,8 +264,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /capability-probes\/summary\?window_minutes=10080&limit=5[\s\S]*<BackofficeDisclosure summary=\{copy\('probe_summary_title'/,
-  'runtime profiles must expose the metadata-only capability probe summary behind a disclosure'
+  /capability-probes\/summary\?window_minutes=10080&limit=5[\s\S]*setReferenceView\('probes'\)[\s\S]*<AdminContextDrawer[\s\S]*runtime-probe-history/,
+  'runtime profiles must expose the metadata-only capability probe summary through the named verification-records drawer'
 );
 
 assert.match(
@@ -250,8 +278,12 @@ const saveSource = pageSource.slice(pageSource.indexOf('  async function savePro
 assert.doesNotMatch(saveSource, /requestCapabilityProbe/, 'saving must never implicitly dispatch a media probe');
 assert.match(saveSource, /explicit_verification_required/, 'saving must explain missing evidence');
 assert.match(saveSource, /profiles: \[\{[\s\S]*profile_id: profile.profile_id/, 'only the dialog usage may be submitted');
-assert.match(pageSource, /onClose=\{\(\) => \{ setEditingProfile\(null\)/, 'cancel and close discard dialog state');
-assert.match(pageSource, /onSubmit=\{\(\) => void saveProfiles\(\)\}/, 'dialog save must commit immediately');
+assert.match(pageSource, /onClose=\{\(\) => \{ if \(profileAdvancedOpen\) \{ returnToCandidateChain\(\); return; \} setEditingProfile\(null\)/, 'closing advanced settings returns to the chain; closing the chain discards its draft');
+assert.match(pageSource, /onSubmit=\{\(\) => void saveProfiles\(\)\}/, 'the usage save still uses the original immediate commit handler');
+assert.match(saveSource, /if \(profileAdvancedOpen\) \{ returnToCandidateChain\(\); return; \}/, 'submitting advanced settings returns to the draft without a request');
+assert.doesNotMatch(pageSource, /<BackofficeDisclosure summary=\{copy\('advanced_settings'/, 'advanced settings must not restore the large disclosure bar');
+assert.match(pageSource, /data-ui="runtime-profile-advanced-trigger"[\s\S]*onClick=\{openAdvancedSettings\}/, 'advanced settings use a named text action beside the dialog title');
+assert.match(saveSource, /if \(advancedValidationError\) \{ setAdvancedValidationAttempted\(true\); openAdvancedSettings\(\); return; \}/, 'invalid hidden advanced values must be corrected before any save request');
 
 assert.match(
   pageSource,

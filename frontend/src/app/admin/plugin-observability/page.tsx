@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { PluginHistory } from '@/features/admin/observability/PluginHistory';
 
-import { normalizeObservationWindow, observationWindows, type ObservationWindow } from '@/features/admin/observability/window';
+import { normalizeObservationWindow, type ObservationWindow } from '@/features/admin/observability/window';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -338,7 +338,6 @@ type AttentionSeverityFilter = 'all' | 'warning' | 'error';
 type AttentionStateAction = 'acknowledge' | 'mute' | 'resolve' | 'clear';
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS = observationWindows('plugin').map(value => ({ value }));
 
 const PLUGIN_FILTER_OPTIONS: { value: PluginFilter; labelKey: string; fallback: string }[] = [
   { value: 'all', labelKey: 'admin.plugin_obs_filter_all', fallback: 'All plugins' },
@@ -700,7 +699,9 @@ function AdminPluginObservabilityContent() {
 
   return (
     <BackofficePageStack spacing="compact">
-      <BackofficePageHeader density="compact" title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
+      <BackofficePageHeader density="compact" descriptionDisplay="hint" title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
+        toolbarControls={<AdminObservationWindow />}
+        freshness={data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : undefined}
         secondaryAction={<div className="flex gap-2"><button className="btn btn-secondary btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.plugin_obs_more')}{data ? ` · ${data.attentionWorkflow.needsAttention}` : ''}</button><button className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh')}</button></div>}
         summaryItems={data ? [
           { label: t('admin.plugin_obs_reporting_sites'), value: formatInteger(data.totals.activeSiteCount) },
@@ -708,27 +709,24 @@ function AdminPluginObservabilityContent() {
           { label: t('admin.plugin_obs_affected_sites'), value: formatInteger(data.sites.filter(site => site.errorTotal > 0).length) },
           { label: t('admin.plugin_obs_record_count'), value: formatInteger(data.totals.eventsTotal) },
         ] : []} />
-      <AdminObservabilityTabs showWindow={false} />
       <div className="flex flex-wrap items-center gap-3">
-        {WINDOW_OPTIONS.map(opt => <BackofficeFilterPill key={opt.value} active={windowHours === opt.value} aria-pressed={windowHours === opt.value} onClick={() => updateUrl({window: opt.value, focus: null})}>{t(`admin.plugin_obs_window_${opt.value}`)}</BackofficeFilterPill>)}
         <label className="text-sm">{t('admin.plugin_obs_plugin')}<select className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_plugin')} value={pluginFilter} onChange={event => updateUrl({plugin: event.target.value as PluginFilter, focus: null})}>{PLUGIN_FILTER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>)}{extraPlugins.map(slug => <option key={slug} value={slug}>{pluginLabel(t, slug)} · {slug}</option>)}</select></label>
         <label className="text-sm">{t('admin.plugin_obs_site')}<input list="plugin-sites" className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_site_filter')} value={siteIdInput} onChange={event => setSiteIdInput(event.target.value)} onKeyDown={handleSiteIdKeyDown} placeholder={t('admin.plugin_obs_all_sites')} /><datalist id="plugin-sites">{data?.sites.map(site => <option key={site.siteId} value={site.siteId}>{site.siteName || site.siteId}</option>)}</datalist></label>
         <button className="btn btn-secondary btn-sm" onClick={handleSiteIdSubmit}>{t('common.apply')}</button>
         {siteIdFilter || pluginFilter !== 'all' ? <button className="btn btn-ghost btn-sm" onClick={() => {setSiteIdInput(''); updateUrl({site: null, plugin: null, focus: null});}}>{t('admin.plugin_obs_reset')}</button> : null}
-        <span className="text-xs text-slate-500">{data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : ''}</span>
       </div>
       {error ? <div role="alert" className="text-sm text-rose-700">{t('error.failed_load')}<details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary>{error}</details>{data ? <p>{t('admin.plugin_obs_stale_notice')}</p> : null}</div> : null}
       {loading && !data ? <LoadingFallback /> : null}
       {data ? <>
         <p className="text-sm text-slate-600">{data.totals.eventsTotal === 0 ? t('admin.plugin_obs_no_records') : data.totals.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</p>
         <AdminDataTableFrame title={t('admin.plugin_obs_problems')} resultLabel={t('admin.plugin_obs_group_note')} dataUi="plugin-problems" density="compact">
-          <table className="w-full"><thead><tr>{problemColumns.map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>
+          {data.errors.length ? <table className="w-full"><thead><tr>{problemColumns.map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>
             {data.errors.map(item => <tr key={errorKey(item)} className="border-t border-slate-100 dark:border-slate-800"><td className={cellClass}><p className="break-all font-medium">{errorLabel(t, item.errorCode)}</p><p className="mt-1 break-all text-xs text-slate-500">{eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)}</p></td><td className={cellClass}>{siteName(item.siteId)}</td><td className={cellClass}>{item.count}</td><td className={cellClass}>{item.lastSeenAt ? formatDate(item.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setIssueKey(errorKey(item))}>{t('admin.plugin_obs_inspect')}</button></td></tr>)}
-          </tbody></table>
-          {!data.errors.length ? <p className="p-4 text-sm text-slate-500">{data.totals.errorTotal > 0 ? t('admin.plugin_obs_missing_breakdown') : t('admin.plugin_obs_no_errors')}</p> : null}
+          </tbody></table> : null}
+          {!data.errors.length ? <p className="p-4 text-sm text-slate-500">{data.totals.errorTotal > 0 ? t('admin.plugin_obs_missing_breakdown') : t('admin.plugin_obs_zero_errors')}</p> : null}
         </AdminDataTableFrame>
         <AdminDataTableFrame title={t('admin.plugin_obs_site_overview')} resultLabel={t('admin.plugin_obs_site_scope')} dataUi="plugin-sites" density="compact" headerActions={<select aria-label={t('admin.plugin_obs_sort')} className="input w-auto" value={siteSort} onChange={e => setSiteSort(e.target.value as SiteSortKey)}><option value="errors">{t('admin.plugin_obs_sort_errors')}</option><option value="lastSeen">{t('admin.plugin_obs_sort_recent')}</option><option value="events">{t('admin.plugin_obs_record_count')}</option></select>}>
-          <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
+          <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_zero_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
           {!sortedSites.length ? <p className="p-4 text-sm text-slate-500">{t('admin.plugin_obs_no_sites')}</p> : null}
         </AdminDataTableFrame>
         <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={`${c('当前显示', 'Showing')} ${Math.min(data.recentActivity.length, recentExpanded ? 50 : 5)} / ${data.recentActivity.length} · ${c('所选范围内最近 50 条以内', 'Latest up to 50 in selected scope')}`} dataUi="plugin-recent-activity" density="compact" headerActions={<select aria-label={c('近期事件类别', 'Recent event category')} className="input w-auto" value={activityCategory} onChange={e => updateUrl({ activity: e.target.value === 'all' ? null : e.target.value })}><option value="all">{c('全部事件', 'All events')}</option><option value="activity">{c('任务与反馈等事件', 'Activity and feedback')}</option><option value="status">{c('连接与状态上报', 'Connection and status')}</option></select>}>
