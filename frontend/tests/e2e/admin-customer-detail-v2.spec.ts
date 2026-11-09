@@ -57,6 +57,8 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await packageDrawer.getByRole('button', { name: /^Free/i }).click();
   const packageDialog = page.getByRole('dialog');
   await expect(packageDialog).toContainText(/Confirm package change|确认更换套餐|確認更換方案/i);
+  await expect(packageDialog).toContainText('Npcink AI Demo');
+  await expect(packageDialog).toContainText('admin@example.com');
   await packageDialog.getByRole('button', { name: /Change package|更换套餐|更換方案/i }).click();
   await expect(page.locator('[data-ui="account-package-collapsed"]')).toContainText(/Free/i);
 
@@ -293,7 +295,7 @@ test('customer detail operator profile keeps the draft when the bounded save fai
     .getByText(/Edit customer info|编辑客户信息|編輯客戶資訊/i)
     .click();
   const operatorNote = page.getByLabel(
-    /Operator note|运营备注|營運備註/i
+    /Internal note|内部备注/i
   );
   await operatorNote.fill('Keep this unsaved note');
   await page
@@ -306,7 +308,7 @@ test('customer detail operator profile keeps the draft when the bounded save fai
   await expect(page.getByText('operator profile rejected', { exact: true })).toHaveCount(0);
 });
 
-test('customer detail operator profile preserves the save payload and success receipt', async ({ page }) => {
+test('customer detail operator profile preserves the save payload and success receipt', async ({ page }, testInfo) => {
   await installAdminMocks(page);
   let savedPayload: Record<string, unknown> | null = null;
   await page.route(`**/api/admin/accounts/${LONG_ACCOUNT_ID}/operator-profile`, async (route) => {
@@ -324,16 +326,17 @@ test('customer detail operator profile preserves the save payload and success re
     .click();
   const editor = page.locator('[data-ui="operator-profile-editor"]');
   await editor
-    .getByLabel(/Operator name|运营显示名|營運顯示名稱/i)
+    .getByLabel(/Customer label|客户备注名/i)
     .fill('  Updated customer  ');
   await editor
-    .getByLabel(/Operator note|运营备注|營運備註/i)
+    .getByLabel(/Internal note|内部备注/i)
     .fill('  Updated detail note  ');
+  await page.screenshot({ path: testInfo.outputPath('customer-internal-labels-1440.png'), fullPage: true });
   await editor.getByRole('button', { name: /Save|保存|儲存/i }).click();
 
   await expect(
     page.getByText(
-      /Operator note has been saved|运营备注已保存|營運備註已儲存/i
+      /Customer details have been saved|客户资料已保存/i
     )
   ).toBeVisible();
   await expect(

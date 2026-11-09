@@ -871,3 +871,21 @@ test('subscription active set survives refresh and pagination and clears on exac
   expect(mocks.requests.at(-1)?.has('status_group')).toBe(false);
   expect(mocks.requests.at(-1)?.has('status')).toBe(false);
 });
+
+test('unnamed subscription customers retain a visible labeled distinction', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installAdminMocks(page);
+  await page.route('**/api/admin/subscriptions?*', route => {
+    const params = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: buildAdminApiEnvelope(subscriptionQueueFixture({
+      items: ['alpha', 'beta'].map(name => ({ account: { account_id: `acct_${name}`, name: '' }, subscription: { subscription_id: `sub_${name}`, account_id: `acct_${name}` } })), total: 2,
+    }, params)) });
+  });
+  await page.goto('/admin/subscriptions?risk=all');
+  const rows = page.locator('[data-ui="subscription-queue-item"]');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('未命名客户');
+  await expect(rows.nth(0)).toContainText('账号 ID: acct_alpha');
+  await expect(rows.nth(1)).toContainText('账号 ID: acct_beta');
+  await page.screenshot({ path: testInfo.outputPath('unnamed-customers-1440.png'), fullPage: true });
+});

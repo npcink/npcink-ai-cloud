@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { BackofficePageHeader, BackofficePageStack } from '@/components/backoffice/BackofficeScaffold';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { AdminHelpTip } from '@/components/admin/AdminHelpTip';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -31,6 +32,8 @@ export default function AdminEconomicsPage() {
   const [usageSource, setUsageSource] = useState<Source<Usage>>({ month, value: null, state: 'loading' });
   const [revenueSource, setRevenueSource] = useState<Source<Revenue>>({ month, value: null, state: 'loading' });
   const [local, setLocal] = useState<{ month: string; bills: Bill[] }>({ month: '', bills: [] });
+  const [billDraft, setBillDraft] = useState<{ month: string; provider: string; amount: string; families: string[] } | null>(null);
+  const [billError, setBillError] = useState('');
   const [storageError, setStorageError] = useState(false);
   const usage = usageSource.month === month && usageSource.state === 'ready' ? usageSource.value : null;
   const revenue = revenueSource.month === month && revenueSource.state === 'ready' ? revenueSource.value : null;
@@ -40,6 +43,7 @@ export default function AdminEconomicsPage() {
     let error = false;
     try { bills = loadBills(month); } catch { error = true; }
     setLocal({ month, bills }); setStorageError(error);
+    setBillDraft(null); setBillError('');
   }, [month]);
   useEffect(() => {
     const controller = new AbortController();
@@ -92,7 +96,7 @@ export default function AdminEconomicsPage() {
         {!usage || !allocation.rows.length ? <tr><td className="px-3 py-5" colSpan={6}>{sourceState(usageSource) === 'loading' ? t('admin.economics.loading') : sourceState(usageSource) === 'error' ? '—' : t('admin.economics.no_usage')}</td></tr> : null}
       </tbody></table>
     </AdminDataTableFrame>
-    <AdminDataTableFrame density="compact" title={t('admin.economics.bills')} dataUi="economics-bills" resultLabel={`${bills.length}`} headerActions={<button type="button" className="btn btn-secondary btn-sm" disabled={local.month !== month} onClick={() => commitBills([...bills, { id: crypto.randomUUID(), provider_name: '', amount_cny: 0, families: [] }])}>{t('admin.economics.add_bill')}</button>}>
+    <AdminDataTableFrame density="compact" title={t('admin.economics.bills')} dataUi="economics-bills" resultLabel={`${bills.length}`} headerActions={<button type="button" className="btn btn-secondary btn-sm" disabled={local.month !== month} onClick={() => { setBillError(''); setBillDraft({ month, provider: '', amount: '', families: [] }); }}>{t('admin.economics.add_bill')}</button>}>
       <p className="px-3 py-2 text-xs text-slate-500">{t('admin.economics.local_scope')}<AdminHelpTip label={t('admin.economics.local_storage_help')}>{t('admin.economics.local_note')}</AdminHelpTip></p>
       {storageError ? <p role="alert" className="px-3 py-2">{t('admin.economics.storage_error')}</p> : null}
       <table className="w-full text-left text-sm"><thead><tr>{['provider', 'amount', 'families', 'action'].map(key => <th key={key} className="px-3 py-2">{label(key)}</th>)}</tr></thead><tbody>
@@ -107,5 +111,31 @@ export default function AdminEconomicsPage() {
       <p data-ui="economics-unallocated" className="px-3 py-2 text-xs">{t('admin.economics.unallocated')}: {money(usage ? allocation.unattributedBillCostCny : allocation.totalBillCostCny)}</p>
     </AdminDataTableFrame>
     <details className="border-t border-slate-200 py-3 text-sm dark:border-slate-800"><summary className="cursor-pointer">{t('admin.economics.definitions')}</summary><div className="mt-3 space-y-2 text-slate-500"><p>{t('admin.economics.allocation_note')}</p><p>{t('admin.economics.revenue_note')}</p><p>{t('admin.economics.cost_note')}</p></div></details>
+    <AdminWorkbenchDialog
+      open={Boolean(billDraft && billDraft.month === month)} titleId="economics-add-bill-title"
+      title={t('admin.economics.add_bill')} error={billError} saving={false}
+      closeLabel={t('common.close')} cancelLabel={t('common.cancel')}
+      saveLabel={t('admin.economics.confirm_add')} savingLabel={t('admin.economics.confirm_add')}
+      footerNotice={t('admin.economics.add_bill_notice', { month })} density="compact" width="compact"
+      onClose={() => { setBillDraft(null); setBillError(''); }}
+      onSubmit={() => {
+        if (!billDraft || billDraft.month !== month || local.month !== month) return;
+        const amount = Number(billDraft.amount);
+        if (!billDraft.provider.trim() || !billDraft.amount.trim() || !Number.isFinite(amount) || amount < 0) {
+          setBillError(t('admin.economics.bill_invalid')); return;
+        }
+        commitBills([...bills, { id: crypto.randomUUID(), provider_name: billDraft.provider.trim(), amount_cny: amount, families: billDraft.families }]);
+        setBillDraft(null); setBillError('');
+      }}
+    >
+      {billDraft ? <>
+        <label className="grid gap-1 text-sm">{t('admin.economics.provider')}<input className="input" maxLength={120} value={billDraft.provider} onChange={event => { setBillDraft({ ...billDraft, provider: event.target.value }); setBillError(''); }} /></label>
+        <label className="grid gap-1 text-sm">{t('admin.economics.amount')}<input className="input" type="text" inputMode="decimal" value={billDraft.amount} onChange={event => { setBillDraft({ ...billDraft, amount: event.target.value }); setBillError(''); }} /></label>
+        <fieldset className="grid gap-2 text-sm"><legend className="mb-2">{t('admin.economics.families')}</legend>
+          <div className="flex flex-wrap gap-3">{familyNames.map(family => <label key={family} className="inline-flex items-center gap-1"><input type="checkbox" checked={billDraft.families.includes(family)} onChange={event => setBillDraft({ ...billDraft, families: event.target.checked ? [...billDraft.families, family] : billDraft.families.filter(value => value !== family) })} />{familyLabel(family)}</label>)}</div>
+          <p className="text-xs text-slate-500">{t('admin.economics.mapping_optional')}</p>
+        </fieldset>
+      </> : null}
+    </AdminWorkbenchDialog>
   </BackofficePageStack>;
 }

@@ -48,6 +48,7 @@ FIRST_INSTALL_PENDING_REPAIR="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR:-0}"
 FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR_APPROVAL:-}"
 FINALIZED_RUNTIME_NETWORK_REPAIR="${NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR:-0}"
 FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL="${NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL:-}"
+REPLACEMENT_HOST_RECOVERY_APPROVAL="${NPCINK_CLOUD_REPLACEMENT_HOST_RECOVERY_APPROVAL:-}"
 STAGE_ONLY_DISALLOWED_CLI=()
 
 while [ "$#" -gt 0 ]; do
@@ -306,6 +307,17 @@ if [ "${STAGE_ONLY}" != "1" ] && \
 	[ -z "${SECRET}" ]; then
 	echo "[fail] NPCINK_CLOUD_SECRET is required unless both runtime seed and signed smoke are skipped." >&2
 	exit 1
+fi
+
+if [ -n "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" ]; then
+	if [ "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" != "Approved for replacement-host recovery by operator." ] || \
+		[ "${STAGE_ONLY}" = "1" ] || [ "${FIRST_INSTALL_PENDING_REPAIR}" != "0" ] || \
+		[ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" != "0" ] || \
+		[ "${SKIP_SEED}" != "1" ] || [ "${SKIP_SMOKE}" != "1" ] || \
+		[ "${WITH_OPERATIONAL_READY}" != "1" ]; then
+		echo "[fail] Replacement-host recovery requires exact approval, full operational readiness, skipped seed/signed smoke, and no other repair or stage-only mode." >&2
+		exit 1
+	fi
 fi
 
 FIRST_INSTALL_PENDING_REPAIR_APPROVAL_TEXT="Approved for first-install pending repair by operator."
@@ -860,6 +872,7 @@ if [ "${STAGE_ONLY}" != "1" ]; then
 	NPCINK_INPUT_REMOTE_COMPOSE_FILE="${REMOTE_COMPOSE_FILE}" \
 	NPCINK_INPUT_REFRESH_PROVIDERS="${REFRESH_PROVIDERS}" \
 	NPCINK_INPUT_WITH_OPERATIONAL_READY="${WITH_OPERATIONAL_READY}" \
+	NPCINK_INPUT_REPLACEMENT_HOST_RECOVERY_APPROVAL="${REPLACEMENT_HOST_RECOVERY_APPROVAL}" \
 	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR="${FIRST_INSTALL_PENDING_REPAIR}" \
 	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" \
 	NPCINK_INPUT_FINALIZED_RUNTIME_NETWORK_REPAIR="${FINALIZED_RUNTIME_NETWORK_REPAIR}" \
@@ -989,6 +1002,7 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		REFRESH_PROVIDERS=0
 		PROVIDER_REFRESH_MODE=strict
 		WITH_OPERATIONAL_READY=0
+		REPLACEMENT_HOST_RECOVERY_APPROVAL=""
 		FIRST_INSTALL_PENDING_REPAIR=0
 		FIRST_INSTALL_PENDING_REPAIR_APPROVAL=""
 		FINALIZED_RUNTIME_NETWORK_REPAIR=0
@@ -1049,6 +1063,7 @@ mapping = {
     "REMOTE_COMPOSE_FILE": "REMOTE_COMPOSE_FILE",
     "REFRESH_PROVIDERS": "REFRESH_PROVIDERS",
     "WITH_OPERATIONAL_READY": "WITH_OPERATIONAL_READY",
+    "REPLACEMENT_HOST_RECOVERY_APPROVAL": "REPLACEMENT_HOST_RECOVERY_APPROVAL",
     "FIRST_INSTALL_PENDING_REPAIR": "FIRST_INSTALL_PENDING_REPAIR",
     "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": "FIRST_INSTALL_PENDING_REPAIR_APPROVAL",
     "FINALIZED_RUNTIME_NETWORK_REPAIR": "FINALIZED_RUNTIME_NETWORK_REPAIR",
@@ -1069,6 +1084,14 @@ PY
 		eval "${REMOTE_INPUT_ASSIGNMENTS}"
 		unset REMOTE_INPUT_ASSIGNMENTS
 		export -n SECRET 2>/dev/null || true
+		if [ -n "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" ]; then
+			if [ "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" != "Approved for replacement-host recovery by operator." ] || \
+				[ "${FIRST_INSTALL_PENDING_REPAIR}" != "0" ] || [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" != "0" ] || \
+				[ "${SKIP_SEED}" != "1" ] || [ "${SKIP_SMOKE}" != "1" ] || [ "${WITH_OPERATIONAL_READY}" != "1" ]; then
+				echo "[fail] Protected replacement-host recovery envelope is invalid." >&2
+				exit 1
+			fi
+		fi
 		if [ "${FIRST_INSTALL_PENDING_REPAIR}" != "0" ] && [ "${FIRST_INSTALL_PENDING_REPAIR}" != "1" ]; then
 			echo "[fail] Protected pending first-install repair flag must be 0 or 1." >&2
 			exit 1
@@ -2310,19 +2333,39 @@ assert_fresh_pg18_install_gate() {
 	local ca_file="${CONFIG_DIR_HOST}/rds-ca.pem"
 	local internal_token_file="${CONFIG_DIR_HOST}/frontend/internal-auth-token"
 
-	if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
-		echo "[fail] An installed deployment requires an existing managed current release." >&2
-		return 1
+	if [ -n "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" ]; then
+		if [ -n "${PREVIOUS_RELEASE_DIR}" ] || [ "${RELEASE_PLAN_LANE}" != "full" ]; then
+			echo "[fail] Replacement-host recovery requires an empty host and a full release plan." >&2
+			return 1
+		fi
+		local existing_project_containers=""
+		existing_project_containers="$(docker ps -aq --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}")" || return 1
+		if [ -n "${existing_project_containers}" ]; then
+			echo "[fail] Replacement-host recovery cannot replace existing project containers." >&2
+			return 1
+		fi
+		NPCINK_CLOUD_RECOVERY_ALEMBIC_HEAD="$(
+			NPCINK_CLOUD_REPLACEMENT_HOST_RECOVERY_APPROVAL="${REPLACEMENT_HOST_RECOVERY_APPROVAL}" \
+			"${RELEASE_TOOL_PYTHON}" "${RELEASE_DIR}/deploy/replacement-host-recovery.py" \
+				--managed-root "${REMOTE_DIR}" --release "${RELEASE_DIR}"
+		)" || return 1
+		export NPCINK_CLOUD_RECOVERY_ALEMBIC_HEAD
+		echo "[ok] Explicit same-database replacement-host recovery validated; target acceptance remains pending."
+	else
+		if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
+			echo "[fail] An installed deployment requires an existing managed current release." >&2
+			return 1
+		fi
+		"${RELEASE_TOOL_PYTHON}" \
+			"${RELEASE_DIR}/deploy/validate-installation-complete.py" \
+			--managed-root "${REMOTE_DIR}" \
+			--sentinel "${INSTALLATION_COMPLETE_MARKER}" \
+			--state "${state_file}" \
+			--runtime "${runtime_file}" >/dev/null || {
+			echo "[fail] Ordinary deployment requires durable installation-complete acceptance and matching current PostgreSQL 18 runtime state." >&2
+			return 1
+		}
 	fi
-	"${RELEASE_TOOL_PYTHON}" \
-		"${RELEASE_DIR}/deploy/validate-installation-complete.py" \
-		--managed-root "${REMOTE_DIR}" \
-		--sentinel "${INSTALLATION_COMPLETE_MARKER}" \
-		--state "${state_file}" \
-		--runtime "${runtime_file}" >/dev/null || {
-		echo "[fail] Ordinary deployment requires durable installation-complete acceptance and matching current PostgreSQL 18 runtime state." >&2
-		return 1
-	}
 	"${RELEASE_TOOL_PYTHON}" - \
 		"${state_file}" "${runtime_file}" "${ca_file}" "${internal_token_file}" <<'PY'
 from __future__ import annotations
@@ -3162,6 +3205,12 @@ if os.geteuid() == 0:
     os.chown(path, 999, 999, follow_symlinks=False)
 os.chmod(path, 0o700)
 PY
+# Recovery must never fall through to prepare-first-install on missing state.
+if [ -n "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" ]; then
+	NPCINK_CLOUD_REPLACEMENT_HOST_RECOVERY_APPROVAL="${REPLACEMENT_HOST_RECOVERY_APPROVAL}" \
+		"${RELEASE_TOOL_PYTHON}" "${RELEASE_DIR}/deploy/replacement-host-recovery.py" \
+			--managed-root "${REMOTE_DIR}" --release "${RELEASE_DIR}" >/dev/null
+fi
 npcink_ai_cloud_start_install_lock_broker \
 	"${RELEASE_DIR}" "${INSTALL_LOCK_FILE}" 1 \
 	env \
@@ -3834,4 +3883,7 @@ if [ "${STAGE_ONLY}" = "1" ]; then
 	echo "[ok] Remote release staged on ${SSH_TARGET}"
 else
 	echo "[ok] Remote deploy completed: ${SSH_TARGET}:${REMOTE_DIR}/current"
+	if [ -n "${REPLACEMENT_HOST_RECOVERY_APPROVAL}" ]; then
+		echo "replacement_host_acceptance=pending"
+	fi
 fi

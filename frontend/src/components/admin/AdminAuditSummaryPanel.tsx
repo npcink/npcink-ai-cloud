@@ -1,4 +1,5 @@
 'use client';
+import { auditActorLabel, auditEventLabel, auditOutcomeLabel } from '@/lib/admin-audit-display';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
@@ -51,13 +52,6 @@ type AuditEventPayload = {
   total?: number;
 };
 
-function humanizeAuditToken(value: string): string {
-  return value
-    .replaceAll('.', ' ')
-    .replaceAll('_', ' ')
-    .replaceAll('-', ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
 
 export function AdminAuditSummaryPanel({
   title,
@@ -190,13 +184,6 @@ export function AdminAuditSummaryPanel({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
             {title || t('admin.audit_summary.title', {}, 'Recent audit summary')}
           </p>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {t(
-              'admin.audit_summary.description',
-              {},
-              'Use this bounded summary to decide whether you need deeper raw audit review.'
-            )}
-          </p>
         </div>
         {trailHref && !isLoading && !error && eventTotal > 0 ? (
           <button type="button" className="btn btn-secondary" onClick={() => void openTrail()}>
@@ -223,24 +210,16 @@ export function AdminAuditSummaryPanel({
       ) : (
         <>
           {display === 'table' ? (
-            <table className="mt-4 w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.events', {}, 'Events')}</th>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.succeeded', {}, 'Succeeded')}</th>
-                  <th className="py-2 font-semibold">{t('admin.audit_summary.errors', {}, 'Errors')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="py-3 text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(Number(totals.events || 0))}</td>
-                  <td className="py-3 text-lg font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(Number(totals.succeeded || 0))}</td>
-                  <td className={`py-3 text-lg font-semibold tabular-nums ${Number(totals.error || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
-                    {formatInteger(Number(totals.error || 0))}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <dl data-ui="audit-summary-totals" className="mt-3 flex flex-wrap gap-x-8 gap-y-3 text-sm">
+              {[
+                { label: t('admin.audit_summary.events', {}, 'Events'), value: totals.events },
+                { label: t('admin.audit_summary.succeeded', {}, 'Succeeded'), value: totals.succeeded },
+                { label: t('admin.audit_summary.errors', {}, 'Errors'), value: totals.error, error: true },
+              ].map(item => <div key={item.label}>
+                <dt className="text-xs text-slate-500 dark:text-slate-400">{item.label}</dt>
+                <dd className={`mt-1 text-lg font-semibold tabular-nums ${item.error && Number(item.value || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>{formatInteger(Number(item.value || 0))}</dd>
+              </div>)}
+            </dl>
           ) : (
             <div className="mt-4">
               <BackofficeMetricStrip
@@ -267,10 +246,10 @@ export function AdminAuditSummaryPanel({
             </div>
           )}
 
-          <div className={display === 'table' ? 'mt-2' : 'mt-4 space-y-3'}>
+          <div className={display === 'table' ? 'mt-2 overflow-x-auto' : 'mt-4 space-y-3'}>
             {groups.length > 0 ? (
               display === 'table' ? (
-                <table className="w-full text-left text-xs">
+                <table data-ui="audit-summary-groups" className="w-auto text-left text-xs [&_th]:pr-6 [&_td]:pr-6 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
                   <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
                       <th className="py-2 font-semibold">{t('admin.audit_summary.event_kind', {}, 'Event')}</th>
@@ -281,8 +260,8 @@ export function AdminAuditSummaryPanel({
                   <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
                     {groups.slice(0, limit).map((group, index) => (
                       <tr key={`${group.event_kind || 'event'}-${group.outcome || 'outcome'}-${index}`}>
-                        <td className="py-2 font-medium text-slate-950 dark:text-white">{group.event_kind || t('common.unknown', {}, 'Unknown')}</td>
-                        <td className="py-2 text-slate-600 dark:text-slate-300">{group.outcome || t('common.unknown', {}, 'Unknown')}</td>
+                        <td className="py-2 font-medium text-slate-950 dark:text-white">{auditEventLabel(group.event_kind, t)}</td>
+                        <td className="py-2 text-slate-600 dark:text-slate-300">{auditOutcomeLabel(group.outcome, t)}</td>
                         <td className="py-2 text-right font-medium tabular-nums text-slate-950 dark:text-white">{formatInteger(Number(group.count || 0))}</td>
                       </tr>
                     ))}
@@ -296,10 +275,10 @@ export function AdminAuditSummaryPanel({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                        {group.event_kind || t('common.unknown', {}, 'Unknown')}
+                        {auditEventLabel(group.event_kind, t)}
                       </p>
                       <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                        {group.outcome || t('common.unknown', {}, 'Unknown')}
+                        {auditOutcomeLabel(group.outcome, t)}
                       </p>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
@@ -377,17 +356,21 @@ export function AdminAuditSummaryPanel({
                   </td>
                   <td className="py-3 pr-3 align-top">
                     <p className="font-medium text-slate-950 dark:text-white">
-                      {humanizeAuditToken(item.event_kind || t('common.unknown', {}, 'Unknown'))}
+                      {auditEventLabel(item.event_kind, t)}
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {item.actor_ref || humanizeAuditToken(item.actor_kind || t('common.unknown', {}, 'Unknown'))}
+                      {auditActorLabel(item.actor_kind, item.actor_ref, t)}
                     </p>
-                    {item.path || item.trace_id ? (
+                    {item.event_kind || item.actor_ref || item.path || item.trace_id ? (
                       <details className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                         <summary className="cursor-pointer font-medium">
                           {t('admin.audit_summary.technical_detail', {}, 'Technical detail')}
                         </summary>
-                        <div className="mt-2 space-y-1 break-all">
+                        <div className="mt-2 space-y-1 break-all select-text">
+                          <p>{t('admin.readability.event_code')}: {item.event_kind || '—'}</p>
+                          <p>{t('admin.readability.result_code')}: {item.outcome || '—'}</p>
+                          <p>{t('admin.audit_workspace.actor_ref')}: {item.actor_ref || '—'}</p>
+                          <p>{t('admin.readability.actor_kind')}: {item.actor_kind || '—'}</p>
                           {item.method || item.path ? <p>{[item.method, item.path].filter(Boolean).join(' ')}</p> : null}
                           {item.trace_id ? <p>{t('audit.trace_id', {}, 'Record number')}: {item.trace_id}</p> : null}
                         </div>
@@ -395,7 +378,7 @@ export function AdminAuditSummaryPanel({
                     ) : null}
                   </td>
                   <td className="py-3 align-top font-medium text-slate-700 dark:text-slate-200">
-                    {humanizeAuditToken(item.outcome || t('common.unknown', {}, 'Unknown'))}
+                    {auditOutcomeLabel(item.outcome, t)}
                   </td>
                 </tr>
               ))}

@@ -1396,6 +1396,20 @@ class RuntimeService:
                 )
             )
 
+            # Optional display-only projection over this bounded cohort plus the
+            # explicit site filter. Names do not establish historical ownership.
+            display_site_ids = {run.site_id for run in runs}
+            if site_id:
+                display_site_ids.add(site_id)
+            site_display = {
+                row.site_id: {"name": row.name, "url": row.site_url}
+                for row in session.execute(
+                    select(Site.site_id, Site.name, Site.site_url).where(
+                        Site.site_id.in_(display_site_ids)
+                    )
+                )
+            } if display_site_ids else {}
+
             call_statement = (
                 select(ProviderCallRecord, RunRecord)
                 .join(RunRecord, ProviderCallRecord.run_id == RunRecord.run_id)
@@ -1659,6 +1673,7 @@ class RuntimeService:
                 "meter_events_truncated": len(meter_events) >= 10000,
                 "capability_groups_truncated": len(capability_items) > max_items,
             },
+            **({"site_display": site_display} if site_display else {}),
             "usage_statistics": build_usage_statistics(
                 runs, since=recent_since, until=current_time
             ),

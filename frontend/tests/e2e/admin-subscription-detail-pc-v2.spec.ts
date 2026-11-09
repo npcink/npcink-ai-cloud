@@ -53,15 +53,19 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await expect(page.getByRole('heading', { name: /Budget and usage|预算与用量/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-operational-grid"]')).toBeVisible();
-  await expect(page.getByRole('table')).toHaveCount(4);
+  await expect(page.getByRole('table')).toHaveCount(3);
+  const totals = page.locator('[data-ui="audit-summary-totals"]');
+  await expect(totals.locator('dd')).toHaveText(['4', '3', '1']);
+  await expect(page.locator('[data-ui="audit-summary-groups"] tbody tr')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('subscription-audit-summary-1440.png'), fullPage: true, animations: 'disabled' });
 
   const auditButton = page.getByRole('button', { name: /View 4 audit records|查看 4 条审计记录/i });
   await expect(auditButton).toBeVisible();
   await auditButton.click();
   const auditDrawer = page.getByRole('dialog', { name: /Recent audit records|近期审计记录/i });
   await expect(auditDrawer).toBeVisible();
-  await expect(auditDrawer.getByText('Subscription Bind')).toBeVisible();
-  await expect(auditDrawer.getByText('Subscription Billing Snapshot Rebuild')).toBeVisible();
+  await expect(auditDrawer.getByText(/Link subscription|关联订阅/)).toBeVisible();
+  await expect(auditDrawer.getByText(/Refresh billing statistics|刷新计费用量统计/)).toBeVisible();
   await expect(auditDrawer.getByText(/trace-audit-101/)).toBeHidden();
   await auditDrawer.getByRole('button', { name: /^Close$|^关闭$/i }).click();
   await expect(auditDrawer).toBeHidden();

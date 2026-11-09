@@ -324,8 +324,8 @@ test('customer creation uses a dialog, receives a generated ID, and binds Free b
 
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('New Customer');
   await page.getByLabel(/Login email|登录邮箱/i).fill('owner@new.example');
-  await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
-  await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
+  await page.getByLabel(/Customer label|客户备注名/i).fill('New Customer Display');
+  await page.getByLabel(/Internal note|内部备注/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
 
   await expect(page).toHaveURL(/\/admin\/accounts\/acct_generated_new_customer\?return_to=%2Fadmin%2Faccounts$/);
@@ -350,7 +350,7 @@ test('customer identity audit and access disable live in the specified customer 
   await expect(
     page.getByRole('heading', { name: /Login identity and access|登录身份与访问/i })
   ).toBeVisible();
-  await expect(page.getByText('admin@example.com')).toBeVisible();
+  await expect(page.getByText('admin@example.com', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /Identity audit|身份审计/i }).click();
   const auditDialog = page.locator('[data-ui="admin-workbench-dialog"]').filter({

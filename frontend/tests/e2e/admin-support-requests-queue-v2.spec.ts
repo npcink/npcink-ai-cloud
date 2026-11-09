@@ -320,8 +320,8 @@ test('ticket drawer inspects context and shared dialog owns bounded internal han
   await expect(inspector.getByRole('heading', { name: /Internal handling|内部处理/i })).toBeVisible();
   await expect(page.locator('textarea')).toHaveCount(0);
   await expect(inspector.getByRole('link', { name: /Open conversation|打开会话/i })).toHaveAttribute('href', /\/admin\/support-requests\/sr_overdue_payment\?return_to=/);
-  await expect(inspector.getByRole('link', { name: 'acct_beta' })).toHaveAttribute('href', '/admin/accounts/acct_beta');
-  await expect(inspector.getByRole('link', { name: 'site_beta' })).toHaveAttribute('href', '/admin/sites/site_beta');
+  await expect(inspector.getByRole('link', { name: 'beta@example.com' })).toHaveAttribute('href', '/admin/accounts/acct_beta');
+  await expect(inspector.getByRole('link', { name: /Unnamed site · site_beta|未命名站点 · site_beta/ })).toHaveAttribute('href', '/admin/sites/site_beta');
 
   await inspector.getByRole('button', { name: /Edit handling|编辑处理/i }).click();
   const editor = page.getByRole('dialog', { name: /Edit internal handling|编辑内部处理/i });
@@ -637,4 +637,30 @@ test('ticket keyboard selection A inspects only B and yields to its edit dialog'
   await expect(page).toHaveURL(/\/admin\/support-requests\?focus=sr_open_site/);
   await expect(drawer).toContainText('Site connection needs review');
   await testInfo.attach('inspected-records', { body: JSON.stringify({ titles: inspectedTitles }), contentType: 'application/json' });
+});
+
+test('support readable identities keep invalid-row blocking visible and raw paths on demand', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  await page.route('**/api/admin/support-requests?*', route => route.fulfill({ json: buildAdminApiEnvelope({
+    items: [{ ...initialTickets()[0], account_name: '编辑团队', site_name: '', site_url: 'https://blog.example.test' }, null],
+    pagination: { limit: 10, offset: 0, total: 2, has_more: false },
+    summary: { open: 1, in_progress: 0, critical: 1, warning: 0, monitor: 0, stable: 0, waiting_for_operator: 1, waiting_for_customer: 0, overdue: 1 },
+  }) }));
+  await page.goto('/admin/support-requests');
+  const row = page.locator('[data-ui="support-request-row"]');
+  await expect(row).toContainText('编辑团队');
+  await expect(row).toContainText('blog.example.test');
+  const issues = page.locator('[data-ui="support-directory-issues"]');
+  await expect(issues).toContainText('有 1 条目录记录未通过校验');
+  await expect(issues).toContainText('禁止修改');
+  await expect(issues.getByText('items[2]', { exact: true })).toBeHidden();
+  await row.getByRole('button', { name: '检查', exact: true }).click();
+  const inspector = page.locator('[data-ui="admin-context-drawer"]');
+  await expect(inspector.getByRole('link', { name: '编辑团队', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: '编辑处理', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('support-readable-blocked-1440.png'), fullPage: true });
+  await page.locator('[data-ui="admin-context-drawer-close"]').click();
+  await issues.getByText('异常记录详情', { exact: true }).click();
+  await expect(issues.getByText('items[2]', { exact: true })).toBeVisible();
 });

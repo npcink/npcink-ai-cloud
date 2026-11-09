@@ -504,7 +504,15 @@ def external_images(image_lock: dict[str, Any]) -> list[dict[str, str]]:
                 "archive": f"dist/external-{key.replace('_', '-')}.tar.gz",
             }
         )
-    if not result:
+    # A reviewed lock may build the two service images from locked upstream
+    # bases to apply an available distro fix. They are then local, scanned
+    # outputs, not unmodified upstream images with upstream RepoDigests.
+    local_outputs = {
+        item.get("key")
+        for item in image_lock.get("application_outputs", [])
+        if isinstance(item, dict) and item.get("scan_by_default") is True
+    }
+    if not result and not {"external_redis", "external_nginx"}.issubset(local_outputs):
         fail("production image lock has no compose_external images")
     return result
 
@@ -1158,7 +1166,7 @@ def finalize_image_records(
     finalized: list[str] = []
     for record in records:
         role = record["role"]
-        if role.startswith("external_"):
+        if role not in outputs and role.startswith("external_"):
             key = role.removeprefix("external_")
             external = externals.get(key)
             if (
@@ -2088,7 +2096,7 @@ def verify_directory(
     bundled_external = {
         role.removeprefix("external_"): record
         for role, record in roles.items()
-        if role.startswith("external_")
+        if role in {f"external_{key}" for key in locked_external}
     }
     if build["external_images_included"] is not True:
         fail("exact offline release bundles must include every external image")

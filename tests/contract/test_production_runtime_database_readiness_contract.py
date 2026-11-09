@@ -197,6 +197,22 @@ def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
             },
             18,
         ),
+        (
+            {
+                "settings_error": RuntimeConfigError(
+                    "runtime database hostname must resolve only to public addresses"
+                )
+            },
+            18,
+        ),
+        (
+            {
+                "settings_error": RuntimeConfigError(
+                    "runtime public database hosts must be Alibaba RDS hostnames"
+                )
+            },
+            18,
+        ),
         ({"engine_error": RuntimeError("secret engine detail")}, 11),
         (
             {

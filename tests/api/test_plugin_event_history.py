@@ -243,3 +243,30 @@ def test_event_category_filters_before_limits_and_preserves_totals(tmp_path: Pat
     assert client.get(
         PATH, params={"event_category": "invalid"}, headers=HEADERS
     ).status_code == 422
+
+
+def test_history_projects_current_site_identity_without_payloads_or_missing_site_guessing(tmp_path):
+    from app.core.models import Site
+
+    db, client = _build_client(tmp_path)
+    seed(db, count=2)
+    with get_session(db) as session:
+        site = session.get(Site, "site-001")
+        site.name = "Editorial blog"
+        site.site_url = "https://editorial.example.test"
+        session.add(PluginObservabilityEvent(
+            dedupe_key="missing-site-history", site_id="removed-site",
+            plugin_slug="unknown-plugin", event_kind="unknown.event",
+            received_at=datetime.now(UTC) - timedelta(days=10),
+        ))
+        session.commit()
+    for view in ("events", "groups"):
+        data = client.get(
+            PATH, params={"window_hours": 720, "view": view}, headers=HEADERS,
+        ).json()["data"]
+        named = next(row for row in data["items"] if row["site_id"] == "site-001")
+        assert named["site_name"] == "Editorial blog"
+        assert named["site_url"] == "https://editorial.example.test"
+        absent = next(row for row in data["items"] if row["site_id"] == "removed-site")
+        assert absent["site_name"] == absent["site_url"] == ""
+        assert "MUST_NOT_LEAK" not in str(data)

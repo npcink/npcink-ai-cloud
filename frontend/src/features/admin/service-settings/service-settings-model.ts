@@ -16,6 +16,7 @@ export type ServiceSetting = {
 export type ServiceSettingsData = {
   settings: {
     portal_public: ServiceSetting;
+    portal_registration?: ServiceSetting;
     qq_login: ServiceSetting;
     portal_email: ServiceSetting;
     alipay_payment: ServiceSetting;
@@ -80,6 +81,11 @@ export type PortalPublicForm = {
   public_base_url: string;
 };
 
+export type RegistrationForm = {
+  public_registration_enabled: boolean;
+  email_allowlist: string;
+};
+
 export type QQForm = {
   enabled: boolean;
   client_id: string;
@@ -128,6 +134,7 @@ export type PlatformPreferencesForm = {
 
 export type SavedServiceSettingsForms = {
   portal: PortalPublicForm;
+  registration: RegistrationForm;
   qq: QQForm;
   email: EmailForm;
   payment: AlipayForm;
@@ -285,10 +292,16 @@ export function projectServiceSettingsForms(
   if (!source?.settings || typeof source.settings !== 'object' || Array.isArray(source.settings)) {
     throw new TypeError('Service settings response is invalid.');
   }
-  for (const key of [...required, 'accounting_fx', 'provider_budget'] as const) {
+  for (const key of [...required, 'accounting_fx', 'provider_budget', 'portal_registration'] as const) {
     const setting = source.settings[key];
     if (setting === undefined && !required.includes(key as typeof required[number])) continue;
     assertServiceSetting(setting, key);
+  }
+  const registration = source.settings.portal_registration;
+  if (registration && (typeof registration.config.public_registration_enabled !== 'boolean'
+    || !Array.isArray(registration.config.email_allowlist)
+    || !registration.config.email_allowlist.every((value) => typeof value === 'string'))) {
+    throw new TypeError('Registration policy response is invalid.');
   }
   const portalPublic = source.settings.portal_public;
   const qq = source.settings.qq_login;
@@ -312,6 +325,10 @@ export function projectServiceSettingsForms(
     portal: {
       enabled: portalPublic.enabled,
       public_base_url: stringValue(portalPublic.config.public_base_url),
+    },
+    registration: {
+      public_registration_enabled: registration ? registration.config.public_registration_enabled as boolean : true,
+      email_allowlist: registration ? (registration.config.email_allowlist as string[]).join('\n') : '',
     },
     qq: {
       enabled: qq.enabled,

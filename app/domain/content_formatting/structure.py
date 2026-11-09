@@ -188,7 +188,7 @@ class Inline(HTMLParser):
         return self.lines[line - 1] + col
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag not in {"a", "br"}:
+        if tag not in {"a", "br"} or (tag == "br" and attrs):
             self.invalid = True
         if tag == "a":
             if self.stack:
@@ -215,6 +215,14 @@ class Inline(HTMLParser):
         self.invalid = True
 
 
+def native_list(rows: list[str]) -> str:
+    """Keep each source fragment verbatim, including its literal markers/whitespace."""
+    items = "\n\n".join(
+        f"<!-- wp:list-item -->\n<li>{row}</li>\n<!-- /wp:list-item -->" for row in rows
+    )
+    return f'<!-- wp:list -->\n<ul class="wp-block-list">{items}</ul>\n<!-- /wp:list -->'
+
+
 def repair_paragraph(raw: str) -> tuple[str, int]:
     match = re.fullmatch(r"<!-- wp:paragraph -->\s*<p>(.*)</p>\s*<!-- /wp:paragraph -->", raw, re.S)
     if not match:
@@ -228,14 +236,46 @@ def repair_paragraph(raw: str) -> tuple[str, int]:
 
     # Only repair inline markers when repeated existing line-start markers
     # establish a list context. Multiplication and code never qualify.
+    markers = [
+        marker
+        for marker in ("*", "-", "+", "•")
+        if len(re.findall(r"<br\s*/?>\s*" + re.escape(marker) + r" [\u3400-\u9fff]", inner))
+        >= 2
+    ]
     count = 0
-    if len(re.findall(r"<br\s*/?>\s*\* [\u3400-\u9fff]", inner)) >= 2:
+    # A single consistent repeated marker is required. Do not guess when a
+    # paragraph mixes list styles, or when only an isolated symbol is present.
+    if len(markers) == 1:
+        marker = markers[0]
+        pattern = r"(?<=[\u3400-\u9fff。！？；，：）】”’」』])" + re.escape(marker)
+        pattern += r" (?=[\u3400-\u9fff])"
         for offset, text in reversed(parser.text):
-            changed, added = re.subn(r"(?<=[\u3400-\u9fff])\* (?=[\u3400-\u9fff])", "<br>* ", text)
+            changed, added = re.subn(pattern, "<br>" + marker + " ", text)
             inner = inner[:offset] + changed + inner[offset + len(text) :]
             count += added
     if count:
         return raw[: match.start(1)] + inner + raw[match.end(1) :], count
+
+    # Already line-delimited metadata needs no semantic boundary inference.
+    # Require at least three distinct labels and short single-line values;
+    # preserve all original whitespace and link fragments inside each item.
+    rows = re.split(r"<br\s*/?>", inner)
+    labels = []
+    if len(rows) >= 3:
+        for row in rows:
+            label = re.fullmatch(r"\s*([\u3400-\u9fff]{2,16})[：:]([^\r\n]+?)\s*", row)
+            if not label:
+                break
+            value = unescape(re.sub(r"<a\b[^>]*>(.*?)</a>", r"\1", label[2]))
+            if (
+                not value.strip()
+                or len(value) > 120
+                or re.search(r"[<>。！？；!?;]", value)
+            ):
+                break
+            labels.append(label[1])
+        if len(labels) == len(rows) and len(set(labels)) == len(rows):
+            return native_list(rows), 1
 
     # A run of two or more labeled links plus a scalar labeled tail is an
     # explicit metadata list, not free-form sentence inference.
@@ -259,12 +299,9 @@ def repair_paragraph(raw: str) -> tuple[str, int]:
     ):
         return raw, 0
     rows.append(tail)
-    items = "\n\n".join(
-        f"<!-- wp:list-item -->\n<li>{row}</li>\n<!-- /wp:list-item -->" for row in rows
-    )
     return (
         f"<!-- wp:paragraph -->\n<p>{intro}</p>\n<!-- /wp:paragraph -->\n\n"
-        f'<!-- wp:list -->\n<ul class="wp-block-list">{items}</ul>\n<!-- /wp:list -->',
+        + native_list(rows),
         1,
     )
 

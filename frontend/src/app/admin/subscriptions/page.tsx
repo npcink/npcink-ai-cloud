@@ -2,6 +2,7 @@
 
 import React, { FormEvent, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { shortIdentity } from '@/lib/identity-display';
 import { customerLabel } from '@/features/admin/accounts/customer-label';
 import { readSubscriptionQueue, subscriptionSnapshotCost, SubscriptionEvidenceError, type SubscriptionQueueItem } from '@/features/admin/subscriptions/evidence';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -296,6 +297,41 @@ function SubscriptionsContent() {
     });
   }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId]);
 
+  // Quiet density: debounce text/date drafts into the URL; Enter still applies immediately.
+  useEffect(() => {
+    const nextCustomer = draftFilters.customer.trim();
+    const nextPlanId = draftFilters.plan_id.trim();
+    const nextExpiresBefore = draftFilters.expires_before;
+    const currentCustomer = (appliedCustomer || appliedAccountId).trim();
+    if (
+      nextCustomer === currentCustomer &&
+      nextPlanId === appliedPlanId.trim() &&
+      nextExpiresBefore === appliedExpiresBefore
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      updateQueueUrl({
+        customer: nextCustomer || null,
+        account_id: null,
+        plan_id: nextPlanId || null,
+        expires_before: nextExpiresBefore || null,
+        offset: null,
+        focus: null,
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    appliedAccountId,
+    appliedCustomer,
+    appliedExpiresBefore,
+    appliedPlanId,
+    draftFilters.customer,
+    draftFilters.expires_before,
+    draftFilters.plan_id,
+    updateQueueUrl,
+  ]);
+
   const queuedSubscriptions = subscriptions;
 
   const selectedSubscription = focusedSubscriptionId
@@ -397,16 +433,30 @@ function SubscriptionsContent() {
 
   if (isLoading && !hasLoaded) return <LoadingFallback />;
 
-  const statusFilters = ['', 'past_due', 'expired', 'trialing', 'active'];
-  const riskFilters: RiskFilter[] = ['needs_action', 'critical', 'warning', 'monitor', 'stable', 'all'];
+  const primaryRiskFilters: RiskFilter[] = ['needs_action', 'critical', 'warning', 'all'];
+  const moreRiskFilters: RiskFilter[] = ['monitor', 'stable'];
+  const moreStatusFilters = ['past_due', 'expired', 'trialing', 'active'];
+  const statusFilters = ['', ...moreStatusFilters];
+  const moreRiskActive = moreRiskFilters.includes(appliedRisk);
+  const moreStatusActive = Boolean(appliedStatus && moreStatusFilters.includes(appliedStatus));
+  const hasMoreTextFilters = Boolean(
+    appliedPlanId ||
+    appliedExpiresBefore ||
+    draftFilters.plan_id.trim() ||
+    draftFilters.expires_before
+  );
   const hasFilters = Boolean(
     appliedRisk !== 'needs_action' ||
+    appliedStatusGroup ||
     appliedStatus ||
     appliedAccountId ||
     appliedCustomer ||
     appliedPlanId ||
     appliedExpiresBefore ||
     sort !== 'priority'
+  );
+  const hasDraftFilters = Boolean(
+    draftFilters.customer.trim() || draftFilters.plan_id.trim() || draftFilters.expires_before
   );
   const isShowingRetainedResults = Boolean(error && hasLoaded);
   const riskReasonByCode: Record<string, string> = {
@@ -425,7 +475,7 @@ function SubscriptionsContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficePageHeader
-        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}
+        title={`${t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}${hasLoaded ? ` · ${formatInteger(total)}` : ''}`}
         description={t(
           'admin.subscriptions.workspace_desc',
           {},
@@ -453,12 +503,6 @@ function SubscriptionsContent() {
             label: t('admin.subscriptions.summary_warning_metric', {}, 'Warning'),
             value: formatInteger(summary.warning),
             toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
-          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
-          {
-            label: t('common.updated_at', {}, 'Updated'),
-            value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
           },
         ]}
       />
@@ -488,14 +532,12 @@ function SubscriptionsContent() {
 
       <>
         <BackofficeSectionPanel className="overflow-hidden !p-0">
-          <div className="space-y-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-800">
+          <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:justify-end">
+              <h2 className="sr-only">
+                {t('admin.subscriptions.queue_list_title', {}, 'Subscriptions needing follow-up')}
+              </h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:ml-auto lg:justify-end">
                 <AdminHelpTip label={t('admin.queue_keyboard_label', {}, 'Keyboard shortcuts')}>
                   <p>
                   {t(
@@ -516,10 +558,12 @@ function SubscriptionsContent() {
               </div>
             </div>
 
-            <div data-ui="subscription-enumerated-filters" className="space-y-2">
+            <div data-ui="subscription-enumerated-filters" className="space-y-2.5">
               <div role="group" aria-label={t('admin.subscriptions.risk_filter_label')} className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.risk_filter_label')}</span>
-                {riskFilters.map((risk) => (
+                <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+                  {t('admin.subscriptions.risk_filter_label')}
+                </span>
+                {primaryRiskFilters.map((risk) => (
                   <BackofficeFilterPill
                     key={risk}
                     active={appliedRisk === risk}
@@ -529,9 +573,32 @@ function SubscriptionsContent() {
                     {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
                   </BackofficeFilterPill>
                 ))}
+                <details
+                  data-ui="subscription-more-risk-filters"
+                  className="min-w-0"
+                  {...(moreRiskActive ? { open: true } : {})}
+                >
+                  <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200 [&::-webkit-details-marker]:hidden">
+                    {t('admin.subscriptions.more_risk_filters', {}, 'More follow-up states')}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {moreRiskFilters.map((risk) => (
+                      <BackofficeFilterPill
+                        key={risk}
+                        active={appliedRisk === risk}
+                        aria-pressed={appliedRisk === risk}
+                        onClick={() => updateQueueUrl({ risk, offset: null, focus: null })}
+                      >
+                        {t(`admin.subscriptions.risk_filter_${risk}`, undefined, risk)}
+                      </BackofficeFilterPill>
+                    ))}
+                  </div>
+                </details>
               </div>
               <div role="group" aria-label={t('admin.subscriptions.status_filter_label')} className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.subscriptions.status_filter_label')}</span>
+                <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+                  {t('admin.subscriptions.status_filter_label')}
+                </span>
                 <BackofficeFilterPill
                   active={appliedStatusGroup === 'active'}
                   aria-pressed={appliedStatusGroup === 'active'}
@@ -539,16 +606,34 @@ function SubscriptionsContent() {
                 >
                   {t('admin.subscriptions.active_status_group')}
                 </BackofficeFilterPill>
-                {statusFilters.map((status) => (
-                  <BackofficeFilterPill
-                    key={status || 'all'}
-                    active={!appliedStatusGroup && appliedStatus === status}
-                    aria-pressed={!appliedStatusGroup && appliedStatus === status}
-                    onClick={() => updateQueueUrl({ status: status || null, status_group: null, offset: null, focus: null })}
-                  >
-                    {status ? t(`status.${status}`, undefined, status) : t('admin.subscriptions.all_statuses')}
-                  </BackofficeFilterPill>
-                ))}
+                <BackofficeFilterPill
+                  active={!appliedStatusGroup && appliedStatus === ''}
+                  aria-pressed={!appliedStatusGroup && appliedStatus === ''}
+                  onClick={() => updateQueueUrl({ status: null, status_group: null, offset: null, focus: null })}
+                >
+                  {t('admin.subscriptions.all_statuses')}
+                </BackofficeFilterPill>
+                <details
+                  data-ui="subscription-more-status-filters"
+                  className="min-w-0"
+                  {...(moreStatusActive ? { open: true } : {})}
+                >
+                  <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200 [&::-webkit-details-marker]:hidden">
+                    {t('admin.subscriptions.more_status_filters', {}, 'More subscription states')}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {moreStatusFilters.map((status) => (
+                      <BackofficeFilterPill
+                        key={status}
+                        active={!appliedStatusGroup && appliedStatus === status}
+                        aria-pressed={!appliedStatusGroup && appliedStatus === status}
+                        onClick={() => updateQueueUrl({ status: status || null, status_group: null, offset: null, focus: null })}
+                      >
+                        {t(`status.${status}`, undefined, status)}
+                      </BackofficeFilterPill>
+                    ))}
+                  </div>
+                </details>
                 {appliedStatus && !statusFilters.includes(appliedStatus) ? (
                   <BackofficeStatusBadge status={appliedStatus} label={t(`status.${appliedStatus}`, undefined, appliedStatus)} />
                 ) : null}
@@ -558,88 +643,83 @@ function SubscriptionsContent() {
             <form
               data-ui="subscription-filter-toolbar"
               onSubmit={applyFilters}
-              className="grid gap-x-3 gap-y-2 md:grid-cols-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.9fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_auto]"
+              className="flex flex-col gap-2"
             >
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
-                </span>
-                <input
-                  type="search"
-                  className="input w-full"
-                  value={draftFilters.customer}
-                  placeholder={t('admin.subscriptions.customer_filter_placeholder', {}, 'Name, email, or Account ID')}
-                  onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
-                />
-              </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-3 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('common.plan', {}, 'Package')}
-                </span>
-                <input
-                  type="search"
-                  className="input w-full"
-                  value={draftFilters.plan_id}
-                  placeholder={t('admin.subscriptions.plan_filter_placeholder', {}, 'Plan ID')}
-                  onChange={(event) => setDraftFilters((current) => ({ ...current, plan_id: event.target.value }))}
-                />
-              </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.expires_before')}
-                </span>
-                <input
-                  type="date"
-                  className="input w-full"
-                  value={draftFilters.expires_before}
-                  onChange={(event) => setDraftFilters((current) => ({ ...current, expires_before: event.target.value }))}
-                />
-              </label>
-              <label className="min-w-0 text-sm text-slate-700 dark:text-slate-200 md:col-span-2 xl:col-span-1">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.sort_label', {}, 'Sort')}
-                </span>
-                <select
-                  className="input w-full"
-                  value={sort}
-                  onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), offset: null, focus: null })}
-                >
-                  <option value="priority">{t('admin.subscriptions.sort_priority', {}, 'Highest risk')}</option>
-                  <option value="expiry">{t('admin.subscriptions.sort_expiry', {}, 'Ending soon')}</option>
-                  <option value="customer">{t('admin.subscriptions.sort_customer', {}, 'Customer name')}</option>
-                </select>
-              </label>
-              <div className="flex items-end justify-end gap-2 md:col-span-2 xl:col-span-1">
-                <button type="submit" className="btn btn-primary whitespace-nowrap">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="min-w-0 basis-full xl:basis-56 xl:flex-1">
+                  <span className="sr-only">
+                    {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
+                  </span>
+                  <input
+                    type="search"
+                    className="input w-full"
+                    value={draftFilters.customer}
+                    placeholder={t('admin.subscriptions.customer_filter_placeholder', {}, 'Name, email, or Account ID')}
+                    onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
+                  />
+                </label>
+                <label className="w-full shrink-0 sm:w-48">
+                  <span className="sr-only">
+                    {t('admin.subscriptions.sort_label', {}, 'Sort')}
+                  </span>
+                  <select
+                    className="input w-full"
+                    value={sort}
+                    onChange={(event) => updateQueueUrl({ sort: normalizeSort(event.target.value), offset: null, focus: null })}
+                  >
+                    <option value="priority">{t('admin.subscriptions.sort_priority', {}, 'Highest risk')}</option>
+                    <option value="expiry">{t('admin.subscriptions.sort_expiry', {}, 'Ending soon')}</option>
+                    <option value="customer">{t('admin.subscriptions.sort_customer', {}, 'Customer name')}</option>
+                  </select>
+                </label>
+                <button type="submit" className="sr-only">
                   {t('admin.subscriptions.apply_filters', {}, 'Apply')}
                 </button>
-                <span
-                  className="inline-flex"
-                  title={t('common.clear_filters', {}, 'Clear filters')}
-                >
+                <div className="flex items-center justify-end whitespace-nowrap">
                   <button
                     type="button"
-                    className="btn btn-secondary h-11 w-11 shrink-0 p-0"
-                    aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!hasFilters && !draftFilters.customer && !draftFilters.plan_id && !draftFilters.expires_before}
+                    className="text-xs font-medium text-slate-500 underline-offset-2 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline dark:text-slate-400 dark:hover:text-slate-200"
+                    disabled={!hasFilters && !hasDraftFilters}
                     onClick={clearFilters}
                   >
-                    <svg
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
-                      <path d="m16.5 16.5 4 4m0-4-4 4" />
-                    </svg>
+                    {t('common.clear_filters', {}, 'Clear filters')}
                   </button>
-                </span>
+                </div>
               </div>
+              <details
+                data-ui="subscription-more-filters"
+                className="min-w-0"
+                {...(hasMoreTextFilters ? { open: true } : {})}
+              >
+                <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200 [&::-webkit-details-marker]:hidden">
+                  {t('admin.subscriptions.more_filters', {}, 'More filters')}
+                </summary>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <label className="min-w-0 w-full sm:w-40">
+                    <span className="sr-only">
+                      {t('common.plan', {}, 'Package')}
+                    </span>
+                    <input
+                      type="search"
+                      className="input w-full"
+                      value={draftFilters.plan_id}
+                      placeholder={t('admin.subscriptions.plan_filter_placeholder', {}, 'Plan ID')}
+                      onChange={(event) => setDraftFilters((current) => ({ ...current, plan_id: event.target.value }))}
+                    />
+                  </label>
+                  <label className="min-w-0 w-full sm:w-44">
+                    <span className="sr-only">
+                      {t('admin.expires_before')}
+                    </span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={draftFilters.expires_before}
+                      onChange={(event) => setDraftFilters((current) => ({ ...current, expires_before: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              </details>
             </form>
           </div>
 
@@ -689,6 +769,7 @@ function SubscriptionsContent() {
                           className="normal-case tracking-normal whitespace-nowrap"
                         />
                       </div>
+                      <p className="mt-1 break-all text-xs text-slate-500">{t('admin.account_id')}: {shortIdentity(subscription.account_id)}</p>
                       <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{packageLabel}</p>
                     </div>
 
@@ -701,28 +782,30 @@ function SubscriptionsContent() {
                       <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{riskReason}</p>
                     </div>
 
-                    <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                      <div className="flex justify-between gap-3">
-                        <dt className="shrink-0">{t('common.sites', {}, 'Sites')}</dt>
-                        <dd className="font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(subscription.site_count)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="shrink-0">{t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics')}</dt>
-                        <dd className="text-right font-semibold text-slate-950 dark:text-white">
+                    <p
+                      data-ui="subscription-row-metrics"
+                      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-xs leading-5 text-slate-600 dark:text-slate-300"
+                    >
+                      <span>
+                        {t('common.sites', {}, 'Sites')}{' '}
+                        <span className="font-semibold tabular-nums text-slate-950 dark:text-white">{formatInteger(subscription.site_count)}</span>
+                      </span>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                      <span>
+                        {t('admin.subscriptions.snapshot_status_metric', {}, 'Usage statistics')}{' '}
+                        <span className="font-semibold text-slate-950 dark:text-white">
                           {t(`status.${snapshotStatus}`, undefined, snapshotStatus)}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="shrink-0">{t('admin.billing_period')}</dt>
-                        <dd className="text-right font-semibold tabular-nums text-slate-950 dark:text-white">
-                          {remaining === null
-                            ? t('common.unknown', {}, 'Unknown')
-                            : remaining >= 0
-                              ? t('admin.days_until_end', { days: String(remaining) })
-                              : t('admin.subscriptions.days_past_end', { days: String(Math.abs(remaining)) }, `${Math.abs(remaining)} days past end`)}
-                        </dd>
-                      </div>
-                    </dl>
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
+                      <span className="font-semibold tabular-nums text-slate-950 dark:text-white">
+                        {remaining === null
+                          ? t('common.unknown', {}, 'Unknown')
+                          : remaining >= 0
+                            ? t('admin.days_until_end', { days: String(remaining) })
+                            : t('admin.subscriptions.days_past_end', { days: String(Math.abs(remaining)) }, `${Math.abs(remaining)} days past end`)}
+                      </span>
+                    </p>
 
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <button
@@ -913,6 +996,12 @@ function SubscriptionsContent() {
           ) : null}
         </AdminInspectorDrawer>
       </>
+
+      {loadedAt ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t('common.updated_at', {}, 'Updated')} {formatDate(loadedAt.toISOString())}
+        </p>
+      ) : null}
     </BackofficePageStack>
   );
 }

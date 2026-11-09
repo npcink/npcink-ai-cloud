@@ -21,6 +21,10 @@ from app.domain.commercial.currency import (
     build_accounting_fx_config,
 )
 from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.portal_registration import (
+    SERVICE_SETTING_PORTAL_REGISTRATION,
+    normalize_registration_policy,
+)
 from app.domain.routing.errors import RoutingError
 from app.domain.routing.service import RoutingService
 from app.domain.runtime.provider_budget import (
@@ -33,6 +37,7 @@ from app.domain.service_settings_projection import (
     serialize_accounting_fx,
     serialize_media_recognition_policy,
     serialize_platform_preferences,
+    serialize_portal_registration,
     serialize_provider_account_spend_budget,
     serialize_site_relink_policy,
 )
@@ -91,6 +96,7 @@ class ServiceSettingsAdminService:
                         ServiceSetting.setting_id.in_(
                             [
                                 SERVICE_SETTING_PORTAL_PUBLIC,
+                                SERVICE_SETTING_PORTAL_REGISTRATION,
                                 SERVICE_SETTING_QQ_LOGIN,
                                 SERVICE_SETTING_PORTAL_EMAIL,
                                 SERVICE_SETTING_PAYMENT_ALIPAY,
@@ -111,6 +117,9 @@ class ServiceSettingsAdminService:
                 "portal_public": serialize(
                     rows.get(SERVICE_SETTING_PORTAL_PUBLIC),
                     setting_id=SERVICE_SETTING_PORTAL_PUBLIC,
+                ),
+                "portal_registration": serialize_portal_registration(
+                    rows.get(SERVICE_SETTING_PORTAL_REGISTRATION),
                 ),
                 "qq_login": serialize(
                     rows.get(SERVICE_SETTING_QQ_LOGIN),
@@ -146,6 +155,23 @@ class ServiceSettingsAdminService:
             "env_fallback": "disabled",
             "boundary": _boundary(),
         }
+
+    def save_portal_registration(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            config = normalize_registration_policy(payload)
+        except ValueError as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.portal_registration_invalid",
+                str(error),
+            ) from error
+        row = self._save(
+            setting_id=SERVICE_SETTING_PORTAL_REGISTRATION,
+            config=config,
+            secrets={},
+            enabled=True,
+            required_secret_keys=[],
+        )
+        return serialize_portal_registration(row)
 
     def save_portal_public(self, payload: dict[str, Any]) -> dict[str, Any]:
         public_base_url = _normalize_public_base_url(_string(payload.get("public_base_url")))

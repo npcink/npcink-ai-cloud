@@ -73,6 +73,7 @@ from app.domain.commercial.membership_policy import (
     assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+from app.domain.portal_registration import require_registration_allowed
 from app.domain.portal_sessions.service import (
     AuthenticatedSession,
     OAuthLoginProof,
@@ -1293,6 +1294,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "this identity provider account is already registered",
                 )
 
+            require_registration_allowed(session)
+
             principal_id = _new_principal_id()
             account_id = f"acct_{principal_id.removeprefix('prn_')}"
             profile_metadata = {
@@ -1789,6 +1792,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                         "portal registration is unavailable for this principal",
                     )
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
+            if existing_identity is None or not repository.list_accounts_for_principal(
+                principal_id=existing_identity.principal_id,
+                membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+            ):
+                require_registration_allowed(session, email=normalized_email)
             repository.expire_pending_portal_login_codes(
                 email=normalized_email,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
@@ -1941,6 +1949,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                         "last_login_at": self._serialize_datetime(now),
                         "next": {"portal_path": "/portal"},
                     }
+
+            require_registration_allowed(session, email=normalized_email)
 
             account_id = str(registration_metadata.get("account_id") or "").strip()
             if not account_id:

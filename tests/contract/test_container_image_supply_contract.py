@@ -300,16 +300,14 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
     assert "postgres_base" not in inputs
     assert not (ROOT / "Dockerfile.postgres").exists()
     assert inputs["node_frontend"]["tag"] == "node:22-alpine"
-    assert inputs["nginx"]["source_files"] == [
-        "docker-compose.prod.yml",
-        "docker-compose.runtime.yml",
-    ]
+    assert inputs["nginx_base"]["source_file"] == "Dockerfile.nginx"
+    assert inputs["redis_base"]["source_file"] == "Dockerfile.redis"
     compose_external_keys = {
         record["key"]
         for record in lock["production_inputs"]
         if record["kind"] == "compose_external"
     }
-    assert compose_external_keys == {"redis", "nginx"}
+    assert compose_external_keys == set()
     assert {"caddy", "otel_collector", "jaeger"}.isdisjoint(compose_external_keys)
     for record in lock["production_inputs"]:
         if record["kind"] == "compose_external":
@@ -319,6 +317,12 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
 
     outputs = {record["key"]: record for record in lock["application_outputs"]}
     assert "postgres" not in outputs
+    for key, service in (("external_redis", "redis"), ("external_nginx", "proxy")):
+        assert outputs[key]["scan_by_default"] is True
+        assert outputs[key]["compose_references"] == [
+            {"source_file": path, "services": [service]}
+            for path in ("docker-compose.prod.yml", "docker-compose.runtime.yml")
+        ]
 
     for record in [*lock["production_inputs"], *lock["scanner_images"]]:
         assert re.fullmatch(r"sha256:[0-9a-f]{64}", record["digest"])
@@ -466,6 +470,24 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert "docker image inspect --format '{{.Config.User}}'" in smoke
     assert '[ "$(id -u)" = "999" ]' in smoke
     assert '[ "$(id -g)" = "999" ]' in smoke
+
+
+def test_sqlite_removal_is_production_only_and_has_runtime_smoke() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    before, production = dockerfile.split("FROM runtime AS production\n", 1)
+    smoke = (ROOT / "scripts" / "production-python-extras-smoke.sh").read_text()
+
+    assert "FROM runtime AS development" in before
+    assert "apk del --no-network .python-rundeps sqlite-libs" not in before
+    assert "apk add --no-network --virtual .python-production-rundeps" in production
+    assert "apk del --no-network .python-rundeps sqlite-libs" in production
+    assert "--force-broken-world" not in production
+    assert production.rstrip().endswith("USER app")
+    assert 'importlib.util.find_spec("sqlite3") is None' in smoke
+    assert 'PGDialect_psycopg.import_dbapi().__name__ == "psycopg"' in smoke
+    assert 'scripts/scan-production-images.sh"' in smoke
+    assert 'scan_image "${DEFAULT_TAG}"' in smoke
+    assert 'scan_image "${ZILLIZ_TAG}"' in smoke
 
 
 def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
@@ -699,8 +721,24 @@ def test_grype_database_age_boundary_and_future_time_fail_closed(
 
 def test_evaluator_rejects_wrong_release_reference_repo_digest_and_lock_override(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     supply = _supply_module()
+    # Preserve the old upstream-digest guard even when the current lock builds
+    # patched service outputs. Old release bundles still need that guard.
+    scan_targets = supply._scan_targets
+
+    def legacy_targets(lock):
+        targets = scan_targets(lock)
+        upstream = next(item for item in lock["production_inputs"] if item["key"] == "redis_base")
+        targets["redis"] = {
+            "reference": upstream["reference"],
+            "archive_reference": "npcink-ai-cloud-external-redis:prod",
+            "kind": "compose_external",
+        }
+        return targets
+
+    monkeypatch.setattr(supply, "_scan_targets", legacy_targets)
     built = _fresh_db_built()
     _write_release_receipt(supply, tmp_path, "redis", built=built)
     lock = _lock()
@@ -1381,6 +1419,51 @@ def test_cached_scan_materials_can_be_re_evaluated_with_a_new_database(
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in stable_paths
     } == stable_hashes
+
+
+@pytest.mark.parametrize("with_equivalence", [False, True])
+@pytest.mark.parametrize("index_exit_code", [0, 42])
+def test_scan_index_handles_optional_arguments_and_propagates_failure(
+    tmp_path: Path,
+    with_equivalence: bool,
+    index_exit_code: int,
+) -> None:
+    source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
+    function = (
+        "write_scan_index() {"
+        + source.split("write_scan_index() {", 1)[1].split("\n}", 1)[0]
+        + "\n}"
+    )
+    # /bin/bash is macOS's 3.2 shell on the authoring host and Bash 5 in CI.
+    # Exercise the real function with no Docker or vulnerability feed calls.
+    harness = """
+set -euo pipefail
+ROOT_DIR=/source
+LOCK_FILE=/source/lock.json
+INDEX_SCOPE=focused
+RELEASE_PLATFORM=linux/arm64
+OUTPUT_DIR=/reports
+EQUIVALENCE_ARGS=()
+RECEIPTS=("/reports/api receipt.json")
+if [ "$1" = True ]; then EQUIVALENCE_ARGS=(--equivalence /reports/equivalence.json); fi
+"""
+    harness += f"python3() {{ printf '<%s>\\n' \"$@\"; return {index_exit_code}; }}\n"
+    result = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            harness + function + "\nwrite_scan_index",
+            "proof",
+            str(with_equivalence),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert result.returncode == index_exit_code, result.stderr
+    assert "</reports/api receipt.json>" in result.stdout
+    assert ("<--equivalence>" in result.stdout) is with_equivalence
 
 
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:

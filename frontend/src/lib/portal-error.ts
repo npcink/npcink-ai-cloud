@@ -52,6 +52,8 @@ export function formatPortalErrorMessage(
 ): string {
   if (error instanceof ApiError) {
     switch (error.errorCode) {
+      case 'service.portal_registration_closed':
+        return t('portal.register.closed', undefined, 'Internal testing is in progress. Registration is limited to approved email addresses. Existing users can still sign in.');
       case 'portal.login_code_rate_limited':
       case 'portal.oauth_state_rate_limited':
       case 'portal.subscription_order_rate_limited':

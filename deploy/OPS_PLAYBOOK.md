@@ -309,13 +309,18 @@ with no installation state and no runtime artifacts. An installed deployment
 must prove `complete`, `database_contract=pg18_empty_initialization.v1`, and the
 exact protected runtime-config digest before image mutation. After exact
 candidate images are loaded and before old writers stop, the candidate API
-must load the structured config and prove private RDS resolution, TLS
+must load the structured config and prove the configured RDS resolution, TLS
 `verify-full`, PostgreSQL major 18, and exactly one known Alembic revision at
 the candidate head or on its ancestor chain. After migration, the exact sole
 candidate head is required. Database
 credentials and runtime roots come only from `shared/config/`; `.env.deploy`
 contains non-secret host, edge, provider, and tuning inputs and explicitly
 rejects exact-bundle smoke overrides.
+
+Private resolution remains the default. Existing installations may use the
+operator-configured [public RDS transport](../docs/public-rds-transport-v1.md)
+with the same CA, hostname verification, protected-config digest and candidate
+preflight. This is not a database migration or an environment fallback.
 
 The normal deploy sequence is fixed:
 

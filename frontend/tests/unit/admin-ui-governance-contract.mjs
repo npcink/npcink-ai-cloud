@@ -382,6 +382,26 @@ for (const requiredPullRequestField of [
   );
 }
 
+// Only reviewed short comparisons; full record/configuration tables keep their own geometry.
+for (const [path, marker] of [
+  ['src/app/admin/media-observability/page.tsx', 'media-delivery-comparison'],
+  ['src/app/admin/runtime-profiles/page.tsx', 'probe-summary-comparison'],
+  ['src/components/admin/AdminAuditSummaryPanel.tsx', 'audit-summary-groups'],
+  ['src/features/admin/observability/ObservationTrend.tsx', 'observation-interval-table'],
+]) {
+  const source = readFileSync(fromFrontendRoot(path), 'utf8');
+  const table = source.match(new RegExp(`<table[^>]*data-ui="${marker}"[^>]*>`))?.[0];
+  assert.ok(table, `${path} must retain the reviewed comparison table`);
+  assert.match(table, /\bw-auto\b/, `${marker}: compact comparisons size to their content`);
+  assert.doesNotMatch(table, /(?:min-)?w-full|table-fixed/, `${marker}: do not stretch short evidence across the workbench`);
+}
+const auditSummarySource = readFileSync(fromFrontendRoot('src/components/admin/AdminAuditSummaryPanel.tsx'), 'utf8');
+assert.match(auditSummarySource, /<dl data-ui="audit-summary-totals"/, 'scalar audit totals use a compact definition list');
+assert.doesNotMatch(auditSummarySource, /admin\.audit_summary\.description/, 'do not restore redundant instructions above audit facts');
+for (const field of ['Table intent (', 'Repeated copy removed and column reading distance checked']) {
+  assert.ok(pullRequestTemplateSource.includes(field), `PR review must include ${field}`);
+}
+
 console.log(
   `admin_ui_governance_contract: ok (${actualRoutes.length} routes, ${allowedLegacyDialogs.length} legacy dialogs, ${allowedLegacyCredentials.length} legacy credential surfaces)`
 );
