@@ -705,6 +705,16 @@ evidence fails closed before image, container, migration, or WordPress
 mutation. This exception repairs release lifecycle evidence only; it does not
 authorize Admin, provider, database, product, or infrastructure expansion.
 
+An empty replacement host retaining an existing completed PG18 database may
+instead use the explicit [same-database replacement-host recovery](replacement-host-recovery-v1.md).
+It requires an operator-confirmed old-host writer fence, a fresh matched dump,
+preserved original protected configuration/roots, an exact-source protected
+recovery receipt and the separate exact recovery approval. It accepts only a
+full release and the already-current exact schema head, retains all normal
+image/TLS/release gates, and never fabricates a previous release or historical
+completion sentinel. New-target acceptance remains a separate finalize step.
+This bounded trusted-workstation recovery is not an ordinary deployment bypass.
+
 After installation, the ordinary deployment order is:
 
 ```text

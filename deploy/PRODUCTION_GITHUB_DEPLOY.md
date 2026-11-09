@@ -541,6 +541,13 @@ current release project.
 
 ## First Installation
 
+An empty replacement host that retains an existing completed PG18 database
+must use the separately approved [replacement-host recovery](../docs/replacement-host-recovery-v1.md).
+Neither ordinary deploy nor Setup is an implicit migration path. The recovery
+approval is a protected workstation process input; ordinary workflow dispatch
+does not enable it. All image, certificate and exact-source authorization gates
+remain in effect, and new-target finalization is separate from activation.
+
 A host with missing or `pending` installation state takes the bounded first-
 install path. Before remote mkdir, upload, deployment lock, image, container, or
 database mutation, the deploy helper reads the protected state with
