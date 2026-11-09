@@ -615,7 +615,8 @@ project name. Ordinary production deployment also requires an existing managed
 `current` release; it is not a host-bootstrap path. Before image mutation it
 proves `complete`, `database_contract=pg18_empty_initialization.v1`, and the
 exact protected runtime-config digest. After exact images load and before old
-writers stop, the candidate API proves private RDS resolution, TLS
+writers stop, the candidate API proves private RDS resolution by default (or
+the explicit protected [public RDS transport](../docs/public-rds-transport-v1.md)), TLS
 `verify-full`, PostgreSQL major 18, and one known Alembic revision that is the
 candidate head or its ancestor. After migration the exact sole candidate head
 is required. The retired
