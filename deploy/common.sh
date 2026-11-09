@@ -1627,14 +1627,30 @@ npcink_ai_cloud_wait_for_ready() {
 	return 1
 }
 
+npcink_ai_cloud_operational_request_timeout() {
+	local timeout_seconds="${NPCINK_CLOUD_OPERATIONAL_READY_REQUEST_TIMEOUT_SECONDS:-30}"
+	if [[ ! "${timeout_seconds}" =~ ^([1-9]|[1-5][0-9]|60)$ ]]; then
+		echo "[fail] Operational readiness request timeout must be an integer from 1 to 60." >&2
+		return 1
+	fi
+	printf '%s' "${timeout_seconds}"
+}
+
 npcink_ai_cloud_wait_for_internal_endpoint() {
 	local root_dir="$1"
 	local endpoint_path="$2"
 	local success_message="$3"
 	local allow_provider_refresh_degraded="${4:-0}"
+	local request_timeout_seconds=5
+	# This projection includes multiple database round trips; cross-region RDS
+	# latency is not a missing heartbeat. Keep the cheap dependency probe at 5s.
+	if [ "${endpoint_path}" = "/health/operational-ready" ]; then
+		request_timeout_seconds="$(npcink_ai_cloud_operational_request_timeout)" || return 1
+	fi
 
 	npcink_ai_cloud_compose "${root_dir}" exec -T api python - \
-		"${endpoint_path}" "${success_message}" "${allow_provider_refresh_degraded}" <<'PY'
+		"${endpoint_path}" "${success_message}" "${allow_provider_refresh_degraded}" \
+		"${request_timeout_seconds}" <<'PY'
 from __future__ import annotations
 
 import json
@@ -1650,6 +1666,7 @@ from app.domain.observability.readiness_policy import accepts_degraded_provider_
 endpoint_path = sys.argv[1]
 success_message = sys.argv[2]
 allow_provider_refresh_degraded = sys.argv[3] == "1"
+request_timeout_seconds = int(sys.argv[4])
 domain_name = os.getenv("NPCINK_CLOUD_DOMAIN_NAME", "").strip()
 trusted_hosts = os.getenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "")
 trusted_host = next((item.strip() for item in trusted_hosts.split(",") if item.strip()), "")
@@ -1682,7 +1699,7 @@ request = urllib.request.Request(
 last_error: Exception | None = None
 for _ in range(30):
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=request_timeout_seconds) as response:
             status = response.status
             payload = response.read() if hasattr(response, "read") else b""
             if status == 200:

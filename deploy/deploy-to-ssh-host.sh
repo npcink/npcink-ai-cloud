@@ -2924,6 +2924,17 @@ recover_failed_cutover() {
 		echo "[fail] Governed one-off cleanup is unproved; public/write services remain stopped and the deploy lock is retained." >&2
 		return 1
 	fi
+	if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
+		# An empty replacement/first-install host has no old runtime to preserve.
+		# Remove candidate references (including Redis) before removing their last
+		# image tags; Docker rejects removal while a container still uses an image.
+		if ! force_recovery_services_stopped; then
+			prove_fail_closed_recovery "recovery_incomplete" \
+				"[fail] Candidate container removal was not proved; deploy lock retained." || true
+			RETAIN_DEPLOY_LOCK=1
+			return 1
+		fi
+	fi
 	restore_release_image_tags || image_restore_status=$?
 	if [ "${image_restore_status}" -ne 0 ]; then
 		# Tag restoration is part of the pre-migration recovery point. Even when
