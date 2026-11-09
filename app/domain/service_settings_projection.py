@@ -85,7 +85,7 @@ def serialize_portal_registration(row: ServiceSetting | None) -> dict[str, Any]:
         try:
             if not row.enabled:
                 raise ValueError("disabled registration policy")
-            normalize_registration_policy(row.config_json)
+            normalize_registration_policy(row.config_json or {})
         except (ValueError, TypeError, AttributeError):
             result.update(
                 configured=False,
