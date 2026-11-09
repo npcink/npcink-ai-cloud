@@ -131,9 +131,13 @@ must use the digest-locked candidates recorded in
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
 `frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
 2026-10-25 and were retired on 2026-10-27. The canonical CVE allowlist is empty.
-The updated digest-locked candidates carry OpenSSL 3.5.9-r0, pcre2 10.49-r0
-and zlib 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
-`api` and `frontend` retain their minimum-version in-image package upgrades.
+The locked upstream bases carry OpenSSL 3.5.9-r0, pcre2 10.49-r0 and zlib
+1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
+The [bounded service-image patch contract](patched-service-images-v1.md)
+builds Redis/NGINX outputs with the available `zlib>=1.4-r0` fix and scans
+those exact built outputs. Upstream digest evidence is not substituted for
+the patched output identity. `api` and `frontend` retain their minimum-version
+in-image package upgrades.
 The Python `production` target excludes SQLite's APK library and CPython modules;
 the governed production database is PostgreSQL. All other Python base shared-library
 dependencies remain explicitly installed. The `runtime` and `development` targets

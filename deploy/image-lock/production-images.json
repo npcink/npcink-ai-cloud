@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-11-03T10:47:13.874788Z",
-  "resolved_from_revision": "b98fbbc25c9f082664a02ff04f655c06cc604380",
+  "resolved_at_utc": "2026-11-09T08:26:44Z",
+  "resolved_from_revision": "d3416239c716a4549e794ab35a02206cc0982e35",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -41,29 +41,45 @@
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
     {
-      "key": "redis",
-      "kind": "compose_external",
+      "key": "redis_base",
+      "kind": "dockerfile_base",
       "tag": "redis:7-alpine",
       "digest": "sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af",
       "reference": "redis:7-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af",
-      "release_reference": "npcink-ai-cloud-external-redis:prod",
-      "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
-      "services": ["redis"],
+      "source_file": "Dockerfile.redis",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
     {
-      "key": "nginx",
-      "kind": "compose_external",
+      "key": "nginx_base",
+      "kind": "dockerfile_base",
       "tag": "nginx:1.30-alpine-slim",
       "digest": "sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7",
       "reference": "nginx:1.30-alpine-slim@sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7",
-      "release_reference": "npcink-ai-cloud-external-nginx:prod",
-      "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
-      "services": ["proxy"],
+      "source_file": "Dockerfile.nginx",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     }
   ],
   "application_outputs": [
+    {
+      "key": "external_redis",
+      "reference": "npcink-ai-cloud-external-redis:prod",
+      "dockerfile": "Dockerfile.redis",
+      "compose_references": [
+        {"source_file": "docker-compose.prod.yml", "services": ["redis"]},
+        {"source_file": "docker-compose.runtime.yml", "services": ["redis"]}
+      ],
+      "scan_by_default": true
+    },
+    {
+      "key": "external_nginx",
+      "reference": "npcink-ai-cloud-external-nginx:prod",
+      "dockerfile": "Dockerfile.nginx",
+      "compose_references": [
+        {"source_file": "docker-compose.prod.yml", "services": ["proxy"]},
+        {"source_file": "docker-compose.runtime.yml", "services": ["proxy"]}
+      ],
+      "scan_by_default": true
+    },
     {
       "key": "api",
       "reference": "npcink-ai-cloud-api:prod",

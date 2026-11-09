@@ -24,13 +24,13 @@ Usage: scripts/scan-production-images.sh [options]
 Options:
   --output DIR          Empty output directory outside the Git worktree.
   --reuse-dir DIR       Prior complete scan directory used as disposable cache.
-  --applications-only   Scan the API and frontend build outputs only.
+  --applications-only   Scan locally built outputs, including patched service images.
   --image KEY=REF       Scan one exact local image reference; repeatable.
   --platform PLATFORM   Explicit linux/amd64 or linux/arm64 release platform.
   -h, --help            Show this help.
 
-With no target option, the gate scans API/frontend plus every digest-locked
-external production image. External inputs are pulled by exact digest. Every
+With no target option, the gate scans every declared built output plus every
+digest-locked external production image. External inputs are pulled by exact digest. Every
 target is inspected to an immutable local image ID before Syft and Grype run.
 USAGE
 }
