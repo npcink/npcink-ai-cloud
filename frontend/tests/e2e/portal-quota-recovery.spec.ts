@@ -1,4 +1,4 @@
-import { expect, test as base, type Page, type Route } from '@playwright/test';
+import { expect, test as base, type Page, type Route, type TestInfo } from '@playwright/test';
 
 // Read-only browser evidence for existing recovery destinations, not a purchase flow.
 const site = {
@@ -10,6 +10,8 @@ const startedAt = '2026-10-01T00:00:00Z';
 const endsAt = '2026-11-01T00:00:00Z';
 const diagnostic = 'INTERNAL_QUOTA_DIAGNOSTIC_DO_NOT_DISPLAY';
 type Model = {
+  inactiveSiteStatus: 'inactive' | 'suspended' | 'provisioning' | null;
+  selectInactive: boolean;
   credits: 'ok' | 'limited' | 'near_limit' | 'unlimited';
   free: boolean;
   resources: Array<{ key: string; used: number; limit: number; status: string; unlimited?: boolean }>;
@@ -32,7 +34,7 @@ function subscription(model: Model) {
 
 function entitlements(model: Model) {
   const remaining = model.credits === 'limited' || model.credits === 'unlimited'
-    ? 0 : model.credits === 'near_limit' ? 7 : 2400;
+    ? 0 : model.credits === 'near_limit' ? 7 : model.free ? 279 : 2400;
   const limit = model.free ? 300 : 3000;
   return {
     current_subscription: subscription(model),
@@ -70,6 +72,7 @@ const test = base.extend<{ model: Model }>({
     const reads: string[] = [];
     const prefetched: string[] = [];
     const model: Model = {
+      inactiveSiteStatus: null, selectInactive: false,
       credits: 'ok', free: false, resources: [], trial: 'active',
       failQuota: false, holdQuota: null, quotaReads: 0,
     };
@@ -83,6 +86,7 @@ const test = base.extend<{ model: Model }>({
       localStorage.setItem('locale', 'zh-CN');
       // Exclude login telemetry from this read-only recovery slice.
       sessionStorage.setItem(`npcink.portal.journey.sent.v1:${siteId}:login:succeeded`, '1');
+      sessionStorage.setItem('npcink.portal.journey.sent.v1:site_quota_second:login:succeeded', '1');
     }, site.site_id);
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -95,11 +99,19 @@ const test = base.extend<{ model: Model }>({
       if (url.origin !== origin || request.method() !== 'GET') return reject();
       const path = url.pathname;
       if (path.startsWith('/api/portal/')) reads.push(`${path}${url.search}`);
+      const inactiveSite = {
+        ...site, site_id: 'site_quota_second', name: 'Inactive Site',
+        site_url: 'https://second.example.test', status: model.inactiveSiteStatus,
+        allowed_actions: [...site.allowed_actions, 'provision_sites'], capacity_scope: 'account_test',
+        capacity: { active_count: 1, active_limit: 1, active_remaining: 0, bound_count: 3, bound_limit: 3, bound_remaining: 0 },
+      };
       if (path === '/api/portal/session') return ok(route, {
-        email: 'quota-recovery@example.test', sites: model.resources.some((resource) => resource.key === 'active_sites' && resource.used === 2)
+        email: 'quota-recovery@example.test', sites: model.inactiveSiteStatus ? [
+          { ...site, capacity_scope: 'account_test' }, inactiveSite,
+        ] : model.resources.some((resource) => resource.key === 'active_sites' && resource.used === 2)
           ? [site, { ...site, site_id: 'site_quota_second', name: 'Second Quota Site', site_url: 'https://second.example.test' }]
           : [site],
-        selected_context: { site, allowed_actions: site.allowed_actions, current_subscription: subscription(model) },
+        selected_context: { site: model.selectInactive ? inactiveSite : site, allowed_actions: site.allowed_actions, current_subscription: subscription(model) },
         auth_mode: 'jwt',
         session: { state: 'active', transport: 'cookie', issued_at: startedAt, expires_at: '2099-11-01T00:00:00Z', revocable: true },
       });
@@ -162,6 +174,12 @@ async function home(page: Page) {
   await page.goto('/portal');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.locator('[data-portal-home="sites-workspace"]')).toContainText(site.name);
+}
+
+async function capture(page: Page, testInfo: TestInfo, name: string) {
+  const path = testInfo.outputPath(`${name}.png`);
+  await page.screenshot({ path });
+  await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
 async function packageDestination(page: Page) {
@@ -300,3 +318,65 @@ test('zh-CN: active and previously used trial descriptions do not claim a new ex
     await expect(trial).toHaveCount(0);
   }
 });
+
+for (const selectInactive of [false, true]) {
+  test(`zh-CN: full site quota with inactive binding stays quiet (selectedInactive=${selectInactive})`, async ({ page, model }, testInfo) => {
+    model.free = true;
+    model.inactiveSiteStatus = 'inactive';
+    model.selectInactive = selectInactive;
+    model.resources = [
+      { key: 'bound_sites', used: 3, limit: 3, status: 'limited' },
+      { key: 'active_sites', used: 1, limit: 1, status: 'limited' },
+    ];
+    await home(page);
+    await expect(page.locator('[data-portal-home="operation-overview"]')).toContainText('1 个活动 · 1 个未激活');
+    await expect(page.locator('[data-portal-home="operation-overview"]')).not.toContainText('需关注');
+    await expect(page.locator('[data-portal-home="attention-focus"]')).toHaveCount(0);
+    await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
+    await expect(page.locator('[data-portal-sites="capacity-alerts"]')).toHaveCount(0);
+    const inactiveRow = page.getByRole('row').filter({ hasText: 'Inactive Site' });
+    await expect(inactiveRow).toContainText('未激活');
+    const switchAction = inactiveRow.getByRole('button', { name: '切换活动站点', exact: true });
+    await expect(switchAction).not.toHaveClass(/btn-primary/);
+    await switchAction.click();
+    const dialog = page.getByRole('dialog', { name: '切换活动站点', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('系统不会自动替换任何站点');
+    await expect(dialog.getByRole('checkbox')).not.toBeChecked();
+    await dialog.getByRole('button', { name: '切换活动站点', exact: true }).click();
+    await expect(dialog).toContainText('请按要求选择足够数量的活动站点');
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(switchAction).toBeFocused();
+    await switchAction.click();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(switchAction).toBeFocused();
+    await capture(page, testInfo, 'home-full-with-inactive');
+    if (!selectInactive) {
+      await page.setViewportSize({ width: 1280, height: 1050 });
+      await capture(page, testInfo, 'home-1280-light');
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await capture(page, testInfo, 'home-1280-dark');
+      await page.emulateMedia({ colorScheme: 'light' });
+    }
+
+
+    await page.goto('/portal/billing');
+    await expect(page.locator('[data-portal-billing="entitlements"]')).toBeVisible();
+    await expect(page.locator('[data-portal-billing="attention"]')).toHaveCount(0);
+    await expect(page.locator('[data-portal-billing="site-scope"]')).toHaveText('账户绑定 3 个站点；当前登录用户可查看 2 个。');
+    await expect(page.locator('[data-portal-billing="site-usage-item"]')).toHaveCount(2);
+    await expect(page.locator('[data-portal-billing="entitlements"]')).not.toContainText('受限');
+    await capture(page, testInfo, 'billing-full-with-scope');
+  });
+}
+
+for (const status of ['suspended', 'provisioning'] as const) {
+  test(`zh-CN: ${status} still needs attention`, async ({ page, model }) => {
+    model.inactiveSiteStatus = status;
+    await home(page);
+    await expect(page.locator('[data-portal-home="operation-overview"]')).toContainText('1 个需关注');
+  });
+}

@@ -324,6 +324,7 @@ function PortalBillingContent() {
         <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950">
           <PortalBillingSiteUsageList
             sites={session.sites}
+            accountBoundSiteCount={quotaSummary?.resource_limits?.find((resource) => resource.key === 'bound_sites')?.used}
             t={t}
             onSelectSite={openSiteUsage}
             highlight={siteUsageListHighlight}
