@@ -143,6 +143,32 @@ def validate_site_knowledge_runtime_contract(
             f"site knowledge input may not include write/control field '{forbidden_path}'",
         )
     normalize_source_items(input_payload, ability_name=ability_name)
+    normalize_media_source_page(input_payload, ability_name=ability_name)
+
+
+def normalize_media_source_page(
+    input_payload: dict[str, Any], *, ability_name: str
+) -> tuple[int, int] | None:
+    """A bounded read of derived identities; never a WordPress deletion signal."""
+    if "media_source_page" not in input_payload:
+        return None
+    page = input_payload["media_source_page"]
+    if (
+        ability_name != SITE_KNOWLEDGE_STATUS_ABILITY
+        or {"site_id", "customer_id", "account_id", "source_items", "post_ids",
+            "media_attachment_ids"}.intersection(input_payload)
+        or not isinstance(page, dict)
+        or set(page) != {"after_source_id", "limit"}
+        or type(page["after_source_id"]) is not int
+        or not 0 <= page["after_source_id"] < 2**63
+        or type(page["limit"]) is not int
+        or not 1 <= page["limit"] <= 100
+    ):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.media_source_page_invalid",
+            "media_source_page requires status-only integer cursor and limit 1 to 100",
+        )
+    return page["after_source_id"], page["limit"]
 
 
 def normalize_source_items(
