@@ -3042,7 +3042,7 @@ test('identity provider failures have a retry state', async ({ page }) => {
 });
 
 for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) {
-  test(`confirmed site ${scenario} keeps success when session refresh fails`, async ({ page }) => {
+  test(`confirmed site ${scenario} keeps success when session refresh fails`, async ({ page }, testInfo) => {
     await installPortalMocks(page);
     let mutationCount = 0;
     let refreshCount = 0;
@@ -3072,6 +3072,15 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     await actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
     const actionName = scenario === 'deactivate' ? /^(Deactivate|停用)$/i : /^(Remove site|移除站点)$/i;
     await actionScope.getByRole('button', { name: actionName }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Attention Site');
+    await expect(dialog).toContainText(scenario === 'deactivate'
+      ? /Site whose Cloud service will stop|准备停用 Cloud 服务的站点/
+      : /Site to remove from this account|准备从当前账户移除的站点/);
+    await testInfo.attach(`site-${scenario}-confirmation`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`site-${scenario}-confirmation.png`) }),
+      contentType: 'image/png',
+    });
     await page.getByRole('dialog').getByRole('button', { name: actionName }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByText(/operation completed, but|操作已完成，但站点列表/i)).toBeVisible();
@@ -3420,4 +3429,161 @@ test('local knowledge latency guidance follows the explicit development environm
     await expect(guidance).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`local-search-${width}.png`), fullPage: true });
   }
+});
+
+// Lifecycle, monitoring activity and failed reads are separate facts.
+async function installSiteDetailStateMocks(page: Page, options: {
+  status?: string; missingAddress?: boolean; credentialMissing?: boolean; failMonitoring?: boolean;
+  holdSummary?: Promise<void>; withoutOwnedSnapshot?: boolean;
+} = {}) {
+  await installPortalMocks(page, { singleReadySite: true });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('npcink.portal.journey.sent.v1:site_clear:login:succeeded', '1');
+  });
+  const errors: string[] = [];
+  const writes: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/*', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin !== new URL(BASE_URL).origin || request.method() !== 'GET') {
+      writes.push(`${request.method()} ${url.pathname}`);
+      await route.abort('blockedbyclient');
+    } else await route.fallback();
+  });
+  const fixtureSite = {
+    ...buildPortalSession('site_clear', { singleReadySite: true }).sites[0],
+    status: options.status ?? 'inactive',
+    site_url: options.missingAddress ? '' : 'https://clear.example.test',
+  };
+  await page.route(/\/(?:api\/portal|portal\/v1)\/session$/, async (route) => {
+    const session = buildPortalSession('site_clear', { singleReadySite: true });
+    session.sites = options.withoutOwnedSnapshot ? [] : [fixtureSite];
+    await fulfillJson(route, session);
+  });
+  await page.route(/\/(?:api\/portal|portal\/v1)\/sites\/site_clear\/summary$/, async (route) => {
+    if (options.holdSummary) await options.holdSummary;
+    await fulfillJson(route, { site_id: 'site_clear', site: fixtureSite });
+  });
+  await page.route(/\/(?:api\/portal|portal\/v1)\/sites\/site_clear\/monitoring-overview\?/, async (route) => {
+    if (options.failMonitoring) return fulfillError(route, 'service.temporarily_unavailable');
+    const metric = { used: 0, limit: 1000, remaining: 1000, usage_ratio: 0, over_limit: false };
+    await fulfillJson(route, {
+      contract_version: 'magick-site-monitoring-overview-v1', site_id: 'site_clear',
+      generated_at: '2026-11-10T08:00:00Z',
+      window: { hours: 24, start_at: '2026-11-09T08:00:00Z', end_at: '2026-11-10T08:00:00Z' },
+      health: { status: 'inactive', score: 0, summary: 'No activity', components_count: 0 },
+      action_required: options.credentialMissing ? [{
+        code: 'site_monitoring.connection_credential_missing', source: 'connection', severity: 'error',
+        title: 'Missing credential', detail: '', suggested_action: '', sort_weight: 1,
+      }] : [],
+      quota: { period_start_at: '', period_end_at: '', runs: metric, tokens: metric, cost: metric, top_pressure: 'none', summary: '' },
+      activity: { last_seen_at: '', plugin_events_total: 0, plugin_errors_total: 0, media_jobs_total: 0,
+        media_failed_total: 0, vector_searches_total: 0, vector_no_hit_total: 0,
+        runtime_runs_total: 0, runtime_success_rate: 0, runtime_p95_latency_ms: 0 },
+      components: [],
+    });
+  });
+  return { verify: () => { expect(writes).toEqual([]); expect(errors).toEqual([]); } };
+}
+
+for (const variant of [
+  { locale: 'zh-CN', theme: 'light', width: 1440 },
+  { locale: 'en', theme: 'dark', width: 1056 },
+]) {
+  test(`site detail state: inactive and no observations stay neutral ${variant.locale}`, async ({ page }, testInfo) => {
+    await page.addInitScript(({ locale, theme }) => {
+      localStorage.setItem('locale', locale); localStorage.setItem('theme', theme);
+    }, variant);
+    const state = await installSiteDetailStateMocks(page);
+    await page.setViewportSize({ width: variant.width, height: 1050 });
+    await page.goto('/portal/sites/site_clear');
+    const note = page.locator('[data-portal-site="inactive-service-note"]');
+    await expect(note).toContainText(variant.locale === 'en' ? 'binding and WordPress content are preserved' : '绑定和 WordPress 内容保留');
+    await expect(note.getByRole('link', { name: /^(Activate|激活)$/ })).toHaveAttribute('href', '/portal#sites');
+    await expect(page.locator('[data-portal-site="attention-focus"]')).toHaveCount(0);
+    const service = page.locator('[data-portal-site="service-status"]');
+    await expect(service).toContainText(variant.locale === 'en' ? 'No recent site connection activity.' : '近期没有站点连接活动。');
+    await expect(service).not.toContainText(variant.locale === 'en' ? 'Inactive' : '未激活');
+    await expect(service.locator('[data-ui="portal-status-badge"]')).not.toHaveClass(/amber|rose/);
+    await expect(page.locator('[data-portal-site="context-summary"]')).toContainText(variant.locale === 'en' ? 'No records' : '暂无记录');
+    await expect(page.locator('[data-portal-site="context-summary"]')).not.toContainText('2026');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`inactive-neutral-${variant.locale}.png`) });
+    await note.getByRole('link').click();
+    await expect(page).toHaveURL(/\/portal#sites$/);
+    await expect(page.getByRole('row').filter({ hasText: 'Clear Site' }).getByRole('button', { name: /^(Activate|激活)$/ })).toBeEnabled();
+    state.verify();
+  });
+}
+
+for (const issue of ['credential', 'address', 'failed-read'] as const) {
+  test(`site detail state: inactive preserves specific ${issue} recovery`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const state = await installSiteDetailStateMocks(page, {
+      credentialMissing: issue === 'credential', missingAddress: issue === 'address', failMonitoring: issue === 'failed-read',
+    });
+    await page.goto('/portal/sites/site_clear');
+    await expect(page.locator('[data-portal-site="inactive-service-note"]')).toBeVisible();
+    const attention = page.locator('[data-portal-site="attention-focus"]');
+    if (issue === 'credential') {
+      await expect(attention).toContainText('站点缺少有效连接凭据');
+      await expect(attention.locator('[data-portal-site="attention-cta"]')).toHaveAttribute('href', 'https://clear.example.test/wp-admin/');
+      await expect(attention.getByRole('link', { name: '激活', exact: true })).toHaveCount(0);
+    } else if (issue === 'address') {
+      await expect(attention).toContainText('未配置站点地址');
+      await expect(attention.locator('[data-portal-site="attention-cta"]')).toHaveAttribute('href', '/portal/support?new=1&topic=site&site=site_clear');
+    } else {
+      await expect(page.locator('[data-portal-site="service-status"]')).toContainText('无法加载这个站点记录的服务状态');
+      await expect(page.locator('[data-portal-site="recheck"]')).toBeVisible();
+    }
+    await page.screenshot({ path: testInfo.outputPath(`inactive-${issue}.png`) });
+    state.verify();
+  });
+}
+
+for (const status of ['unknown', 'suspended']) {
+  test(`site detail state: ${status} has the same label across lists`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const state = await installSiteDetailStateMocks(page, { status });
+    const label = status === 'unknown' ? '未知' : '已暂停';
+    await page.goto('/portal');
+    const row = page.getByRole('row').filter({ hasText: 'Clear Site' });
+    await expect(row).toContainText(label);
+    if (status === 'unknown') await expect(row).not.toContainText('已暂停');
+    await page.screenshot({ path: testInfo.outputPath(`site-list-${status}.png`) });
+    await page.goto('/portal/billing');
+    const item = page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]');
+    await expect(item).toContainText(label);
+    await page.screenshot({ path: testInfo.outputPath(`billing-list-${status}.png`) });
+    await page.goto('/portal/sites/site_clear');
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await expect(page.locator('[data-portal-site="inactive-service-note"]')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`site-record-${status}.png`) });
+    state.verify();
+  });
+}
+
+test('site detail state: an absent status does not become inactive', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  const state = await installSiteDetailStateMocks(page, { status: '' });
+  await page.goto('/portal/sites/site_clear');
+  await expect(page.getByRole('heading', { name: 'Clear Site', exact: true })).toBeVisible();
+  await expect(page.locator('[data-portal-site="attention-focus"]')).toBeVisible();
+  await expect(page.getByText('未知', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-portal-site="inactive-service-note"]')).toHaveCount(0);
+  await expect(page.getByText('已暂停', { exact: true })).toHaveCount(0);
+  state.verify();
+});
+
+test('site detail state: waiting for summary does not invent a deactivated site', async ({ page }) => {
+  let release!: () => void;
+  const holdSummary = new Promise<void>((resolve) => { release = resolve; });
+  const state = await installSiteDetailStateMocks(page, { holdSummary, withoutOwnedSnapshot: true });
+  await page.goto('/portal/sites/site_clear');
+  await expect(page.locator('[data-portal-page-state="loading"]')).toBeVisible();
+  await expect(page.locator('[data-portal-site="inactive-service-note"]')).toHaveCount(0);
+  release();
+  await expect(page.getByRole('heading', { name: 'Clear Site', exact: true })).toBeVisible();
+  state.verify();
 });

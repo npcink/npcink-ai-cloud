@@ -20,6 +20,9 @@ function siteConnectionLabel(site: Site, t: TranslateFn): string {
   if (site.status === 'provisioning') {
     return t('portal.site_status_provisioning', {}, 'Provisioning');
   }
+  if (site.status === 'suspended') {
+    return t('portal.site_status_suspended', {}, 'Suspended');
+  }
   return t('portal.site_status_unknown', {}, 'Unknown');
 }
 
