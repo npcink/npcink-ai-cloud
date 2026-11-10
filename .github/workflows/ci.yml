@@ -1197,7 +1197,7 @@ jobs:
           NPCINK_CLOUD_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           NPCINK_CLOUD_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts tests/e2e/admin-navigation.spec.ts tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/admin-ai-advisor-pc-v2.spec.ts
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts tests/e2e/admin-navigation.spec.ts tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/admin-ai-advisor-pc-v2.spec.ts tests/e2e/portal-quota-recovery.spec.ts
           node scripts/run-admin-visual-checks.mjs --ci-changed
           node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-workspace-path.spec.ts --grep 'portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
 

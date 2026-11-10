@@ -1910,7 +1910,8 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
-  await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+  // The default fixture is genuinely over its bound-site allowance (2 / 1).
+  await page.getByRole('link', { name: /^Upgrade package$|^升级套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade/);
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
@@ -2755,7 +2756,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await page.screenshot({ path: testInfo.outputPath(`${variant.width}-${variant.locale}-${variant.theme}-support.png`), fullPage: true, animations: 'disabled' });
 
     await page.goto('/portal/billing');
-    await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+    await page.getByRole('link', { name: /^Upgrade package$|^升级套餐$/i }).click();
     await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade$/);
     const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
     await expect(packageDialog).toBeVisible();
@@ -2829,7 +2830,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i })).toHaveAttribute('aria-selected', 'true');
   await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
 
-  await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+  await page.getByRole('link', { name: /^Upgrade package$|^升级套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/billing\?action=upgrade$/);
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();

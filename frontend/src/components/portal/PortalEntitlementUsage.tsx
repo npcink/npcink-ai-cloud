@@ -229,6 +229,9 @@ export function PortalEntitlementUsage({
                     ? 0
                     : Math.min(100, Math.max(0, Number(metric.usage_ratio || 0) * 100));
                   const rowPresentation = resolveBillingQuotaRowPresentation({
+                    key,
+                    used,
+                    limit,
                     status: metric.status,
                     attentionSurfaceActive,
                   });

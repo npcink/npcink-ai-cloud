@@ -33,7 +33,8 @@ export function findLimitedBillingResources(
   return (quotaSummary?.resource_limits || []).filter((resource) => (
     !resource.unlimited
     && Number(resource.limit || 0) > 0
-    && (resource.status === 'limited' || Number(resource.used || 0) > Number(resource.limit || 0))
+    && (Number(resource.used || 0) > Number(resource.limit || 0)
+      || (resource.key !== 'active_sites' && resource.key !== 'bound_sites' && resource.status === 'limited'))
   ));
 }
 
@@ -42,7 +43,8 @@ export function billingPackageNeedsAttention(
   loadError?: string | null
 ): boolean {
   if (!quotaSummary || loadError) return false;
-  return String(quotaSummary.status) === 'limited';
+  return quotaSummary.ai_credits?.status === 'limited'
+    || findLimitedBillingResources(quotaSummary).length > 0;
 }
 
 export function resolveBillingPressureCta(options: {
@@ -105,8 +107,7 @@ export function billingQuotaStatusTone(status: string | undefined): BillingQuota
  * no alarm-red progress, no duplicated overflow explainer under the row.
  * near_limit (watch) rows are not covered by the limited strip and keep amber.
  */
-export function resolveBillingQuotaRowPresentation(options: {
-  status?: string;
+export function resolveBillingQuotaRowPresentation(options: BillingQuotaResource & {
   attentionSurfaceActive?: boolean;
 }): {
   tone: BillingQuotaRowTone;
@@ -114,7 +115,10 @@ export function resolveBillingQuotaRowPresentation(options: {
   suppressAlarmBadge: boolean;
   suppressOverflowDetail: boolean;
 } {
-  const tone = billingQuotaStatusTone(options.status);
+  const siteAllowanceNotExceeded = (options.key === 'active_sites' || options.key === 'bound_sites')
+    && Number(options.limit || 0) > 0
+    && Number(options.used || 0) <= Number(options.limit || 0);
+  const tone = billingQuotaStatusTone(siteAllowanceNotExceeded ? 'ok' : options.status);
   const coveredByAttention = Boolean(options.attentionSurfaceActive) && tone === 'error';
   return {
     tone,
