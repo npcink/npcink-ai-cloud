@@ -25,6 +25,7 @@ REVISION = "a" * 40
 @pytest.fixture(autouse=True)
 def isolated_recovery_receipt(tmp_path, monkeypatch):
     monkeypatch.setattr(BASELINE, "RECOVERY_FILE", tmp_path / "missing-recovery.json")
+    monkeypatch.setattr(BASELINE, "WORKSTATION_FILE", tmp_path / "missing-workstation.json")
 
 
 def _recovery(tmp_path, **overrides):

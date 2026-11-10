@@ -87,6 +87,29 @@ when retained runtime evidence is missing, never when it is malformed. A newer
 unproven attempt, rerun, mismatch, future observation or expired window still
 blocks planning. This planning recovery neither modifies the host nor authorizes
 deployment; the current installed manifest must be checked again at release time.
+
+An operator-authorized standard-script workstation activation has a different
+evidence origin from an Actions deployment. Reconcile it in a separately reviewed
+change using `.github/production-workstation-baseline.json` and its sanitized
+`production-baseline-observations/` sibling; do not rewrite the old recovery
+receipt or fabricate a successful Actions dispatch. Bind the installed full
+source/tree, exact manifest and bundle hashes, protected activation-log hash,
+fresh read-only operational/public health and seven-container observation to the
+latest successful Actions run ID, SHA, attempt and update time. Keep original
+logs and credentials off-repository. Checksums bind reviewed bytes; review of
+the protected originals establishes provenance, not the checksums themselves.
+
+This workstation observation is valid for at most seven days. The resolver
+validates any retained runtime/CI artifacts first; malformed artifacts, changed
+or missing anchors, unhealthy observations and newer unproven attempts still
+stop planning. A matching reviewed observation may reconcile missing historical
+artifacts. Later proven non-runtime dispatches do not advance this baseline; a
+later evidenced runtime deployment supersedes it, even after its window expires.
+If no later evidenced runtime has superseded it, renew an expired observation
+through another read-only check and reviewed change; never just extend its date.
+This repairs planning only: host acceptance/finalize, promotion, deployment and
+current-manifest checks remain separate gates requiring their existing authority.
+
 Before preserving either application image, the deployment
 script requires the current managed manifest source revision to equal the plan
 base. A mismatch stops before service mutation or migration. A full plan retains

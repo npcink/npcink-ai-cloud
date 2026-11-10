@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import re
@@ -15,7 +16,146 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 RECOVERY_FILE = Path(__file__).resolve().parents[1] / ".github/production-baseline-recovery.json"
+WORKSTATION_FILE = (
+    Path(__file__).resolve().parents[1] / ".github/production-workstation-baseline.json"
+)
 UTC = timezone.utc  # noqa: UP017 -- operator Python may predate datetime.UTC.
+
+
+def _utc_timestamp(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("workstation baseline timestamp is missing")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("workstation baseline timestamp is invalid") from exc
+    if parsed.utcoffset() != timedelta(0):
+        raise ValueError("workstation baseline timestamp must be UTC")
+    return parsed
+
+
+def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) -> str | None:
+    """Reconcile a reviewed workstation activation after its exact Actions anchor.
+
+    Validate retained artifacts before calling. Missing historical artifacts may
+    use this separately reviewed observation, bound to the exact successful run.
+    A later proven runtime supersedes it; unproven later attempts still stop.
+    """
+    if not path.is_file():
+        return None
+    raw = path.read_bytes()
+    if len(raw) > 16_384:
+        raise ValueError("workstation baseline receipt is oversized")
+    receipt = json.loads(raw)
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema") != "npcink.production_workstation_baseline.v1"
+        or receipt.get("repository") != repository
+    ):
+        raise ValueError("workstation baseline receipt identity is invalid")
+    observed = _utc_timestamp(receipt.get("observed_at_utc"))
+    updated = _utc_timestamp(run.get("updated_at"))
+    if updated > observed:
+        return None
+    expected = {key: run.get(key) for key in ("id", "head_sha", "run_attempt", "updated_at")}
+    if (
+        receipt.get("previous_workflow") != expected
+        or type(expected["id"]) is not int
+        or type(expected["run_attempt"]) is not int
+    ):
+        raise ValueError("workstation baseline Actions anchor changed or is missing")
+    expires = _utc_timestamp(receipt.get("expires_at_utc"))
+    current = now or datetime.now(UTC)
+    if not (
+        updated <= observed <= current
+        and observed < expires <= observed + timedelta(days=7)
+        and current < expires
+    ):
+        raise ValueError("workstation baseline observation is stale or has an invalid window")
+    for key, length in (
+        ("installed_sha", 40),
+        ("installed_tree", 40),
+        ("manifest_sha256", 64),
+        ("bundle_sha256", 64),
+        ("activation_log_sha256", 64),
+        ("observation_sha256", 64),
+    ):
+        if re.fullmatch(r"[0-9a-f]{" + str(length) + "}", str(receipt.get(key, ""))) is None:
+            raise ValueError("workstation baseline evidence identity is invalid")
+    filename = receipt.get("observation_file", "")
+    if (
+        not isinstance(filename, str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,80}\.json", filename) is None
+    ):
+        raise ValueError("workstation baseline observation filename is invalid")
+    observation_path = path.parent / "production-baseline-observations" / filename
+    evidence_raw = observation_path.read_bytes()
+    if (
+        len(evidence_raw) > 32_768
+        or hashlib.sha256(evidence_raw).hexdigest() != receipt["observation_sha256"]
+    ):
+        raise ValueError("workstation baseline observation checksum mismatch")
+    evidence = json.loads(evidence_raw)
+    expected_evidence = {
+        "schema": "npcink.production_workstation_observation.v1",
+        "repository": repository,
+        **{
+            key: receipt[key]
+            for key in (
+                "installed_sha",
+                "installed_tree",
+                "manifest_sha256",
+                "bundle_sha256",
+                "activation_log_sha256",
+                "observed_at_utc",
+            )
+        },
+        "deploy_exit_status": 0,
+        "remote_sequence_exit_status": 0,
+        "deployment_lock_absent": True,
+        "failed_cutover_marker_absent": True,
+        "internal_operational_ready": True,
+        "public_live_status": 200,
+    }
+    if not isinstance(evidence, dict) or any(
+        type(evidence.get(key)) is not type(value) or evidence[key] != value
+        for key, value in expected_evidence.items()
+    ):
+        raise ValueError("workstation baseline observation does not prove successful activation")
+    containers = evidence.get("containers")
+    roles = {"api", "frontend", "redis", "proxy", "worker", "callback-worker", "ops-worker"}
+    if (
+        not isinstance(containers, list)
+        or len(containers) != 7
+        or any(not isinstance(item, dict) for item in containers)
+        or {item.get("service") for item in containers} != roles
+        or any(
+            item.get("status") != "running"
+            or type(item.get("restarts")) is not int
+            or item["restarts"] != 0
+            or item.get("OOMKilled") is not False
+            or item.get("health")
+            not in ({"healthy", "none"} if item["service"].endswith("worker") else {"healthy"})
+            for item in containers
+        )
+    ):
+        raise ValueError("workstation baseline container proof is invalid")
+    tree = subprocess.run(
+        ["git", "rev-parse", "--verify", receipt["installed_sha"] + "^{tree}"],
+        cwd=path.parent.parent,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    if tree != receipt["installed_tree"]:
+        raise ValueError("workstation baseline installed source tree mismatch")
+    print(
+        "[ok] reviewed workstation observation recovers deployed baseline "
+        f"{receipt['installed_sha']}",
+        file=sys.stderr,
+    )
+    return receipt["installed_sha"]
 
 
 def recovered_baseline(repository: str, run: dict, path: Path, *, now=None) -> str | None:
@@ -95,7 +235,11 @@ def read_artifact(root, run_id, name, filename, api):
 
 
 def resolve_baseline(
-    repository: str, api: Callable[[str], bytes] = github_api, *, recovery_path: Path | None = None
+    repository: str,
+    api: Callable[[str], bytes] = github_api,
+    *,
+    recovery_path: Path | None = None,
+    workstation_path: Path | None = None,
 ) -> str:
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
         raise ValueError("repository must use owner/name format")
@@ -184,10 +328,18 @@ def resolve_baseline(
                     )
                     break
             if not no_runtime:
+                observed = workstation_baseline(
+                    repository, run, workstation_path or WORKSTATION_FILE
+                )
+                if observed is not None:
+                    return observed
                 recovered = recovered_baseline(repository, run, recovery_path or RECOVERY_FILE)
                 if recovered is not None:
                     return recovered
                 raise ValueError("no retained runtime receipt or proven non-runtime plan")
+            observed = workstation_baseline(repository, run, workstation_path or WORKSTATION_FILE)
+            if observed is not None:
+                return observed
             continue
         expected = {
             "schema": "npcink.release_timing.v1",
@@ -209,7 +361,9 @@ def resolve_baseline(
         ):
             raise ValueError("deployment receipt has no successful remote sequence")
         print(f"[ok] deployed baseline {revision}; deployment run {run_id}", file=sys.stderr)
-        return revision
+        return (
+            workstation_baseline(repository, run, workstation_path or WORKSTATION_FILE) or revision
+        )
     raise ValueError(
         "no retained successful runtime deployment evidence; re-establish baseline read-only"
     )
@@ -221,7 +375,14 @@ def main() -> int:
     args = parser.parse_args()
     try:
         revision = resolve_baseline(args.repository)
-    except (ValueError, KeyError, TypeError, zipfile.BadZipFile, subprocess.SubprocessError) as exc:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        zipfile.BadZipFile,
+        subprocess.SubprocessError,
+    ) as exc:
         raise SystemExit(f"deployed baseline resolution failed: {exc}") from exc
     print(revision)
     return 0

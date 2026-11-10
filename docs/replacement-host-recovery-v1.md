@@ -138,6 +138,12 @@ treating its old identities, timestamps or operator approval as new authority:
   separately authorized matched recovery proves its exact container/tag/config
   state before releasing a lock; never delete markers merely to retry.
 - Close the source, deployment, documentation and resource tracks separately.
+  A successful workstation activation does not update Actions deployment
+  history. Before the next automatic release, reconcile the actual installed
+  source through the reviewed, time-bounded workstation observation in the
+  [cumulative baseline policy](cloud-production-release-policy-v1.md#cumulative-release-baseline).
+  Preserve its original activation log off-repository and refresh operational
+  proof read-only; do not redeploy just to manufacture a workflow receipt.
   Preserve protected workstation configuration before any later worktree
   archival; Git snapshots do not include ignored secrets. A conversation may
   close with a named acceptance owner and retained protected worktree.
