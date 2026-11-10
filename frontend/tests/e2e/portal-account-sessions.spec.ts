@@ -208,6 +208,9 @@ test('single revoke confirms scope, cancel restores focus, busy double click wri
   const { state, panel } = await fixture(page, baseURL);
   await open(page); const trigger = panel.locator('[data-session-row="sid_1"] button');
   await trigger.click(); await expect(page.getByRole('dialog')).toContainText('当前登录及其他会话保留');
+  await expect(page.getByRole('dialog')).toContainText(state.rows[1].client_hint!);
+  await expect(page.getByRole('dialog')).toContainText('2026');
+  await capture(page, info, 'session-target-confirmation');
   await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
   await expect(trigger).toBeFocused(); expect(state.writes).toBe(0);
   state.holdWrite = true; await trigger.click();

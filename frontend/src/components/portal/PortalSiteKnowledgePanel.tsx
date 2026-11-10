@@ -38,83 +38,102 @@ export function PortalSiteKnowledgePanel({
   const indexedPages = Number(snapshot?.document_count ?? totals?.current_document_count ?? 0);
   const searchCount = Number(totals?.search_queries_total || 0);
   const noAnswerCount = Number(totals?.no_hit_total || 0);
-  const lastUpdatedAt = snapshot?.last_indexed_at || totals?.last_index_job_finished_at || '';
+  // A finished attempt may have failed; only the index snapshot proves an update.
+  const lastUpdatedAt = snapshot?.last_indexed_at || '';
+  const lastAttemptAt = totals?.last_index_job_finished_at || '';
   const hasKnowledge = indexedPages > 0 || Number(totals?.index_jobs_total || 0) > 0;
   const healthStatus = String(summary?.health?.status || '');
   const indexJobs = Number(totals?.index_jobs_total || 0);
   const indexSucceeded = Number(totals?.index_succeeded_total || 0);
   const indexFailed = Number(totals?.index_failed_total || 0);
-  // Hard failure: empty index, or every recent index job failed with nothing succeeding.
+  const failedSearches = Number(totals?.search_failed_total || 0);
+  const highNoHitRate = searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25;
+  const slowSearches = searchCount > 0 && Number(totals?.p95_search_latency_ms || 0) >= 1200;
+  const searchNeedsAttention = failedSearches > 0 || highNoHitRate || slowSearches;
+  // Report observed failures independently of the aggregate health score.
   const hardUpdateFailure = Boolean(
-    hasKnowledge
-    && healthStatus === 'error'
+    indexFailed > 0
     && (
       indexedPages === 0
-      || (indexJobs > 0 && indexSucceeded === 0 && indexFailed > 0)
+      || (indexJobs > 0 && indexSucceeded === 0)
     )
   );
   const softUpdateIssue = Boolean(
-    hasKnowledge && healthStatus === 'error' && !hardUpdateFailure
+    indexedPages > 0 && indexFailed > 0 && !hardUpdateFailure
   );
   const needsAttention = Boolean(
-    hasKnowledge && summary && healthStatus === 'warning'
+    summary && (
+      hardUpdateFailure || searchNeedsAttention || healthStatus === 'error'
+      || (healthStatus === 'warning' && !softUpdateIssue)
+    )
   );
   const windowDays = Math.max(1, Math.round(Number(summary?.window?.hours || 168) / 24));
-  const failedSearches = Number(totals?.search_failed_total || 0);
   const slowOnlyWarning = needsAttention
     && indexFailed === 0 && failedSearches === 0
-    && Number(totals?.no_hit_rate || 0) < 0.25
-    && Number(totals?.p95_search_latency_ms || 0) >= 1200;
+    && !highNoHitRate && slowSearches;
   const warningReasons = [
     indexFailed > 0 ? t('portal.vector_obs.warning_updates', { count: formatNumber(indexFailed) }, '{{count}} knowledge update(s) failed.') : '',
     failedSearches > 0 ? t('portal.vector_obs.warning_searches', { count: formatNumber(failedSearches) }, '{{count}} search(es) failed.') : '',
-    searchCount > 0 && Number(totals?.no_hit_rate || 0) >= 0.25
+    highNoHitRate
       ? t('portal.vector_obs.warning_no_hits', { count: formatNumber(noAnswerCount), total: formatNumber(searchCount) }, '{{count}} of {{total}} searches found no related content.') : '',
-    Number(totals?.p95_search_latency_ms || 0) >= 1200
+    slowSearches
       ? t('portal.vector_obs.warning_slow', { seconds: (Number(totals?.p95_search_latency_ms || 0) / 1000).toFixed(1) }, '95% of searches finished within {{seconds}} seconds.') : '',
   ].filter(Boolean);
 
-  const softFailedCount = Math.max(0, indexFailed);
-  const softUpdateNote = softUpdateIssue
-    ? (softFailedCount > 0
-      ? t(
+  // Only a partial update issue without other faults belongs in metric help.
+  const softUpdateNote = softUpdateIssue && !needsAttention
+    ? t(
         'portal.vector_obs.soft_update_note',
-        { days: String(windowDays), count: formatNumber(softFailedCount) },
+        { days: String(windowDays), count: formatNumber(indexFailed) },
         'In the last {{days}} days, {{count}} update(s) did not succeed. Indexed pages are still available.'
       )
-      : t(
-        'portal.vector_obs.soft_update_note_generic',
-        { days: String(windowDays) },
-        'In the last {{days}} days knowledge health dipped (slow or incomplete updates). Indexed pages are still available.'
-      ))
     : '';
-  // Soft issues stay usable — no mystery yellow 「更新异常」 badge.
-  const statusLabel = !hasKnowledge
-    ? t('portal.vector_obs.status_empty', {}, 'Not started')
-    : hardUpdateFailure
-      ? t('portal.vector_obs.status_error', {}, 'Update failed')
-      : softUpdateIssue
-        ? t('portal.vector_obs.status_usable', {}, 'Knowledge is usable')
-        : needsAttention
-          ? slowOnlyWarning
-            ? localPreviewIndex
-              ? t('portal.vector_obs.status_local_slow', {}, 'Development searches were slow')
-              : t('portal.vector_obs.status_slow', {}, 'Searches were slow')
-            : t('portal.vector_obs.status_attention', {}, 'Needs attention')
-          : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
+  let statusLabel = t('portal.vector_obs.status_pending', {}, 'To confirm');
+  if (hardUpdateFailure) {
+    statusLabel = t('portal.vector_obs.status_error', {}, 'Update failed');
+  } else if (failedSearches > 0) {
+    statusLabel = t('portal.vector_obs.status_search_failed', {}, 'Searches failed');
+  } else if (slowOnlyWarning) {
+    statusLabel = localPreviewIndex
+      ? t('portal.vector_obs.status_local_slow', {}, 'Development searches were slow')
+      : t('portal.vector_obs.status_slow', {}, 'Searches were slow');
+  } else if (needsAttention) {
+    statusLabel = t('portal.vector_obs.status_attention', {}, 'Needs attention');
+  } else if (!hasKnowledge) {
+    statusLabel = t('portal.vector_obs.status_empty', {}, 'Not started');
+  } else if (softUpdateIssue || healthStatus === 'inactive') {
+    statusLabel = t('portal.vector_obs.status_usable', {}, 'Knowledge is usable');
+  } else if (healthStatus === 'ok') {
+    statusLabel = t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
+  }
   const displayedStatusLabel = error
     ? t('portal.home.package_pending_label', {}, 'To confirm')
     : summary
       ? statusLabel
       : t('common.loading');
-  const statusTone = error || !hasKnowledge
-    ? 'inactive'
-    : hardUpdateFailure
+  const statusTone = error
+    ? 'neutral'
+    : hardUpdateFailure || failedSearches > 0
       ? 'error'
       : needsAttention
         ? 'warning'
-        : 'active';
-  const showRefresh = Boolean(error || hardUpdateFailure || softUpdateIssue || needsAttention);
+        : healthStatus === 'ok' && hasKnowledge && !softUpdateIssue
+          ? 'active'
+          : 'neutral';
+  const showRefresh = Boolean(error || hardUpdateFailure || softUpdateIssue || needsAttention
+    || (summary && hasKnowledge && !['ok', 'inactive'].includes(healthStatus)));
+  let nextStep: string;
+  if (hardUpdateFailure) {
+    nextStep = t('portal.vector_obs.update_failed_next', {}, 'Check the failed content update in the WordPress Cloud Addon. If it still fails, contact support with the page and time. Refresh only reads status; it does not retry updates or clear historical records.');
+  } else if (failedSearches > 0) {
+    nextStep = t('portal.vector_obs.search_failed_next', {}, 'If searches are still failing, contact support with an example and time. Refresh only reads status; it does not rerun searches or clear historical records.');
+  } else if (slowOnlyWarning) {
+    nextStep = localPreviewIndex
+      ? t('portal.vector_obs.warning_next_local_slow', {}, 'Local development: the latest index uses the local search setup. Its response time does not represent the hosted vector services planned for launch. Continue checking search results; latency is a development task and does not require reconnecting or resyncing the site.')
+      : t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.');
+  } else {
+    nextStep = t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.');
+  }
   const knowledgeDesc = t(
     'portal.vector_obs.customer_desc',
     {},
@@ -132,9 +151,13 @@ export function PortalSiteKnowledgePanel({
     'Content changes are updated automatically from the connected WordPress site.'
   );
   const helpAria = [knowledgeDesc, knowledgeScopeNote].filter(Boolean).join(' ');
-  const lastUpdatedDetailLabel = softUpdateNote
-    ? `${updateHint} ${softUpdateNote}`
-    : updateHint;
+  const attemptNote = lastAttemptAt ? t(
+    'portal.vector_obs.last_attempt',
+    { time: formatDate(lastAttemptAt) },
+    'Latest update attempt finished: {{time}}. This does not establish when content was successfully updated.'
+  ) : '';
+  const lastUpdatedDetailLabel = [updateHint, softUpdateNote,
+    needsAttention && indexFailed > 0 ? '' : attemptNote].filter(Boolean).join(' ');
 
   return (
     <PortalSection
@@ -157,7 +180,7 @@ export function PortalSiteKnowledgePanel({
             </>
           )}
         />
-        {softUpdateIssue ? (
+        {softUpdateIssue && !needsAttention ? (
           <PortalStatusInline
             label={displayedStatusLabel}
             className="normal-case tracking-normal"
@@ -204,24 +227,26 @@ export function PortalSiteKnowledgePanel({
             {t('portal.vector_obs.warning_period', { days: String(windowDays) }, 'In the last {{days}} days:')}{' '}
             {warningReasons.join(' ') || t('portal.vector_obs.warning_unknown', {}, 'Knowledge health needs review; the exact cause is not identified here.')}
           </p>
+          {hardUpdateFailure || failedSearches > 0 ? (
+            <p>{indexedPages > 0
+              ? t('portal.vector_obs.saved_pages_preserved', { count: formatNumber(indexedPages) }, '{{count}} indexed pages are retained.')
+              : t('portal.vector_obs.no_saved_pages', {}, 'No pages are indexed yet.')}</p>
+          ) : null}
+          {indexFailed > 0 && attemptNote ? <p>{attemptNote}</p> : null}
           {slowOnlyWarning ? (
             <p>{t('portal.vector_obs.warning_slow_successes', { queries: formatNumber(searchCount), updates: formatNumber(indexJobs) }, 'No failed searches or knowledge updates were recorded ({{queries}} searches, {{updates}} updates).')}</p>
           ) : null}
           {slowOnlyWarning && totals?.last_search_finished_at ? (
             <p>{t('portal.vector_obs.warning_last_search', { time: formatDate(totals.last_search_finished_at) }, 'Last recorded search: {{time}}. These historical figures do not establish current response time.')}</p>
           ) : null}
-          <p>{slowOnlyWarning
-            ? localPreviewIndex
-              ? t('portal.vector_obs.warning_next_local_slow', {}, 'Local development: the latest index uses the local search setup. Its response time does not represent the hosted vector services planned for launch. Continue checking search results; latency is a development task and does not require reconnecting or resyncing the site.')
-              : t('portal.vector_obs.warning_next_slow', {}, 'You can continue using site knowledge. If searches still feel slow, contact support with the search and time. Reconnecting the site or resyncing content is not needed solely for this latency notice.')
-            : t('portal.vector_obs.warning_next', {}, 'Check Saved pages and Last updated below against the content you expect to use. If pages are missing or outdated, check the Cloud Addon connection in WordPress. If searches still fail or cannot find existing content, submit a ticket with an example and time. Refresh only reads status; it does not resync content or clear historical records.')}</p>
+          <p>{nextStep}</p>
           <Link className="btn btn-secondary btn-sm" href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(summary.site_id)}`}>
             {t('portal.site_attention_contact_support', {}, 'Contact support')}
           </Link>
         </div>
       ) : null}
 
-      {!isLoading && !error && summary && !hasKnowledge ? (
+      {!isLoading && !error && summary && !hasKnowledge && !needsAttention ? (
         <PortalCard className="text-sm leading-6 text-slate-600 dark:text-slate-300">
           {t(
             'portal.vector_obs.customer_empty_desc',
@@ -231,7 +256,7 @@ export function PortalSiteKnowledgePanel({
         </PortalCard>
       ) : null}
 
-      {!isLoading && !error && summary && hasKnowledge ? (
+      {!isLoading && !error && summary && (hasKnowledge || searchCount > 0) ? (
         <PortalMetricStrip
           layout="grid"
           variant="header"
@@ -251,17 +276,18 @@ export function PortalSiteKnowledgePanel({
               value: lastUpdatedAt
                 ? formatDate(lastUpdatedAt)
                 : t('portal.home.package_pending_label', {}, 'To confirm'),
-              detail: softUpdateNote ? (
+              detail: (
                 <>
                   <span className="block">{updateHint}</span>
-                  <span
+                  {softUpdateNote ? <span
                     className="mt-1 block text-slate-500 dark:text-slate-400"
                     data-portal-site="knowledge-soft-note-help"
                   >
                     {softUpdateNote}
-                  </span>
+                  </span> : null}
+                  {attemptNote && !(needsAttention && indexFailed > 0) ? <span className="mt-1 block text-slate-500 dark:text-slate-400">{attemptNote}</span> : null}
                 </>
-              ) : updateHint,
+              ),
               detailLabel: lastUpdatedDetailLabel,
               detailDisplay: 'hint',
               hintProps: {
