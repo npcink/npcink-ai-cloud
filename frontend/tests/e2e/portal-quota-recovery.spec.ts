@@ -306,7 +306,7 @@ test('zh-CN: active and previously used trial descriptions do not claim a new ex
     model.trial = state;
     // Full navigation resets client catalogs between independent server snapshots.
     await page.goto('/portal/billing?action=upgrade');
-    await expect(page.locator('html')).toHaveAttribute('lang', language);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     const packages = page.getByRole('dialog', { name: '选择套餐', exact: true });
     await expect(packages).toBeVisible();
     await packages.getByRole('button', { name: '查看试用资格', exact: true }).click();
