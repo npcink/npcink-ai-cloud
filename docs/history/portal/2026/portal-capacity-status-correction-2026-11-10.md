@@ -67,6 +67,20 @@ Those fixture/assertion issues were corrected; targeted rerun: 4 passed.
 Additional dialog focus/Escape and saved PC captures: 2 passed. No writes,
 external model traffic, unexpected requests or page crashes were accepted.
 
+The first PR CI run caught an existing workspace-path assertion still looking
+for “Manage package” with a genuinely over-limit 2/1 binding fixture. The
+correct warning action is “Upgrade package”; all three affected path assertions
+now require that label. The complete quota-recovery spec also joins the existing
+critical frontend CI step without a title filter, with a CI contract guarding
+its inclusion. This preserves the existing wider gates and makes the new
+boundary scenarios automatic before merge.
+Focused replay on M4: workspace and purchase paths passed. The existing PC
+matrix reached its 90-second total budget; an isolated replay with a 180-second
+command budget passed in about 90 seconds. Default suite timeouts were unchanged.
+All 54 CI-efficiency contracts, changed-Python quality, type-check and scoped
+test lint passed; the three CI-selection contracts also passed after sharing
+the existing unfiltered browser invocation rather than adding another build.
+
 M4 candidate, CI, merged, M4 accepted, production and human visual acceptance
 remain separate states and will be recorded as they occur. This document does
 not authorize deployment. Source rollback is a revert; there is no data rollback.
