@@ -85,7 +85,10 @@ export function portalSiteNeedsAttention(site: SiteLike | null | undefined): boo
     return true;
   }
 
-  return normalizeString(site.status).toLowerCase() !== 'active' || !getPortalSiteUrl(site);
+  const status = normalizeString(site.status).toLowerCase();
+  // An intentionally inactive binding is not a service incident. Its row
+  // still says Inactive and retains the explicit activation/swap action.
+  return (status !== 'active' && status !== 'inactive') || !getPortalSiteUrl(site);
 }
 
 /** Navigation only: no Cloud credentials or connection state leave the Portal. */

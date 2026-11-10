@@ -1499,3 +1499,23 @@ test('advanced settings use a compact dialog and return to the candidate draft w
     human_acceptance: 'pending',
   }, null, 2));
 });
+
+
+test('Smart Ask shares editorial configuration and shows its missing-model recovery on PC', async ({ page }, testInfo) => {
+  const profiles = structuredClone(initialProfiles);
+  profiles[0].profile_id = 'wp-ai.editorial';
+  profiles[0].candidate_instance_ids = [];
+  await installRuntimeProfilesHarness(page, { profiles });
+  await page.goto('/admin/runtime-profiles');
+  const row = profileRow(page, 'wp-ai.editorial');
+  await expect(row).toContainText(/Also used by Smart Ask|同时用于智能提问/);
+  await expect(row).toContainText(/Select a model to enable Smart Ask|请选择模型以启用智能提问/);
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`smart-ask-missing-model-${width}.png`), fullPage: true });
+  }
+  await row.getByRole('button', { name: /Configure|配置/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(candidateRow(page, 'text.primary')).toBeVisible();
+});

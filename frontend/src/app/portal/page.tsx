@@ -51,7 +51,7 @@ function buildRestrictionItems({
   subscriptionStatus: string;
 }): RestrictionItem[] {
   return [
-    siteStatus !== 'active'
+    siteStatus !== 'active' && siteStatus !== 'inactive'
       ? {
           tone: 'warn',
           label: t('portal.home.restriction_setup_label', {}, 'Site setup still needs attention'),
@@ -195,6 +195,8 @@ function PortalHome() {
         },
       ];
   const restrictedCount = visibleSites.filter((site) => portalSiteNeedsAttention(site)).length;
+  const activeSiteCount = visibleSites.filter((site) => site.status === 'active').length;
+  const inactiveSiteCount = visibleSites.filter((site) => site.status === 'inactive').length;
   const hasPackageLabel = currentPackageDisplay.coverage_state === 'covered'
     && Boolean(currentPackageDisplay.display_package_label);
   const selectedSiteRecordHref = selectedSite
@@ -202,7 +204,7 @@ function PortalHome() {
     : '/portal#sites';
   const isSelectedSiteConnected =
     Boolean(selectedSite) &&
-    selectedSite?.status === 'active' &&
+    (selectedSite?.status === 'active' || selectedSite?.status === 'inactive') &&
     Boolean(selectedSiteUrl);
   const setupChecklistItems = [
     {
@@ -368,12 +370,18 @@ function PortalHome() {
       value: visibleSites.length
         ? restrictedCount > 0
           ? t('portal.home.site_connection_attention_value', { count: String(restrictedCount) }, `${restrictedCount} need attention`)
-          : t('portal.home.site_connection_ready_value', { count: String(visibleSites.length) }, `${visibleSites.length} connected`)
+          : inactiveSiteCount > 0
+            ? t('portal.home.site_connection_mixed_value', {
+                active: String(activeSiteCount), inactive: String(inactiveSiteCount),
+              }, `${activeSiteCount} active · ${inactiveSiteCount} inactive`)
+            : t('portal.home.site_connection_ready_value', { count: String(visibleSites.length) }, `${visibleSites.length} connected`)
         : t('portal.home.site_connection_none_value', {}, 'Not connected'),
       detail: visibleSites.length
         ? restrictedCount > 0
           ? t('portal.home.site_status_attention_detail', { count: String(restrictedCount) }, `${restrictedCount} sites need attention.`)
-          : t('portal.home.site_status_ready_detail', {}, 'All connected sites look ready.')
+          : inactiveSiteCount > 0
+            ? t('portal.home.site_inactive_detail', {}, 'Inactive sites retain their binding; hosted service is available only for active sites.')
+            : t('portal.home.site_status_ready_detail', {}, 'All connected sites look ready.')
         : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.'),
       size: 'compact' as const,
     },

@@ -19,7 +19,9 @@ from app.core.models import (
     RoutingProfile,
     RunRecord,
 )
+from app.domain.hosted_model_defaults import TEXT_AI_PROFILE_ID
 from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
+from app.domain.wordpress_ai_connector.routing_profiles import WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
 
 
 class CatalogRepository:
@@ -267,6 +269,16 @@ class CatalogRepository:
 
     def get_routing_binding(self, profile_id: str) -> RoutingBinding | None:
         return self.session.get(RoutingBinding, profile_id)
+
+    def get_runtime_routing_binding(self, profile_id: str) -> RoutingBinding | None:
+        # General Toolbox text uses the operator's existing editorial model
+        # chain. Never revive an obsolete automatic binding when it is empty.
+        source_profile_id = (
+            WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
+            if profile_id == TEXT_AI_PROFILE_ID
+            else profile_id
+        )
+        return self.get_routing_binding(source_profile_id)
 
     def upsert_provider_snapshot(self, snapshot: ProviderCatalogSnapshot, revision: str) -> None:
         incoming_model_ids = [model_seed.model_id for model_seed in snapshot.models]

@@ -4414,6 +4414,46 @@ def _runtime_profile_replacement_from_projection(
     ]
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_smart_ask_projection_uses_live_editorial_readiness_without_writes(
+    tmp_path: Path,
+    enabled: bool,
+) -> None:
+    database_url, client, _provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        binding = session.get(RoutingBinding, "wp-ai.editorial")
+        assert binding is not None
+        binding.candidate_instance_ids = ["openai-wp-ai-connector-test"] if enabled else []
+        binding.revision = "runtime-profiles-admin-smart-ask"
+        session.merge(
+            RoutingBinding(
+                profile_id="text.ai",
+                candidate_instance_ids=["obsolete-model"],
+                selection_policy_json={},
+                revision="legacy-text-binding",
+            )
+        )
+        session.commit()
+    response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    automatic = data["read_only_profiles"][0]
+    editorial = next(item for item in data["profiles"] if item["profile_id"] == "wp-ai.editorial")
+    assert automatic["status"] == editorial["status"]
+    assert automatic["status"] == ("configured" if enabled else "needs_candidates")
+    assert [item["instance_id"] for item in automatic["candidates"]] == editorial[
+        "candidate_instance_ids"
+    ]
+    with get_session(database_url) as session:
+        legacy = session.get(RoutingBinding, "text.ai")
+        assert legacy is not None
+        assert legacy.candidate_instance_ids == ["obsolete-model"]
+        assert legacy.revision == "legacy-text-binding"
+
+
 def test_admin_runtime_profiles_updates_hosted_candidates(
     tmp_path: Path,
 ) -> None:
@@ -4454,10 +4494,12 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     )
     assert audio_profile["availability_state"] == "paused"
     with get_session(database_url) as session:
-        binding = session.get(RoutingBinding, "text.ai")
+        binding = session.get(RoutingBinding, "wp-ai.editorial")
         expected_candidates = list(binding.candidate_instance_ids) if binding else []
     assert data["read_only_profiles"][0]["profile_id"] == "text.ai"
     assert data["read_only_profiles"][0]["selection_mode"] == "automatic"
+    assert data["read_only_profiles"][0]["source_profile_id"] == "wp-ai.editorial"
+    assert data["read_only_profiles"][0]["status"] == "configured"
     assert [
         candidate["instance_id"] for candidate in data["read_only_profiles"][0]["candidates"]
     ] == expected_candidates

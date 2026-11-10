@@ -95,8 +95,8 @@ The read projection contains:
 - available runtime instances grouped by execution kind;
 - six supported WordPress profiles, ordered candidate instance IDs, and
   `availability_state` (`active` or `paused`);
-- independent `read_only_profiles` containing the existing `text.ai` automatic
-  binding snapshot in configured order; this is not historical call evidence;
+- `read_only_profiles` containing the effective `text.ai` candidate chain,
+  source profile and readiness; this is not historical call evidence;
 - the Cloud/local ownership boundary.
 
 The write request must repeat `contract_version`, `platform_kind`,
@@ -112,7 +112,7 @@ second save exists. Ordinary saves never trigger capability probes, including
 for the edited media usage: explicit **Verify capability** supplies existing
 required evidence before saving. Media recognition policy saves independently.
 `read_only_profiles` is never accepted by the write interface; the six-profile
-whitelist and `text.ai` automatic selection rules are unchanged.
+whitelist remain unchanged. `text.ai` follows the editorial chain as specified below.
 
 For the development M4 Ollama connection, text and vision model declarations
 persist `endpoint_variant: ollama_chat` in the existing per-model operator
@@ -261,3 +261,34 @@ pnpm run lint
 成因记录：旧预设会将硬编码型号直接填入启用选择，保存未校验账户目录，目录同步又会
 为避免中断已有用途保留已保存型号；这条组合路径能够长期保留目录未返回型号。
 以上规则同时约束预设、参考入口、写接口和空列表语义，不能仅删除单个型号。
+
+
+## General Text Configuration Repair — 2026-11-10
+
+Toolbox Smart Ask and existing generic text consumers retain the public
+`text.ai` profile. Its candidate chain and binding revision now come directly
+from `wp-ai.editorial` (Admin label: Editorial / 长文编辑). Its execution kind,
+timeout/retry/fallback policy and consumer identity remain `text.ai`'s; this
+shares model configuration, not WordPress tasks, prompts or write authority.
+There is no new editable profile or model picker.
+
+This replaces the old `hosted-free` / `free-gpt55` automatic-only candidate
+rule, which could keep pointing at a model removed from the supplier allowlist
+while the operator had already configured a replacement for WordPress.
+Catalog refresh no longer creates or updates a separate `text.ai` binding;
+old rows remain retained and are ignored at runtime. Catalog recommendations
+also use the editorial chain. No data migration or catalog refresh is required
+to activate an already configured editorial chain.
+
+A missing or explicitly empty editorial binding fails closed. Ordinary provider
+enablement, allowlist, model status, health and execution-adapter checks still
+apply; there is no fallback to the retained old binding or arbitrary catalog
+models. Operator edits take effect on the next resolution. Reading Admin never
+repairs or persists bindings. The read-only projection reports
+`source_profile_id=wp-ai.editorial`, `status=configured|needs_candidates` and
+only effective candidates, matching the editable editorial projection.
+
+The existing editorial row explains that Smart Ask shares its model. If no
+candidate is usable, the row says Smart Ask is unavailable and keeps its
+existing Configure action. No seventh table row, technical route selector or
+new standalone diagnostics section is introduced.

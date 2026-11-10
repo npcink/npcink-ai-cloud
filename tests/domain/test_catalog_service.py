@@ -174,6 +174,7 @@ def test_list_models_returns_recommended_sets_and_profile_filter(tmp_path: Path)
     assert balanced_models["total"] == 1
     assert balanced_models["items"][0]["model_id"] == "gpt-4.1-mini"
     assert balanced_models["items"][0]["recommended_profiles"] == [
+        "text.ai",
         "text.economy",
         "text.balanced",
         "text.quality",
@@ -317,7 +318,7 @@ def test_wordpress_text_profile_ignores_embedding_only_provider_candidates(
     dispose_engine(database_url)
 
 
-def test_text_ai_profile_filters_to_hosted_free_model_without_exact_model_pin(
+def test_text_ai_recommendations_follow_editorial_without_free_model_tags(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -343,7 +344,7 @@ def test_text_ai_profile_filters_to_hosted_free_model_without_exact_model_pin(
                         instance_id="openai-global-hosted-free-next",
                         endpoint_variant="responses",
                         region="global",
-                        capability_tags=["text", "quality", "hosted-free"],
+                        capability_tags=["text", "quality"],
                         is_default=True,
                         weight=140,
                     )

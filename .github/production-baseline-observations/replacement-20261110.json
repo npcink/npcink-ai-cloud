@@ -1,0 +1,79 @@
+{
+  "activation_log_sha256": "a1d70e4d4e8355a5b71a804fcbeb871ffa536906bb2adeac471c5f7a1931a691",
+  "bundle_sha256": "a84e0c8ed4d8f2e2736e4ace20add6ea2e8657165d197ef095043928a1915c66",
+  "containers": [
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:b6de6204172b770891031ec829263844adb9c055a9612e4cb715944bb4a89620",
+      "health": "healthy",
+      "restarts": 0,
+      "service": "api",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:b6de6204172b770891031ec829263844adb9c055a9612e4cb715944bb4a89620",
+      "health": "none",
+      "restarts": 0,
+      "service": "callback-worker",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:743f2dc73cd8f456a9082c0a255f752dc90c8b21b16fdfb8c7423e65f51704f4",
+      "health": "healthy",
+      "restarts": 0,
+      "service": "frontend",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:b6de6204172b770891031ec829263844adb9c055a9612e4cb715944bb4a89620",
+      "health": "none",
+      "restarts": 0,
+      "service": "ops-worker",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:1997c6a007689661b322dc8efaa52fb9505ca1623681a2575d669fead75c7247",
+      "health": "healthy",
+      "restarts": 0,
+      "service": "proxy",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:d49aa42891d9f2084ed934849304742895cc3deebedd45b87804a96264e4cdfb",
+      "health": "healthy",
+      "restarts": 0,
+      "service": "redis",
+      "status": "running"
+    },
+    {
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:b6de6204172b770891031ec829263844adb9c055a9612e4cb715944bb4a89620",
+      "health": "none",
+      "restarts": 0,
+      "service": "worker",
+      "status": "running"
+    }
+  ],
+  "deploy_exit_status": 0,
+  "deployment_lock_absent": true,
+  "evidence_origin": "Operator-authorized standard deploy-to-ssh-host.sh workstation activation; protected original log and artifact receipts retained off-repository. Fresh strict-identity read-only host and HTTPS checks.",
+  "failed_cutover_marker_absent": true,
+  "installed_sha": "86be17ed14da1f15a847de91b75460d18079771a",
+  "installed_tree": "faf4334ae6153d5cdf278f9a38e9926491bfa7e6",
+  "integrity_posture": "Checksums bind reviewed evidence bytes; they do not authenticate a deployment independently.",
+  "internal_operational_ready": true,
+  "manifest_sha256": "a63d23326cb4c945a252cdb048c908d423d9f72076d131d245f048e58405efec",
+  "observed_at_utc": "2026-11-10T01:29:57.385014+00:00",
+  "paid_provider_calls": false,
+  "production_mutation_during_observation": false,
+  "public_live_status": 200,
+  "public_revision": "86be17ed14da",
+  "remote_sequence_exit_status": 0,
+  "repository": "npcink/npcink-ai-cloud",
+  "schema": "npcink.production_workstation_observation.v1"
+}

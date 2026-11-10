@@ -57,6 +57,38 @@ describe('Portal billing quiet status', () => {
     expect(resolveBillingPackageStatusLabel(creditLimited, t)).toBe('AI credits unavailable');
   });
 
+  it('keeps full site slots quiet even when the backend aggregate says limited', () => {
+    const full = {
+      status: 'limited', ai_credits: { status: 'ok' },
+      resource_limits: [
+        { key: 'bound_sites', used: 3, limit: 3, status: 'limited' },
+        { key: 'active_sites', used: 1, limit: 1, status: 'limited' },
+      ],
+    };
+    expect(billingPackageNeedsAttention(full)).toBe(false);
+    expect(findLimitedBillingResources(full)).toEqual([]);
+    expect(resolveBillingPackageStatusLabel(full, t)).toBe('OK');
+    expect(resolveBillingQuotaRowPresentation(full.resource_limits[1])).toMatchObject({
+      tone: 'ok', displayTone: 'ok',
+    });
+  });
+
+  it.each(['bound_sites', 'active_sites'])('still reports genuinely exceeded %s', (key) => {
+    const exceeded = {
+      status: 'limited', ai_credits: { status: 'ok' },
+      resource_limits: [{ key, used: 4, limit: 3, status: 'limited' }],
+    };
+    expect(billingPackageNeedsAttention(exceeded)).toBe(true);
+    expect(resolveBillingPackageStatusLabel(exceeded, t)).toBe('Site limit exceeded');
+  });
+
+  it.each(['vector_documents', 'media_images'])('preserves full %s indexing restrictions', (key) => {
+    expect(billingPackageNeedsAttention({
+      status: 'limited', ai_credits: { status: 'ok' },
+      resource_limits: [{ key, used: 100, limit: 100, status: 'limited' }],
+    })).toBe(true);
+  });
+
   it('does not treat load failure as a package-pressure alert surface', () => {
     expect(
       billingPackageNeedsAttention(

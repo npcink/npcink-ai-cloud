@@ -60,7 +60,7 @@ class RoutingService:
                     execution_kind,
                 )
 
-            binding = repository.get_routing_binding(profile_id)
+            binding = repository.get_runtime_routing_binding(profile_id)
             if binding is None:
                 raise RoutingNoCandidatesError(profile_id)
 
