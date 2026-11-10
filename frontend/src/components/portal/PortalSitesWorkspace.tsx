@@ -70,12 +70,12 @@ function siteConnectionLabel(site: Site, t: PortalTranslator): string {
 
 function SiteConnectionStatus({ site, t }: { site: Site; t: PortalTranslator }) {
   const label = siteConnectionLabel(site, t);
-  if (site.status === 'active') {
+  if (site.status === 'active' || site.status === 'inactive') {
     return <PortalStatusInline label={label} />;
   }
   return (
     <PortalStatusBadge
-      status={site.status === 'inactive' || site.status === 'provisioning' ? 'warning' : 'error'}
+      status={site.status === 'provisioning' ? 'warning' : 'error'}
       label={label}
       className="normal-case tracking-normal"
     />
@@ -98,7 +98,7 @@ function buildSiteRowActions(args: {
   openLifecycleModal: (site: Site, status: 'active' | 'inactive') => void;
   onRemove: (site: Site) => void;
 }): {
-  primary: PortalRowActionItem;
+  primary: PortalRowActionItem | null;
   secondary: PortalRowActionItem | null;
   inline: PortalRowActionItem[];
   overflow: PortalRowActionItem[];
@@ -124,20 +124,25 @@ function buildSiteRowActions(args: {
       }
     : null;
 
-  // Desktop density: only the primary open-site (or Activate) control is visible;
-  // WP admin + deactivate/remove live in the overflow menu.
-  let primary: PortalRowActionItem = viewSite;
+  // Site activation is a quiet text action; opening an active site stays an
+  // icon control. WP admin + deactivate/remove live in the overflow menu.
+  let primary: PortalRowActionItem | null = viewSite;
   const secondary: PortalRowActionItem | null = null;
   const inline: PortalRowActionItem[] = [];
   const overflow: PortalRowActionItem[] = [];
 
   if (canProvision && site.status === 'inactive') {
-    primary = {
+    const needsSwap = site.capacity && site.capacity.active_limit > 0
+      && site.capacity.active_count >= site.capacity.active_limit;
+    primary = null;
+    inline.push({
       id: 'activate',
-      label: t('portal.activate_site_action', {}, 'Activate'),
+      label: needsSwap
+        ? t('portal.swap_active_site_action', {}, 'Switch active site')
+        : t('portal.activate_site_action', {}, 'Activate'),
       disabled,
       onClick: () => openLifecycleModal(site, 'active'),
-    };
+    });
     overflow.push({ ...viewSite, iconOnly: false });
   }
 
@@ -804,7 +809,9 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isUpdatingLifecycle}
         title={pendingLifecycleStatus === 'active'
-          ? t('portal.activate_site_action', {}, 'Activate site')
+          ? activationNeedsSwap
+            ? t('portal.swap_active_site_action', {}, 'Switch active site')
+            : t('portal.activate_site_action', {}, 'Activate site')
           : t('portal.deactivate_site_action', {}, 'Deactivate site')}
         description={pendingLifecycleStatus === 'active'
           ? activationNeedsSwap
@@ -829,7 +836,9 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
               {isUpdatingLifecycle
                 ? t('common.saving')
                 : pendingLifecycleStatus === 'active'
-                  ? t('portal.activate_site_action', {}, 'Activate')
+                  ? activationNeedsSwap
+                    ? t('portal.swap_active_site_action', {}, 'Switch active site')
+                    : t('portal.activate_site_action', {}, 'Activate')
                   : t('portal.deactivate_site_action', {}, 'Deactivate')}
             </button>
           </>

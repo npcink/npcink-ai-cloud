@@ -1,0 +1,19 @@
+{
+  "activation_log_sha256": "a1d70e4d4e8355a5b71a804fcbeb871ffa536906bb2adeac471c5f7a1931a691",
+  "bundle_sha256": "a84e0c8ed4d8f2e2736e4ace20add6ea2e8657165d197ef095043928a1915c66",
+  "expires_at_utc": "2026-11-17T01:29:57.385014+00:00",
+  "installed_sha": "86be17ed14da1f15a847de91b75460d18079771a",
+  "installed_tree": "faf4334ae6153d5cdf278f9a38e9926491bfa7e6",
+  "manifest_sha256": "a63d23326cb4c945a252cdb048c908d423d9f72076d131d245f048e58405efec",
+  "observation_file": "replacement-20261110.json",
+  "observation_sha256": "da07aab2e36c03947607eec31af3d761acc139450f680d0ef24c5eefff3de410",
+  "observed_at_utc": "2026-11-10T01:29:57.385014+00:00",
+  "previous_workflow": {
+    "head_sha": "9a5bf35240b5702ab853fedc0f126baa7f003360",
+    "id": 41766124689,
+    "run_attempt": 1,
+    "updated_at": "2026-11-04T03:21:15Z"
+  },
+  "repository": "npcink/npcink-ai-cloud",
+  "schema": "npcink.production_workstation_baseline.v1"
+}

@@ -25,6 +25,7 @@ function siteConnectionLabel(site: Site, t: TranslateFn): string {
 
 export type PortalBillingSiteUsageListProps = {
   sites: readonly Site[] | null | undefined;
+  accountBoundSiteCount?: number;
   t: TranslateFn;
   onSelectSite: (site: Site) => void;
   /** Temporary focus flash after「查看本期用量」scroll; quiet ring/bg only. */
@@ -33,6 +34,7 @@ export type PortalBillingSiteUsageListProps = {
 
 export function PortalBillingSiteUsageList({
   sites,
+  accountBoundSiteCount,
   t,
   onSelectSite,
   highlight = false,
@@ -72,6 +74,13 @@ export function PortalBillingSiteUsageList({
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
             {listDescription}
           </p>
+          {accountBoundSiteCount !== undefined && accountBoundSiteCount !== visibleSites.length ? (
+            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300" data-portal-billing="site-scope">
+              {t('portal.billing.site_usage_scope', {
+                bound: String(accountBoundSiteCount), visible: String(visibleSites.length),
+              }, `Account-bound sites: ${accountBoundSiteCount}; sites accessible to you in this list: ${visibleSites.length}.`)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -108,11 +117,11 @@ export function PortalBillingSiteUsageList({
                   </span>
                 </span>
                 <span className="shrink-0">
-                  {site.status === 'active' ? (
+                  {site.status === 'active' || site.status === 'inactive' ? (
                     <PortalStatusInline label={label} />
                   ) : (
                     <PortalStatusBadge
-                      status={site.status === 'inactive' || site.status === 'provisioning' ? 'warning' : 'error'}
+                      status={site.status === 'provisioning' ? 'warning' : 'error'}
                       label={label}
                       className="normal-case tracking-normal"
                     />

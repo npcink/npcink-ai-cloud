@@ -583,6 +583,16 @@ def test_portal_workspace_critical_grep_alternatives_match_real_test_titles() ->
         )
 
 
+def test_portal_quota_recovery_runs_without_a_title_filter() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    section = workflow.split("Critical frontend paths", 1)[1].split("- name:", 1)[0]
+    quota_lines = [
+        line for line in section.splitlines() if "tests/e2e/portal-quota-recovery.spec.ts" in line
+    ]
+    assert quota_lines, "quota boundary regressions must run in frontend CI"
+    assert all("--grep" not in line for line in quota_lines)
+
+
 @pytest.mark.skipif(
     not (ROOT / ".git").exists(),
     reason="CI-only Git diff contract requires repository metadata omitted from M4 bundles",

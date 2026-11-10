@@ -1,5 +1,10 @@
 # Production release preparation — 2026-11-03
 
+Successor: the later replacement-host deployment and conversation closeout are
+recorded in [2026-11-10 release evidence](replacement-host-release-2026-11-10.md).
+The observations below remain evidence for their original date and host;
+they are not the current installed source or unresolved-blocker list.
+
 Status: release preparation, not production promotion, deployment or acceptance.
 The operator requested sequential implementation of the readiness findings.
 Production mutation, exact-SHA promotion/deployment, real payments and full

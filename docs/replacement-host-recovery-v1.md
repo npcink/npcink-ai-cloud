@@ -105,3 +105,45 @@ absence. Container volumes are retained. This avoids Docker refusing to remove
 the last tag of an image still used by a candidate. An ambiguous stop/removal
 or tag proof retains the deploy lock and failure evidence; this order does not
 authorize unlocking an already-failed deployment or restoring a database.
+
+## Workstation execution and evidence lessons
+
+The [2026-11-10 recovery record](history/production/2026/replacement-host-release-2026-11-10.md)
+records an actual replacement activation. Reuse these execution rules without
+treating its old identities, timestamps or operator approval as new authority:
+
+- Source the workspace target loader from **Bash**; it uses `BASH_SOURCE`.
+  Verify the resolved target privately before SSH. Keep a task-scoped pinned
+  host-key file and explicit identity; do not disable strict host checking.
+- On macOS, use a short task-local temporary path for SSH ControlPath when
+  the default temporary directory exceeds the Unix socket path limit. Keep
+  proxy and anonymous registry-client overrides process-scoped; do not change
+  workstation-wide network or Docker credentials to fix one release.
+- A readable compressed dump is not full restore proof. Verify an offhost
+  checksum and restore into a uniquely owned isolated PG18 target with no
+  production network/configuration. Budget for the **expanded data, WAL and
+  indexes**, not the compressed archive size. A memory-backed database also
+  consumes the container memory limit. Retain diagnostic stderr and container
+  OOM state before cleaning that exact temporary resource.
+- Separate infrastructure liveness, cheap database readiness, complex worker
+  projections and human business acceptance. A longer bounded timeout does
+  not fix excessive SQL round trips. Label workstation/tunnel timings by
+  their measurement path; never present them as native-host performance.
+- Post-deploy probes must use the canonical Compose project-name resolver,
+  not the product display name. Public revision headers contain 12 characters;
+  compare the full source through the installed manifest. A Worker without a
+  Docker healthcheck needs heartbeat/stability proof, not a fabricated health
+  result. Missing host metrics are unavailable, not zero.
+- Preserve a failed transaction's original marker, locks and receipt. A
+  separately authorized matched recovery proves its exact container/tag/config
+  state before releasing a lock; never delete markers merely to retry.
+- Close the source, deployment, documentation and resource tracks separately.
+  A successful workstation activation does not update Actions deployment
+  history. Before the next automatic release, reconcile the actual installed
+  source through the reviewed, time-bounded workstation observation in the
+  [cumulative baseline policy](cloud-production-release-policy-v1.md#cumulative-release-baseline).
+  Preserve its original activation log off-repository and refresh operational
+  proof read-only; do not redeploy just to manufacture a workflow receipt.
+  Preserve protected workstation configuration before any later worktree
+  archival; Git snapshots do not include ignored secrets. A conversation may
+  close with a named acceptance owner and retained protected worktree.

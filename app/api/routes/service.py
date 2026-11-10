@@ -102,6 +102,7 @@ from app.domain.site_knowledge.vector_profile_contract import (
 )
 from app.domain.wordpress_ai_connector.contracts import WORDPRESS_OPERATION_CONTRACT
 from app.domain.wordpress_ai_connector.routing_profiles import (
+    WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
     WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID,
 )
@@ -1607,12 +1608,17 @@ def _build_hosted_runtime_profile_projection(
                 }
             )
 
-        # A snapshot of the existing automatic route, never an editable seventh
-        # WordPress profile. Reading this must not seed or change its binding.
-        text_binding = repository.get_routing_binding(TEXT_AI_PROFILE_ID)
+        # Same effective chain as runtime; reading never seeds or changes it.
+        text_binding = repository.get_runtime_routing_binding(TEXT_AI_PROFILE_ID)
         read_only_profiles = [{
             "profile_id": TEXT_AI_PROFILE_ID,
             "selection_mode": "automatic",
+            "source_profile_id": WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
+            "status": next(
+                item["status"]
+                for item in profiles
+                if item["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
+            ),
             "candidates": [
                 {
                     "instance_id": read_only_instance.instance_id,
@@ -1636,6 +1642,13 @@ def _build_hosted_runtime_profile_projection(
                 }
                 for instance_id in (text_binding.candidate_instance_ids if text_binding else [])
                 if (read_only_instance := instances_by_id.get(instance_id)) is not None
+                and _hosted_runtime_instance_is_routing_eligible(
+                    read_only_instance, models_by_id.get(read_only_instance.model_id)
+                )
+                and provider_model_allowlist.allows(
+                    provider_id=read_only_instance.provider_id,
+                    model_id=read_only_instance.model_id,
+                )
             ],
         }]
 
