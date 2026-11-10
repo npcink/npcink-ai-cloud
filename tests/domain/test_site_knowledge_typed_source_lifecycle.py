@@ -1033,3 +1033,88 @@ def test_media_refresh_final_quota_recheck_preserves_vector_only_residue(databas
             site_id="alpha", source_type="media", source_id=42
         )
         assert service.repository.document_exists(site_id="beta", source_type="media", source_id=43)
+
+def test_media_source_page_is_bounded_site_scoped_and_includes_orphan_chunks(database):
+    with get_session(database) as session:
+        for key in range(1, 106):
+            _seed(
+                session,
+                "media",
+                key,
+                orphan=key == 105,
+                status="stale" if key == 104 else "publish",
+            )
+        _seed(session, "post", 900)
+        _seed(session, "media", 999, site="beta")
+        service = _service(session)
+        payload = {"media_source_page": {"after_source_id": 0, "limit": 100}}
+        first = service.status(site_id="alpha", input_payload=payload)["media_source_page"]
+        assert first["source_ids"] == list(range(1, 101))
+        assert first["has_more"] is True and first["next_after_source_id"] == 100
+        assert first["after_source_id"] == 0 and first["limit"] == 100
+        assert first["status"] == "complete" and first["storage_scope"] == "relational_index"
+        service.sync(
+            site_id="alpha",
+            input_payload=_input(("media", 1), delete_mode=True),
+            run_id="delete-page-item",
+        )
+        second = service.status(
+            site_id="alpha",
+            input_payload={"media_source_page": {"after_source_id": 100, "limit": 100}},
+        )["media_source_page"]
+        assert second["source_ids"] == [101, 102, 103, 104, 105]
+        assert second["has_more"] is False and second["next_after_source_id"] == 0
+        empty = service.status(
+            site_id="beta",
+            input_payload={"media_source_page": {"after_source_id": 999, "limit": 100}},
+        )["media_source_page"]
+        assert empty["source_ids"] == [] and empty["has_more"] is False
+        assert "media_source_page" not in service.status(site_id="alpha", input_payload={})
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        None,
+        [],
+        {},
+        {"after_source_id": True, "limit": 20},
+        {"after_source_id": -1, "limit": 20},
+        {"after_source_id": "0", "limit": 20},
+        {"after_source_id": 0, "limit": False},
+        {"after_source_id": 0, "limit": 101},
+        {"after_source_id": 0, "limit": 0},
+        {"after_source_id": 0, "limit": 20, "site_id": "beta"},
+        {"after_source_id": 2**63, "limit": 20},
+    ],
+)
+def test_media_source_page_rejects_invalid_ranges(database, page):
+    with get_session(database) as session, pytest.raises(SiteKnowledgeContractViolation):
+        _service(session).status(site_id="alpha", input_payload={"media_source_page": page})
+
+
+@pytest.mark.parametrize("ability", [SITE_KNOWLEDGE_SYNC_ABILITY, SITE_KNOWLEDGE_SEARCH_ABILITY])
+def test_media_source_page_is_status_only(ability):
+    with pytest.raises(SiteKnowledgeContractViolation):
+        validate_site_knowledge_runtime_contract(
+            ability_name=ability,
+            contract_version="site_knowledge_sync.v1"
+            if ability == SITE_KNOWLEDGE_SYNC_ABILITY
+            else "site_knowledge_search.v1",
+            input_payload={
+                "write_posture": "suggestion_only",
+                "media_source_page": {"after_source_id": 0, "limit": 20},
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["site_id", "customer_id", "account_id", "source_items", "post_ids", "media_attachment_ids"],
+)
+def test_media_source_page_rejects_scope_and_selector_mixing(database, field):
+    with get_session(database) as session, pytest.raises(SiteKnowledgeContractViolation):
+        _service(session).status(
+            site_id="alpha",
+            input_payload={"media_source_page": {"after_source_id": 0, "limit": 20}, field: []},
+        )
