@@ -65,3 +65,14 @@ ops-cadence-worker and worker-heartbeat-projection tests. Validate actual
 deletion/commit behavior on an isolated PostgreSQL 18 target before production
 backlog cleanup. Report one-time production maintenance separately from the
 later release enabling scheduled cleanup and container log rotation.
+
+For post-deployment observation, bind the installed source/manifest and actual
+container log-driver settings to the new Worker start time. Read the latest
+`runtime.retention_cleanup.cadence` event and its outcome, interval and
+`operational_evidence` payload. An old event without that payload does not
+prove the new rules ran; a failed activation may also have written a valid
+historical event before the current release. Record those executions separately.
+A successful first post-start event proves one scheduled execution, not a
+complete multi-hour cadence observation. Prefer the next natural event rather
+than manually triggering deletion to manufacture evidence. Keep full-batch
+and storage-reuse limitations visible in the report.
