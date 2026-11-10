@@ -332,6 +332,15 @@ UI remain follow-up work. PDF/video ingestion, OCR and ASR remain deferred.
 
 ## Bounded media identity reconciliation (2026-11-10 candidate)
 
+Implementation merged in Cloud #1400 (`9f7fe0916499`) and Addon #347
+(`a55ca329`). M4 accepted the clean Cloud master; the development site's hourly
+callback removed 69 confirmed missing media, retaining both current media and
+all non-media rows with unchanged hashes. The deletion run made zero provider
+calls. Historical-writer confirmation remains pending: an administratively
+failed old run is not executor completion evidence. Data cleanup does not prove
+completed compensation, external-vector or production acceptance. See the
+[cross-repository receipt](https://github.com/npcink/npcink-workflow-toolbox/blob/master/docs/maintenance-acceptance-2026-11-10.md#media-source-repair-and-historical-writer-limit).
+
 The existing `site_knowledge_status.v1` accepts optional
 `media_source_page: {"after_source_id": 0, "limit": 100}`. Both fields are
 required strict JSON integers: cursor is in `[0, 2^63)`, limit in `[1, 100]`.
