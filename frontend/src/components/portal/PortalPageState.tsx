@@ -31,7 +31,7 @@ type PortalErrorStateProps = {
 
 type PortalEmptyStateProps = {
   title: string;
-  description: string;
+  description?: string;
   actionLabel?: string;
   actionHref?: string;
   actionButton?: ReactNode;
@@ -166,7 +166,7 @@ export function PortalEmptyState({
     >
       <div className="max-w-lg">
         <h2 className={cn('font-semibold text-slate-950 dark:text-white', compact ? 'text-lg' : 'text-xl')}>{title}</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+        {description ? <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p> : null}
         {actionButton ? (
           <div className="mt-5">{actionButton}</div>
         ) : actionLabel && actionHref ? (

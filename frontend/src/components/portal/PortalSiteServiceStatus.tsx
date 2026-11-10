@@ -61,7 +61,7 @@ export function PortalSiteServiceStatus({
 }: PortalSiteServiceStatusProps) {
   const hasQuotaPressure = Boolean(overview && hasPortalQuotaPressure(overview));
   const serviceStatus = overview ? getPortalServiceOperationStatus(overview) : 'inactive';
-  const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
+  const latestActivityAt = overview?.activity.last_seen_at || '';
 
   const serviceOperationStatus = overview
     ? getPortalServiceOperationStatus(overview)
@@ -252,14 +252,12 @@ export function PortalSiteServiceStatus({
               </dt>
               <dd className="min-w-0 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <PortalStatusBadge
-                  status={serviceOperationStatus}
+                  status={serviceOperationStatus === 'inactive' ? 'neutral' : serviceOperationStatus}
                   label={serviceOperationStatus === 'inactive'
-                    ? t('status.inactive', {}, 'Inactive')
+                    ? t('portal.monitoring.health_inactive', {}, 'No recent site connection activity.')
                     : t('portal.home.filter_attention_only', {}, 'Needs attention')}
                 />
-                <span>
-                  {latestActivityAt ? formatDate(latestActivityAt) : t('portal.home.package_pending_label', {}, 'To confirm')}
-                </span>
+                {latestActivityAt ? <span>{formatDate(latestActivityAt)}</span> : null}
               </dd>
             </div>
           ) : null}

@@ -12,6 +12,8 @@ const diagnostic = 'INTERNAL_QUOTA_DIAGNOSTIC_DO_NOT_DISPLAY';
 type Model = {
   inactiveSiteStatus: 'inactive' | 'suspended' | 'provisioning' | null;
   selectInactive: boolean;
+  activeSiteCount: number;
+  targetName: string;
   credits: 'ok' | 'limited' | 'near_limit' | 'unlimited';
   free: boolean;
   resources: Array<{ key: string; used: number; limit: number; status: string; unlimited?: boolean }>;
@@ -63,8 +65,9 @@ async function ok(route: Route, data: unknown) {
   }) });
 }
 
-const test = base.extend<{ model: Model }>({
-  model: async ({ page, context, baseURL }, runTest, testInfo) => {
+const test = base.extend<{ model: Model; language: string }>({
+  language: ['zh-CN', { option: true }],
+  model: async ({ page, context, baseURL, language }, runTest, testInfo) => {
     if (!baseURL || new URL(baseURL).hostname !== '127.0.0.1') throw new Error('A loopback runner is required');
     const origin = new URL(baseURL).origin;
     const unexpected: string[] = [];
@@ -72,7 +75,7 @@ const test = base.extend<{ model: Model }>({
     const reads: string[] = [];
     const prefetched: string[] = [];
     const model: Model = {
-      inactiveSiteStatus: null, selectInactive: false,
+      inactiveSiteStatus: null, selectInactive: false, activeSiteCount: 1, targetName: 'Inactive Site',
       credits: 'ok', free: false, resources: [], trial: 'active',
       failQuota: false, holdQuota: null, quotaReads: 0,
     };
@@ -82,12 +85,12 @@ const test = base.extend<{ model: Model }>({
       popup.on('pageerror', (error) => pageErrors.push(error.message));
     });
     await context.addCookies([{ name: 'npcink_portal_session_token', value: 'quota-recovery-fixture', url: baseURL }]);
-    await context.addInitScript((siteId) => {
-      localStorage.setItem('locale', 'zh-CN');
+    await context.addInitScript(({ siteId, language }) => {
+      localStorage.setItem('locale', language);
       // Exclude login telemetry from this read-only recovery slice.
       sessionStorage.setItem(`npcink.portal.journey.sent.v1:${siteId}:login:succeeded`, '1');
       sessionStorage.setItem('npcink.portal.journey.sent.v1:site_quota_second:login:succeeded', '1');
-    }, site.site_id);
+    }, { siteId: site.site_id, language });
     await context.route('**/*', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
@@ -100,14 +103,17 @@ const test = base.extend<{ model: Model }>({
       const path = url.pathname;
       if (path.startsWith('/api/portal/')) reads.push(`${path}${url.search}`);
       const inactiveSite = {
-        ...site, site_id: 'site_quota_second', name: 'Inactive Site',
+        ...site, site_id: 'site_quota_second', name: model.targetName,
         site_url: 'https://second.example.test', status: model.inactiveSiteStatus,
         allowed_actions: [...site.allowed_actions, 'provision_sites'], capacity_scope: 'account_test',
-        capacity: { active_count: 1, active_limit: 1, active_remaining: 0, bound_count: 3, bound_limit: 3, bound_remaining: 0 },
+        capacity: { active_count: model.activeSiteCount, active_limit: 1, active_remaining: 0, bound_count: 3, bound_limit: 3, bound_remaining: 0 },
       };
       if (path === '/api/portal/session') return ok(route, {
         email: 'quota-recovery@example.test', sites: model.inactiveSiteStatus ? [
-          { ...site, capacity_scope: 'account_test' }, inactiveSite,
+          ...Array.from({ length: model.activeSiteCount }, (_, index) => ({
+            ...site, site_id: index === 0 ? site.site_id : `site_active_${index}`,
+            name: index === 0 ? site.name : `Active Site ${index + 1}`, capacity_scope: 'account_test',
+          })), inactiveSite,
         ] : model.resources.some((resource) => resource.key === 'active_sites' && resource.used === 2)
           ? [site, { ...site, site_id: 'site_quota_second', name: 'Second Quota Site', site_url: 'https://second.example.test' }]
           : [site],
@@ -147,7 +153,9 @@ const test = base.extend<{ model: Model }>({
         pagination: { limit: 10, offset: 0, total: 0, has_more: false },
       });
       if (path.startsWith('/api/') || path.startsWith('/portal/v1/')) return reject();
-      const prefetchPaths = ['/portal', '/portal/login', '/portal/billing', '/portal/account', '/portal/support', '/portal/notifications', '/terms', '/privacy', `/portal/sites/${site.site_id}`, '/portal/sites/site_quota_second'];
+      const prefetchPaths = ['/portal', '/portal/login', '/portal/billing', '/portal/account', '/portal/support', '/portal/notifications', '/terms', '/privacy', `/portal/sites/${site.site_id}`, '/portal/sites/site_quota_second',
+        ...Array.from({ length: model.activeSiteCount - 1 }, (_, index) => `/portal/sites/site_active_${index + 1}`),
+      ];
       if (request.headers()['next-router-prefetch'] === '1' && prefetchPaths.includes(path)) {
         prefetched.push(`${path}${url.search}`);
         return route.fulfill({ status: 204, body: '' });
@@ -170,9 +178,9 @@ const test = base.extend<{ model: Model }>({
 });
 test.use({ serviceWorkers: 'block' });
 
-async function home(page: Page) {
+async function home(page: Page, language = 'zh-CN') {
   await page.goto('/portal');
-  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await expect(page.locator('html')).toHaveAttribute('lang', language);
   await expect(page.locator('[data-portal-home="sites-workspace"]')).toContainText(site.name);
 }
 
@@ -298,7 +306,7 @@ test('zh-CN: active and previously used trial descriptions do not claim a new ex
     model.trial = state;
     // Full navigation resets client catalogs between independent server snapshots.
     await page.goto('/portal/billing?action=upgrade');
-    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    await expect(page.locator('html')).toHaveAttribute('lang', language);
     const packages = page.getByRole('dialog', { name: '选择套餐', exact: true });
     await expect(packages).toBeVisible();
     await packages.getByRole('button', { name: '查看试用资格', exact: true }).click();
@@ -339,12 +347,24 @@ for (const selectInactive of [false, true]) {
     const switchAction = inactiveRow.getByRole('button', { name: '切换活动站点', exact: true });
     await expect(switchAction).not.toHaveClass(/btn-primary/);
     await switchAction.click();
-    const dialog = page.getByRole('dialog', { name: '切换活动站点', exact: true });
+    const dialog = page.getByRole('dialog', { name: '切换 Cloud 服务站点', exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('系统不会自动替换任何站点');
-    await expect(dialog.getByRole('checkbox')).not.toBeChecked();
-    await dialog.getByRole('button', { name: '切换活动站点', exact: true }).click();
-    await expect(dialog).toContainText('请按要求选择足够数量的活动站点');
+    await expect(dialog).toContainText('活动名额已用满');
+    await expect(dialog).toContainText('准备启用的站点');
+    await expect(dialog).toContainText('https://second.example.test');
+    await expect(dialog.getByRole('group', { name: '停用以下站点的 Cloud 服务（选择 1 个）' })).toContainText(site.name);
+    const checkbox = dialog.getByRole('checkbox');
+    await expect(checkbox).not.toBeChecked();
+    await expect(dialog.getByRole('button', { name: '确认切换', exact: true })).toBeDisabled();
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await capture(page, testInfo, 'site-switch-unselected-1440');
+    await checkbox.check();
+    await expect(dialog.getByRole('button', { name: '确认切换', exact: true })).toBeEnabled();
+    await capture(page, testInfo, 'site-switch-selected-1440');
+    await checkbox.uncheck();
+    await expect(dialog.getByRole('button', { name: '确认切换', exact: true })).toBeDisabled();
+    await page.setViewportSize({ width: 1056, height: 800 });
+    await capture(page, testInfo, 'site-switch-unselected-1056');
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(switchAction).toBeFocused();
@@ -378,5 +398,41 @@ for (const status of ['suspended', 'provisioning'] as const) {
     model.inactiveSiteStatus = status;
     await home(page);
     await expect(page.locator('[data-portal-home="operation-overview"]')).toContainText('1 个需关注');
+  });
+}
+
+for (const language of ['en', 'zh-CN']) {
+  test.describe(`site switch clarity ${language}`, () => {
+    test.use({ language });
+    test('keeps target and selection clear for long names and multiple releases', async ({ page, model }, testInfo) => {
+      model.inactiveSiteStatus = 'inactive';
+      model.activeSiteCount = 2;
+      model.targetName = 'Editorial WordPress Site — ' + 'LongSiteName'.repeat(8);
+      await home(page, language);
+      const row = page.getByRole('row').filter({ hasText: model.targetName });
+      await row.getByRole('button', { name: language === 'en' ? 'Switch active site' : '切换活动站点', exact: true }).click();
+      const dialog = page.getByRole('dialog');
+      const confirmLabel = language === 'en' ? 'Confirm switch' : '确认切换';
+      await expect(dialog).toContainText(language === 'en' ? 'Site to activate' : '准备启用的站点');
+      await expect(dialog.getByRole('button', { name: confirmLabel, exact: true })).toBeDisabled();
+      await dialog.getByRole('checkbox').nth(0).check();
+      await expect(dialog.getByRole('button', { name: confirmLabel, exact: true })).toBeDisabled();
+      await dialog.getByRole('checkbox').nth(1).check();
+      const confirm = dialog.getByRole('button', { name: confirmLabel, exact: true });
+      await expect(confirm).toBeEnabled();
+      for (const width of [1440, 1056]) {
+        await page.setViewportSize({ width, height: width === 1440 ? 1050 : 800 });
+        const box = await dialog.boundingBox();
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+        expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+        await expect(confirm).toBeInViewport();
+        await capture(page, testInfo, `site-switch-long-selected-${language}-${width}`);
+      }
+      await dialog.getByRole('checkbox').nth(0).uncheck();
+      await expect(dialog.getByRole('button', { name: confirmLabel, exact: true })).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    });
   });
 }
