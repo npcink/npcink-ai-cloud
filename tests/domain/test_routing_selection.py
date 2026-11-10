@@ -8,7 +8,14 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import CatalogCapabilityEvidence, CatalogModel, ProviderConnection
+from app.core.models import (
+    CatalogCapabilityEvidence,
+    CatalogInstance,
+    CatalogModel,
+    ProviderConnection,
+    RoutingBinding,
+    RoutingProfile,
+)
 from app.domain.catalog.service import CatalogService
 from app.domain.model_capabilities.probes import vision_probe_fingerprint
 from app.domain.provider_connections.service import ProviderConnectionAdminService
@@ -35,6 +42,96 @@ def _settings(database_url: str) -> Settings:
         admin_session_secret=TEST_ADMIN_SESSION_SECRET,
         portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
     )
+
+
+@pytest.mark.parametrize(
+    "source_state", ["configured", "empty", "missing", "disabled", "unhealthy"]
+)
+def test_text_ai_follows_current_editorial_chain_without_reviving_legacy_binding(
+    tmp_path: Path,
+    source_state: str,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    with get_session(database_url) as session:
+        session.merge(
+            ProviderConnection(
+                connection_id="openai",
+                provider_type="openai_compatible",
+                display_name="OpenAI",
+                enabled=True,
+                base_url="https://api.openai.test/v1",
+                config_json={
+                    "provider_id": "openai",
+                    "kind": "openai_compatible",
+                    "model_ids": ["gpt-4.1-mini", "gpt-5.5"],
+                },
+                secret_ciphertext="configured-in-test",
+                status="ready",
+                source_role="execution_source",
+                metadata_json={},
+            )
+        )
+        # Keep an old executable binding to prove empty/missing configuration
+        # never silently falls back to an unrelated model.
+        session.merge(
+            RoutingBinding(
+                profile_id="text.ai",
+                candidate_instance_ids=["openai-global-free-gpt55"],
+                selection_policy_json={},
+                revision="legacy-text-binding",
+            )
+        )
+        session.flush()
+        profile = session.get(RoutingProfile, "text.ai")
+        assert profile is not None
+        profile.default_policy_json = {"timeout_ms": 15000, "allow_fallback": False}
+        binding = session.get(RoutingBinding, "wp-ai.editorial")
+        assert binding is not None
+        binding.candidate_instance_ids = (
+            [] if source_state == "empty" else ["openai-us-east-text-balanced"]
+        )
+        binding.revision = "runtime-profiles-admin-current"
+        if source_state == "missing":
+            session.delete(binding)
+        if source_state == "disabled":
+            connection = session.get(ProviderConnection, "openai")
+            assert connection is not None
+            connection.config_json = {**connection.config_json, "model_ids": ["gpt-5.5"]}
+        if source_state == "unhealthy":
+            instance = session.get(CatalogInstance, "openai-us-east-text-balanced")
+            assert instance is not None
+            instance.health_status = "unhealthy"
+        session.commit()
+
+    router = RoutingService(database_url)
+    if source_state == "configured":
+        resolution = router.resolve(profile_id="text.ai", execution_kind="text")
+        assert [item.model_id for item in resolution.candidates] == ["gpt-4.1-mini"]
+        assert resolution.profile_id == "text.ai"
+        assert resolution.revision == "runtime-profiles-admin-current"
+        assert resolution.default_policy == {"timeout_ms": 15000, "allow_fallback": False}
+        # No catalog refresh or DB repair is needed after an operator switches models.
+        with get_session(database_url) as session:
+            binding = session.get(RoutingBinding, "wp-ai.editorial")
+            assert binding is not None
+            binding.candidate_instance_ids = ["openai-us-east-text-economy"]
+            session.commit()
+        assert (
+            router.resolve(
+                profile_id="text.ai", execution_kind="text"
+            ).selected_candidate.instance_id
+            == "openai-us-east-text-economy"
+        )
+    else:
+        with pytest.raises(RoutingNoCandidatesError):
+            router.resolve(profile_id="text.ai", execution_kind="text")
+    with get_session(database_url) as session:
+        legacy = session.get(RoutingBinding, "text.ai")
+        assert legacy is not None
+        assert legacy.revision == "legacy-text-binding"
+    dispose_engine(database_url)
 
 
 def test_routing_service_prefers_balanced_text_instance(tmp_path: Path) -> None:

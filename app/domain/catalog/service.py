@@ -393,7 +393,7 @@ class CatalogService:
         recommended_sets: dict[str, dict[str, Any]] = {}
 
         for profile_id in DEFAULT_RECOMMENDED_PROFILE_IDS:
-            binding = repository.get_routing_binding(profile_id)
+            binding = repository.get_runtime_routing_binding(profile_id)
             instance_ids = binding.candidate_instance_ids if binding is not None else []
             instances = repository.list_instances_by_ids(instance_ids)
             model_ids: list[str] = []
@@ -563,7 +563,7 @@ class CatalogService:
             return [instance_id for _, _, instance_id in scored]
 
         profile_specs: dict[str, tuple[str, list[str]]] = {
-            TEXT_AI_PROFILE_ID: ("text", ["hosted-free", "free-gpt55"]),
+            TEXT_AI_PROFILE_ID: ("text", []),
             FREE_GPT55_TEXT_PROFILE_ID: ("text", ["free-gpt55"]),
             "text.economy": ("text", ["economy", "balanced"]),
             "text.balanced": ("text", ["balanced", "economy", "quality"]),
@@ -653,7 +653,7 @@ class CatalogService:
                     execution_kind=execution_kind,
                     default_policy_json=default_policy_json,
                 )
-            if not preserve_hosted_admin_state:
+            if not preserve_hosted_admin_state and profile_id != TEXT_AI_PROFILE_ID:
                 repository.upsert_routing_binding(
                     profile_id=profile_id,
                     candidate_instance_ids=candidate_instance_ids,
