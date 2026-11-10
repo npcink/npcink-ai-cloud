@@ -3587,3 +3587,119 @@ test('site detail state: waiting for summary does not invent a deactivated site'
   await expect(page.getByRole('heading', { name: 'Clear Site', exact: true })).toBeVisible();
   state.verify();
 });
+
+type KnowledgeStateScenario = 'search-errors' | 'first-update-failed' | 'empty-search-errors'
+  | 'missing-update-time' | 'partial-update' | 'unknown-health' | 'no-recent-activity';
+
+async function installKnowledgeStateMocks(page: Page, scenario: KnowledgeStateScenario) {
+  const state = await installSiteDetailStateMocks(page, { status: 'active' });
+  const empty = scenario === 'first-update-failed' || scenario === 'empty-search-errors';
+  const noUpdates = scenario === 'empty-search-errors' || scenario === 'no-recent-activity';
+  const failedUpdates = scenario === 'first-update-failed' || scenario === 'missing-update-time' ? 3
+    : scenario === 'partial-update' ? 1 : 0;
+  const failedSearches = scenario === 'search-errors' ? 20 : scenario === 'empty-search-errors' ? 5 : 0;
+  const queries = scenario === 'no-recent-activity' || scenario === 'first-update-failed' ? 0
+    : scenario === 'empty-search-errors' ? 5 : scenario === 'search-errors' ? 64 : 32;
+  await page.route(/\/(?:api\/portal|portal\/v1)\/sites\/site_clear\/vector-observability\?/, (route) => fulfillJson(route, {
+    contract_version: 'magick-vector-observability-summary-v1', site_id: 'site_clear',
+    generated_at: '2026-11-10T08:00:00Z',
+    window: { hours: 168, start_at: '2026-11-03T08:00:00Z', end_at: '2026-11-10T08:00:00Z' },
+    totals: {
+      index_jobs_total: noUpdates ? 0 : 3, index_succeeded_total: noUpdates ? 0 : 3 - failedUpdates,
+      index_failed_total: failedUpdates, current_document_count: empty ? 0 : 86,
+      last_index_job_finished_at: noUpdates ? '' : '2026-11-09T10:00:00Z',
+      search_queries_total: queries, search_succeeded_total: queries - failedSearches,
+      search_failed_total: failedSearches, no_hit_total: scenario === 'search-errors' ? 32 : 0,
+      no_hit_rate: scenario === 'search-errors' ? 0.5 : 0, p95_search_latency_ms: 0,
+    },
+    health: { status: scenario === 'search-errors' ? 'error'
+      : scenario === 'unknown-health' ? '' : scenario === 'no-recent-activity' ? 'inactive' : 'warning',
+    score: scenario === 'search-errors' ? 50 : 75, summary: '' },
+    index_snapshots: empty ? [] : [{
+      site_id: 'site_clear', document_count: 86,
+      last_indexed_at: scenario === 'missing-update-time' ? '' : '2026-04-07T09:30:00Z',
+    }], timeline: [], intents: [], errors: [],
+  }));
+  return state;
+}
+
+for (const scenario of ['search-errors', 'first-update-failed', 'empty-search-errors', 'missing-update-time'] as const) {
+  test(`knowledge state: ${scenario} preserves the actual fault`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const state = await installKnowledgeStateMocks(page, scenario);
+    await page.goto('/portal/sites/site_clear');
+    const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+    const guidance = knowledge.locator('[data-portal-site="knowledge-guidance"]');
+    await expect(guidance).toBeVisible();
+    await expect(guidance.getByRole('link', { name: '联系支持处理' })).toHaveAttribute('href', '/portal/support?new=1&topic=site&site=site_clear');
+    if (scenario === 'search-errors' || scenario === 'empty-search-errors') {
+      await expect(knowledge.getByText('检索失败', { exact: true })).toBeVisible();
+      await expect(guidance).toContainText(scenario === 'search-errors' ? '20 次检索失败' : '5 次检索失败');
+      await expect(knowledge.getByText('知识库可用', { exact: true })).toHaveCount(0);
+      if (scenario === 'empty-search-errors') await expect(guidance).toContainText('暂无已收录页面');
+    } else {
+      await expect(knowledge.getByText('更新失败', { exact: true })).toBeVisible();
+      await expect(guidance).toContainText('3 次知识更新失败');
+    }
+    if (scenario === 'missing-update-time') {
+      const metric = knowledge.locator('[data-portal-site="knowledge-last-updated-help"]').locator('xpath=../..');
+      await expect(metric).not.toContainText('2026/11/9');
+      await expect(metric).toContainText('待确认');
+      await expect(guidance).toContainText('最近一次更新尝试');
+      await expect(guidance).toContainText('不代表内容已成功更新');
+      await expect(guidance).toContainText('已收录的 86 个页面保留');
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`${scenario}.png`) });
+    state.verify();
+  });
+}
+
+test('knowledge state: partial updates keep the existing quiet explanation and keyboard help', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  const state = await installKnowledgeStateMocks(page, 'partial-update');
+  await page.goto('/portal/sites/site_clear');
+  const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+  await expect(knowledge.getByText('知识库可用', { exact: true })).toBeVisible();
+  await expect(knowledge.locator('[data-portal-site="knowledge-guidance"]')).toHaveCount(0);
+  const hint = knowledge.locator('[data-portal-site="knowledge-last-updated-help"]');
+  await hint.focus();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toContainText('1 次更新未成功');
+  await expect(tooltip).toContainText('最近一次更新尝试');
+  await page.screenshot({ path: testInfo.outputPath('partial-update-keyboard-help.png') });
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  state.verify();
+});
+
+for (const scenario of ['unknown-health', 'no-recent-activity'] as const) {
+  test(`knowledge state: ${scenario} does not invent healthy searches or a fault`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const state = await installKnowledgeStateMocks(page, scenario);
+    await page.goto('/portal/sites/site_clear');
+    const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+    await expect(knowledge.getByText(scenario === 'unknown-health' ? '待确认' : '知识库可用', { exact: true })).toBeVisible();
+    await expect(knowledge.locator('[data-portal-site="knowledge-guidance"]')).toHaveCount(0);
+    await expect(knowledge.locator('[data-ui="portal-status-badge"]')).not.toHaveClass(/amber|rose/);
+    if (scenario === 'unknown-health') await expect(knowledge.locator('[data-portal-site="knowledge-refresh"]')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${scenario}.png`) });
+    state.verify();
+  });
+}
+
+test('knowledge state: English search failure stays readable on a narrow dark PC window', async ({ page }, testInfo) => {
+  await page.addInitScript(() => { localStorage.setItem('locale', 'en'); localStorage.setItem('theme', 'dark'); });
+  const state = await installKnowledgeStateMocks(page, 'search-errors');
+  await page.setViewportSize({ width: 1056, height: 900 });
+  await page.goto('/portal/sites/site_clear');
+  const knowledge = page.locator('[data-portal-site="site-knowledge"]');
+  await expect(knowledge.getByText('Searches failed', { exact: true })).toBeVisible();
+  const guidance = knowledge.locator('[data-portal-site="knowledge-guidance"]');
+  await expect(guidance).toContainText('20 search(es) failed');
+  await expect(guidance).toContainText('86 indexed pages are retained');
+  await expect(guidance.getByRole('link', { name: 'Contact support' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('search-errors-en-dark-1056.png') });
+  state.verify();
+});
