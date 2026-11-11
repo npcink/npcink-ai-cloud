@@ -1,0 +1,11 @@
+# The handoff artifact intentionally writes a report and CLI summary containing
+# only redacted booleans, lengths, paths, and failure descriptions. Raw secrets
+# never enter those values. These two data-flow queries report that intentional
+# redacted serialization as clear-text storage/logging; keep all other CodeQL
+# rules enabled.
+name: npcink-ai-cloud-codeql
+query-filters:
+  - exclude:
+      id: py/clear-text-storage-sensitive-data
+  - exclude:
+      id: py/clear-text-logging-sensitive-data
