@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -107,6 +107,7 @@ function PortalSiteRecordContent() {
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const [hasOpenedRemoveModal, setHasOpenedRemoveModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState('');
   const [isRenamingSite, setIsRenamingSite] = useState(false);
@@ -460,6 +461,7 @@ function PortalSiteRecordContent() {
           <>
             {canRenameThisSite ? (
               <button
+                ref={renameButtonRef}
                 type="button"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:text-white"
                 onClick={openRenameModal}
@@ -574,6 +576,7 @@ function PortalSiteRecordContent() {
       <Modal
         isOpen={showRenameModal}
         onClose={closeRenameModal}
+        returnFocusRef={renameButtonRef}
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRenamingSite}
         title={t('portal.site_rename_action', {}, 'Rename site')}
