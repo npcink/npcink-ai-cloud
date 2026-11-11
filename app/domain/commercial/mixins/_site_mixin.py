@@ -1590,6 +1590,62 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def _addon_activation_preview_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        account_id: str,
+        principal_id: str,
+        site_id: str,
+        site_status: str,
+        snapshot: object | None,
+    ) -> dict[str, Any]:
+        capacity = self._site_capacity_projection_in_session(
+            repository=repository, account_id=account_id, snapshot=snapshot,
+        )
+        active_limit = self._coerce_int(capacity.get("active_limit"))
+        required = (
+            max(0, self._coerce_int(capacity.get("active_count")) + 1 - active_limit)
+            if active_limit > 0 and site_status != SITE_STATUS_ACTIVE else 0
+        )
+        replacements = []
+        for candidate in cast(list[dict[str, object]], capacity["active_sites"]):
+            candidate_id = str(candidate["site_id"])
+            binding = repository.get_current_principal_site_binding(
+                candidate_id, for_update=False,
+            )
+            if (
+                candidate_id != site_id and binding is not None
+                and str(binding.principal_id or "") == principal_id
+            ):
+                replacements.append(candidate)
+        return {
+            "site_id": site_id,
+            "site_status": site_status,
+            "capacity": {key: value for key, value in capacity.items() if key != "active_sites"},
+            "required_release_count": required,
+            "replacement_sites": replacements,
+        }
+
+    def _validate_addon_activation_selection(
+        self, preview: dict[str, Any], replace_site_ids: list[str],
+    ) -> None:
+        eligible = {str(item["site_id"]) for item in preview["replacement_sites"]}
+        if len(set(replace_site_ids)) != len(replace_site_ids) or any(
+            site_id not in eligible for site_id in replace_site_ids
+        ):
+            raise CommercialValidationError(
+                "service.portal_site_replacement_invalid",
+                "select active sites bound to you in this account",
+            )
+        required = int(preview["required_release_count"])
+        if len(replace_site_ids) != required:
+            raise CommercialConflictError(
+                "service.site_limit_exceeded",
+                "site capacity changed; review the activation selection again",
+                data={**preview["capacity"], "required_release_count": required},
+            )
+
     def create_wordpress_addon_connection(
         self,
         *,
@@ -1599,8 +1655,18 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         site_name: str,
         return_url: str,
         addon_state: str,
+        activate: bool = False,
+        replace_site_ids: list[str] | None = None,
+        preview_only: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        # Preview shares authorization/ownership checks but creates no pending state.
+        replacements = list(replace_site_ids or [])
+        if replacements and not activate:
+            raise CommercialValidationError(
+                "service.portal_site_replacement_not_allowed",
+                "replacement requires explicit activation consent",
+            )
         normalized_account_id = str(account_id or "").strip()
         normalized_principal_id = str(principal_id or "").strip()
         safe_return_url = _normalize_addon_return_url(return_url)
@@ -1640,8 +1706,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             or normalized_site_id
         )
         now = self.now_factory()
-        connection_code = secrets.token_urlsafe(32)
-        expires_at = now + timedelta(seconds=WORDPRESS_ADDON_CONNECTION_TTL_SECONDS)
         relink_policy = resolve_site_relink_policy(self.database_url)
 
         with get_session(self.database_url) as session:
@@ -1703,6 +1767,20 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         account_id=normalized_account_id,
                         site_limit=service._resolve_site_limit(snapshot=snapshot),
                     )
+            if preview_only or activate:
+                preview = self._addon_activation_preview_in_session(
+                    repository=repository,
+                    account_id=normalized_account_id,
+                    principal_id=normalized_principal_id,
+                    site_id=normalized_site_id,
+                    site_status=str(existing_site.status) if existing_site else "not_connected",
+                    snapshot=snapshot,
+                )
+                if preview_only:
+                    return preview
+                self._validate_addon_activation_selection(preview, replacements)
+            connection_code = secrets.token_urlsafe(32)
+            expires_at = now + timedelta(seconds=WORDPRESS_ADDON_CONNECTION_TTL_SECONDS)
             repository.create_portal_oauth_state(
                 state_id=f"wacs_{uuid4().hex}",
                 provider=WORDPRESS_ADDON_CONNECTION_PROVIDER,
@@ -1726,6 +1804,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                             "site_id": normalized_site_id,
                             "site_name": resolved_site_name,
                             "site_url": canonical_site_url,
+                            "activate": activate,
+                            "replace_site_ids": replacements,
                         },
                         settings=self.settings,
                     ),
@@ -2038,10 +2118,36 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 audit_context=audit_context,
                 replaced_key_ids=revoked_key_ids,
             )
+            activation_requested = payload.get("activate") is True
+            if activation_requested:
+                preview = self._addon_activation_preview_in_session(
+                    repository=repository, account_id=account_id,
+                    principal_id=principal_id, site_id=site.site_id,
+                    site_status=str(site.status), snapshot=snapshot,
+                )
+                replacements = [str(item) for item in payload.get("replace_site_ids", [])]
+                self._validate_addon_activation_selection(preview, replacements)
+                # Account lock serializes capacity with other lifecycle/exchange actions.
+                # All selected deactivations and this activation commit with the key exchange.
+                for replacement_id in replacements:
+                    replacement = repository.get_site_for_update(replacement_id)
+                    if replacement is None:
+                        raise CommercialValidationError(
+                            "service.portal_site_replacement_invalid", "replacement site is unavailable",
+                        )
+                    replacement.status = SITE_STATUS_INACTIVE
+                    self._record_service_audit_in_session(
+                        repository=repository, audit_context=audit_context,
+                        event_kind="site.deactivate", outcome="succeeded",
+                        account_id=account_id, site_id=replacement.site_id,
+                        scope_kind="site", scope_id=replacement.site_id,
+                        payload_json=self._serialize_site(replacement),
+                    )
+                session.flush()
             should_auto_activate = site.status in {
                 SITE_STATUS_PROVISIONING,
                 SITE_STATUS_ARCHIVED,
-            }
+            } or (activation_requested and site.status == SITE_STATUS_INACTIVE)
             capacity_before_activation = service._site_capacity_projection_in_session(
                 repository=repository,
                 account_id=account_id,

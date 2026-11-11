@@ -195,6 +195,8 @@ class PortalAddonConnectionPayload(BaseModel):
     site_url: str = Field(default="", max_length=2048)
     return_url: str = ""
     state: str = ""
+    activate: bool = False
+    replace_site_ids: list[str] = Field(default_factory=list, max_length=25)
 
 
 class PortalAddonConnectionExchangePayload(BaseModel):
@@ -5030,6 +5032,36 @@ async def list_portal_addon_connection_accounts(request: Request) -> Any:
     )
 
 
+@router.post("/addon-connections/preview")
+async def preview_portal_addon_connection(
+    request: Request, payload: PortalAddonConnectionPayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request)
+    if same_origin is not None:
+        return same_origin
+    auth = await resolve_portal_request_context(
+        request, require_idempotency=False, allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_addon_account_access(
+        request, principal_id=auth.principal_id, account_id=payload.account_id,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_wordpress_addon_connection,
+            account_id=payload.account_id, principal_id=auth.principal_id,
+            site_url=payload.site_url, site_name=payload.site_name,
+            return_url=payload.return_url, addon_state=payload.state,
+            preview_only=True,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(message="wordpress addon activation preview", data=result)
+
+
 @router.post("/addon-connections")
 async def create_portal_addon_connection(
     request: Request,
@@ -5070,6 +5102,8 @@ async def create_portal_addon_connection(
             site_name=payload.site_name,
             return_url=payload.return_url,
             addon_state=payload.state,
+            activate=payload.activate,
+            replace_site_ids=payload.replace_site_ids,
             audit_context=audit_context,
         )
     except CommercialServiceError as error:

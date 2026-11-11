@@ -1,5 +1,7 @@
 'use client';
 
+import { resolvePortalReturnTo } from '@/lib/portal-return-to';
+
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useState } from 'react';
@@ -35,9 +37,10 @@ function RegisterFormContent() {
     : searchParams.get('plan') === 'pro'
       ? 'pro'
       : null;
-  const postRegistrationTarget = requestedPlan
-    ? `/portal/billing?plan=${requestedPlan}&action=upgrade`
-    : '/portal#sites';
+  const postRegistrationTarget = resolvePortalReturnTo(
+    searchParams.get('redirect'),
+    requestedPlan ? `/portal/billing?plan=${requestedPlan}&action=upgrade` : '/portal#sites',
+  );
   const requestedPlanLabel = requestedPlan === 'plus'
     ? 'Plus'
     : requestedPlan === 'pro'
