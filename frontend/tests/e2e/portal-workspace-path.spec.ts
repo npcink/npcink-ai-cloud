@@ -2304,6 +2304,33 @@ test('portal site record focuses on address, status, and support actions', async
   await expect(siteKnowledgePanel.getByText(/P95|top1|embedding|vector backend|向量库|分块/i)).toHaveCount(0);
 });
 
+test('portal site rename dialog closes without saving and restores keyboard focus', async ({ page }, testInfo) => {
+  const calls = await installPortalMocks(page);
+  await page.goto('/portal/sites/site_clear');
+  const trigger = page.getByRole('button', { name: /Rename site|修改站点名称/i });
+  const dialog = page.getByRole('dialog', { name: /Rename site|修改站点名称/i });
+  const input = dialog.getByRole('textbox');
+
+  for (const action of ['cancel', 'escape', 'close'] as const) {
+    await trigger.focus();
+    await trigger.press('Enter');
+    await expect(input).toBeFocused();
+    await input.fill('Unsaved rename');
+    if (action === 'escape') {
+      await input.press('Escape');
+    } else {
+      await dialog.getByRole('button', {
+        name: action === 'cancel' ? /^Cancel$|^取消$/i : /^Close$|^关闭$/i,
+      }).click();
+    }
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1, name: 'Clear Site' })).toBeVisible();
+  }
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
+  await page.screenshot({ path: testInfo.outputPath('rename-closed-focus-return.png') });
+});
+
 test('portal support owns customer feedback and status expectations', async ({ page }) => {
   await installPortalMocks(page);
 
