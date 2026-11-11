@@ -91,6 +91,24 @@ Addon 当前本机挂载检出为 `4758074177e3ab8300f85d5d16d704939d1b6f79`；
 | A3 `MERGED_PENDING_ACCEPTANCE` 新绑定闭环 | 操作者确定账号/站点及允许变更；接续验收代理执行 | 在正常入口验证“新站点链接→Cloud绑定提示→确认绑定/激活→返回WordPress→状态回写”，记录各端持久状态；健康或旧权益读取不能替代。测试范围明确时复核 |
 | A4 `EVIDENCE_PENDING` 详情重命名弹窗 | 接续Portal修复代理；本轮仅登记，未修复 | device详情取消关闭且不保存，但焦点BODY，Escape未观察关闭；下次具名修复先复现。缺显式returnFocusRef/input autoFocus只是线索，不是完整根因；不泛化到已有显式refs的列表/生命周期弹窗 |
 
+### 5.1 接回执行更新（2026-11-11）
+
+以下为第5节的后继事实；保留原交接快照，不把不同环境的证据合成一项通过。
+
+| ID | 已完成 | 当前限制与下一步 |
+| --- | --- | --- |
+| A1 | 操作者已授权 cf527db5 晋级及精确35bb9908部署；#1419合入production；精确CI、CodeQL和包扫描通过；[Deploy42997960375](https://github.com/npcink/npcink-ai-cloud/actions/runs/42997960375)已把35bb激活，公网和内部operational-ready正常 | Deploy最终失败于 `finalize-rollback-image-tags`，保留锁和失败证据。Redis按backend计划保留旧运行镜像，正常标签被新包替换，仅剩回退标签，清理未完成；不是摘要Provider失败。恢复工具修复与权限、正式认证smoke及发布基线对账仍待完成，不宣称部署成功 |
+| A2 | device独立草稿10已只读保存基线，原文仍在 | 本轮新增模型调用0；待A1完整恢复后，只补原生post_excerpt和整段改写各一次，审阅、保存草稿并回读，失败即停 |
+| A3 | device旧连接检查通过；正常UI临时停用后，WordPress连接检查提示在Cloud启用；重新授权返回后显示已连接，Portal恢复3站接入，积分149979未变 | 未直接观察本轮Cloud最终确认按钮交互，不能说确认页全交互已验收。Local安装Addon详细检查把inactive泛化成服务错误，而连接检查显示正确恢复状态；此显示差异单列残项，未修改安装目录或混入生产包 |
+| A4 | #1420合入master43a1a901；取消后焦点回到触发按钮的回归修前失败、修后通过。取消/Escape/关闭、未保存值与零业务写请求，本地、M4 candidate和干净master accepted均通过 | 只修确认的focus引用；未猜测旧生产Escape观察原因。35bb仅发后端，不含此UI修复，下一次前端发布再复验 |
+
+10:03:15Z只读恢复预检确认：当前35bb、backend计划、七服务均匹配应运行的身份；
+旧Redis与上一版15ae的受保护镜像记录和回退映射一致，无governed one-off，live200。
+其他六服务按新包映射或保留前端证据核对，Redis按上一版保留证据核对；
+不能写成“七个都换成新包镜像”。
+原始观察、失败日志及草稿基线保存在仓库外
+`~/.codex/task-evidence/editor-release-closeout-20261111/`。未强删标签、解锁、重启服务或重新部署。
+
 ## 6. 资源清理与明确保留
 
 本次为会话范围收尾，非全仓阶段迁移。私有保全根目录为

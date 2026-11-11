@@ -1679,6 +1679,12 @@ def test_backend_only_cutover_preserves_existing_frontend_container(
     assert preserved["services"]["frontend"]["target_daemon_image_id"].startswith(
         "sha256:"
     )
+    assert preserved["services"]["redis"]["source_revision"] == "a" * 40
+    assert preserved["services"]["redis"]["target_daemon_image_id"].startswith("sha256:")
+    redis_tag_restore = (
+        "docker:tag npcink-ai-cloud-rollback:test-8 npcink-ai-cloud-external-redis:prod"
+    )
+    assert log.index(redis_tag_restore) < log.index("docker:image rm")
 
 
 def test_migration_release_plan_preserves_frontend_but_runs_data_and_migration(

@@ -327,6 +327,87 @@ def _require_live_health(url: str) -> None:
         raise RepairError("live health is unavailable") from exc
 
 
+def _backend_preserved_redis(
+    managed_root: Path,
+    current_release: Path,
+    marker: dict[str, str],
+    plan: dict[str, Any],
+    records: list[tuple[str, str, str]],
+    uid: int,
+) -> dict[str, str] | None:
+    # Backend plans deliberately skip data-only startup. The newly loaded
+    # Redis tag is therefore not the identity of the running Redis container.
+    if not (
+        plan.get("lane") == "backend"
+        and plan.get("migration_required") is False
+        and plan.get("runtime_config_required") is False
+    ):
+        return None
+    previous = Path(marker["previous_release"])
+    if (
+        previous.parent != managed_root
+        or previous == current_release
+        or not previous.name.startswith("release-")
+        or previous.is_symlink()
+        or previous.resolve(strict=True) != previous
+    ):
+        raise RepairError("preserved Redis previous release is unsafe")
+    manifest_path = previous / "release-bundle-manifest.json"
+    manifest = _read_json(manifest_path, 0o644, uid)
+    revision = manifest.get("source", {}).get("revision")
+    if REVISION_RE.fullmatch(str(revision)) is None or revision != plan.get("base_sha"):
+        raise RepairError("preserved Redis does not match the release plan baseline")
+    previous_images = _target_daemon_roles(
+        managed_root / ".release-state" / previous.name / "target-daemon-images.json",
+        manifest_path,
+        previous,
+        revision,
+        uid,
+    )
+    previous_preserved_path = (
+        managed_root / ".release-state" / previous.name / "preserved-runtime-services.json"
+    )
+    if previous_preserved_path.exists() or previous_preserved_path.is_symlink():
+        previous_preserved = _read_json(previous_preserved_path, 0o600, uid)
+        if (
+            previous_preserved.get("schema") != "npcink.preserved_runtime_services.v1"
+            or previous_preserved.get("release_name") != previous.name
+            or previous_preserved.get("release_path") != str(previous)
+        ):
+            raise RepairError("previous preserved runtime-service binding is invalid")
+        prior_redis = previous_preserved.get("services", {}).get("redis")
+        if prior_redis is not None:
+            prior_image = prior_redis.get("target_daemon_image_id")
+            if IMAGE_ID_RE.fullmatch(str(prior_image)) is None:
+                raise RepairError("previous preserved Redis image is invalid")
+            previous_images["redis"] = prior_image
+    matches = [row for row in records if row[0] == "npcink-ai-cloud-external-redis:prod"]
+    if len(matches) != 1 or matches[0][1] == "-" or matches[0][2] != previous_images["redis"]:
+        raise RepairError("preserved Redis rollback binding is missing or inconsistent")
+    return {
+        "previous_release": str(previous),
+        "source_revision": revision,
+        "target_daemon_image_id": previous_images["redis"],
+    }
+
+
+def _publish_preserved_services(path: Path, payload: dict[str, Any], uid: int) -> None:
+    temporary = path.with_name(f".{path.name}.repair.{os.getpid()}")
+    if temporary.exists() or temporary.is_symlink():
+        raise RepairError("temporary preserved runtime-service evidence already exists")
+    encoded = (json.dumps(payload, sort_keys=True) + "\n").encode()
+    try:
+        _restore_protected_file(temporary, encoded, 0o600, uid)
+        os.replace(temporary, path)
+        descriptor = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def repair(
     managed_root: Path,
     expected_active_revision: str,
@@ -417,9 +498,7 @@ def repair(
 
         state_dir = managed_root / ".release-state" / current_release.name
         _protected_directory(state_dir, 0o700, expected_uid)
-        preserved = _read_json(
-            state_dir / "preserved-runtime-services.json", 0o600, expected_uid
-        )
+        preserved = _read_json(state_dir / "preserved-runtime-services.json", 0o600, expected_uid)
         frontend = preserved.get("services", {}).get("frontend", {})
         preserved_image_id = frontend.get("target_daemon_image_id")
         if (
@@ -442,6 +521,19 @@ def repair(
             expected_uid,
         )
         expected_images["frontend"] = preserved_image_id
+        redis = _backend_preserved_redis(
+            managed_root,
+            current_release,
+            marker,
+            plan,
+            records,
+            expected_uid,
+        )
+        if redis is not None:
+            recorded_redis = preserved["services"].get("redis")
+            if recorded_redis is not None and recorded_redis != redis:
+                raise RepairError("current preserved Redis evidence is inconsistent")
+            expected_images["redis"] = redis["target_daemon_image_id"]
         active_containers = _require_active_service_images(
             compose_project, expected_images, docker_runner
         )
@@ -452,9 +544,7 @@ def repair(
         if REFERENCE_RE.fullmatch(configured_reference) is None:
             raise RepairError("running frontend no longer matches preserved evidence")
 
-        frontend_records = [
-            record for record in records if record[0] == FRONTEND_RELEASE_REFERENCE
-        ]
+        frontend_records = [record for record in records if record[0] == FRONTEND_RELEASE_REFERENCE]
         if len(frontend_records) != 1:
             raise RepairError("preserved frontend rollback binding is missing or ambiguous")
         _, frontend_rollback, previous_image_id = frontend_records[0]
@@ -466,16 +556,26 @@ def repair(
             rollback_image_id = _inspect_image(docker_runner, frontend_rollback)
             if rollback_image_id != preserved_image_id:
                 raise RepairError("preserved frontend rollback tag identity drifted")
-            _run_docker(
-                docker_runner, "tag", frontend_rollback, FRONTEND_RELEASE_REFERENCE
-            )
-            if (
-                _inspect_image(docker_runner, FRONTEND_RELEASE_REFERENCE)
-                != preserved_image_id
-            ):
+            _run_docker(docker_runner, "tag", frontend_rollback, FRONTEND_RELEASE_REFERENCE)
+            if _inspect_image(docker_runner, FRONTEND_RELEASE_REFERENCE) != preserved_image_id:
                 raise RepairError("preserved frontend release tag repair did not persist")
 
         _require_governed_one_off_absent(managed_root, docker_runner)
+        if redis is not None:
+            redis_reference = "npcink-ai-cloud-external-redis:prod"
+            redis_rollback = next(row[1] for row in records if row[0] == redis_reference)
+            if _inspect_image(docker_runner, redis_reference) != expected_images["redis"]:
+                if _inspect_image(docker_runner, redis_rollback) != expected_images["redis"]:
+                    raise RepairError("preserved Redis rollback tag identity drifted")
+                _run_docker(docker_runner, "tag", redis_rollback, redis_reference)
+                if _inspect_image(docker_runner, redis_reference) != expected_images["redis"]:
+                    raise RepairError("preserved Redis release tag repair did not persist")
+            preserved["services"]["redis"] = redis
+            _publish_preserved_services(
+                state_dir / "preserved-runtime-services.json",
+                preserved,
+                expected_uid,
+            )
         removed_tags = 0
         for _target, rollback, _previous_image_id in records:
             if rollback == "-" or _inspect_image(docker_runner, rollback) is None:
