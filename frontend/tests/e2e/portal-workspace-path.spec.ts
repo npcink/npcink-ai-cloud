@@ -3077,6 +3077,13 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     await expect(dialog).toContainText(scenario === 'deactivate'
       ? /Site whose Cloud service will stop|准备停用 Cloud 服务的站点/
       : /Site to remove from this account|准备从当前账户移除的站点/);
+    if (scenario === 'deactivate') {
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i })).toBeFocused();
+      await actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
+      await actionScope.getByRole('button', { name: actionName }).click();
+    }
     await testInfo.attach(`site-${scenario}-confirmation`, {
       body: await page.screenshot({ path: testInfo.outputPath(`site-${scenario}-confirmation.png`) }),
       contentType: 'image/png',

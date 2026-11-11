@@ -1,0 +1,94 @@
+{
+  "schema": "npcink.production_workstation_observation.v2",
+  "repository": "npcink/npcink-ai-cloud",
+  "installed_sha": "4af1aca79a5936c71c29f8bc4d99fbf2c648fcfc",
+  "installed_tree": "a6df0f1d7fdc56673d8482aef656ad763363f05b",
+  "manifest_sha256": "812b4b049917b9a0873fd7e90f884689be8a9775fb9b101bce6a76b4b96ef90d",
+  "bundle_sha256": "3465a3bf765c696ce033e8e02dce41c4c7e4836ad799334d1126fa5fbbef72c9",
+  "activation_log_sha256": "a1d70e4d4e8355a5b71a804fcbeb871ffa536906bb2adeac471c5f7a1931a691",
+  "observed_at_utc": "2026-11-11T03:57:58.345749+00:00",
+  "activation_completed_at_utc": "2026-11-11T03:09:07.153660+00:00",
+  "deploy_exit_status": 0,
+  "remote_sequence_exit_status": 0,
+  "deployment_lock_absent": true,
+  "failed_cutover_marker_absent": true,
+  "internal_operational_ready": true,
+  "public_live_status": 200,
+  "installation_complete": true,
+  "one_off_lock_absent": true,
+  "public_revision": "4af1aca79a59",
+  "cancelled_upload": {
+    "workflow": {
+      "id": 42949719234,
+      "head_sha": "4af1aca79a5936c71c29f8bc4d99fbf2c648fcfc",
+      "run_attempt": 1,
+      "updated_at": "2026-11-11T03:07:49Z",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "event": "workflow_dispatch",
+      "head_branch": "production",
+      "path": ".github/workflows/deploy-production.yml"
+    },
+    "last_phase": "upload deploy bundle",
+    "remote_installation_started": false,
+    "log_sha256": "97f5bcc77997f3549d0fe6be0b59a2aef2675a8e07237deac4e69ecac450409a"
+  },
+  "containers": [
+    {
+      "service": "api",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "callback-worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "frontend",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "ops-worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "proxy",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "redis",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    },
+    {
+      "service": "worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "image_matches_exact_bundle": true
+    }
+  ]
+}
