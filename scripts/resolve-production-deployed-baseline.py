@@ -79,7 +79,11 @@ def workstation_baseline(
         )
     else:
         anchor_matches = anchor == expected
-    if not anchor_matches or type(expected["id"]) is not int or type(expected["run_attempt"]) is not int:
+    if (
+        not anchor_matches
+        or type(expected["id"]) is not int
+        or type(expected["run_attempt"]) is not int
+    ):
         raise ValueError("workstation baseline Actions anchor changed or is missing")
     expires = _utc_timestamp(receipt.get("expires_at_utc"))
     current = now or datetime.now(UTC)
