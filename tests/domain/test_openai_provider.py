@@ -91,7 +91,8 @@ def test_deepseek_editor_has_visible_output_without_spending_budget_on_reasoning
 
     assert result.output["output_text"] == "AI时代的写作困境"
     assert len(calls) == 1
-    assert calls[0]["max_output_tokens" if endpoint_variant == "responses" else "max_tokens"] == budget
+    budget_key = "max_output_tokens" if endpoint_variant == "responses" else "max_tokens"
+    assert calls[0][budget_key] == budget
 
 
 @pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
