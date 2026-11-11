@@ -9324,13 +9324,22 @@ def test_addon_explicit_activation_is_deferred_and_atomic(
         "state": "explicit-state",
     }
     with get_session(database_url) as session:
-        before_counts = [len(list(session.scalars(select(model)))) for model in (Site, SiteApiKey, PortalOAuthState)]
+        before_counts = [
+            len(list(session.scalars(select(model))))
+            for model in (Site, SiteApiKey, PortalOAuthState)
+        ]
     preview_response = client.post("/portal/v1/addon-connections/preview", json=payload)
     assert preview_response.status_code == 200, preview_response.text
     preview = preview_response.json()["data"]
-    assert preview["required_release_count"] == (1 if scenario in {"swap", "stale", "invalid", "rollback"} else 0)
+    assert preview["required_release_count"] == (
+        1 if scenario in {"swap", "stale", "invalid", "rollback"} else 0
+    )
     with get_session(database_url) as session:
-        assert before_counts == [len(list(session.scalars(select(model)))) for model in (Site, SiteApiKey, PortalOAuthState)]
+        after_counts = [
+            len(list(session.scalars(select(model))))
+            for model in (Site, SiteApiKey, PortalOAuthState)
+        ]
+        assert before_counts == after_counts
     if scenario in {"swap", "stale", "invalid", "rollback"}:
         assert [item["site_id"] for item in preview["replacement_sites"]] == [primary_id]
         # No silent replacement even when there is only one eligible choice.
@@ -9373,7 +9382,9 @@ def test_addon_explicit_activation_is_deferred_and_atomic(
                 raise RuntimeError("injected failure before commit")
             original_audit(service, **kwargs)
 
-        monkeypatch.setattr(CommercialService, "_record_service_audit_in_session", fail_exchange_audit)
+        monkeypatch.setattr(
+            CommercialService, "_record_service_audit_in_session", fail_exchange_audit,
+        )
         with pytest.raises(RuntimeError, match="injected failure"):
             client.post("/portal/v1/addon-connections/exchange", json=exchange_payload)
         with get_session(database_url) as session:
@@ -9382,7 +9393,10 @@ def test_addon_explicit_activation_is_deferred_and_atomic(
             key = session.get(SiteApiKey, old_key_id)
             assert primary is not None and primary.status == "active"
             assert key is not None and key.status == "active"
-            assert len(session.scalars(select(PortalOAuthState).where(PortalOAuthState.status == "pending")).all()) == 1
+            pending = session.scalars(
+                select(PortalOAuthState).where(PortalOAuthState.status == "pending"),
+            ).all()
+            assert len(pending) == 1
         dispose_engine(database_url)
         return
     result = client.post("/portal/v1/addon-connections/exchange", json=exchange_payload)
@@ -9392,7 +9406,9 @@ def test_addon_explicit_activation_is_deferred_and_atomic(
             assert session.get(Site, "site_secondary-example-com") is None
             key = session.get(SiteApiKey, old_key_id)
             assert key is not None and key.status == "active"
-            pending = session.scalars(select(PortalOAuthState).where(PortalOAuthState.status == "pending")).all()
+            pending = session.scalars(
+                select(PortalOAuthState).where(PortalOAuthState.status == "pending"),
+            ).all()
             assert len(pending) == 1
     else:
         assert result.status_code == 200, result.text
