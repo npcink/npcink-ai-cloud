@@ -9320,7 +9320,9 @@ def test_addon_explicit_activation_is_deferred_and_atomic(
             session.commit()
     payload = {
         "account_id": account_id, "site_name": "Target", "site_url": target_url,
-        "return_url": target_url + "/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth",
+        "return_url": (
+            target_url + "/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth"
+        ),
         "state": "explicit-state",
     }
     with get_session(database_url) as session:
