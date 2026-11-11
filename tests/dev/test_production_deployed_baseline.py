@@ -26,6 +26,7 @@ REVISION = "a" * 40
 def isolated_recovery_receipt(tmp_path, monkeypatch):
     monkeypatch.setattr(BASELINE, "RECOVERY_FILE", tmp_path / "missing-recovery.json")
     monkeypatch.setattr(BASELINE, "WORKSTATION_FILE", tmp_path / "missing-workstation.json")
+    monkeypatch.setattr(BASELINE, "CLEANUP_FILE", tmp_path / "missing-cleanup.json")
 
 
 def _recovery(tmp_path, **overrides):

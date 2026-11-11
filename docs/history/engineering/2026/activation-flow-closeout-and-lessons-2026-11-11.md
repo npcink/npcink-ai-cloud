@@ -1,6 +1,6 @@
 # 激活流程、伪需求审查与会话收尾 — 2026-11-11
 
-状态：已批准应用改动均有合并/后继记录，激活修复已生产安装；四项接续事项仍待授权或验收。
+状态：摘要后端已生产安装、清理恢复和真实草稿补验完成；详情焦点修复已合入master但未上线，另保留具名验收限制。
 可以按本台账关闭聊天，不能宣称全部历史问题解决、全部候选上线或全仓资源清零。
 日期按 Asia/Shanghai；原始生产收据保留 UTC。
 
@@ -97,8 +97,8 @@ Addon 当前本机挂载检出为 `4758074177e3ab8300f85d5d16d704939d1b6f79`；
 
 | ID | 已完成 | 当前限制与下一步 |
 | --- | --- | --- |
-| A1 | 操作者已授权 cf527db5 晋级及精确35bb9908部署；#1419合入production；精确CI、CodeQL和包扫描通过；[Deploy42997960375](https://github.com/npcink/npcink-ai-cloud/actions/runs/42997960375)已把35bb激活，公网和内部operational-ready正常 | Deploy最终失败于 `finalize-rollback-image-tags`，保留锁和失败证据。Redis按backend计划保留旧运行镜像，正常标签被新包替换，仅剩回退标签，清理未完成；不是摘要Provider失败。恢复工具修复与权限、正式认证smoke及发布基线对账仍待完成，不宣称部署成功 |
-| A2 | device独立草稿10已只读保存基线，原文仍在 | 本轮新增模型调用0；待A1完整恢复后，只补原生post_excerpt和整段改写各一次，审阅、保存草稿并回读，失败即停 |
+| A1 | 操作者已授权 cf527db5 晋级及精确35bb9908部署；#1419合入production；精确CI、CodeQL和包扫描通过；[Deploy42997960375](https://github.com/npcink/npcink-ai-cloud/actions/runs/42997960375)已激活35bb。#1421所有CI/CodeQL通过并合入master c7d872ae后，按本次严格SSH例外授权完成cleanup-only恢复；独立复核内外健康、七服务应运行身份、完成标记及锁/失败标记清除全部通过 | 原Deploy最终仍为failure，不改写为成功。恢复零服务切换、零迁移、零模型；零模型连接认证通过。默认完整formal smoke包含模型，未运行，不能冒称通过；后继发布基线须使用独立清理恢复证据而非伪造成功run |
+| A2 | device独立草稿10的原生post_excerpt与首个完整段落改写各执行一次，均成功、审阅采用并保存草稿；只读数据库回读通过，摘要3分、改写6分，各一次Provider、无重试/备用切换 | 未发布文章、未改源站原文；其余正文仅编辑器空行/空格实体归一化，另有目标段落aiResized标记。代理审阅不等于自然用户持续采用；无需为补观测重复调用 |
 | A3 | device旧连接检查通过；正常UI临时停用后，WordPress连接检查提示在Cloud启用；重新授权返回后显示已连接，Portal恢复3站接入，积分149979未变 | 未直接观察本轮Cloud最终确认按钮交互，不能说确认页全交互已验收。Local安装Addon详细检查把inactive泛化成服务错误，而连接检查显示正确恢复状态；此显示差异单列残项，未修改安装目录或混入生产包 |
 | A4 | #1420合入master43a1a901；取消后焦点回到触发按钮的回归修前失败、修后通过。取消/Escape/关闭、未保存值与零业务写请求，本地、M4 candidate和干净master accepted均通过 | 只修确认的focus引用；未猜测旧生产Escape观察原因。35bb仅发后端，不含此UI修复，下一次前端发布再复验 |
 
@@ -107,7 +107,41 @@ Addon 当前本机挂载检出为 `4758074177e3ab8300f85d5d16d704939d1b6f79`；
 其他六服务按新包映射或保留前端证据核对，Redis按上一版保留证据核对；
 不能写成“七个都换成新包镜像”。
 原始观察、失败日志及草稿基线保存在仓库外
-`~/.codex/task-evidence/editor-release-closeout-20261111/`。未强删标签、解锁、重启服务或重新部署。
+`~/.codex/task-evidence/editor-release-closeout-20261111/`。以上是恢复前预检；后继实际恢复如下。
+
+### 5.2 清理恢复与真实草稿结果（2026-11-11）
+
+- 已审查head `d0afea07f06a55a8b117791741406de90d2e1d99` 与合并版
+  `c7d872ae8b082926f42318487b370085772a449b` 的恢复helper字节一致，SHA256
+  `2562d32e36c13abb74a9668d1dd8bed0ec29e3cdf22585ccdad5967ed8bc851d`。
+  通过已核验严格SSH以stdin执行；原始失败标记及映射已保存在仓库外0600证据中，
+  没有在主机安装/修改应用源码。工具返回 `terminalization_repair=complete`，
+  恢复正常Redis标签、清除1个临时标签及本次失败/锁；服务切换、迁移、模型调用均0。
+- 10:27:17Z独立只读观察确认35bb及公网revision一致、live200、operational-ready、
+  七服务应运行镜像、零重启/无OOM、完成标记及三项锁/失败标记清除。
+  Redis保留15ae运行身份，不能要求七项都替换成新包镜像。失败Deploy保持原状；
+  新的清理基线收据与观察保存在 `.github/production-cleanup-baseline.json` 及其具名观察文件。
+  校验和绑定已审查字节，原始私有证据的核对才建立来源可信性。
+- 18:29（Asia/Shanghai）从device Addon正常入口“检查连接”显示已连接，Portal已登录且device已接入；
+  属于零模型认证证据，不等同默认 `deploy/release-smoke.sh` 全部通过。
+  默认脚本会执行 `/v1/runtime/execute`；此前误称其零模型已纠正，未执行额外模型smoke。
+- 草稿10原生摘要run `run_06e98c9b8be14f918716f65130f4abc0`：DeepSeek
+  `deepseek/deepseek-v4-flash`，1440输入/81输出token，Provider 1838ms，消耗3积分。
+  返回实际摘要，保留插件用途、切换/切回及兼容信息，无原文外事实；审阅后保存原生 `post_excerpt`，
+  此时正文和标题字节未变。
+- 首段改写run `run_b709ef590e87491e9898d4913d84f556`：OpenAI `gpt-5.6-sol`，
+  4876输入/71输出token，Provider 13039ms，消耗6积分。建议保留原意和使用场景，
+  语句更顺畅，未添加新承诺；原生建议弹窗接受后保存草稿。
+  两run均succeeded、一次Provider调用、retry_count=0、fallback=false、error=null；
+  Portal积分149979→149970，与逐run账本合计-9一致。
+- 数据库回读：状态draft、标题不变、摘要已持久化；仅首段语义变化，其余文本/链接不变。
+  Gutenberg同时添加目标段落 `aiResized=true`、移除冗余空行并将既有NBSP转为 `&nbsp;`；
+  不把正文全字节不变作为通过结论。保留前/中/后JSON、原文对照、截图及run账本，
+  不在Git复制文章正文或凭据。
+
+剩余边界：A3确认页最终按钮未直接观察与Addon inactive详细检查提示差异仍保留；
+A4等待下一次具名前端发布后生产复验；完整formal smoke未运行、自然用户价值未替代。
+这些限制不通过重复付费调用或无授权部署来消除。
 
 ## 6. 资源清理与明确保留
 
@@ -137,7 +171,7 @@ Git fetch失败后本地master/production及跟踪refs可能陈旧；本轮以Gi
 
 目标：只关停低收益重复路径，修复客户激活闭环，并留下可恢复、可接续的交付。
 已达成：镜像清理、激活实现、扫描范围修正、生产身份核验、旧资源保全退休。
-未达成：第5节四项；自然用户价值及所有新业务变更未验收。
+接续结果以§5.1–5.2为准；自然用户价值及所有新业务变更未验收。
 
 | 具体偏差 | 原因 | 更正及下次控制 |
 | --- | --- | --- |
