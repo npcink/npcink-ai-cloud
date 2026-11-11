@@ -178,6 +178,13 @@ function buildSiteRowActions(args: {
   return { primary, secondary, inline, overflow };
 }
 
+function findSiteActionTrigger(siteId: string): HTMLElement | null {
+  const roots = Array.from(document.querySelectorAll<HTMLElement>('[data-portal-site-id]'));
+  const root = roots.find((candidate) => candidate.dataset.portalSiteId === siteId
+    && candidate.getClientRects().length > 0);
+  return root?.querySelector<HTMLElement>('.portal-row-more-btn') || null;
+}
+
 function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?: PortalSitesCapacityAlert[] }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -193,10 +200,14 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
   const [isLoadingAddonAccounts, setIsLoadingAddonAccounts] = useState(false);
   const [addonAccountsRetryVersion, setAddonAccountsRetryVersion] = useState(0);
   const [pendingRemoveSite, setPendingRemoveSite] = useState<Site | null>(null);
+  const [removeReturnFocusElement, setRemoveReturnFocusElement] = useState<HTMLElement | null>(null);
+  const removeReturnFocusRef = useMemo(() => ({ current: removeReturnFocusElement }), [removeReturnFocusElement]);
   const [removeError, setRemoveError] = useState('');
   const [removeNotice, setRemoveNotice] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const [pendingLifecycleSite, setPendingLifecycleSite] = useState<Site | null>(null);
+  const [lifecycleReturnFocusElement, setLifecycleReturnFocusElement] = useState<HTMLElement | null>(null);
+  const lifecycleReturnFocusRef = useMemo(() => ({ current: lifecycleReturnFocusElement }), [lifecycleReturnFocusElement]);
   const [pendingLifecycleStatus, setPendingLifecycleStatus] = useState<'active' | 'inactive'>('active');
   const [replacementSiteIds, setReplacementSiteIds] = useState<string[]>([]);
   const [lifecycleError, setLifecycleError] = useState('');
@@ -417,6 +428,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
 
   const openLifecycleModal = (site: Site, status: 'active' | 'inactive') => {
     if (siteRefreshFailed || isRefreshingSites) return;
+    setLifecycleReturnFocusElement(findSiteActionTrigger(site.site_id));
     setPendingLifecycleSite(site);
     setPendingLifecycleStatus(status);
     setReplacementSiteIds([]);
@@ -682,6 +694,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                     disabled: siteRefreshFailed || isRefreshingSites,
                     openLifecycleModal,
                     onRemove: (nextSite) => {
+                      setRemoveReturnFocusElement(findSiteActionTrigger(nextSite.site_id));
                       setRemoveError('');
                       setPendingRemoveSite(nextSite);
                     },
@@ -719,6 +732,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                         overflow={rowActions.overflow}
                         moreLabel={t('portal.sites.more_actions', {}, 'More actions')}
                         overflowTestId="desktop-actions"
+                        siteId={site.site_id}
                         className="flex-nowrap justify-end gap-1.5"
                       />
                     </td>
@@ -747,6 +761,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                 disabled: siteRefreshFailed || isRefreshingSites,
                 openLifecycleModal,
                 onRemove: (nextSite) => {
+                  setRemoveReturnFocusElement(findSiteActionTrigger(nextSite.site_id));
                   setRemoveError('');
                   setPendingRemoveSite(nextSite);
                 },
@@ -780,6 +795,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                   overflow={rowActions.overflow}
                   moreLabel={t('portal.sites.more_actions', {}, 'More actions')}
                   overflowTestId="mobile-actions"
+                  siteId={site.site_id}
                   className="w-full flex-nowrap justify-start gap-1.5"
                 />
               </div>
@@ -814,6 +830,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         onClose={closeLifecycleModal}
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isUpdatingLifecycle}
+        returnFocusRef={lifecycleReturnFocusRef}
         title={pendingLifecycleStatus === 'active'
           ? activationNeedsSwap
             ? t('portal.site_swap_title', {}, 'Switch the site using Cloud service')
@@ -918,6 +935,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         onClose={closeRemoveSiteModal}
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
+        returnFocusRef={removeReturnFocusRef}
         title={t('portal.remove_site_action', {}, 'Remove site')}
         description={removeSiteConfirmation}
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"

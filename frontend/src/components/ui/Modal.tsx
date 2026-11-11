@@ -2,7 +2,7 @@
 
 import { isTopmostDialog, registerDialog } from '@/lib/dialog-layer';
 
-import React, { useEffect, useCallback, useId, useRef } from 'react';
+import React, { useEffect, useCallback, useId, useRef, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Button } from './Button';
@@ -19,6 +19,7 @@ export interface ModalProps {
   showCloseButton?: boolean;
   closeLabel?: string;
   className?: string;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -41,6 +42,7 @@ export function Modal({
   showCloseButton = true,
   closeLabel = 'Close modal',
   className,
+  returnFocusRef,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -58,6 +60,7 @@ export function Modal({
   useEffect(() => {
     if (!isOpen) return;
     const unregisterDialog = registerDialog(dialogRef.current);
+    const returnFocusTarget = returnFocusRef?.current;
 
     previousActiveElementRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -132,10 +135,14 @@ export function Modal({
       unregisterDialog();
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleDialogKeyDown);
-      previousActiveElementRef.current?.focus();
+      if (returnFocusTarget) {
+        returnFocusTarget.focus();
+      } else {
+        previousActiveElementRef.current?.focus();
+      }
       previousActiveElementRef.current = null;
     };
-  }, [isOpen]);
+  }, [isOpen, returnFocusRef]);
 
   // Preserve the previous body scroll state while the dialog is active.
   useEffect(() => {

@@ -71,6 +71,9 @@ read permission, never production SSH credentials. A `no_deploy` or static
 dispatch does not advance the managed runtime baseline.
 An active, failed, or cancelled attempt newer than the proven runtime baseline
 stops planning: a failed workflow may already have changed the installed release.
+The only cancelled-upload reconciliation is the separately reviewed, bounded
+workstation observation described below; cancellation alone is never evidence
+that the host was unchanged.
 
 Dispatches without timing evidence are skipped only when their exact successful
 production CI artifact proves a `no_deploy` or static plan. Missing runtime
@@ -98,6 +101,22 @@ fresh read-only operational/public health and seven-container observation to the
 latest successful Actions run ID, SHA, attempt and update time. Keep original
 logs and credentials off-repository. Checksums bind reviewed bytes; review of
 the protected originals establishes provenance, not the checksums themselves.
+
+Schema `npcink.production_workstation_baseline.v2` additionally permits the exact
+latest **completed, cancelled bundle upload**, with no retained runtime timing
+artifact, to anchor a later successful workstation activation of the **same
+source SHA**. Bind its run ID, SHA, attempt, update time, status and conclusion;
+the activation completion must be strictly after that update and no later than
+the fresh observation. Its matching v2 observation also binds the protected
+cancelled log hash, last phase `upload deploy bundle`, and reviewed fact that
+remote installation never started. Require installation acceptance, no one-off
+lock, the matching public revision and exact-bundle image proof for all seven
+containers in addition to the existing health checks. Any retained runtime
+timing artifact at this cancelled anchor requires separate review and blocks
+this path. Active or failed attempts, another SHA, reruns, changed/missing
+anchors, an activation before cancellation, and any newer unproven attempt
+remain blocked. The v1 successful-Actions anchor remains supported. Neither
+schema repairs or relabels the cancelled Actions run as successful.
 
 This workstation observation is valid for at most seven days. The resolver
 validates any retained runtime/CI artifacts first; malformed artifacts, changed

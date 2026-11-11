@@ -34,7 +34,9 @@ def _utc_timestamp(value: object) -> datetime:
     return parsed
 
 
-def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) -> str | None:
+def workstation_baseline(
+    repository: str, run: dict, path: Path, *, now=None, cancelled_upload=False
+) -> str | None:
     """Reconcile a reviewed workstation activation after its exact Actions anchor.
 
     Validate retained artifacts before calling. Missing historical artifacts may
@@ -47,9 +49,19 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
     if len(raw) > 16_384:
         raise ValueError("workstation baseline receipt is oversized")
     receipt = json.loads(raw)
+    version = (
+        "v2"
+        if isinstance(receipt, dict)
+        and receipt.get("schema") == "npcink.production_workstation_baseline.v2"
+        else "v1"
+    )
+    if cancelled_upload and isinstance(receipt, dict) and receipt.get("schema") != (
+        "npcink.production_workstation_baseline.v2"
+    ):
+        return None
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") != "npcink.production_workstation_baseline.v1"
+        or receipt.get("schema") != f"npcink.production_workstation_baseline.{version}"
         or receipt.get("repository") != repository
     ):
         raise ValueError("workstation baseline receipt identity is invalid")
@@ -58,11 +70,16 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
     if updated > observed:
         return None
     expected = {key: run.get(key) for key in ("id", "head_sha", "run_attempt", "updated_at")}
-    if (
-        receipt.get("previous_workflow") != expected
-        or type(expected["id"]) is not int
-        or type(expected["run_attempt"]) is not int
-    ):
+    if cancelled_upload:
+        expected.update(status=run.get("status"), conclusion=run.get("conclusion"))
+    anchor = receipt.get("previous_workflow")
+    if cancelled_upload:
+        anchor_matches = isinstance(anchor, dict) and all(
+            anchor.get(key) == value for key, value in expected.items()
+        )
+    else:
+        anchor_matches = anchor == expected
+    if not anchor_matches or type(expected["id"]) is not int or type(expected["run_attempt"]) is not int:
         raise ValueError("workstation baseline Actions anchor changed or is missing")
     expires = _utc_timestamp(receipt.get("expires_at_utc"))
     current = now or datetime.now(UTC)
@@ -72,6 +89,16 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
         and current < expires
     ):
         raise ValueError("workstation baseline observation is stale or has an invalid window")
+    if cancelled_upload:
+        activated = _utc_timestamp(receipt.get("activation_completed_at_utc"))
+        if not (
+            expected["status"] == "completed"
+            and expected["conclusion"] == "cancelled"
+            and receipt.get("installed_sha") == run["head_sha"]
+            and updated < activated <= observed
+            and re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("cancelled_upload_log_sha256")))
+        ):
+            raise ValueError("workstation baseline cancelled upload reconciliation is invalid")
     for key, length in (
         ("installed_sha", 40),
         ("installed_tree", 40),
@@ -97,7 +124,7 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
         raise ValueError("workstation baseline observation checksum mismatch")
     evidence = json.loads(evidence_raw)
     expected_evidence = {
-        "schema": "npcink.production_workstation_observation.v1",
+        "schema": f"npcink.production_workstation_observation.{version}",
         "repository": repository,
         **{
             key: receipt[key]
@@ -117,11 +144,44 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
         "internal_operational_ready": True,
         "public_live_status": 200,
     }
+    if cancelled_upload:
+        expected_evidence.update(
+            activation_completed_at_utc=receipt["activation_completed_at_utc"],
+            installation_complete=True,
+            one_off_lock_absent=True,
+            public_revision=receipt["installed_sha"][:12],
+            cancelled_upload={
+                "workflow": expected,
+                "last_phase": "upload deploy bundle",
+                "remote_installation_started": False,
+                "log_sha256": receipt["cancelled_upload_log_sha256"],
+            },
+        )
+    direct_expected = {
+        key: value for key, value in expected_evidence.items() if key != "cancelled_upload"
+    }
     if not isinstance(evidence, dict) or any(
         type(evidence.get(key)) is not type(value) or evidence[key] != value
-        for key, value in expected_evidence.items()
+        for key, value in direct_expected.items()
     ):
         raise ValueError("workstation baseline observation does not prove successful activation")
+    if cancelled_upload:
+        cancelled_evidence = evidence.get("cancelled_upload")
+        expected_cancelled = expected_evidence["cancelled_upload"]
+        if (
+            not isinstance(cancelled_evidence, dict)
+            or not isinstance(cancelled_evidence.get("workflow"), dict)
+            or any(
+                cancelled_evidence["workflow"].get(key) != value
+                for key, value in expected_cancelled["workflow"].items()
+            )
+            or any(
+                cancelled_evidence.get(key) != value
+                for key, value in expected_cancelled.items()
+                if key != "workflow"
+            )
+        ):
+            raise ValueError("workstation baseline cancelled upload proof types are invalid")
     containers = evidence.get("containers")
     roles = {"api", "frontend", "redis", "proxy", "worker", "callback-worker", "ops-worker"}
     if (
@@ -134,6 +194,7 @@ def workstation_baseline(repository: str, run: dict, path: Path, *, now=None) ->
             or type(item.get("restarts")) is not int
             or item["restarts"] != 0
             or item.get("OOMKilled") is not False
+            or (cancelled_upload and item.get("image_matches_exact_bundle") is not True)
             or item.get("health")
             not in ({"healthy", "none"} if item["service"].endswith("worker") else {"healthy"})
             for item in containers
@@ -253,6 +314,36 @@ def resolve_baseline(
     # Host mutation is serialized. Completion order also handles reruns of old SHAs.
     for run in sorted(runs, key=lambda item: item["updated_at"], reverse=True):
         if run.get("conclusion") != "success":
+            if (
+                run.get("status") == "completed"
+                and run.get("conclusion") == "cancelled"
+                and run.get("event") == "workflow_dispatch"
+                and run.get("head_branch") == "production"
+                and run.get("path") == ".github/workflows/deploy-production.yml"
+                and type(run.get("id")) is int
+                and re.fullmatch(r"[0-9a-f]{40}", str(run.get("head_sha")))
+            ):
+                # A reviewed, same-version workstation activation can fence this
+                # exact cancelled upload. Never override a retained runtime receipt.
+                retained = read_artifact(
+                    root,
+                    run["id"],
+                    f"production-deploy-timing-{run['id']}-{run['head_sha']}",
+                    "production-deploy-phase-timing.json",
+                    api,
+                )
+                if retained is not None:
+                    raise ValueError(
+                        "cancelled upload has retained runtime evidence; review required"
+                    )
+                observed = workstation_baseline(
+                    repository,
+                    run,
+                    workstation_path or WORKSTATION_FILE,
+                    cancelled_upload=True,
+                )
+                if observed is not None:
+                    return observed
             raise ValueError(
                 "later deployment attempt is not successful; confirm installed baseline read-only"
             )
