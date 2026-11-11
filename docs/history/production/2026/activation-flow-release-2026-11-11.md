@@ -37,3 +37,7 @@ Status: dated production installation evidence; real WordPress binding/activatio
 回退基线 `4af1aca79a5936c71c29f8bc4d99fbf2c648fcfc` / `release-3465a3bf765c696c-20261111031030-46556` 的既有包和证明保留，未演练回退。新包、checksum、run/plan/timing及安装证明保存在仓库外发布证据目录，不提交归档、主机目标或凭据。
 
 本次未购买、未付费调用模型、未修改真实WordPress内容或客户绑定。真实业务闭环与人工采用须单独验收。
+
+## Residual PC UI acceptance
+
+生产只读PC复验观察到：device详情的“修改站点名称”弹窗点击取消后关闭且名称不变，但焦点落到BODY；键盘打开后按Escape也未观察到关闭，最终通过取消退出。该弹窗的具体来源和修复范围待独立核对，不把#1408或生产健康通过外推成所有弹窗键盘验收通过。本次未保存名称或重新部署。
