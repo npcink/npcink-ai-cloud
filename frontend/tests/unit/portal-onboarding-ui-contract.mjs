@@ -62,8 +62,8 @@ const connectClientCalls = Array.from(
 );
 assert.deepEqual(
   connectClientCalls,
-  ['createAddonConnection'],
-  'site connection panel must expose only the WordPress addon handoff'
+  ['previewAddonConnection', 'createAddonConnection'],
+  'site connection panel exposes only the read-only preview and WordPress addon handoff'
 );
 assert.doesNotMatch(
   connectSource,
@@ -87,8 +87,8 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /soleAccount[\s\S]*data-portal-bind="account"[\s\S]*accountLabel\(soleAccount, 0\)[\s\S]*type="submit"[\s\S]*portal\.connect_site_authorize_addon/,
-  'a sole eligible account is named plainly and confirmed by the single Finish connection click'
+  /soleAccount[\s\S]*data-portal-bind="account"[\s\S]*accountLabel\(soleAccount, 0\)[\s\S]*type="submit"[\s\S]*portal\.bind_activate/,
+  'a sole eligible account is named plainly and confirmed by the single explicit connection and activation click'
 );
 assert.match(
   connectSource,
