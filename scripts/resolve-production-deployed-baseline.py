@@ -317,7 +317,10 @@ def cleanup_baseline(repository: str, run: dict, timing: dict | None, path: Path
         receipt.get("repository") != repository
         or not isinstance(bound_anchor, dict)
         or set(bound_anchor) != set(anchor)
-        or any(type(bound_anchor[k]) is not type(v) or bound_anchor[k] != v for k, v in anchor.items())
+        or any(
+            type(bound_anchor[k]) is not type(v) or bound_anchor[k] != v
+            for k, v in anchor.items()
+        )
         or type(anchor["id"]) is not int
         or type(anchor["run_attempt"]) is not int
         or receipt.get("installed_sha") != anchor["head_sha"]
