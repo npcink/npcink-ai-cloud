@@ -65,7 +65,10 @@ function siteConnectionLabel(site: Site, t: PortalTranslator): string {
   if (site.status === 'provisioning') {
     return t('portal.site_status_provisioning', {}, 'Provisioning');
   }
-  return t('portal.site_status_suspended', {}, 'Suspended');
+  if (site.status === 'suspended') {
+    return t('portal.site_status_suspended', {}, 'Suspended');
+  }
+  return t('portal.site_status_unknown', {}, 'Unknown');
 }
 
 function SiteConnectionStatus({ site, t }: { site: Site; t: PortalTranslator }) {
@@ -244,6 +247,9 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         && site.status === 'active'
       ))
     : [];
+  const selectedReplacementSites = replacementCandidates.filter((site) => replacementSiteIds.includes(site.site_id));
+  const replacementSelectionComplete = replacementSiteIds.length === requiredReleaseCount
+    && selectedReplacementSites.length === requiredReleaseCount;
 
   useEffect(() => {
     setSearchQuery(routeSearchQuery);
@@ -426,7 +432,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
 
   const handleLifecycleUpdate = async () => {
     if (!pendingLifecycleSite || siteRefreshFailed || isRefreshingSites) return;
-    if (activationNeedsSwap && replacementSiteIds.length !== requiredReleaseCount) {
+    if (activationNeedsSwap && !replacementSelectionComplete) {
       setLifecycleError(
         t(
           'portal.site_swap_required',
@@ -810,21 +816,21 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         closeOnOverlay={!isUpdatingLifecycle}
         title={pendingLifecycleStatus === 'active'
           ? activationNeedsSwap
-            ? t('portal.swap_active_site_action', {}, 'Switch active site')
+            ? t('portal.site_swap_title', {}, 'Switch the site using Cloud service')
             : t('portal.activate_site_action', {}, 'Activate site')
           : t('portal.deactivate_site_action', {}, 'Deactivate site')}
         description={pendingLifecycleStatus === 'active'
           ? activationNeedsSwap
             ? t(
               'portal.activate_site_swap_desc',
-                { count: String(requiredReleaseCount) },
-                `Your active-site quota is full. Choose exactly ${requiredReleaseCount} active site(s) to deactivate; no site is replaced automatically.`
+                {},
+                'All active-site slots are in use. Activating this site requires stopping Cloud service on other sites.'
               )
             : t('portal.activate_site_confirm', {}, 'Activate this site for Cloud runtime service?')
           : t(
               'portal.deactivate_site_confirm',
               {},
-              'Deactivate this site? Its binding, credential, usage, and audit history will be preserved.'
+              'Cloud service will stop for this site. Its binding, credential, usage, and audit history will be preserved; WordPress content will not be deleted.'
             )}
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
         footer={
@@ -832,12 +838,12 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
             <button type="button" className="btn btn-secondary" onClick={closeLifecycleModal} disabled={isUpdatingLifecycle}>
               {t('common.cancel')}
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => void handleLifecycleUpdate()} disabled={isUpdatingLifecycle}>
+            <button type="button" className="btn btn-primary max-w-full whitespace-normal break-words" onClick={() => void handleLifecycleUpdate()} disabled={isUpdatingLifecycle || (activationNeedsSwap && !replacementSelectionComplete)}>
               {isUpdatingLifecycle
                 ? t('common.saving')
                 : pendingLifecycleStatus === 'active'
                   ? activationNeedsSwap
-                    ? t('portal.swap_active_site_action', {}, 'Switch active site')
+                    ? t('portal.site_swap_confirm', {}, 'Confirm switch')
                     : t('portal.activate_site_action', {}, 'Activate')
                   : t('portal.deactivate_site_action', {}, 'Deactivate')}
             </button>
@@ -845,16 +851,27 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         }
       >
         <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-950 dark:text-white">
-            {getPortalSiteDisplayName(pendingLifecycleSite)}
-          </p>
+          <div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {pendingLifecycleStatus === 'active'
+                ? t('portal.site_activation_target', {}, 'Site to activate')
+                : t('portal.site_deactivation_target', {}, 'Site whose Cloud service will stop')}
+            </p>
+            <p className="break-words font-semibold text-slate-950 dark:text-white">
+              {getPortalSiteDisplayName(pendingLifecycleSite)}
+            </p>
+            <p className="break-all text-xs">
+              {getPortalSiteUrl(pendingLifecycleSite)
+                || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+            </p>
+          </div>
           {activationNeedsSwap ? (
             <fieldset className="space-y-2">
               <legend className="font-medium text-slate-950 dark:text-white">
                 {t(
                   'portal.site_swap_select_label',
                   { count: String(requiredReleaseCount) },
-                  `Choose ${requiredReleaseCount} active site(s) to deactivate`
+                  `Stop Cloud service on ${requiredReleaseCount} selected site(s)`
                 )}
               </legend>
               {replacementCandidates.map((site) => (
@@ -870,18 +887,23 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                         : current.filter((siteId) => siteId !== site.site_id));
                     }}
                     disabled={
-                      !replacementSiteIds.includes(site.site_id)
-                      && replacementSiteIds.length >= requiredReleaseCount
+                      isUpdatingLifecycle || (
+                        !replacementSiteIds.includes(site.site_id)
+                        && replacementSiteIds.length >= requiredReleaseCount
+                      )
                     }
                     className="mt-1"
                   />
-                  <span>
-                    <span className="block font-medium text-slate-950 dark:text-white">{getPortalSiteDisplayName(site)}</span>
+                  <span className="min-w-0">
+                    <span className="block break-words font-medium text-slate-950 dark:text-white">{getPortalSiteDisplayName(site)}</span>
                     <span className="block break-all text-xs">{getPortalSiteUrl(site)}</span>
                   </span>
                 </label>
               ))}
             </fieldset>
+          ) : null}
+          {activationNeedsSwap ? (
+            <p>{t('portal.site_swap_preserved', {}, 'Site bindings and WordPress content will be preserved.')}</p>
           ) : null}
           {lifecycleError ? (
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
@@ -911,11 +933,14 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         }
       >
         <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-950 dark:text-white">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('portal.site_removal_target', {}, 'Site to remove from this account')}
+          </p>
+          <p className="break-words font-semibold text-slate-950 dark:text-white">
             {getPortalSiteDisplayName(pendingRemoveSite)}
           </p>
           {pendingRemoveSite ? (
-            <p className="break-words">
+            <p className="break-all">
               {getPortalSiteUrl(pendingRemoveSite)
                 || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
             </p>

@@ -107,6 +107,7 @@ test('empty, load error, retry and write error remain local', async ({ page }, i
   mock.scenario.failInbox = false; mock.scenario.empty = true;
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByText('No notifications yet', { exact: true })).toBeVisible();
+  await expect(page.getByText('Service notices, support replies, trial and AI-credit reminders sent to you appear here.', { exact: true })).toHaveCount(1);
   await screenshot(page, info, 'notifications-empty');
   mock.scenario.empty = false; mock.scenario.failRead = true;
   await page.reload();

@@ -44,6 +44,7 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     coerce_positive_int,
+    normalize_media_source_page,
     normalize_source_items,
     normalize_source_passages,
     validate_site_knowledge_runtime_contract,
@@ -834,6 +835,9 @@ class SiteKnowledgeService:
         )
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
+        media_page = normalize_media_source_page(
+            input_payload, ability_name=SITE_KNOWLEDGE_STATUS_ABILITY
+        )
         source_items = normalize_source_items(
             input_payload, ability_name=SITE_KNOWLEDGE_STATUS_ABILITY
         )
@@ -941,6 +945,22 @@ class SiteKnowledgeService:
                 "items": self.repository.source_presence(
                     site_id=site_id, source_items=source_items
                 ),
+            }
+        if media_page is not None:
+            after, limit = media_page
+            identities = self.repository.media_source_ids(
+                site_id, after_source_id=after, limit=limit + 1
+            )
+            has_more = len(identities) > limit
+            result["media_source_page"] = {
+                "status": "complete",
+                "storage_scope": "relational_index",
+                "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "after_source_id": after,
+                "limit": limit,
+                "source_ids": identities[:limit],
+                "has_more": has_more,
+                "next_after_source_id": identities[limit - 1] if has_more else 0,
             }
         return result
 

@@ -172,9 +172,11 @@ assert.doesNotMatch(
 );
 assert.match(
   siteRecordSource,
-  /site\.status === 'inactive'[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*WordPress plugin/,
-  'An inactive site must direct customers to reconnect from WordPress before escalating to support'
+  /inactive-service-note[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*href="\/portal#sites"/,
+  'An inactive binding keeps a neutral explanation and a path to explicit activation'
 );
+assert.doesNotMatch(siteRecordSource, /Reconnect this site from the WordPress plugin first/,
+  'Ordinary deactivation must not imply a broken connection');
 assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
   siteRecordSource,
