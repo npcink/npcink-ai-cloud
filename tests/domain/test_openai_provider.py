@@ -19,8 +19,9 @@ from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
 @pytest.mark.parametrize(
     "model_id", ["deepseek/deepseek-v4-flash", "deepseek-v4-pro", "deepseek-flash"]
 )
-def test_deepseek_title_has_visible_output_without_spending_budget_on_reasoning(
-    endpoint_variant: str, model_id: str
+@pytest.mark.parametrize("task,budget", [("title_generation", 256), ("excerpt_generation", 140)])
+def test_deepseek_editor_has_visible_output_without_spending_budget_on_reasoning(
+    endpoint_variant: str, model_id: str, task: str, budget: int
 ) -> None:
     calls = []
 
@@ -73,7 +74,7 @@ def test_deepseek_title_has_visible_output_without_spending_budget_on_reasoning(
     ).build_provider_input(
         {
             "operation_contract": {
-                "task": "title_generation",
+                "task": task,
                 "request": {"source_text": "文章正文。" * 60},
             }
         }
@@ -90,13 +91,15 @@ def test_deepseek_title_has_visible_output_without_spending_budget_on_reasoning(
 
     assert result.output["output_text"] == "AI时代的写作困境"
     assert len(calls) == 1
-    assert calls[0]["max_output_tokens" if endpoint_variant == "responses" else "max_tokens"] == 256
+    budget_key = "max_output_tokens" if endpoint_variant == "responses" else "max_tokens"
+    assert calls[0][budget_key] == budget
 
 
 @pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
 @pytest.mark.parametrize("effort", ["none", "high"])
-def test_deepseek_title_preserves_explicit_provider_reasoning_effort(
-    endpoint_variant: str, effort: str
+@pytest.mark.parametrize("task", ["title_generation", "excerpt_generation"])
+def test_deepseek_editor_preserves_explicit_provider_reasoning_effort(
+    endpoint_variant: str, effort: str, task: str
 ) -> None:
     adapter = OpenAIProviderAdapter(default_reasoning_effort=effort)
     request = _build_request(
@@ -107,7 +110,7 @@ def test_deepseek_title_preserves_explicit_provider_reasoning_effort(
             "input": "标题",
             "metadata": {
                 "source_surface": "wordpress_ai_connector",
-                "task": "title_generation",
+                "task": task,
             },
         },
     )
@@ -128,8 +131,9 @@ def test_deepseek_title_preserves_explicit_provider_reasoning_effort(
         ("chat_completions", {"thinking": {"type": "enabled"}}),
     ],
 )
-def test_deepseek_title_preserves_explicit_request_reasoning(
-    endpoint_variant: str, explicit: dict[str, object]
+@pytest.mark.parametrize("task", ["title_generation", "excerpt_generation"])
+def test_deepseek_editor_preserves_explicit_request_reasoning(
+    endpoint_variant: str, explicit: dict[str, object], task: str
 ) -> None:
     request = _build_request(
         execution_kind="text",
@@ -138,7 +142,7 @@ def test_deepseek_title_preserves_explicit_request_reasoning(
         input_payload={
             "input": "标题",
             "extra": explicit,
-            "metadata": {"source_surface": "wordpress_ai_connector", "task": "title_generation"},
+            "metadata": {"source_surface": "wordpress_ai_connector", "task": task},
         },
     )
     request.ability_name = "npcink-cloud/connector-runtime"
@@ -154,13 +158,16 @@ def test_deepseek_title_preserves_explicit_request_reasoning(
     "model_id,task,ability_name",
     [
         ("gpt-5.4", "title_generation", "npcink-cloud/connector-runtime"),
+        ("gpt-5.4", "excerpt_generation", "npcink-cloud/connector-runtime"),
         ("deepseek-reasoner", "title_generation", "npcink-cloud/connector-runtime"),
+        ("deepseek-reasoner", "excerpt_generation", "npcink-cloud/connector-runtime"),
         ("deepseek-v4-flash", "content_rewrite", "npcink-cloud/connector-runtime"),
         ("deepseek-v4-flash", "title_generation", "other/ability"),
+        ("deepseek-v4-flash", "excerpt_generation", "other/ability"),
     ],
 )
 @pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
-def test_deepseek_title_reasoning_default_is_scoped(
+def test_deepseek_editor_reasoning_default_is_scoped(
     model_id: str, task: str, ability_name: str, endpoint_variant: str
 ) -> None:
     request = _build_request(
@@ -180,7 +187,10 @@ def test_deepseek_title_reasoning_default_is_scoped(
     assert not {"reasoning", "thinking", "reasoning_effort"} & payload.keys()
 
 
-def test_deepseek_title_incomplete_keeps_reasoning_usage_and_fails_closed() -> None:
+@pytest.mark.parametrize("task,budget", [("title_generation", 48), ("excerpt_generation", 140)])
+def test_deepseek_editor_incomplete_keeps_reasoning_usage_and_fails_closed(
+    task: str, budget: int
+) -> None:
     adapter = OpenAIProviderAdapter(
         api_key="mock-key",
         transport=httpx.MockTransport(
@@ -192,8 +202,8 @@ def test_deepseek_title_incomplete_keeps_reasoning_usage_and_fails_closed() -> N
                     "output": [{"type": "reasoning", "summary": []}],
                     "usage": {
                         "input_tokens": 925,
-                        "output_tokens": 48,
-                        "output_tokens_details": {"reasoning_tokens": 48},
+                        "output_tokens": budget,
+                        "output_tokens_details": {"reasoning_tokens": budget},
                     },
                 },
             )
@@ -205,9 +215,9 @@ def test_deepseek_title_incomplete_keeps_reasoning_usage_and_fails_closed() -> N
         model_id="deepseek/deepseek-v4-flash",
         input_payload={
             "input": "标题",
-            "max_output_tokens": 48,
+            "max_output_tokens": budget,
             "extra": {"reasoning": {"effort": "high"}},
-            "metadata": {"source_surface": "wordpress_ai_connector", "task": "title_generation"},
+            "metadata": {"source_surface": "wordpress_ai_connector", "task": task},
         },
     )
     request.ability_name = "npcink-cloud/connector-runtime"
@@ -215,8 +225,8 @@ def test_deepseek_title_incomplete_keeps_reasoning_usage_and_fails_closed() -> N
         adapter.execute(request)
     assert error.value.error_code == "provider.output_contract_invalid"
     assert error.value.tokens_in == 925
-    assert error.value.tokens_out == 48
-    assert error.value.usage_context["reasoning_tokens"] == 48
+    assert error.value.tokens_out == budget
+    assert error.value.usage_context["reasoning_tokens"] == budget
     assert error.value.usage_context["response_status"] == "incomplete"
     assert error.value.cost > 0
 

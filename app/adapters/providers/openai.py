@@ -872,7 +872,7 @@ class OpenAIProviderAdapter:
             if isinstance(options.get("max_output_tokens"), int):
                 responses_payload["max_output_tokens"] = options["max_output_tokens"]
             self._apply_responses_request_options(responses_payload, options)
-            self._apply_deepseek_title_reasoning_default(responses_payload, options, request)
+            self._apply_deepseek_editor_reasoning_default(responses_payload, options, request)
             self._apply_prompt_cache_affinity(responses_payload, request)
             return "/responses", responses_payload
 
@@ -893,11 +893,11 @@ class OpenAIProviderAdapter:
         if isinstance(options.get("max_tokens"), int):
             chat_payload["max_tokens"] = options["max_tokens"]
         self._apply_chat_request_options(chat_payload, options)
-        self._apply_deepseek_title_reasoning_default(chat_payload, options, request)
+        self._apply_deepseek_editor_reasoning_default(chat_payload, options, request)
         self._apply_prompt_cache_affinity(chat_payload, request)
         return "/chat/completions", chat_payload
 
-    def _apply_deepseek_title_reasoning_default(
+    def _apply_deepseek_editor_reasoning_default(
         self,
         payload: dict[str, Any],
         options: dict[str, Any],
@@ -908,13 +908,14 @@ class OpenAIProviderAdapter:
             request.ability_name != "npcink-cloud/connector-runtime"
             or not isinstance(metadata, dict)
             or metadata.get("source_surface") != "wordpress_ai_connector"
-            or metadata.get("task") != "title_generation"
+            or metadata.get("task") not in {"title_generation", "excerpt_generation"}
             or self._normalize_deepseek_model_id(request.model_id)
             not in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}
         ):
             return
-        # A title needs visible output, not a hidden reasoning prefix consuming
-        # its entire output allowance. Keep explicit request/provider choices;
+        # Titles and excerpts need visible output within their short allowance;
+        # DeepSeek's hidden reasoning can consume it before emitting any text.
+        # Keep explicit request/provider choices;
         # only supply a task default using the endpoint's documented dialect.
         explicit_mode = options.get("thinking") is not None or any(
             key in payload for key in ("reasoning", "thinking")
