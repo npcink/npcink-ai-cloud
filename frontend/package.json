@@ -47,7 +47,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@floating-ui/react": "^0.27.19",
+    "@floating-ui/react": "^0.27.20",
     "@swc/helpers": "0.5.15",
     "@tanstack/react-query": "^5.104.1",
     "clsx": "^2.1.1",
