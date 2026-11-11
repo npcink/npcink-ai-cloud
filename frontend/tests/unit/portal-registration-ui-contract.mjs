@@ -54,12 +54,12 @@ assert.match(
 
 assert.match(
   loginSource,
-  /href="\/portal\/register"/,
+  /href=\{searchParams\.get\('redirect'\)\s*\?[^;]+encodeURIComponent\(redirectTo\)/,
   'portal login page must link new users to the registration page'
 );
 assert.match(
   loginSource,
-  /<PortalAuthShell[\s\S]*portal\.login\.existing_label[\s\S]*href="\/portal\/register"[\s\S]*<form/,
+  /<PortalAuthShell[\s\S]*portal\.login\.existing_label[\s\S]*href=\{searchParams\.get\('redirect'\)\s*\?[^;]+encodeURIComponent\(redirectTo\)[\s\S]*<form/,
   'portal login page must put the email form and account-registration entry in the shared authentication shell'
 );
 assert.doesNotMatch(
@@ -143,7 +143,7 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /const \{ isAuthenticated, isLoading, refresh, verifyRegistrationResult \} = useSession\(\);[\s\S]*const postRegistrationTarget = requestedPlan[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\(postRegistrationTarget\)/,
+  /const \{ isAuthenticated, isLoading, refresh, verifyRegistrationResult \} = useSession\(\);[\s\S]*const postRegistrationTarget = resolvePortalReturnTo\([\s\S]*searchParams\.get\('redirect'\)[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\(postRegistrationTarget\)/,
   'authenticated users must leave registration for the default workspace or preserved package intent'
 );
 assert.match(

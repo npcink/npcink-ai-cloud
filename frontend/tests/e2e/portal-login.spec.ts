@@ -203,7 +203,7 @@ async function installLoginFlowMocks(
       return;
     }
 
-    if (pathname === '/auth/code/verify') {
+    if (pathname === '/auth/code/verify' || pathname === '/register/verify') {
       const body = route.request().postDataJSON() as {
         email?: string;
         code?: string;
@@ -258,6 +258,14 @@ async function installLoginFlowMocks(
 
     if (pathname === '/addon-connection-accounts') {
       await fulfillJson(route, { items: addonAccounts });
+      return;
+    }
+
+    if (pathname === '/addon-connections/preview') {
+      await fulfillJson(route, {
+        site_id: 'site_demo-example-com', site_status: 'not_connected',
+        required_release_count: 0, replacement_sites: [],
+      });
       return;
     }
 
@@ -520,7 +528,7 @@ test('addon binding survives login and returns the complete payload to WordPress
   await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
   await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
   await expect(page.getByText(/acct_/)).toHaveCount(0);
-  const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
+  const submitButton = page.getByRole('button', { name: /Connect and activate|确认绑定并激活/i });
   expect(calls.addonConnectionPayload()).toBeNull();
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
@@ -531,6 +539,8 @@ test('addon binding survives login and returns the complete payload to WordPress
     site_name: 'Demo Site',
     return_url: returnUrl,
     state: 'addon-state-001',
+    activate: true,
+    replace_site_ids: [],
   });
 });
 
@@ -551,7 +561,7 @@ test('mobile email login preserves the WordPress binding and single confirmation
   await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
-  const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
+  const submitButton = page.getByRole('button', { name: /Connect and activate|确认绑定并激活/i });
   await expect(submitButton).toBeInViewport();
   await submitButton.click();
 
@@ -650,8 +660,8 @@ for (const [variant, addonAccounts] of [
     await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
     await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
     await expect(page.getByText(/acct_/)).toHaveCount(0);
-    await expect(page.getByRole('button')).toHaveCount(1);
-    const submit = page.getByRole('button', { name: '完成绑定' });
+    await expect(card.getByRole('button')).toHaveCount(1);
+    const submit = page.getByRole('button', { name: '确认绑定并激活' });
     if (variant === 'multi') {
       await expect(page.getByRole('radio')).toHaveCount(2);
       await expect(submit).toBeDisabled();
@@ -720,6 +730,106 @@ test('addon bind distinguishes duplicate readable account names with short refer
   const card = page.locator('[data-portal-bind="card"]');
   await expect(card).toContainText('同名账户 · acct_first');
   await expect(card).toContainText('同名账户 · acct_second');
-  await expect(page.getByRole('button', { name: '完成绑定', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '确认绑定并激活', exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('portal-duplicate-account-1440.png'), fullPage: true });
+});
+
+
+test('addon binding survives account registration and returns to WordPress', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page);
+  const bindingPath = `/portal?${new URLSearchParams({
+    connect: 'wordpress-addon', site_url: 'https://demo.example.com', site_name: 'Demo Site',
+    return_url: 'https://demo.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth',
+    state: 'registration-state',
+  })}`;
+  await page.goto(bindingPath);
+  await page.locator('a[href^="/portal/register"]').click();
+  await expect(page).toHaveURL(`${BASE_URL}/portal/register?redirect=${encodeURIComponent(bindingPath)}`);
+  await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+  await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
+  await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
+  await expect(page).toHaveURL(`${BASE_URL}${bindingPath}`);
+  await page.locator('[data-portal-bind="submit"]').click();
+  await expect(page).toHaveURL(/wordpress-addon-return.*state=registration-state/);
+  expect(calls.addonConnectionPayload()?.activate).toBe(true);
+});
+
+test('addon binding requires an explicit replacement before returning', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const calls = await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+  await page.route('**/addon-connections/preview', route => fulfillJson(route, {
+    site_id: 'site_demo-example-com', site_status: 'not_connected', required_release_count: 1,
+    replacement_sites: [{ site_id: 'site_old', name: 'Old Site', site_url: 'https://old.example.com' }],
+  }));
+  const bindingPath = `/portal?${new URLSearchParams({
+    connect: 'wordpress-addon', site_url: 'https://demo.example.com', site_name: 'Demo Site',
+    return_url: 'https://demo.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth',
+    state: 'replacement-state',
+  })}`;
+  await page.goto(bindingPath);
+  await expect(page.locator('[data-portal-bind="replacements"]')).toBeVisible();
+  await expect(page.locator('[data-portal-bind="replacements"] legend')).toContainText(/1/);
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeDisabled();
+  expect(calls.addonConnectionPayload()).toBeNull();
+  await page.getByRole('checkbox', { name: /Old Site/ }).check();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeEnabled();
+  await page.screenshot({ path: 'test-results/addon-activation-replacement.png', fullPage: true });
+  await page.locator('[data-portal-bind="submit"]').click();
+  await expect(page).toHaveURL(/wordpress-addon-return.*state=replacement-state/);
+  expect(calls.addonConnectionPayload()?.replace_site_ids).toEqual(['site_old']);
+});
+
+
+test('addon activation preview fails closed and can be retried', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+  let reads = 0;
+  await page.route('**/addon-connections/preview', route => fulfillJson(route, ++reads === 1 ? {} : {
+    site_id: 'site_demo', site_status: 'inactive', required_release_count: 0, replacement_sites: [],
+  }));
+  await page.goto(`/portal?${new URLSearchParams({
+    connect: 'wordpress-addon', site_url: 'https://demo.example.com',
+    return_url: 'https://demo.example.com/wp-admin/admin-post.php', state: 'preview-state',
+  })}`);
+  const card = page.locator('[data-portal-bind="card"]');
+  await expect(card.getByRole('alert')).toBeVisible();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeDisabled();
+  expect(calls.addonConnectionPayload()).toBeNull();
+  await card.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeEnabled();
+  await expect(card.getByRole('alert')).toHaveCount(0);
+  expect(reads).toBe(2);
+});
+
+test('addon account change discards replacement consent while the next preview loads', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [
+    { account_id: 'acct_a', name: 'Account A', site_count: 1 },
+    { account_id: 'acct_b', name: 'Account B', site_count: 0 },
+  ] });
+  let finishSecondPreview: (() => void) | undefined;
+  const secondReady = new Promise<void>(resolve => { finishSecondPreview = resolve; });
+  await page.route('**/addon-connections/preview', async route => {
+    const accountId = route.request().postDataJSON().account_id;
+    if (accountId === 'acct_b') await secondReady;
+    await fulfillJson(route, {
+      site_id: 'site_demo', site_status: 'not_connected', required_release_count: accountId === 'acct_a' ? 1 : 0,
+      replacement_sites: accountId === 'acct_a' ? [{ site_id: 'site_old', name: 'Old Site', site_url: 'https://old.example.com' }] : [],
+    });
+  });
+  await page.goto(`/portal?${new URLSearchParams({
+    connect: 'wordpress-addon', site_url: 'https://demo.example.com',
+    return_url: 'https://demo.example.com/wp-admin/admin-post.php', state: 'account-state',
+  })}`);
+  await page.getByRole('radio', { name: 'Account A', exact: true }).check();
+  await page.getByRole('checkbox', { name: /Old Site/ }).check();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeEnabled();
+  await page.getByRole('radio', { name: 'Account B', exact: true }).check();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeDisabled();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  finishSecondPreview?.();
+  await expect(page.locator('[data-portal-bind="submit"]')).toBeEnabled();
+  await page.locator('[data-portal-bind="submit"]').click();
+  await expect(page).toHaveURL(/wordpress-addon-return.*state=account-state/);
+  expect(calls.addonConnectionPayload()?.account_id).toBe('acct_b');
+  expect(calls.addonConnectionPayload()?.replace_site_ids).toEqual([]);
 });

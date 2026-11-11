@@ -9288,3 +9288,120 @@ def test_portal_addon_connection_accounts_mark_current_account_from_selected_sit
     }
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("scenario", ["new", "inactive", "swap", "stale", "invalid", "rollback"])
+def test_addon_explicit_activation_is_deferred_and_atomic(
+    tmp_path: Path, scenario: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "addon-explicit@example.com"
+    request = _request_portal_registration_code(
+        client, email=email,
+        headers={"x-npcink-debug-portal-link": "1", "x-npcink-dev-login-code": "1"},
+    )
+    _verify_portal_registration_code(client, email=email, code=str(request["code"]))
+    account_id = str(_ACCESS_BY_EMAIL[email]["account_id"])
+    primary_id = "site_primary-example-com"
+    target_url = "https://secondary.example.com"
+    old_key_id = ""
+    if scenario != "new":
+        _, exchange = _connect_wordpress_addon(
+            client, account_id=account_id, site_url="https://primary.example.com",
+            site_name="Primary", state="initial", idempotency_key="initial",
+        )
+        old_key_id = str(exchange["key_id"])
+    if scenario == "inactive":
+        target_url = "https://primary.example.com"
+        with get_session(database_url) as session:
+            site = session.get(Site, primary_id)
+            assert site is not None
+            site.status = "inactive"
+            session.commit()
+    payload = {
+        "account_id": account_id, "site_name": "Target", "site_url": target_url,
+        "return_url": target_url + "/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth",
+        "state": "explicit-state",
+    }
+    with get_session(database_url) as session:
+        before_counts = [len(list(session.scalars(select(model)))) for model in (Site, SiteApiKey, PortalOAuthState)]
+    preview_response = client.post("/portal/v1/addon-connections/preview", json=payload)
+    assert preview_response.status_code == 200, preview_response.text
+    preview = preview_response.json()["data"]
+    assert preview["required_release_count"] == (1 if scenario in {"swap", "stale", "invalid", "rollback"} else 0)
+    with get_session(database_url) as session:
+        assert before_counts == [len(list(session.scalars(select(model)))) for model in (Site, SiteApiKey, PortalOAuthState)]
+    if scenario in {"swap", "stale", "invalid", "rollback"}:
+        assert [item["site_id"] for item in preview["replacement_sites"]] == [primary_id]
+        # No silent replacement even when there is only one eligible choice.
+        missing_selection = client.post(
+            "/portal/v1/addon-connections", json={**payload, "activate": True},
+            headers={"Idempotency-Key": "missing-selection"},
+        )
+        assert missing_selection.status_code == 409
+    replacements = [primary_id] if scenario in {"swap", "stale", "invalid", "rollback"} else []
+    if scenario == "invalid":
+        replacements = ["site_someone-else"]
+    issued = client.post(
+        "/portal/v1/addon-connections",
+        json={**payload, "activate": True, "replace_site_ids": replacements},
+        headers={"Idempotency-Key": "explicit"},
+    )
+    if scenario == "invalid":
+        assert issued.status_code == 400, issued.text
+        dispose_engine(database_url)
+        return
+    assert issued.status_code == 200, issued.text
+    with get_session(database_url) as session:
+        if old_key_id:
+            key = session.get(SiteApiKey, old_key_id)
+            assert key is not None and key.status == "active"
+        if scenario in {"swap", "stale", "rollback"}:
+            site = session.get(Site, primary_id)
+            assert site is not None and site.status == "active"
+        if scenario == "stale":
+            assert site is not None
+            site.status = "inactive"
+            session.commit()
+    query = parse_qs(urlsplit(issued.json()["data"]["redirect_url"]).query)
+    exchange_payload = {"code": query["code"][0], "state": payload["state"]}
+    if scenario == "rollback":
+        original_audit = CommercialService._record_service_audit_in_session
+
+        def fail_exchange_audit(service: CommercialService, **kwargs: Any) -> None:
+            if kwargs.get("event_kind") == "wordpress_addon_connection.exchange":
+                raise RuntimeError("injected failure before commit")
+            original_audit(service, **kwargs)
+
+        monkeypatch.setattr(CommercialService, "_record_service_audit_in_session", fail_exchange_audit)
+        with pytest.raises(RuntimeError, match="injected failure"):
+            client.post("/portal/v1/addon-connections/exchange", json=exchange_payload)
+        with get_session(database_url) as session:
+            assert session.get(Site, "site_secondary-example-com") is None
+            primary = session.get(Site, primary_id)
+            key = session.get(SiteApiKey, old_key_id)
+            assert primary is not None and primary.status == "active"
+            assert key is not None and key.status == "active"
+            assert len(session.scalars(select(PortalOAuthState).where(PortalOAuthState.status == "pending")).all()) == 1
+        dispose_engine(database_url)
+        return
+    result = client.post("/portal/v1/addon-connections/exchange", json=exchange_payload)
+    if scenario == "stale":
+        assert result.status_code == 400, result.text
+        with get_session(database_url) as session:
+            assert session.get(Site, "site_secondary-example-com") is None
+            key = session.get(SiteApiKey, old_key_id)
+            assert key is not None and key.status == "active"
+            pending = session.scalars(select(PortalOAuthState).where(PortalOAuthState.status == "pending")).all()
+            assert len(pending) == 1
+    else:
+        assert result.status_code == 200, result.text
+        assert result.json()["data"]["activation_state"] == "active"
+        assert result.json()["data"]["activation_required"] is False
+        if scenario == "swap":
+            with get_session(database_url) as session:
+                site = session.get(Site, primary_id)
+                assert site is not None and site.status == "inactive"
+        replay = client.post("/portal/v1/addon-connections/exchange", json=exchange_payload)
+        assert replay.status_code == 403
+    dispose_engine(database_url)
