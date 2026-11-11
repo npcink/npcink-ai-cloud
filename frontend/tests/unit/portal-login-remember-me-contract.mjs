@@ -57,7 +57,7 @@ assert.match(
 
 assert.match(
   loginSource,
-  /resolvePortalLoginRedirect\(searchParams\.get\('redirect'\)\)/,
+  /resolvePortalReturnTo\(searchParams\.get\('redirect'\)\)/,
   'Portal login page must resolve a safe Portal redirect from the login query'
 );
 

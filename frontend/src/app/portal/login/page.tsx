@@ -1,5 +1,7 @@
 'use client';
 
+import { resolvePortalReturnTo } from '@/lib/portal-return-to';
+
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useState } from 'react';
@@ -24,26 +26,13 @@ interface FormState {
   message: string;
 }
 
-function resolvePortalLoginRedirect(value: string | null): string {
-  const redirect = String(value || '').trim();
-  if (
-    redirect === '/portal' ||
-    redirect.startsWith('/portal/') ||
-    redirect.startsWith('/portal?') ||
-    redirect.startsWith('/portal#')
-  ) {
-    return redirect;
-  }
-  return '/portal';
-}
-
 function LoginFormContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, isLoading, requestLoginCode, verifyLoginCode } = useSession();
   const verificationCooldown = useVerificationCodeCooldown();
-  const redirectTo = resolvePortalLoginRedirect(searchParams.get('redirect'));
+  const redirectTo = resolvePortalReturnTo(searchParams.get('redirect'));
   const [handoffHref, setHandoffHref] = useState('');
   const loginReason = searchParams.get('reason');
   const initialMessage =
@@ -266,7 +255,7 @@ function LoginFormContent() {
                 'Verify your account to receive Free service, then connect a site from the WordPress addon to use it.'
               )}
             </p>
-            <Link href="/portal/register" className="btn btn-secondary mt-4 w-full justify-center">
+            <Link href={searchParams.get('redirect') ? `/portal/register?redirect=${encodeURIComponent(redirectTo)}` : '/portal/register'} className="btn btn-secondary mt-4 w-full justify-center">
               {t('auth.create_free_account', undefined, 'Create an account')}
             </Link>
           </PortalCard>

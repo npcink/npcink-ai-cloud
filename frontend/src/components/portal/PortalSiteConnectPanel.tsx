@@ -1,11 +1,11 @@
 'use client';
 import { readableIdentityName, shortIdentity } from '@/lib/identity-display';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
-import { portalClient, type PortalAddonConnectionAccount } from '@/lib/portal-client';
+import { portalClient, type PortalAddonConnectionAccount, type AddonActivationPreview } from '@/lib/portal-client';
 import { resolveDefaultAddonAccountId } from '@/lib/portal-addon-account-default';
 import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
 import {
@@ -65,6 +65,38 @@ export function PortalSiteConnectPanel({
     siteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') ||
     t('portal.connect_site_new_site', undefined, 'New site');
 
+  const [previewVersion, setPreviewVersion] = useState(0);
+  const previewContext = JSON.stringify([selectedAccountId, siteUrl, siteName, addonReturnUrl, addonState, previewVersion]);
+  const [previewResult, setPreviewResult] = useState<{ context: string; data: AddonActivationPreview } | null>(null);
+  const [previewFailure, setPreviewFailure] = useState<{ context: string; message: string; reference: string } | null>(null);
+  const [selection, setSelection] = useState<{ context: string; ids: string[] }>({ context: '', ids: [] });
+  const preview = previewResult?.context === previewContext ? previewResult.data : null;
+  const previewError = previewFailure?.context === previewContext ? previewFailure : null;
+  const replacementIds = selection.context === previewContext ? selection.ids : [];
+  const activationReady = Boolean(preview && replacementIds.length === preview.required_release_count);
+
+  useEffect(() => {
+    if (!hasAddonConnectionContext || !hasSelectedEligibleAccount || isLoadingAccounts) return;
+    let cancelled = false;
+    void portalClient.previewAddonConnection({
+      account_id: selectedAccountId, site_url: siteUrl, site_name: siteName,
+      return_url: addonReturnUrl, state: addonState,
+    }).then(response => {
+      if (!cancelled) {
+        setPreviewResult({ context: previewContext, data: response.data });
+        setPreviewFailure(null);
+      }
+    }).catch(error => {
+      if (!cancelled) setPreviewFailure({
+        context: previewContext,
+        message: formatPortalErrorMessage(error, t, t('portal.bind_preview_failed')),
+        reference: formatPortalErrorReference(error),
+      });
+    });
+    return () => { cancelled = true; };
+  }, [hasAddonConnectionContext, hasSelectedEligibleAccount, isLoadingAccounts,
+    selectedAccountId, siteUrl, siteName, addonReturnUrl, addonState, previewContext, t]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage('');
@@ -90,6 +122,7 @@ export function PortalSiteConnectPanel({
       return;
     }
 
+    if (!activationReady || isSubmitting) return;
     setIsSubmitting(true);
     onSubmittingChange?.(true);
     try {
@@ -99,6 +132,8 @@ export function PortalSiteConnectPanel({
         site_name: siteName,
         return_url: addonReturnUrl,
         state: addonState,
+        activate: true,
+        replace_site_ids: replacementIds,
       });
       await recordPortalJourneyBestEffort(
         response.data.site_id,
@@ -108,6 +143,7 @@ export function PortalSiteConnectPanel({
       );
       window.location.assign(response.data.redirect_url);
     } catch (error) {
+      setPreviewVersion(version => version + 1);
       setErrorReference(formatPortalErrorReference(error));
       setErrorMessage(
         formatPortalErrorMessage(
@@ -167,7 +203,7 @@ export function PortalSiteConnectPanel({
 
       <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
         {!soleAccount && accounts.length > 1 ? (
-          <fieldset data-portal-bind="account-picker">
+          <fieldset data-portal-bind="account-picker" disabled={isSubmitting}>
             <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">
               {t('portal.bind_choose_account', undefined, 'Which account should this site use?')}
             </legend>
@@ -253,15 +289,54 @@ export function PortalSiteConnectPanel({
           </div>
         ) : null}
 
+        {hasAddonConnectionContext && hasSelectedEligibleAccount && !preview && !previewError ? (
+          <p className="text-sm text-slate-500" role="status">{t('portal.bind_checking')}</p>
+        ) : null}
+        {previewError ? (
+          <div role="alert" className="space-y-2 text-sm text-red-700 dark:text-red-200">
+            <p>{previewError.message}</p>
+            {previewError.reference ? <code className="block break-all text-xs">{previewError.reference}</code> : null}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewVersion(version => version + 1)}>
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : null}
+        {preview && preview.required_release_count > 0 ? (
+          <fieldset className="space-y-3" disabled={isSubmitting} data-portal-bind="replacements">
+            <legend className="text-sm font-medium text-slate-900 dark:text-white">
+              {t('portal.bind_replace', { count: String(preview.required_release_count) })}
+            </legend>
+            <p className="text-sm text-amber-800 dark:text-amber-200">{t('portal.bind_replace_desc')}</p>
+            {preview.replacement_sites.map(site => (
+              <label key={site.site_id} className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                <input type="checkbox" className="mt-1" checked={replacementIds.includes(site.site_id)}
+                  onChange={event => {
+                    setSelection({ context: previewContext, ids: event.target.checked
+                      ? [...replacementIds, site.site_id] : replacementIds.filter(id => id !== site.site_id) });
+                    setErrorMessage('');
+                  }} />
+                <span className="min-w-0 break-words">
+                  <span className="block font-medium">{site.name || site.site_url}</span>
+                  {site.name && site.site_url ? <span className="block break-all text-xs text-slate-500">{site.site_url}</span> : null}
+                </span>
+              </label>
+            ))}
+            {preview.replacement_sites.length < preview.required_release_count ? (
+              <p role="alert" className="text-sm text-amber-800 dark:text-amber-200">{t('portal.bind_no_replacement')}</p>
+            ) : null}
+          </fieldset>
+        ) : null}
+        {preview ? <p className="text-sm text-slate-600 dark:text-slate-300">{t('portal.bind_return_desc')}</p> : null}
+
         <button
           type="submit"
           className="btn btn-primary w-full justify-center"
           data-portal-bind="submit"
-          disabled={isSubmitting || isLoadingAccounts || isBlocked || !hasSelectedEligibleAccount}
+          disabled={isSubmitting || isLoadingAccounts || isBlocked || !hasSelectedEligibleAccount || !activationReady}
         >
           {isSubmitting
             ? t('portal.bind_submitting', undefined, 'Connecting…')
-            : t('portal.connect_site_authorize_addon', undefined, 'Finish connection')}
+            : t('portal.bind_activate')}
         </button>
       </form>
     </PortalCard>
