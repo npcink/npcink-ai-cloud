@@ -80,6 +80,10 @@ Addon 当前本机挂载检出为 `4758074177e3ab8300f85d5d16d704939d1b6f79`；
 本节统一登记邻接交接的四项，不创建重复实施队列，也不扩大先前生产授权。
 接续执行者先读本节和精确候选，再按当前事实更新后继记录。
 
+收尾期间邻接会话 `01a1bf16-bba3-7cd1-93b8-2de1c62793d4` 明确接回实际执行，
+报告顺序为 A3→A1→A2→A4；本会话仅维护文档，不并发操作。以下仍记录尚未完成的
+证据/发布状态，接回不等于完成，也不作为本会话新生产权限；后继结果由该执行会话核销。
+
 | ID / 状态 | Owner与边界 | 下一触发/最小动作与复核点 |
 | --- | --- | --- |
 | A1 `WAITING_HUMAN_AUTHORITY` 摘要修复发布 | 操作者授权；接续发布代理执行。保留本地候选 `cf527db58e610128c5dd332de30614a78be5f6ef`，分支 `release-fix/wordpress-excerpt-after-security-20261111`，parent15ae，树等于冻结master cf5886cf | 明确授权该候选晋级/部署后，走现行发布门禁；尚未push、PR、晋级、部署。不得静默加入更新master文档或重新固定上游镜像 |
@@ -101,7 +105,7 @@ Addon 当前本机挂载检出为 `4758074177e3ab8300f85d5d16d704939d1b6f79`；
 | Git恢复证据 | 两仓refs在 `refs/archive/local-branches/20261111/activation-closeout/`，Cloud bundle39164176字节/hash `606ea183eafbfe9ff6c7195ecc6959f3fc16afb8572948dae3f31eb7e91a3ab3`；Addon bundle14969064字节/hash `90ca088bcb7927df7b5e2a7e73dc18bb10388755dfa1d1c6ca4a092d3c242bca`，均已bundle verify |
 | Cloud远端8个交付topic refs | 分页API分支库存确认均已不存在；保护master/production及其他会话refs；不是从单次请求失败推断删除 |
 | Addon #349远端 | 精确head607c1fcc、merged及无open PR核对；单独保全远端bundle14915870字节/hash `470305f8be13bb33c378b64d207f0e7e16e7632fbdeaf9aa9314ae7e84c1c0c4` 后删除，404复核 |
-| Addon #350远端 | 保留 `codex/activation-return-flow@9d3a95e6`。本地仅b360旧候选，精确远端对象缺失；Git传输连续超时已停止，REST可读不等于完整Git历史已保全。后续网络恢复并保全精确head、复核无消费者后才退休 |
+| Addon #350远端 | 保留 `codex/activation-return-flow@9d3a95e6`。本地仅b360旧候选，精确远端对象缺失；Git传输连续超时已停止，REST可读不等于完整Git历史已保全；一次有界REST替代尝试未通过精确commit hash校验，未删除。后续完整保全精确head、复核接续owner不再需要后才退休 |
 | 当前 `activation-release-scan-fix` | App主检出，保留锁；不能绕过主检出保护删除、切换或重置。发布收据/兼容矩阵副本与master相同，本次文档提交后另存本地保全。关闭聊天不代表该checkout已与最新master同SHA |
 | 其他资源 | 邻接验收root与A1候选保留至验收/发布交接完成；WordPress挂载Addon、M4与其他会话受保护worktrees均不动 |
 
@@ -128,4 +132,4 @@ Git fetch失败后本地master/production及跟踪refs可能陈旧；本轮以Gi
 不制造付费观测；保全ignored材料和不同候选后再退休；没有对受保护目录强制清理。
 总活跃工时未记录，不用墙钟推算效率；传输与远端执行时间分开计量。
 可复用控制写入[既有规范§6.5](../../../engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制)，
-不新立重复标准或扩大生产权限。下一焦点由操作者在A1–A4中确定；无新授权时不重跑模型或部署。
+不新立重复标准或扩大生产权限。四项执行由邻接会话按其核实的授权推进，本会话不重跑模型或部署。
