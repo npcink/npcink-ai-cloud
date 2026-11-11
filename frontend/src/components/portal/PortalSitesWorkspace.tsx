@@ -182,6 +182,16 @@ function findSiteActionTrigger(siteId: string): HTMLElement | null {
   const roots = Array.from(document.querySelectorAll<HTMLElement>('[data-portal-site-id]'));
   const root = roots.find((candidate) => candidate.dataset.portalSiteId === siteId
     && candidate.getClientRects().length > 0);
+  const activeElement = document.activeElement;
+  if (
+    root
+    && activeElement instanceof HTMLElement
+    && root.contains(activeElement)
+    && !activeElement.closest('[role="menu"]')
+    && !activeElement.classList.contains('portal-row-more-btn')
+  ) {
+    return activeElement;
+  }
   return root?.querySelector<HTMLElement>('.portal-row-more-btn') || null;
 }
 
