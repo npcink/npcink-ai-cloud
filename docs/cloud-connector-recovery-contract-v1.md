@@ -119,6 +119,40 @@ Activation is explicit and account-scoped in Cloud/Portal. The Addon may open
 the Portal and re-probe the current installation, but it does not select or
 deactivate another site on the customer's behalf.
 
+### Connection confirmation and activation consent
+
+The Portal WordPress connection page keeps `site_url`, `site_name`, `return_url`
+and `state` through email registration, login, QQ and second-factor handoffs.
+Authentication redirects accept Portal-local targets only. The Addon's local
+10-minute state still bounds completion; expired requests restart in WordPress.
+
+`POST /portal/v1/addon-connections/preview` is authenticated and read-only. It
+uses the same account-access, subscription, ownership, return-host and binding
+capacity checks as authorization. It returns `site_id`, `site_status`, bounded
+`capacity`, `required_release_count` and eligible `replacement_sites`. It creates
+no site, credential, one-time code or entitlement. Replacement candidates are
+active sites in the selected account bound to the current principal. An
+unavailable preview blocks confirmation and exposes retry.
+
+`POST /portal/v1/addon-connections` accepts additive optional `activate` (default
+`false`) and `replace_site_ids` (default `[]`, maximum 25). The confirmation page
+explicitly requests activation and, when full, requires the customer to select
+exactly the necessary sites to turn off. Switching accounts discards the old
+selection. Authorization only stores the encrypted intent with the pending
+one-time code; it does not activate or deactivate any site.
+
+The WordPress callback and exchange wire contract remain unchanged. Exchange
+rechecks access, selected-site ownership/status and capacity under the existing
+account lock, and commits the selected deactivations, target activation, key
+rotation and one-time-code consumption atomically. A stale/invalid selection
+or transaction failure rolls all changes back. Addon signed verification then
+updates the local connection state. Neither a browser confirmation nor the
+preview alone establishes activation or a verified WordPress connection.
+
+Legacy callers omitting `activate` retain their existing behavior: previously
+inactive sites stay inactive and quota-full new bindings can return inactive.
+The separate Portal lifecycle/recheck recovery path remains available.
+
 ## 7. Compatibility and versioning
 
 The contract is additive to the existing error envelope. Older Addons may

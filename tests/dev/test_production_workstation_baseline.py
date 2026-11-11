@@ -387,3 +387,138 @@ def test_missing_actions_anchor_cannot_use_workstation_observation(observation):
     save(observation)
     with pytest.raises(ValueError, match="no retained successful runtime"):
         BASELINE.resolve_baseline(REPOSITORY, fake_api([]))
+
+
+@pytest.fixture
+def cancelled_upload_observation(observation):
+    _, receipt, evidence, run = observation
+    run.update(status="completed", conclusion="cancelled", head_sha=receipt["installed_sha"])
+    anchor = {
+        key: run[key]
+        for key in ("id", "head_sha", "run_attempt", "updated_at", "status", "conclusion")
+    }
+    activated = (
+        datetime.fromisoformat(receipt["observed_at_utc"]) - timedelta(minutes=1)
+    ).isoformat()
+    receipt.update(
+        schema="npcink.production_workstation_baseline.v2",
+        previous_workflow=anchor,
+        activation_completed_at_utc=activated,
+        cancelled_upload_log_sha256="f" * 64,
+    )
+    evidence.update(
+        schema="npcink.production_workstation_observation.v2",
+        activation_completed_at_utc=activated,
+        installation_complete=True,
+        one_off_lock_absent=True,
+        public_revision=receipt["installed_sha"][:12],
+        cancelled_upload={
+            "workflow": anchor,
+            "last_phase": "upload deploy bundle",
+            "remote_installation_started": False,
+            "log_sha256": "f" * 64,
+        },
+    )
+    for container in evidence["containers"]:
+        container["image_matches_exact_bundle"] = True
+    return observation
+
+
+def test_reviewed_workstation_activation_reconciles_exact_cancelled_upload(
+    cancelled_upload_observation,
+):
+    observation = cancelled_upload_observation
+    save(observation)
+    assert (
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([observation[3]], missing=True))
+        == observation[1]["installed_sha"]
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("id", 11),
+        ("run_attempt", 2),
+        ("head_sha", "e" * 40),
+        ("updated_at", "2026-11-09T00:00:00Z"),
+        ("status", "in_progress"),
+        ("conclusion", "failure"),
+        ("path", ".github/workflows/other.yml"),
+    ],
+)
+def test_cancelled_upload_anchor_drift_still_blocks(cancelled_upload_observation, field, value):
+    observation = cancelled_upload_observation
+    save(observation)
+    observation[3][field] = value
+    with pytest.raises(ValueError):
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([observation[3]], missing=True))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("installation_complete", False),
+        ("one_off_lock_absent", False),
+        ("public_revision", "wrong"),
+        ("cancelled_upload", {}),
+    ],
+)
+def test_cancelled_upload_requires_complete_installed_proof(
+    cancelled_upload_observation, field, value
+):
+    observation = cancelled_upload_observation
+    observation[2][field] = value
+    save(observation)
+    with pytest.raises(ValueError, match="successful activation|proof types"):
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([observation[3]], missing=True))
+
+
+def test_cancellation_after_activation_is_not_reconciled_by_a_later_observation(
+    cancelled_upload_observation,
+):
+    observation = cancelled_upload_observation
+    observation[1]["activation_completed_at_utc"] = observation[3]["updated_at"]
+    observation[2]["activation_completed_at_utc"] = observation[3]["updated_at"]
+    save(observation)
+    with pytest.raises(ValueError, match="cancelled upload reconciliation"):
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([observation[3]], missing=True))
+
+
+def test_cancelled_upload_cannot_override_retained_runtime_evidence(cancelled_upload_observation):
+    observation = cancelled_upload_observation
+    save(observation)
+    with pytest.raises(ValueError, match="retained runtime evidence"):
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([observation[3]]))
+
+
+@pytest.mark.parametrize("conclusion", [None, "failure", "cancelled", "success"])
+def test_later_unproven_attempt_still_blocks_cancelled_upload_recovery(
+    cancelled_upload_observation, conclusion
+):
+    observation = cancelled_upload_observation
+    save(observation)
+    later = {
+        **observation[3],
+        "id": 11,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "conclusion": conclusion,
+    }
+    with pytest.raises(ValueError):
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([later, observation[3]], missing=True))
+
+
+def test_later_runtime_supersedes_cancelled_upload_reconciliation(cancelled_upload_observation):
+    observation = cancelled_upload_observation
+    save(observation)
+    later = {
+        **observation[3],
+        "id": 11,
+        "head_sha": "e" * 40,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "conclusion": "success",
+    }
+    assert (
+        BASELINE.resolve_baseline(REPOSITORY, fake_api([later, observation[3]]))
+        == later["head_sha"]
+    )

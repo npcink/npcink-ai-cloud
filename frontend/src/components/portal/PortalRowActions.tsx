@@ -140,6 +140,7 @@ export type PortalRowActionsProps = {
   className?: string;
   /** data-* passthrough for contracts / tests on the overflow control. */
   overflowTestId?: string;
+  siteId?: string;
 };
 
 function actionNeedsConfirm(item: PortalRowActionItem): PortalRowActionConfirm | null {
@@ -243,6 +244,7 @@ export function PortalRowActions({
   moreLabel = 'More actions',
   className,
   overflowTestId,
+  siteId,
 }: PortalRowActionsProps) {
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -313,6 +315,7 @@ export function PortalRowActions({
         ref={rootRef}
         className={cn('portal-row-actions inline-flex max-w-full flex-nowrap items-center justify-end gap-1.5', className)}
         data-ui="portal-row-actions"
+        data-portal-site-id={siteId}
       >
         {primary ? <RowActionControl item={primary} tier="primary" onRequestConfirm={onRequestConfirm} /> : null}
         {secondary ? <RowActionControl item={secondary} tier="secondary" onRequestConfirm={onRequestConfirm} /> : null}
@@ -376,6 +379,7 @@ export function PortalRowActions({
         description={pendingConfirm?.confirm.description}
         size="sm"
         className="portal-commercial-dialog rounded-[18px]"
+        returnFocusRef={menuButtonRef}
         footer={
           <>
             <button

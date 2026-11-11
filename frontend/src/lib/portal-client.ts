@@ -320,6 +320,15 @@ export interface CreateAddonConnectionRequest {
   site_url: string;
   return_url: string;
   state: string;
+  activate?: boolean;
+  replace_site_ids?: string[];
+}
+
+export interface AddonActivationPreview {
+  site_id: string;
+  site_status: string;
+  required_release_count: number;
+  replacement_sites: Array<{ site_id: string; name: string; site_url: string }>;
 }
 
 export interface PortalAddonConnectionAccount {
@@ -2185,6 +2194,18 @@ export class PortalClient {
 
   async getSiteRelinkPolicy(): Promise<PortalEnvelope<PortalSiteRelinkPolicy>> {
     return this.request('GET', '/site-relink-policy', undefined);
+  }
+
+  async previewAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonActivationPreview>> {
+    const response = await this.request<AddonActivationPreview>('POST', '/addon-connections/preview', payload);
+    const data = response.data;
+    if (!data || typeof data.site_id !== 'string' || typeof data.site_status !== 'string'
+      || !Number.isSafeInteger(data.required_release_count) || data.required_release_count < 0
+      || !Array.isArray(data.replacement_sites) || !data.replacement_sites.every(site => site
+        && typeof site.site_id === 'string' && typeof site.name === 'string' && typeof site.site_url === 'string')) {
+      throw new Error('Invalid activation preview');
+    }
+    return response;
   }
 
   async createAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonConnectionResult>> {
