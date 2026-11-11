@@ -45,3 +45,14 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          upload: false
+          output: codeql-results
+
+      - name: Filter exact reviewed handoff false positives
+        run: python3 .github/scripts/filter-reviewed-codeql-false-positives.py codeql-results
+
+      - name: Upload CodeQL results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: codeql-results
+          category: "/language:${{ matrix.language }}"
