@@ -330,6 +330,48 @@ pending/exclusion/restore state, complete image production, dispatch suppression
 fresh-read consumption, bounded compensation ownership and the WordPress admin
 UI remain follow-up work. PDF/video ingestion, OCR and ASR remain deferred.
 
+## Bounded media identity reconciliation (2026-11-10 candidate)
+
+Implementation merged in Cloud #1400 (`9f7fe0916499`) and Addon #347
+(`a55ca329`). M4 accepted the clean Cloud master; the development site's hourly
+callback removed 69 confirmed missing media, retaining both current media and
+all non-media rows with unchanged hashes. The deletion run made zero provider
+calls. Historical-writer confirmation remains pending: an administratively
+failed old run is not executor completion evidence. Data cleanup does not prove
+completed compensation, external-vector or production acceptance. See the
+[cross-repository receipt](https://github.com/npcink/npcink-workflow-toolbox/blob/master/docs/maintenance-acceptance-2026-11-10.md#media-source-repair-and-historical-writer-limit).
+
+The existing `site_knowledge_status.v1` accepts optional
+`media_source_page: {"after_source_id": 0, "limit": 100}`. Both fields are
+required strict JSON integers: cursor is in `[0, 2^63)`, limit in `[1, 100]`.
+This selector is status-only and cannot accompany `source_items`, `post_ids`,
+`media_attachment_ids`, or caller-supplied site/customer/account identities.
+Authentication supplies the site scope; legacy status requests are unchanged.
+
+The additive `media_source_page` response contains `status=complete`,
+`storage_scope=relational_index`, UTC `observed_at`, echoed cursor/limit,
+ascending distinct positive integer `source_ids`, boolean `has_more`, and
+`next_after_source_id`. With another page, the next cursor equals this page's
+last ID; otherwise it is zero to restart a subsequent scan. The SQL union
+includes media document and chunk identities of every status, including orphan
+chunks, and excludes every other site. It returns no image URL/body, reads no
+external vectors and invokes no model. No database migration is required.
+
+`complete` describes one bounded page, not a whole-index snapshot. Concurrent
+changes may be found in the next pass. The page is derived Cloud index evidence,
+never WordPress source truth or a deletion command. Addon must query its own
+WordPress attachment rows for these exact IDs and retain any existing attachment;
+DB errors, unsupported/malformed/stale pages or changed credentials cannot prove
+absence or advance its cursor. Only confirmed local absence may enter the existing
+typed media deletion/compensation lifecycle. Refresh omissions remain non-destructive.
+The existing typed presence read confirms relational cleanup separately; external
+vector deletion is not inferred from this pagination response.
+
+Roll out Cloud before its Addon consumer. Older Cloud responses lack this field;
+the consumer fails closed and exposes the reconciliation failure. Versions alone
+do not establish that the matching implementation is installed. Local tests do
+not establish M4 acceptance, historical cleanup or production deployment.
+
 ## Metering Boundary
 
 `npcink-cloud/site-knowledge-sync` is server-classified index maintenance. It

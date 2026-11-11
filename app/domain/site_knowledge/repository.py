@@ -18,6 +18,21 @@ class SiteKnowledgeRepository:
     def _rowcount(self, result: object) -> int:
         return int(getattr(result, "rowcount", 0) or 0)
 
+    def media_source_ids(self, site_id: str, *, after_source_id: int, limit: int) -> list[int]:
+        """Include orphan SQL chunks and stale rows; no content or external-vector read."""
+        queries = [
+            select(model.source_id).where(
+                model.site_id == site_id,
+                model.source_type == "media",
+                model.source_id > after_source_id,
+            )
+            for model in (SiteKnowledgeDocument, SiteKnowledgeChunk)
+        ]
+        identities = queries[0].union(queries[1]).subquery()
+        return list(self.session.scalars(
+            select(identities.c.source_id).order_by(identities.c.source_id).limit(limit)
+        ))
+
     def delete_site_index(self, site_id: str) -> int:
         chunk_result = self.session.execute(
             delete(SiteKnowledgeChunk).where(SiteKnowledgeChunk.site_id == site_id)

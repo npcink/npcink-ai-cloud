@@ -1,10 +1,11 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { PortalPageStack } from '@/components/portal/PortalScaffold';
-import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
+import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
 import { PortalSiteKnowledgePanel } from '@/components/portal/PortalSiteKnowledgePanel';
 import { PortalSiteServiceStatus } from '@/components/portal/PortalSiteServiceStatus';
 import { PortalActionIcon, PortalRowActions } from '@/components/portal/PortalRowActions';
@@ -40,6 +41,7 @@ import {
   getPortalSiteUrl,
   getPortalSiteUrlDisplay,
   getPortalWordPressAdminUrl,
+  portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
 
 type PortalSiteLoadError = {
@@ -182,6 +184,10 @@ function PortalSiteRecordContent() {
   const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
   const recovery = error ? getPortalSiteRecovery(error.code, siteId, t) : null;
 
+  if (!summary && !sessionSite && !error) {
+    return <PortalLoadingState message={t('common.loading')} />;
+  }
+
   if (error) {
     if (sessionSite) {
       // Keep the owned site snapshot visible while exposing the error-specific
@@ -207,7 +213,7 @@ function PortalSiteRecordContent() {
     name: summary?.site?.name || sessionSite?.name || siteId,
     site_url: summary?.site?.site_url || sessionSite?.site_url || '',
     platform_kind: summary?.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
-    status: summary?.site?.status || sessionSite?.status || 'inactive',
+    status: summary?.site?.status || sessionSite?.status || 'unknown',
   };
   const siteUrl = getPortalSiteUrl(site);
   // Quiet default: banner only for concrete customer actions (not soft component scores).
@@ -218,43 +224,33 @@ function PortalSiteRecordContent() {
       || siteMonitoring.overview.action_required.some((item) => isPortalActionableServiceIssue(item, siteMonitoring.overview!))
     )
   );
-  const siteNeedsAttention = site.status !== 'active'
-    || !siteUrl
-    || monitoringNeedsAttention;
+  const siteNeedsAttention = portalSiteNeedsAttention(site) || monitoringNeedsAttention;
   const siteConnectionStatusLabel = site.status === 'active'
     ? t('portal.sites.table_ready', {}, 'Connected')
     : site.status === 'inactive'
       ? t('portal.site_status_inactive', {}, 'Inactive')
       : site.status === 'provisioning'
         ? t('portal.site_status_provisioning', {}, 'Provisioning')
-        : t('portal.site_status_suspended', {}, 'Suspended');
+        : site.status === 'suspended'
+          ? t('portal.site_status_suspended', {}, 'Suspended')
+          : t('portal.site_status_unknown', {}, 'Unknown');
   const primaryMonitoringAction = siteMonitoring.overview?.action_required.find(
     (item) => isPortalActionableServiceIssue(item, siteMonitoring.overview!)
   ) || null;
   const primaryIssueCategory = primaryMonitoringAction
     ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
     : null;
-  const latestActivityAt = siteMonitoring.overview?.activity.last_seen_at
-    || siteMonitoring.overview?.generated_at
-    || '';
+  const latestActivityAt = siteMonitoring.overview?.activity.last_seen_at || '';
   const pluginMissingPrimary = isPortalCustomerPluginMissingAction(primaryMonitoringAction);
   const recheckHelpful = isPortalRecheckHelpfulForAction(primaryMonitoringAction);
-  const attentionTitle = site.status === 'inactive'
-    ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
-    : primaryMonitoringAction
+  const attentionTitle = primaryMonitoringAction
       ? getPortalCustomerIssueTitle(primaryMonitoringAction, t)
       : !siteUrl
       ? t('portal.site_url_missing_short', {}, 'Site URL not configured')
       : site.status !== 'active'
         ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
         : t('portal.site_service_status_attention', {}, 'Site service status needs confirmation');
-  const attentionDetail = site.status === 'inactive'
-    ? t(
-        'portal.site_inactive_recovery_detail',
-        {},
-        'Reconnect this site from the WordPress plugin first. If it still remains inactive, submit a ticket and include the site name.'
-      )
-    : primaryMonitoringAction
+  const attentionDetail = primaryMonitoringAction
       ? getPortalCustomerIssueDetail(primaryMonitoringAction, t)
       : !siteUrl
       ? t(
@@ -379,9 +375,7 @@ function PortalSiteRecordContent() {
   const recheckActionLabel = siteMonitoring.isRefreshing
     ? t('portal.retry.rechecking', {}, 'Checking…')
     : t('portal.retry.recheck_service', {}, 'Recheck service');
-  const attentionActionLabel = site.status === 'inactive'
-    ? t('portal.activate_site_action', {}, 'Activate')
-    : !siteUrl
+  const attentionActionLabel = !siteUrl
       ? t('portal.support_request_new_action', {}, 'Submit ticket')
       : openWordPressForAttention
         ? t('portal.sites.open_wordpress_admin', {}, 'Open WordPress admin')
@@ -391,13 +385,7 @@ function PortalSiteRecordContent() {
           ? t('portal.site_attention_contact_support', {}, 'Contact support')
           : recheckActionLabel;
 
-  const attentionAction = site.status === 'inactive'
-    ? {
-        label: attentionActionLabel,
-        href: '/portal#sites',
-        testId: 'attention-cta',
-      }
-    : !siteUrl
+  const attentionAction = !siteUrl
       ? {
           label: attentionActionLabel,
           href: supportHref,
@@ -427,7 +415,6 @@ function PortalSiteRecordContent() {
   const attentionSecondaryAction = (
     siteNeedsAttention
     && !error
-    && site.status !== 'inactive'
     && siteUrl
     && primaryIssueCategory !== 'quota'
     && (openWordPressForAttention || pluginMissingPrimary || !recheckHelpful)
@@ -483,12 +470,14 @@ function PortalSiteRecordContent() {
                 <PortalActionIcon id="rename" />
               </button>
             ) : null}
-            {!(siteNeedsAttention && !error) ? (
+            {site.status === 'inactive' ? (
+              <PortalStatusInline label={siteConnectionStatusLabel} />
+            ) : (
               <PortalStatusBadge
                 status={site.status === 'active' ? 'active' : 'warning'}
                 label={siteConnectionStatusLabel}
               />
-            ) : null}
+            )}
             {(wpAdminUrl || canRemoveThisSite) ? (
               <div data-portal-site="other-actions">
                 <PortalRowActions
@@ -529,11 +518,22 @@ function PortalSiteRecordContent() {
               {t('portal.monitoring.last_activity', {}, 'Last activity')}:{' '}
               {latestActivityAt
                 ? formatDate(latestActivityAt)
-                : t('portal.home.package_pending_label', {}, 'To confirm')}
+                : siteMonitoring.overview
+                  ? t('portal.monitoring.no_activity_recorded', {}, 'No records')
+                  : t('portal.home.package_pending_label', {}, 'To confirm')}
             </span>
           </div>
         )}
       />
+
+      {site.status === 'inactive' && !error ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300" data-portal-site="inactive-service-note">
+          <p>{t('portal.site_inactive_recovery_detail', {}, 'Cloud service is stopped for this site. Its binding and WordPress content are preserved. Activate it in My sites when needed.')}</p>
+          {sessionSite?.allowed_actions?.includes('provision_sites') ? (
+            <Link className="btn btn-secondary btn-sm" href="/portal#sites">{t('portal.activate_site_action', {}, 'Activate')}</Link>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? (
         <PortalErrorState
@@ -646,8 +646,11 @@ function PortalSiteRecordContent() {
         }
       >
         <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-950 dark:text-white">{displayName}</p>
-          <p className="break-words">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('portal.site_removal_target', {}, 'Site to remove from this account')}
+          </p>
+          <p className="break-words font-semibold text-slate-950 dark:text-white">{displayName}</p>
+          <p className="break-all">
             {siteUrl || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
           </p>
           {removeError ? (

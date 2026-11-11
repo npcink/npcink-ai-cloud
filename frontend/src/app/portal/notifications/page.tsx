@@ -88,7 +88,7 @@ export default function PortalNotificationsPage() {
         {loading ? <PortalLoadingState compact message={t('common.loading')} /> : error ? (
           <PortalErrorState compact title={t('portal.notifications.load_failed')} description={error} retryLabel={t('common.retry')} onRetry={() => void load()} />
         ) : !inbox?.items.length ? (
-          <PortalEmptyState compact title={t('portal.notifications.empty')} description={t('portal.notifications.description')} />
+          <PortalEmptyState compact title={t('portal.notifications.empty')} />
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800" aria-label={t('portal.notifications.title')}>
             {inbox.items.map((item) => {

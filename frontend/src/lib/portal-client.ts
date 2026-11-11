@@ -1242,7 +1242,7 @@ function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord
       name: String(nestedSite.name || nestedSite.site_id || record.site_id || ''),
       site_url: String(nestedSite.site_url || ''),
       platform_kind: String(nestedSite.platform_kind || ''),
-      status: String(nestedSite.status || 'inactive'),
+      status: String(nestedSite.status || 'unknown'),
       ownership_released_at: String(nestedSite.ownership_released_at || ''),
       relink_cooldown_until: String(nestedSite.relink_cooldown_until || ''),
       created_at: String(nestedSite.created_at || ''),
