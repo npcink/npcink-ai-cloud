@@ -71,9 +71,10 @@ read permission, never production SSH credentials. A `no_deploy` or static
 dispatch does not advance the managed runtime baseline.
 An active, failed, or cancelled attempt newer than the proven runtime baseline
 stops planning: a failed workflow may already have changed the installed release.
-The only cancelled-upload reconciliation is the separately reviewed, bounded
+The cancelled-upload reconciliation is the separately reviewed, bounded
 workstation observation described below; cancellation alone is never evidence
-that the host was unchanged.
+that the host was unchanged. A failed backend tag-finalization has its own
+reviewed cleanup reconciliation below; failure alone never proves installation.
 
 Dispatches without timing evidence are skipped only when their exact successful
 production CI artifact proves a `no_deploy` or static plan. Missing runtime
@@ -117,6 +118,26 @@ this path. Active or failed attempts, another SHA, reruns, changed/missing
 anchors, an activation before cancellation, and any newer unproven attempt
 remain blocked. The v1 successful-Actions anchor remains supported. Neither
 schema repairs or relabels the cancelled Actions run as successful.
+
+A failed backend deployment that reached `finalize-rollback-image-tags` may be
+reconciled for planning by `.github/production-cleanup-baseline.json` (schema
+`npcink.production_cleanup_baseline.v1`) and its checksum-bound sanitized
+observation. Bind the exact failed Actions run ID, SHA, attempt, update time,
+status, conclusion and workflow identity, retained failed backend timing hash,
+installed source/tree, manifest/bundle, original failure marker, and reviewed
+cleanup helper source/output hashes. The independently reviewed originals must
+prove that the failure was tag finalization, not migration or service startup.
+The cleanup must finish after the failed run, preserve all seven intended service
+identities (including backend-preserved Redis), and record zero service switches,
+migration attempts and Provider calls. Require a later independent operational/
+public revision check, installation completion, no deployment/failure/one-off
+locks, and seven healthy running containers with no restart or OOM. Keep the
+observation window at most seven days; missing/changed retained timing, stale
+evidence, another attempt or any newer unproven deployment still blocks planning.
+Retain the failed Actions conclusion and any unexecuted formal smoke separately.
+This read-only reconciliation authorizes neither host recovery nor deployment;
+the cleanup itself requires its own exact human authorization. Do not reuse the
+cancelled-upload schema or extend dates without a fresh observation and review.
 
 This workstation observation is valid for at most seven days. The resolver
 validates any retained runtime/CI artifacts first; malformed artifacts, changed

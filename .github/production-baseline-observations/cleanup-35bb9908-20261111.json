@@ -1,0 +1,129 @@
+{
+  "repository": "npcink/npcink-ai-cloud",
+  "installed_sha": "35bb9908e262b1e1c2be3938bdfa9bc5a1daba77",
+  "installed_tree": "ecd4db5788a70d8a9cf1ca83656c014300896595",
+  "manifest_sha256": "cf24d851c709e796cad0e4e8792abe468f6d63c30994ec7682e7f8d7dca7f945",
+  "bundle_sha256": "a7e64e89decf5f6b5fdf3abd9d7a903c99f5921beb48804647129d932f609b29",
+  "timing_sha256": "aacc9f6103cad2b20f9398d89eed3358fdb44d6659a6d1d6179d3f89ec5791c7",
+  "recovery_source_revision": "c7d872ae8b082926f42318487b370085772a449b",
+  "recovery_helper_sha256": "2562d32e36c13abb74a9668d1dd8bed0ec29e3cdf22585ccdad5967ed8bc851d",
+  "recovery_output_sha256": "7d809dba2ad86db074cb59517f897e5727de4cc1a979624019d35cd01195e19c",
+  "failed_marker_sha256": "b8fd2f3a71cc58ea6ffcea3d67f0b23f722ff14a0868f45d23947d2e17550b97",
+  "failed_workflow": {
+    "id": 42997960375,
+    "head_sha": "35bb9908e262b1e1c2be3938bdfa9bc5a1daba77",
+    "run_attempt": 1,
+    "updated_at": "2026-11-11T09:53:22Z",
+    "status": "completed",
+    "conclusion": "failure",
+    "event": "workflow_dispatch",
+    "head_branch": "production",
+    "path": ".github/workflows/deploy-production.yml"
+  },
+  "failed_phase": "finalize-rollback-image-tags",
+  "observed_at_utc": "2026-11-11T10:27:17.922587+00:00",
+  "recovery_completed_at_utc": "2026-11-11T10:25:35.557976+00:00",
+  "schema": "npcink.production_cleanup_observation.v1",
+  "current_release": "release-a7e64e89decf5f6b-20261111094648-2291",
+  "repair": {
+    "active_production_revision": "35bb9908e262b1e1c2be3938bdfa9bc5a1daba77",
+    "active_services_proved": [
+      "api",
+      "callback-worker",
+      "frontend",
+      "ops-worker",
+      "proxy",
+      "redis",
+      "worker"
+    ],
+    "frontend_image_id": "sha256:675838f6793425bb3b3a088bbec70ba4a77d873e111de75fd4bf36d1c3913f7a",
+    "lane": "backend",
+    "migration_attempts": 0,
+    "provider_calls": 0,
+    "recovery_source_revision": "c7d872ae8b082926f42318487b370085772a449b",
+    "release": "release-a7e64e89decf5f6b-20261111094648-2291",
+    "rollback_tags_removed": 1,
+    "schema": "npcink.production_terminalization_repair.v1",
+    "service_switches": 0,
+    "status": "complete"
+  },
+  "containers": [
+    {
+      "service": "api",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:a551ccab514d6c597ecc17c496989e745b84d3f833b188e6935a3cb1a7d6b0ba",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "callback-worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:a551ccab514d6c597ecc17c496989e745b84d3f833b188e6935a3cb1a7d6b0ba",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "frontend",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:675838f6793425bb3b3a088bbec70ba4a77d873e111de75fd4bf36d1c3913f7a",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "ops-worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:a551ccab514d6c597ecc17c496989e745b84d3f833b188e6935a3cb1a7d6b0ba",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "proxy",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:de24e6805e2b58b0c7ff979379f4bc1e334c84b1f98d062c76e423946cda8dbb",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "redis",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:b4e6d8dffd2a0893024b2457f9c7cbe19e694a1ab249873919415c30c3bf4e9f",
+      "image_matches_exact_bundle": false,
+      "image_matches_intended_runtime": true
+    },
+    {
+      "service": "worker",
+      "status": "running",
+      "health": "none",
+      "restarts": 0,
+      "OOMKilled": false,
+      "daemon_image_id": "sha256:a551ccab514d6c597ecc17c496989e745b84d3f833b188e6935a3cb1a7d6b0ba",
+      "image_matches_exact_bundle": true,
+      "image_matches_intended_runtime": true
+    }
+  ],
+  "internal_operational_ready": true,
+  "deployment_lock_absent": true,
+  "failed_cutover_marker_absent": true,
+  "one_off_lock_absent": true,
+  "installation_complete": true,
+  "public_live_status": 200,
+  "public_revision": "35bb9908e262"
+}

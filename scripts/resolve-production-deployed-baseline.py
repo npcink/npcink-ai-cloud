@@ -19,6 +19,7 @@ RECOVERY_FILE = Path(__file__).resolve().parents[1] / ".github/production-baseli
 WORKSTATION_FILE = (
     Path(__file__).resolve().parents[1] / ".github/production-workstation-baseline.json"
 )
+CLEANUP_FILE = Path(__file__).resolve().parents[1] / ".github/production-cleanup-baseline.json"
 UTC = timezone.utc  # noqa: UP017 -- operator Python may predate datetime.UTC.
 
 
@@ -285,6 +286,189 @@ def github_api(path: str) -> bytes:
     return subprocess.run(["gh", "api", path], check=True, capture_output=True, timeout=60).stdout
 
 
+def cleanup_baseline(repository: str, run: dict, timing: dict | None, path: Path) -> str | None:
+    """Recognize reviewed cleanup after a failed backend cutover, never relabel its run."""
+    if not path.is_file():
+        return None
+    raw = path.read_bytes()
+    if len(raw) > 16_384:
+        raise ValueError("cleanup baseline receipt is oversized")
+    receipt = json.loads(raw)
+    if not isinstance(receipt, dict) or receipt.get("schema") != (
+        "npcink.production_cleanup_baseline.v1"
+    ):
+        raise ValueError("cleanup baseline receipt schema is invalid")
+    anchor = {
+        key: run.get(key)
+        for key in (
+            "id",
+            "head_sha",
+            "run_attempt",
+            "updated_at",
+            "status",
+            "conclusion",
+            "event",
+            "head_branch",
+            "path",
+        )
+    }
+    bound_anchor = receipt.get("failed_workflow")
+    if (
+        receipt.get("repository") != repository
+        or not isinstance(bound_anchor, dict)
+        or set(bound_anchor) != set(anchor)
+        or any(type(bound_anchor[k]) is not type(v) or bound_anchor[k] != v for k, v in anchor.items())
+        or type(anchor["id"]) is not int
+        or type(anchor["run_attempt"]) is not int
+        or receipt.get("installed_sha") != anchor["head_sha"]
+        or receipt.get("failed_phase") != "finalize-rollback-image-tags"
+        or anchor["status"] != "completed"
+        or anchor["conclusion"] != "failure"
+        or anchor["event"] != "workflow_dispatch"
+        or anchor["head_branch"] != "production"
+        or anchor["path"] != ".github/workflows/deploy-production.yml"
+    ):
+        raise ValueError("cleanup baseline does not bind the exact failed deployment")
+    for field, length in (
+        ("installed_sha", 40),
+        ("installed_tree", 40),
+        ("manifest_sha256", 64),
+        ("bundle_sha256", 64),
+        ("timing_sha256", 64),
+        ("observation_sha256", 64),
+        ("recovery_source_revision", 40),
+        ("recovery_helper_sha256", 64),
+        ("recovery_output_sha256", 64),
+        ("failed_marker_sha256", 64),
+    ):
+        if not re.fullmatch(r"[0-9a-f]{" + str(length) + "}", str(receipt.get(field, ""))):
+            raise ValueError("cleanup baseline evidence identity is invalid")
+    observed = _utc_timestamp(receipt.get("observed_at_utc"))
+    completed = _utc_timestamp(receipt.get("recovery_completed_at_utc"))
+    expires = _utc_timestamp(receipt.get("expires_at_utc"))
+    now = datetime.now(UTC)
+    if not (
+        _utc_timestamp(anchor["updated_at"]) < completed <= observed <= now
+        and observed < expires <= observed + timedelta(days=7)
+        and now < expires
+    ):
+        raise ValueError("cleanup baseline observation is stale or has an invalid window")
+    expected_timing = {
+        "schema": "npcink.release_timing.v1",
+        "kind": "production_deploy_phases",
+        "repository": repository,
+        "head_sha": receipt["installed_sha"],
+        "workflow_run_id": str(run["id"]),
+        "release_lane": "backend",
+        "release_action": "runtime",
+        "status": "failure",
+        "deploy_exit_status": 1,
+    }
+    if not isinstance(timing, dict) or any(
+        type(timing.get(key)) is not type(value) or timing[key] != value
+        for key, value in expected_timing.items()
+    ):
+        raise ValueError("cleanup baseline requires retained failed backend timing")
+    timing_hash = hashlib.sha256(
+        json.dumps(timing, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if timing_hash != receipt["timing_sha256"]:
+        raise ValueError("cleanup baseline retained timing changed")
+    filename = receipt.get("observation_file", "")
+    if not isinstance(filename, str) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9-]{0,80}\.json", filename
+    ):
+        raise ValueError("cleanup baseline observation filename is invalid")
+    evidence_raw = (path.parent / "production-baseline-observations" / filename).read_bytes()
+    if (
+        len(evidence_raw) > 32_768
+        or hashlib.sha256(evidence_raw).hexdigest() != (receipt["observation_sha256"])
+    ):
+        raise ValueError("cleanup baseline observation checksum mismatch")
+    evidence = json.loads(evidence_raw)
+    expected = {
+        **{
+            key: value
+            for key, value in receipt.items()
+            if key
+            not in {
+                "schema",
+                "expires_at_utc",
+                "observation_file",
+                "observation_sha256",
+            }
+        },
+        "schema": "npcink.production_cleanup_observation.v1",
+        "failed_phase": "finalize-rollback-image-tags",
+        "deployment_lock_absent": True,
+        "failed_cutover_marker_absent": True,
+        "one_off_lock_absent": True,
+        "installation_complete": True,
+        "internal_operational_ready": True,
+        "public_live_status": 200,
+        "public_revision": receipt["installed_sha"][:12],
+    }
+    if not isinstance(evidence, dict) or any(
+        type(evidence.get(key)) is not type(value) or evidence[key] != value
+        for key, value in expected.items()
+    ):
+        raise ValueError("cleanup baseline observation is incomplete")
+    roles = {"api", "frontend", "redis", "proxy", "worker", "callback-worker", "ops-worker"}
+    repair = evidence.get("repair", {})
+    required_repair = {
+        "schema": "npcink.production_terminalization_repair.v1",
+        "status": "complete",
+        "lane": "backend",
+        "active_production_revision": receipt["installed_sha"],
+        "recovery_source_revision": receipt["recovery_source_revision"],
+        "release": evidence.get("current_release"),
+        "service_switches": 0,
+        "migration_attempts": 0,
+        "provider_calls": 0,
+        "rollback_tags_removed": 1,
+    }
+    if (
+        not isinstance(repair, dict)
+        or not evidence.get("current_release")
+        or any(
+            type(repair.get(k)) is not type(v) or repair[k] != v for k, v in required_repair.items()
+        )
+        or sorted(repair.get("active_services_proved", [])) != sorted(roles)
+    ):
+        raise ValueError("cleanup baseline recovery was not cleanup-only")
+    containers = evidence.get("containers")
+    if (
+        not isinstance(containers, list)
+        or len(containers) != 7
+        or any(not isinstance(item, dict) for item in containers)
+        or {item.get("service") for item in containers} != roles
+        or any(
+            item.get("status") != "running"
+            or item.get("OOMKilled") is not False
+            or type(item.get("restarts")) is not int
+            or item["restarts"] != 0
+            or item.get("image_matches_intended_runtime") is not True
+            or item.get("health")
+            not in ({"healthy", "none"} if item["service"].endswith("worker") else {"healthy"})
+            for item in containers
+        )
+    ):
+        raise ValueError("cleanup baseline intended-runtime proof is invalid")
+    tree = subprocess.check_output(
+        ["git", "rev-parse", "--verify", receipt["installed_sha"] + "^{tree}"],
+        cwd=path.parent.parent,
+        text=True,
+        timeout=10,
+    ).strip()
+    if tree != receipt["installed_tree"]:
+        raise ValueError("cleanup baseline installed tree mismatch")
+    print(
+        "[ok] reviewed cleanup recovers installed baseline; Actions run remains failed",
+        file=sys.stderr,
+    )
+    return receipt["installed_sha"]
+
+
 def read_artifact(root, run_id, name, filename, api):
     artifacts = json.loads(api(f"{root}/runs/{run_id}/artifacts?per_page=100"))["artifacts"]
     matches = [item for item in artifacts if item["name"] == name and not item["expired"]]
@@ -305,6 +489,7 @@ def resolve_baseline(
     *,
     recovery_path: Path | None = None,
     workstation_path: Path | None = None,
+    cleanup_path: Path | None = None,
 ) -> str:
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
         raise ValueError("repository must use owner/name format")
@@ -318,6 +503,19 @@ def resolve_baseline(
     # Host mutation is serialized. Completion order also handles reruns of old SHAs.
     for run in sorted(runs, key=lambda item: item["updated_at"], reverse=True):
         if run.get("conclusion") != "success":
+            if run.get("status") == "completed" and run.get("conclusion") == "failure":
+                retained = read_artifact(
+                    root,
+                    run["id"],
+                    f"production-deploy-timing-{run['id']}-{run['head_sha']}",
+                    "production-deploy-phase-timing.json",
+                    api,
+                )
+                recovered = cleanup_baseline(
+                    repository, run, retained, cleanup_path or CLEANUP_FILE
+                )
+                if recovered is not None:
+                    return recovered
             if (
                 run.get("status") == "completed"
                 and run.get("conclusion") == "cancelled"
