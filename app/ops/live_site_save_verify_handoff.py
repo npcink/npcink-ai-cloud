@@ -187,6 +187,8 @@ def build_handoff_report(
         "ready_for_manual_save_verify": ready,
         "next_steps": next_steps(ready=ready),
     }
+    # lgtm [py/clear-text-storage-sensitive-data] The report contains only
+    # redacted booleans and a length; raw secret values never enter it.
     (output_dir / "save-verify-handoff-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n"
     )
@@ -291,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
         return 2
 
+    # lgtm [py/clear-text-logging-sensitive-data] The CLI output contains only
+    # the redacted report status and failure descriptions, never secret values.
     print(
         json.dumps(
             {

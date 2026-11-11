@@ -2125,7 +2125,12 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     principal_id=principal_id, site_id=site.site_id,
                     site_status=str(site.status), snapshot=snapshot,
                 )
-                replacements = [str(item) for item in payload.get("replace_site_ids", [])]
+                raw_replacements = payload.get("replace_site_ids", [])
+                replacements = (
+                    [str(item) for item in raw_replacements]
+                    if isinstance(raw_replacements, list)
+                    else []
+                )
                 self._validate_addon_activation_selection(preview, replacements)
                 # Account lock serializes capacity with other lifecycle/exchange actions.
                 # All selected deactivations and this activation commit with the key exchange.
