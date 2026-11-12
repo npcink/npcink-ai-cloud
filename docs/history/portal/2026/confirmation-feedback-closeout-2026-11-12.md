@@ -56,7 +56,7 @@ PC 浏览器：新增 9 个截图场景；中文 1056×1050 覆盖归属、冷�
 - [x] 补齐连接受阻状态及原因/下一步，验证 fail-closed 和零隐式绑定。
 - [x] 经验写入活跃信息层级规范 §16 与本回执，并同步台账。
 - [x] M4 候选同步、运行身份与连接定向浏览器验证。
-- [ ] PR/CI、合并与 clean-master M4 接受：本源文档形成时待执行，最终状态以关联 PR、M4 status 和任务终结回执为准。
+- [x] PR/CI、合并与 clean-master M4 接受：后继工程收尾已完成，见下方最终状态补记；前文候选证据保留其发生时身份。
 - [ ] 人工成品视觉接受、真实生产：未作技术自证，不属于本地/mock 通过结论。
 
 ### 发现的问题
@@ -107,3 +107,46 @@ Git 直连 fetch 超时后未继续同签名重试；核对 API master 与 origi
 未单独归因。publisher 首次仅覆盖 helper 仍超时，停止该进程后同时固定 HTTP/1.1，
 认证交给既有 gh helper。只作用于当前进程，不修改全局配置或输出认证材料。
 台账合并只处理双方追加记录冲突，同时保留前序生产验收事实与本轮 UI 记录。生产未在本任务中操作；最终人工视觉接受待用户确认。
+
+
+## 最终状态补记 — 2026-11-12
+
+本节补齐前文形成于 PR 前的状态。功能代码、既有回归与经验规范均已通过
+[PR #1429](https://github.com/npcink/npcink-ai-cloud/pull/1429) 合入 master：
+`bfd6e35abdb2e622ec40e706703abd15acb86dd9`，合并时间 `2026-11-12T09:36:56Z`。
+本会话所确认的移除站点、七类同类确认及连接受阻提示问题已完成技术整改，
+不是对全项目历史 backlog、未改入口或所有生产状态作清零声明。
+
+| 层级 | 最终证据 |
+| --- | --- |
+| 本地 | 构建版定向 36/36：确认24、长名称多对象替换2、连接10；类型、ESLint、构建、静态契约与文案门禁通过 |
+| GitHub CI | 首轮 [43188460762](https://github.com/npcink/npcink-ai-cloud/actions/runs/43188460762) 通过；master 合入 #1430 后严格保护要求更新基线，更新后 head `b41f7a2e` 的 [43190692476](https://github.com/npcink/npcink-ai-cloud/actions/runs/43190692476) 亦通过；没有复用旧 head 绿灯绕过新门禁 |
+| M4 candidate | 连接10/10、移除及后台确认4/4；截图与夹具不冒充真实 Npcink 所有权交换 |
+| M4 accepted | 从 clean master 执行 promote，20.51秒；`accepted / promotion_pr=1429 / source_branch=master / source_dirty=false / source_revision=bfd6e35a…`；健康200，合并后冒烟2/2（9.5秒） |
+| 前端来源 | frontend source hash 保持 `3dc89ba0…`，保留 `9dad04e7` 的已验证构建；没有为更新接受元数据重复构建相同前端 |
+| 自动模型评审 | Codex Review 因评审额度耗尽未完成，无具体行内发现且未重试；OCR 工作流读回手动停用，未重新启用 |
+| 生产与人工 | 本任务未部署生产，未进行真实站点交换；人工成品视觉接受待确认，不能由技术绿灯代替 |
+
+### 分支与工作树
+
+后继复核时，原功能远端分支 `codex/site-removal-dialog` 已不存在；其本地分支和
+陈旧 remote-tracking ref 也已清理。删除前核对了精确 head、已合并 PR、工作树未占用
+以及内容与合并 master 一致，并将原提交图保存到证据根下
+`closeout/site-removal-dialog-merged.bundle`，验证可恢复。
+
+当前会话 worktree 因应用主检出保护保留。归档工具明确返回
+`The task's primary checkout cannot be removed.`；未绕过保护手工删除。
+它没有未提交的代码交付；关闭会话与移除该目录是两件事。只有该路径不再承担
+应用主检出角色后，才能重新核对 clean/merged/占用/证据状态并归档。
+其他会话的分支、工作树和稳定 M4 ops checkout 不在本轮清理范围。
+
+完整最终证据及清理状态另存于证据根 `closeout/final-handoff.md`、
+`final-ci-success.json`、`m4-accepted-status.log`、`m4-accepted-health.json`、
+`m4-accepted-smoke.log`、`branch-cleanup.json` 与 `archive-state.json`。
+本次补记只改文档；按 documentation-only 规则走文档/CI 门禁，不重新构建或同步 M4。
+
+### 收尾经验补充
+
+阶段回执应保留历史失败与来源，但在合并/接受后追加最终状态入口，并同步落实台账。
+“工作区干净”“分支已删”“工作树已归档”须分别核对；受保护目录保留不能写成全部清理。
+这能避免后续会话把原“待合并”误读为仍有代码待办，也避免把技术完成误读为生产或人工接受。

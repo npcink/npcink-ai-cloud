@@ -1,5 +1,8 @@
 # Portal 移除站点弹窗版式 — 2026-11-12
 
+> 后继工程状态：本项已随 [PR #1429](https://github.com/npcink/npcink-ai-cloud/pull/1429) 合并并完成 M4 接受。
+> 下文保留当时的本地候选、失败及待办记录；[最终状态补记](confirmation-feedback-closeout-2026-11-12.md#最终状态补记--2026-11-12)分别说明 CI、M4、评审限制、清理及生产/人工状态。
+
 ## Scope / Boundary
 
 `development` lane，本地候选；仅 `/portal` 和 `/portal/sites/[siteId]` 的移除确认。
