@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 接续主机高读盘事故、统计/worker修复和当前会话资源收尾 | [事故接续与开发复盘 — 2026-11-12](history/engineering/2026/host-io-incident-development-handoff-2026-11-12.md) — 三批源码交付、生产取证与未证实根因分开；保留历史验收限制、主检出角色及下一复核点 |
 | 核对激活发布、伪需求取舍、四项接续与本会话清理 | [激活流程与收尾复盘 — 2026-11-11](history/engineering/2026/activation-flow-closeout-and-lessons-2026-11-11.md) — 已合并/生产与待验收分开；唯一四项台账、归档和受保护资源；方法见[收尾规范§6.5](engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制) |
 | 核对替换主机发布、历史阻塞、经验与本会话收尾 | [替换主机发布与收尾记录 — 2026-11-10](history/production/2026/replacement-host-release-2026-11-10.md) — 精确生产版本、保留规则实效、历史问题对账、人工接受与资源保留；长期规则见[替换主机恢复](replacement-host-recovery-v1.md)和[保留维护](production-retention-maintenance-v1.md) |
 | 核对注册准入是否合并、历史阻塞、分支清理与关闭会话条件 | [注册准入收口与经验 — 2026-11-06](history/portal/2026/registration-access-closeout-2026-11-06.md) — #1380、CI/M4接受、两平台基线、生产等待项与主检出保留；长期规则见[注册准入合同](portal-registration-access-v1.md) |
