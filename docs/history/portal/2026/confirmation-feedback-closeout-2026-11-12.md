@@ -103,6 +103,7 @@ M4 同步复用既有镜像，按源/配置指纹重建前端并重建 API 容�
 全量后台视觉矩阵依 PC 选择规范 §4 不适用；定向两宽/语言/主题和既有强制 CI 保留。
 
 Git 直连 fetch 超时后未继续同签名重试；核对 API master 与 origin/master 一致。
-后续禁用本次命令的 osxkeychain helper 后 fetch 成功；发布改用现有 gh credential helper，
-只作用于当前进程，不修改全局凭据配置或输出认证材料。
+后续本进程禁用 credential helper 并指定 HTTP/1.1 后 fetch 成功；两项同时改变，
+未单独归因。publisher 首次仅覆盖 helper 仍超时，停止该进程后同时固定 HTTP/1.1，
+认证交给既有 gh helper。只作用于当前进程，不修改全局配置或输出认证材料。
 台账合并只处理双方追加记录冲突，同时保留前序生产验收事实与本轮 UI 记录。生产未在本任务中操作；最终人工视觉接受待用户确认。
