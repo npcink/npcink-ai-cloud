@@ -337,6 +337,8 @@ jobs:
       - name: Deploy
         id: deploy
         env:
+          GH_TOKEN: ${{ github.token }}
+          NPCINK_CLOUD_DEPLOY_ARTIFACT_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
           NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
           NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}

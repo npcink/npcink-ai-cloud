@@ -55,6 +55,12 @@ def test_format_duration_handles_missing_and_seconds() -> None:
     assert format_duration(65) == "1m05s"
 
 
+def test_direct_artifact_download_is_counted_as_transfer() -> None:
+    assert report_release_timing.classify_deploy_phase(
+        "download deploy bundle from Actions artifact"
+    ) == "transfer"
+
+
 def test_deploy_timing_summary_groups_release_phases_without_double_counting_wrapper() -> None:
     log_text = """
 [timing] upload deploy bundle: start

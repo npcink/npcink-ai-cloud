@@ -184,6 +184,7 @@ ARCHIVE_PATHS=(
 	scripts/production-image-supply.py
 	scripts/production-application-image-inputs.py
 	scripts/production-release-plan.py
+	scripts/transfer-release-artifact.py
 	scripts/scan-production-images.sh
 	scripts/verify-release-bundle-manifest.py
 )
