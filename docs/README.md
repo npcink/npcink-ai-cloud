@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 接续主机高读盘事故、统计/worker修复和当前会话资源收尾 | [事故接续与开发复盘 — 2026-11-12](history/engineering/2026/host-io-incident-development-handoff-2026-11-12.md) — 三批源码交付、生产取证与未证实根因分开；保留历史验收限制、主检出角色及下一复核点 |
 | 核对激活发布、伪需求取舍、四项接续与本会话清理 | [激活流程与收尾复盘 — 2026-11-11](history/engineering/2026/activation-flow-closeout-and-lessons-2026-11-11.md) — 已合并/生产与待验收分开；唯一四项台账、归档和受保护资源；方法见[收尾规范§6.5](engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制) |
 | 核对替换主机发布、历史阻塞、经验与本会话收尾 | [替换主机发布与收尾记录 — 2026-11-10](history/production/2026/replacement-host-release-2026-11-10.md) — 精确生产版本、保留规则实效、历史问题对账、人工接受与资源保留；长期规则见[替换主机恢复](replacement-host-recovery-v1.md)和[保留维护](production-retention-maintenance-v1.md) |
 | 核对注册准入是否合并、历史阻塞、分支清理与关闭会话条件 | [注册准入收口与经验 — 2026-11-06](history/portal/2026/registration-access-closeout-2026-11-06.md) — #1380、CI/M4接受、两平台基线、生产等待项与主检出保留；长期规则见[注册准入合同](portal-registration-access-v1.md) |
@@ -61,6 +62,7 @@ product work or override the current Phase 1 expansion freeze.
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 排查常驻 worker 数据库连接超时和恢复 | [Worker 连接恢复](worker-database-connection-recovery-v1.md) — 只重试进入业务前的连接获取；有限退避、释放失败 Session、保留业务不重放与生产授权边界 |
+| 追查 Linux 主机持续读盘、进程来源与内存回收 | [主机 IO 现场取证](host-io-incident-evidence-v1.md) — 短时只读采样、经授权的48小时临时记录、32MiB轮转、停止方式及根因证据标准 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
 | 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
