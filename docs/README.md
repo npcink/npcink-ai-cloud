@@ -61,6 +61,7 @@ product work or override the current Phase 1 expansion freeze.
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 排查常驻 worker 数据库连接超时和恢复 | [Worker 连接恢复](worker-database-connection-recovery-v1.md) — 只重试进入业务前的连接获取；有限退避、释放失败 Session、保留业务不重放与生产授权边界 |
+| 追查 Linux 主机持续读盘、进程来源与内存回收 | [主机 IO 现场取证](host-io-incident-evidence-v1.md) — 短时只读采样、经授权的48小时临时记录、32MiB轮转、停止方式及根因证据标准 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
 | 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
