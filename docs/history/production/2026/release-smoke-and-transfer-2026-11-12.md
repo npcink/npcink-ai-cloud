@@ -78,3 +78,41 @@ artifact `13921841937`，外层 ZIP 为 242,522,120 bytes，digest
 应用源码、数据库、WordPress 和 M4 均无改动；本机 Docker 保持退出。
 传输工具的本地测试、生产只读网络实验、master 合并及生产工具晋级分别记账。
 网络读取成功不等于新的生产部署成功，正式 smoke 仍为未通过。
+
+## 开发期轻量 smoke 合并与真实验收（2026-11-12）
+
+操作者批准按“合并工具 → 真实零模型检查 → 回执与资源清理”收尾。
+[PR #1432](https://github.com/npcink/npcink-ai-cloud/pull/1432) 已合入 master，
+工具合并版本为 `f340303dc8b0e48222cb93ec84c4dd2c9a77c40e`。
+本次没有晋级 production、部署应用、修改服务配置或调用模型。
+
+| 证据层 | 最终结果 |
+| --- | --- |
+| 本地 | `verify:local` 通过，发布配置与 smoke/凭据测试共 115 项通过；发布规范、Bash、Python 质量及文档可达检查通过 |
+| 初次 CI | [43196765971](https://github.com/npcink/npcink-ai-cloud/actions/runs/43196765971) 失败：一条旧契约仍要求默认支付预检；已本地复现并更新为批准的“默认轻量、支付专项”契约，原失败保留 |
+| 最终 PR CI | [43197909318](https://github.com/npcink/npcink-ai-cloud/actions/runs/43197909318) 及 [CodeQL 43197909169](https://github.com/npcink/npcink-ai-cloud/actions/runs/43197909169) 通过，必需检查通过后合并 |
+| M4 | 本次为发布工具/文档，runtime lane none；不把未执行的 M4 检查记成通过 |
+| 实际生产安装 | 执行前后 installed manifest 均为 `6ef9e100b62ce591855c15d5eb3db56b922f2cce`，与此前成功 Deploy 一致；部署锁、失败标记及全局 one-off 锁均不存在 |
+| 真实轻量 smoke | 北京时间 2026-11-12 18:17，用已合并工具、严格固定指纹 SSH 和现有 device 加密凭据执行；`lightweight_passed`，含本地定位/凭据准备共 20.57 秒 |
+| 验证范围 | 公共 live、公共内部接口拒绝、私网无 token 拒绝/带 token 就绪、必要 worker、首页与 Portal/Admin 登录页、匿名 Admin 跳转、unsigned catalog 拒绝及签名 catalog 读取通过 |
+| 操作边界 | 验证码请求 0、模型调用 0、支付 0、部署 0；未重连站点或修改文章；临时凭据目录已删除，SSH 通道清理成功 |
+| 完整正式 smoke | `not_run`；轻量成功不证明完整登录、模型质量或外部 Trace 集成通过。Trace/Grafana 依操作者决定继续暂缓 |
+
+执行前曾遇到本机旧目标配置与全局 SSH 记录不适用；复用此前独立核验过的
+专用生产 SSH 配置及固定指纹后，确认实际安装身份。没有覆盖全局 known_hosts、
+接受新扫描指纹或放宽 StrictHostKeyChecking。
+凭据准备脚本还曾因本地文件接口用法错误，在 canonical smoke 前停止；修正后
+实际执行的一次轻量 smoke 通过。该准备失败及清理结果单独保留，不改写为成功。
+
+本轮补充的经验：
+
+1. 改默认发布策略时，同步检查整个发布配置契约；按测试名选取的局部测试可能漏掉旧断言。
+2. 读取本地 WordPress 凭据时明确站点路径，跳过插件/主题加载，直接解密已有 envelope；避免调用可能顺带迁移设置的读取封装。
+3. 工具版本与生产应用版本分开记录；已合并的新工具可以只读验收现有应用，无需为检查而部署。
+4. 先验证主机身份与发布终态，秘密只经受保护文件/进程传递；清理成功才关闭验收。
+
+受限本地证据继续保存在 `~/.codex/task-evidence/editor-release-closeout-20261111/`：
+`pr1432-merged-20261112.json`、`lightweight-smoke-production-20261112.json`、
+已脱敏执行日志及准备失败回执。记录不包含正文、站点签名秘密、内部 token 或真实 SSH 目标。
+主机直取传输提速仍只合入 master，随下次另获授权的正常发布启用；本轮不额外部署。
+磁盘根因定时排查与数据库安排仍由原负责人接续，不转为本会话新增待办。
