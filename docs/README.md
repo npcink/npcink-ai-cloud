@@ -60,6 +60,7 @@ product work or override the current Phase 1 expansion freeze.
 | 查 Provider 账户级预算硬上限缺口（开放前必做） | [Provider 预算硬上限缺口盘点](provider-budget-hard-cap-inventory-2026-09-23.md) — 三层防线已合入 master（PR #1029/#1031）；剩余出口：M4 promotion、操作者武装与 smoke、裸 HTTP 付费路径收敛（见"实现合入更新"节） |
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
+| 排查常驻 worker 数据库连接超时和恢复 | [Worker 连接恢复](worker-database-connection-recovery-v1.md) — 只重试进入业务前的连接获取；有限退避、释放失败 Session、保留业务不重放与生产授权边界 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
 | 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
