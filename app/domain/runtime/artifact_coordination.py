@@ -554,6 +554,8 @@ class RuntimeArtifactCoordinationService:
             }
             if governance:
                 fingerprint_input["governance"] = governance
+            if input_payload.get("processing_purpose") is not None:
+                fingerprint_input["processing_purpose"] = input_payload["processing_purpose"]
             request_fingerprint = self.run_controller.build_media_derivative_request_fingerprint(
                 site_id,
                 fingerprint_input,

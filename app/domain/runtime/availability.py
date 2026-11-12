@@ -1,5 +1,9 @@
 """Bounded release pauses, not an ability registry or operator feature console."""
 
+from typing import Any
+
+from pydantic import ValidationError
+
 from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_ABILITIES,
     AUDIO_GENERATION_CONTRACT,
@@ -18,6 +22,7 @@ from app.domain.media_batch_plans.contracts import (
     MEDIA_BATCH_PLAN_PROFILE_ID,
     MEDIA_BATCH_PLAN_REQUEST_CONTRACT,
 )
+from app.domain.media_derivatives.contracts import MediaJobRequest
 from app.domain.media_governance.contracts import (
     MEDIA_GOVERNANCE_AUDIT_ABILITIES,
     MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND,
@@ -33,6 +38,22 @@ from app.domain.site_ops_analysis.contracts import (
 )
 
 PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection", "audio_generation", "advanced_media"})
+
+
+def is_save_as_new_media_job(payload: dict[str, Any]) -> bool:
+    """Validate the complete persisted preview contract, never a flag alone."""
+    if payload.get("processing_purpose") != "save_as_new.v1":
+        return False
+    try:
+        MediaJobRequest.model_validate(payload)
+    except ValidationError:
+        return False
+    return True
+
+
+def require_media_job_available(payload: dict[str, Any]) -> None:
+    if not is_save_as_new_media_job(payload):
+        require_runtime_available(ability_name="", execution_kind="media_derivative")
 
 _FEATURE_MARKERS = {
     "advanced_media": frozenset(

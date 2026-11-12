@@ -126,7 +126,12 @@ from app.domain.runtime.artifact_coordination import (
     RuntimeArtifactCoordinationDependencies,
     RuntimeArtifactCoordinationService,
 )
-from app.domain.runtime.availability import paused_runtime_feature, require_runtime_available
+from app.domain.runtime.availability import (
+    is_save_as_new_media_job,
+    paused_runtime_feature,
+    require_media_job_available,
+    require_runtime_available,
+)
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.diagnostics_query import RuntimeDiagnosticsQueryService
@@ -943,7 +948,7 @@ class RuntimeService:
         idempotency_key: str | None = None,
         trace_id: str | None = None,
     ) -> RuntimeExecutionResponse:
-        require_runtime_available(ability_name="", execution_kind="media_derivative")
+        require_media_job_available(input_payload)
         return self.artifact_coordination_service.enqueue_media_job_run(
             site_id=site_id,
             input_payload=input_payload,
@@ -2843,6 +2848,15 @@ class RuntimeService:
             contract_version=run.contract_version or "",
             profile_id=run.profile_id,
         )
+        if (
+            feature == "advanced_media"
+            and run.execution_kind == "media_derivative"
+            and run.ability_name == "media_image_transform"
+            and run.contract_version == "media_job_request.v1"
+            and run.profile_id == "media.transform.worker"
+            and is_save_as_new_media_job(self._get_execution_input_payload(run))
+        ):
+            feature = None
         if feature:
             self.run_lifecycle_service.fail_run(
                 repository,

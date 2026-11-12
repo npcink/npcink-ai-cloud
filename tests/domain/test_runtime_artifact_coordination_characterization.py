@@ -542,6 +542,6 @@ def test_runtime_facade_retains_run_04_entrypoints_with_extracted_delegation() -
         body = methods[method_name].body
         if method_name == "enqueue_media_job_run":
             assert isinstance(body[0], ast.Expr)
-            assert "require_runtime_available" in ast.unparse(body[0])
+            assert "require_media_job_available" in ast.unparse(body[0])
             body = body[1:]
         assert len(body) == 1
