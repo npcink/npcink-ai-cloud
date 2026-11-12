@@ -23,9 +23,14 @@ RUNTIME_SECRET="${NPCINK_CLOUD_RELEASE_KEY_SECRET:-}"
 PERSISTED_PORTAL_COOKIE_JAR="${NPCINK_CLOUD_PORTAL_COOKIE_JAR:-}"
 CREDENTIALS_FILE=""
 PREFLIGHT_ONLY="0"
+LIGHTWEIGHT="0"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--lightweight)
+			LIGHTWEIGHT="1"
+			shift
+			;;
 		--preflight-only)
 			PREFLIGHT_ONLY="1"
 			shift
@@ -189,12 +194,17 @@ if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	fail "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN is required through --credentials-file or the process environment"
 fi
 # Pure preflight never uses login, mailbox, or signed-runtime credentials.
+if [ "${LIGHTWEIGHT}" = "1" ] && [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	fail "Choose --lightweight or --preflight-only, not both"
+fi
 if [ "${PREFLIGHT_ONLY}" != "1" ]; then
-	if [ -z "${ADMIN_KEY}" ]; then
-		fail "operator-only NPCINK_CLOUD_ADMIN_KEY is required through --credentials-file or the process environment"
-	fi
-	if [ -z "${MEMBER_EMAIL}" ]; then
-		fail "--member-email or NPCINK_CLOUD_RELEASE_MEMBER_EMAIL is required"
+	if [ "${LIGHTWEIGHT}" != "1" ]; then
+		if [ -z "${ADMIN_KEY}" ]; then
+			fail "operator-only NPCINK_CLOUD_ADMIN_KEY is required through --credentials-file or the process environment"
+		fi
+		if [ -z "${MEMBER_EMAIL}" ]; then
+			fail "--member-email or NPCINK_CLOUD_RELEASE_MEMBER_EMAIL is required"
+		fi
 	fi
 	if [ -z "${RUNTIME_SITE_ID}" ] || [ -z "${RUNTIME_KEY_ID}" ] || [ -z "${RUNTIME_SECRET}" ]; then
 		fail "release smoke requires signed runtime credentials through --credentials-file or the process environment"
@@ -303,7 +313,7 @@ cleanup_tmp_dir() {
 }
 trap cleanup_tmp_dir EXIT
 chmod 0700 "${TMP_DIR}"
-if [ "${PREFLIGHT_ONLY}" != "1" ] && [ -n "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
+if [ "${PREFLIGHT_ONLY}" != "1" ] && [ "${LIGHTWEIGHT}" != "1" ] && [ -n "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
 	if [ -L "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
 		fail "NPCINK_CLOUD_PORTAL_COOKIE_JAR must not be a symbolic link"
 	fi
@@ -356,6 +366,9 @@ http_request() {
 		"${url}"
 		--header "@${request_headers}"
 	)
+	if [ "${LIGHTWEIGHT}" = "1" ]; then
+		curl_args+=(--connect-timeout 3 --max-time 10)
+	fi
 	# Internal loopback traffic must not inherit a caller's HTTP proxy.
 	case "${url}" in
 		http://127.0.0.1:*) curl_args+=(--noproxy 127.0.0.1) ;;
@@ -394,9 +407,11 @@ http_request() {
 	fi
 }
 
-ok "Waiting for cloud ready: ${BASE_URL}"
-if ! npcink_ai_cloud_wait_for_ready "${BASE_URL}" 20 2; then
-	fail "Cloud API did not become ready"
+if [ "${LIGHTWEIGHT}" != "1" ]; then
+	ok "Waiting for cloud ready: ${BASE_URL}"
+	if ! npcink_ai_cloud_wait_for_ready "${BASE_URL}" 20 2; then
+		fail "Cloud API did not become ready"
+	fi
 fi
 
 http_request "GET" "${BASE_URL%/}/health/live" "${PORTAL_COOKIE_JAR}"
@@ -426,6 +441,41 @@ http_request \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
 assert_status "${HTTP_STATUS}" "200" "operational readiness should load"
 assert_json_non_empty "${HTTP_BODY}" "data.required_workers" "operational readiness should expose required workers"
+
+if [ "${LIGHTWEIGHT}" = "1" ]; then
+	for page in / /portal/login /admin/login; do
+		http_request "GET" "${BASE_URL%/}${page}" "${PORTAL_COOKIE_JAR}"
+		assert_status "${HTTP_STATUS}" "200" "page ${page} should load"
+	done
+	http_request "GET" "${BASE_URL%/}/admin/service-settings" "${PORTAL_COOKIE_JAR}"
+	case "${HTTP_STATUS}" in
+		302 | 303 | 307) ;;
+		*) fail "anonymous admin settings should redirect to login (got ${HTTP_STATUS})" ;;
+	esac
+	if ! HTTP_RESPONSE_HEADERS="${HTTP_HEADERS}" python3 - "${BASE_URL}" <<'PY_REDIRECT'
+import os
+import sys
+from urllib.parse import urljoin, urlsplit
+headers = [line.partition(":") for line in os.environ["HTTP_RESPONSE_HEADERS"].splitlines()]
+location = next((value.strip() for key, _, value in headers if key.lower() == "location"), "")
+base = urlsplit(sys.argv[1])
+target = urlsplit(urljoin(sys.argv[1], location))
+if not location or (target.scheme, target.netloc, target.path) != (base.scheme, base.netloc, "/admin/login"):
+    raise SystemExit(1)
+PY_REDIRECT
+	then
+		fail "anonymous admin redirect should target the same-origin login"
+	fi
+	# Credentials were already loaded and scrubbed here. Do not re-import the
+	# caller's full dotenv into the catalog-only subprocess.
+	NPCINK_CLOUD_ENV_FILE=/dev/null \
+	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN="${INTERNAL_AUTH_TOKEN}" \
+	NPCINK_CLOUD_SECRET="${RUNTIME_SECRET}" \
+		bash "${ROOT_DIR}/deploy/remote-smoke.sh" --catalog-only \
+			--base-url "${BASE_URL}" --site-id "${RUNTIME_SITE_ID}" --key-id "${RUNTIME_KEY_ID}"
+	ok "Lightweight release smoke passed (read-only, zero model calls); NOT a formal smoke pass"
+	exit 0
+fi
 
 http_request \
 	"GET" \

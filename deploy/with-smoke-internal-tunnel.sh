@@ -68,6 +68,12 @@ trap 'exit 143' TERM
 verify_installed_revision() {
 	smoke_ssh "${SSH_USER}@${SSH_HOST}" bash -s -- "${REMOTE_DIR}" "${EXPECTED_SHA}" <<'REMOTE'
 set -euo pipefail
+for marker in .deploy-lock .cutover-failed .release-state/.release-one-off.lock; do
+	if [ -e "$1/${marker}" ] || [ -L "$1/${marker}" ]; then
+		echo '[fail] Deployment terminal state is not clean' >&2
+		exit 1
+	fi
+done
 python3 - "$1/current/release-bundle-manifest.json" "$2" <<'PY_SHA'
 import json
 import sys

@@ -344,8 +344,8 @@ line emitted by the deploy helper: `installation_state=pending|complete`. It
 does not infer pending from HTTP failures. `pending` produces an operator
 summary for root/TTY setup-code rotation, `/setup`, one-time administrator-key
 capture, independent complete-only smoke, WordPress/RDS/observation acceptance,
-and explicit finalization; it skips the deploy job's small-customer preflight
-and formal release smoke. `complete` runs those ordinary-deploy gates.
+and explicit finalization; it skips the deploy job's post-install smoke.
+`complete` runs the default lightweight smoke or the explicitly selected full formal acceptance.
 
 Migration and provider refresh use the profiled `release-one-off` API service.
 Compose pins it to the recorded target-local daemon ID and creates it with
@@ -1012,6 +1012,10 @@ If real runtime smoke returns `runtime.provider_not_configured`, treat it as a r
 
 ## Trace Sink Check
 
+On demand for complete formal acceptance / Trace work. The 2026-11-12
+operator decision defers external Trace/Grafana setup for development-stage
+releases; default lightweight smoke does not call this check.
+
 1. Read `data.tracing.otlp_endpoint`, `data.tracing.otlp_configured`,
    `data.tracing.trace_query_url`, and `data.tracing.trace_query_configured`
    from `GET /internal/service/observability/summary`.
@@ -1025,6 +1029,11 @@ If real runtime smoke returns `runtime.provider_not_configured`, treat it as a r
 ## Release Gate
 
 Before a formal release, operators must start from `deploy/RELEASE_CHECKLIST.md`.
+Ordinary development-stage runtime releases default to the canonical
+`deploy/release-smoke.sh --lightweight` (zero model calls); full login/model/Trace
+acceptance stays on demand. The broad items below apply to that full acceptance,
+not as mandatory repeats for every development release. See
+[the smoke runbook](../docs/formal-release-smoke-entry-v1.md).
 
 The release gate is divided into:
 

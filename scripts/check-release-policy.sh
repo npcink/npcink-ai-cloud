@@ -801,7 +801,8 @@ for admin_login_surface in \
 	require_marker "${admin_login_surface}" '/admin/auth/login'
 	reject_marker "${admin_login_surface}" '/admin/auth/bootstrap'
 done
-require_marker "deploy/release-smoke.env.example" 'NPCINK_CLOUD_ADMIN_KEY='
+require_marker "deploy/release-smoke.env.example" "supply NPCINK_CLOUD_ADMIN_KEY"
+reject_marker "deploy/release-smoke.env.example" "NPCINK_CLOUD_ADMIN_KEY="
 require_marker "deploy/small-customer-trial-preflight.sh" 'NPCINK_CLOUD_ADMIN_KEY'
 require_marker "deploy/deploy-to-ssh-host.sh" '"NPCINK_CLOUD_ADMIN_KEY",'
 require_marker "deploy/admin-key-rotate.sh" 'runtime configuration digest does not match completed installation state'
@@ -1264,6 +1265,11 @@ require_marker ".github/workflows/deploy-production.yml" \
 	'[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]'
 require_marker ".github/workflows/deploy-production.yml" \
 	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
+require_marker ".github/workflows/deploy-production.yml" "Lightweight release smoke"
+require_marker ".github/workflows/deploy-production.yml" "release-smoke.sh --lightweight"
+require_marker "deploy/release-smoke.sh" "NOT a formal smoke pass"
+require_marker "deploy/remote-smoke.sh" "--catalog-only)"
+require_marker "deploy/with-smoke-internal-tunnel.sh" "Deployment terminal state is not clean"
 require_marker ".github/workflows/deploy-production.yml" "run_formal_release_smoke:"
 require_marker ".github/workflows/deploy-production.yml" \
 	"installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke"

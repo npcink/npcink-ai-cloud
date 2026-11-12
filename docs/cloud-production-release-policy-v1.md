@@ -278,8 +278,8 @@ rerun CI, or weaken either required check.
 single-use and expires after the configured short TTL (10 minutes by default),
 while deployment may take longer. Selecting it makes the post-deploy formal
 smoke fail closed when any protected credential is absent or stale; it never
-silently converts missing credentials into green evidence. For a deployment
-that may exceed the code TTL, leave it off, complete the deploy, issue and store
+silently converts missing credentials into green evidence. Only when separate full acceptance is authorized: if a deployment
+may exceed the code TTL, leave it off, complete the deploy, issue and store
 a fresh code through the protected operator path, and immediately dispatch the
 separate fail-closed `Release Smoke` workflow from `production`. Paste the
 successfully deployed application SHA into `expected_deployed_sha`. The workflow
@@ -576,8 +576,22 @@ production-host mutation or health probing. An exact `static` plan uses the
 transactional static-terms publisher, does not upload the runtime bundle, load
 images, run migration, replace services, refresh providers, or execute runtime
 readiness, and relies on that publisher's exact static-page health proof.
-Runtime lanes retain the protected cutover and small-customer preflight.
+Runtime lanes retain the protected cutover and default read-only lightweight smoke.
 Unknown lanes and inconsistent flag combinations fail before host mutation.
+The 2026-11-12 operator decision makes `deploy/release-smoke.sh --lightweight`
+the default development-stage runtime post-deploy gate (target 2–3 minutes,
+zero model calls). It verifies current installed SHA/clean terminal state,
+health/workers, pages, anonymous rejection and an existing site-signed catalog
+read, without OTP, payment or external Trace dependencies. The deploy already
+proves cutover health/terminal state; smoke samples rather than repeats its
+waits. Full acceptance stays on demand, retains its strict Trace/login/runtime
+gates, and an unexecuted full smoke remains not-run. External Trace/Grafana
+setup is deferred rather than a development-stage prerequisite. Login/reconnect,
+model, payment and migration changes still require their scoped checks. See
+[the smoke entry runbook](formal-release-smoke-entry-v1.md).
+This changes neither exact version/bundle/security gates nor human production
+authorization, and does not waive the separate first-install acceptance.
+
 Formal release smoke is a runtime-profile gate; selecting it for `no_deploy` or
 `static` fails before the plan-scoped action instead of silently adding runtime
 health probes.
