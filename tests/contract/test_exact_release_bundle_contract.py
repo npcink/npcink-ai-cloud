@@ -2458,6 +2458,7 @@ raise SystemExit(0 if (cache_dir / ".valid").is_file() else 1)
 """,
     )
     write(repo / "scripts/production-release-plan.py", "fixture\n")
+    write(repo / "scripts/transfer-release-artifact.py", "fixture\n")
     write(repo / "scripts/scan-production-images.sh", "#!/usr/bin/env bash\nexit 88\n")
     docker_log = tmp_path / "docker.log"
     write(

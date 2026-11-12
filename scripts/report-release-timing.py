@@ -174,6 +174,7 @@ def classify_deploy_phase(label: str) -> str:
         marker in normalized
         for marker in (
             "upload ",
+            "download deploy bundle from actions artifact",
             "transfer inventory",
             "remote directory",
             "remote architecture",
