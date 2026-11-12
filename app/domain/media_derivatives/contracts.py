@@ -194,11 +194,21 @@ class MediaJobRequest(BaseModel):
     params: ImageTransformPayload
     batch_context: BatchContextPayload | None = None
     governance: MediaGovernanceCanaryPayload | None = None
+    processing_purpose: Literal["save_as_new.v1"] | None = None
     result_ttl_minutes: int = ARTIFACT_DEFAULT_TTL_MINUTES
 
     @model_validator(mode="after")
     def validate_fields(self) -> MediaJobRequest:
         payload = self.params
+        if self.processing_purpose == "save_as_new.v1" and (
+            not isinstance(payload, ManualImageTransformPayload)
+            or payload.resize_mode != "preserve"
+            or payload.crop is not None
+            or self.batch_context is not None
+            or self.governance is not None
+            or self.result_ttl_minutes != ARTIFACT_DEFAULT_TTL_MINUTES
+        ):
+            raise ValueError("save_as_new.v1 requires one manual preserve-dimensions preview")
         if payload.target_format not in ALLOWED_TARGET_FORMATS:
             raise ValueError(f"target_format '{payload.target_format}' is not supported")
         if payload.source_media_type not in ALLOWED_SOURCE_MEDIA_TYPES:

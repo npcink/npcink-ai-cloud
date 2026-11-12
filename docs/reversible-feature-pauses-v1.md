@@ -362,3 +362,18 @@ dev-entry redirect selected the configured Cloudflare Access origin and did not
 complete login. No Access/auth/production configuration was changed. This is
 recorded separately from the passing M4 paused-page browser check and M4 API
 contracts; it is not described as a successful live metadata-browser acceptance.
+
+## Single-image save-as-new preview exception — 2026-11-12
+
+The operator approved manual single-image compression/conversion or watermark
+previews using the existing media-job contract with
+`processing_purpose=save_as_new.v1`. The complete request must preserve dimensions,
+use the normal 30-minute result TTL and omit crop, batch and governance context.
+Creation and worker execution both validate this bounded exception; generic
+runtime execution and unmarked media jobs remain paused. The purpose participates
+in idempotency fingerprints; missing/null purpose preserves legacy fingerprints.
+Cloud creates expiring artifacts only. Core approval and Toolkit new-attachment
+writes remain local; originals and article references are untouched.
+
+Source gates and candidate runtime evidence must be reported separately from
+merge, accepted M4 and production status. No production restoration is claimed.
