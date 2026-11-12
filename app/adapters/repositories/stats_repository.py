@@ -169,6 +169,40 @@ class StatsRepository:
         )
         return list(self.session.scalars(statement))
 
+    def list_recent_provider_instance_ids(
+        self,
+        *,
+        site_id: str,
+        since_at: datetime,
+        limit: int,
+    ) -> list[str]:
+        if limit < 1:
+            raise ValueError("recent instance limit must be positive")
+        statement = (
+            select(ProviderCallRecord.instance_id)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(RunRecord.site_id == site_id, ProviderCallRecord.created_at >= since_at)
+            .order_by(ProviderCallRecord.created_at.desc(), ProviderCallRecord.id.desc())
+            .execution_options(yield_per=128)
+        )
+        # A call-row LIMIT could hide older distinct instances behind duplicates.
+        # Stream just IDs and close the server cursor even when we stop early.
+        recent_ids: list[str] = []
+        seen: set[str] = set()
+        result = self.session.scalars(statement)
+        try:
+            for raw_instance_id in result:
+                instance_id = str(raw_instance_id or "").strip()
+                if not instance_id or instance_id in seen:
+                    continue
+                recent_ids.append(instance_id)
+                seen.add(instance_id)
+                if len(recent_ids) >= limit:
+                    break
+        finally:
+            result.close()
+        return recent_ids
+
     def list_provider_calls_for_instance(
         self,
         instance_id: str,

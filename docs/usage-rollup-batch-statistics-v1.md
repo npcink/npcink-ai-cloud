@@ -50,6 +50,26 @@ Interactive statistics continue to use ordinary fresh readers. Cloud remains
 the owner of runtime/service evidence; no WordPress registry, approval, prompt,
 workflow, or final-write authority moves to Cloud.
 
+## Latency-probe instance discovery
+
+The hourly latency probe needs only the most recently used distinct instance
+IDs for each active site: defaults are a six-hour lookback and at most 20 IDs.
+It filters calls by site and the inclusive lower time bound in SQL, reads only
+the instance-ID column in batches of 128, and closes the result cursor as soon
+as enough distinct IDs have been found. It never materializes full call history
+or call ORM objects for discovery. Timestamp descending, then call ID descending,
+retains the previous reverse-history tie order; IDs are stripped, empty IDs are
+skipped, and duplicates do not consume the instance limit. The previous
+lower-bound-only treatment of future timestamps is retained.
+
+A SQL call-row limit would lose older distinct instances behind repeated calls,
+so discovery streams until the distinct-ID limit or exhaustion. It bounds
+application buffering, not total database scanning/sorting or query duration;
+recent duplicate-heavy histories still require database-plan evidence before
+claiming lower RDS cost. No scheduler, index, accounting or existing projection
+contract changes. This optimization is not evidence of the cause or resolution
+of the 2026-11-12 production disk-read incident.
+
 ## Bounded rollup saving
 
 Only `generate_rollups` uses the batch save entry point. It buffers at most
