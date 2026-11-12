@@ -421,6 +421,17 @@ retained lock. It must report
 refresh Providers, recreate services, or roll back the healthy active release.
 Any mismatch or a second failure retains the lock and stops automatic recovery.
 
+For a backend-only plan, Redis is intentionally kept running while bundle
+loading may replace its normal image tag. Record its preserved image alongside
+the frontend and restore that normal tag before deleting rollback tags; deleting
+the only remaining tag of the running Redis image is not safe terminalization.
+Recovery of an older release without a Redis preservation record must bind the
+plan baseline, the previous release's protected image map (including any prior
+preservation record), its rollback record, and the active production Redis
+container. A migration/full plan cannot use this exception. The new runtime
+images remain checked against the new bundle map. Do not force image removal,
+restart Redis, remove the lock by hand, or report the failed Deploy run as green.
+
 ## Signed Runtime Smoke Semantics
 
 The formal release smoke follows the current hosted runtime contract. It does

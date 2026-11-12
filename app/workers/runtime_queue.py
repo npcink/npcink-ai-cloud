@@ -8,7 +8,7 @@ from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.adapters.queue.base import RuntimeQueue
 from app.adapters.queue.redis_runtime_queue import RedisRuntimeQueue
 from app.core.config import Settings, get_settings
-from app.core.db import require_database_connection
+from app.core.db import require_database_connection, worker_database_connection_retries
 from app.core.logging import configure_logging, get_logger
 from app.domain.runtime.service import RuntimeService
 from app.workers.heartbeat import WorkerHeartbeat
@@ -93,6 +93,7 @@ def _build_runtime_service(settings: Settings, runtime_queue: RuntimeQueue) -> R
     )
 
 
+@worker_database_connection_retries("runtime_queue")
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)

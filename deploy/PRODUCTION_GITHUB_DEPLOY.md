@@ -663,13 +663,16 @@ separately recorded active-runtime SHA. The required confirmation is
 `Approved for production terminalization repair by operator.` The workflow
 does not download a bundle or rerun deployment. It verifies the active release,
 frontend-preserving release plan, protected failure/map/evidence files, running
-preserved frontend image, every non-frontend active service image against the
-target-daemon map, the production Compose project, and live health; restores
-the preserved frontend's normal image tag; proves governed one-off locks and
+preserved frontend image, the active service images against their intended
+target-daemon or preserved identities, the production Compose project, and live health; restores
+the preserved services' normal image tags; proves governed one-off locks and
 containers absent; removes
 only the recorded temporary rollback tags and
 terminal files; then proves lock release and live health again. For any other
 post-commit phase, retain the lock and use a separately reviewed recovery plan.
+Backend-only Redis preservation requires the previous release's protected image
+map, plan baseline, rollback binding, and actual running Redis to agree; it does
+not permit keeping an arbitrary old image or using this path for a migration.
 
 The loader has no default or aggregate phase; the orchestrator must select one
 of `prepare-only`, `data-only`, `api-only`, `workers-only`, or `traffic-only`.

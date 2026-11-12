@@ -1466,7 +1466,8 @@ discard_rollback_image_tags() {
 	return "${cleanup_failed}"
 }
 
-restore_preserved_frontend_release_tag() {
+restore_preserved_service_release_tag() {
+	local service="${1:-frontend}"
 	local binding=""
 	local target_reference=""
 	local rollback_reference=""
@@ -1474,10 +1475,13 @@ restore_preserved_frontend_release_tag() {
 	local observed_image_id=""
 
 	[ "${SKIP_FRONTEND_IMAGE}" = "1" ] || return 0
+	if [ "${service}" = "redis" ] && [ "${RELEASE_PLAN_LANE}" != "backend" ]; then
+		return 0
+	fi
 	binding="$(
 		"${RELEASE_TOOL_PYTHON}" - \
 			"${PRESERVED_SERVICES_EVIDENCE}" "${ROLLBACK_IMAGE_MAP}" \
-			"${RELEASE_DIR}" <<'PY'
+			"${RELEASE_DIR}" "${service}" <<'PY'
 from __future__ import annotations
 
 import json
@@ -1489,22 +1493,26 @@ from pathlib import Path
 evidence_path = Path(sys.argv[1])
 rollback_map_path = Path(sys.argv[2])
 release = Path(sys.argv[3])
+service = sys.argv[4]
+if service not in {"frontend", "redis"}:
+    raise SystemExit("[fail] Unsupported preserved service.")
+reference = f"npcink-ai-cloud-{'external-redis' if service == 'redis' else 'frontend'}:prod"
 
 for path in (evidence_path, rollback_map_path):
     metadata = path.lstat()
     if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
-        raise SystemExit("[fail] Preserved frontend cleanup evidence is unsafe.")
+        raise SystemExit(f"[fail] Preserved {service} cleanup evidence is unsafe.")
 
 evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-frontend = evidence.get("services", {}).get("frontend", {})
-expected_image_id = frontend.get("target_daemon_image_id")
+preserved_service = evidence.get("services", {}).get(service, {})
+expected_image_id = preserved_service.get("target_daemon_image_id")
 if (
     evidence.get("schema") != "npcink.preserved_runtime_services.v1"
     or evidence.get("release_name") != release.name
     or evidence.get("release_path") != str(release)
     or re.fullmatch(r"sha256:[0-9a-f]{64}", str(expected_image_id)) is None
 ):
-    raise SystemExit("[fail] Preserved frontend cleanup evidence is invalid.")
+    raise SystemExit(f"[fail] Preserved {service} cleanup evidence is invalid.")
 
 matches: list[tuple[str, str, str]] = []
 for raw_line in rollback_map_path.read_text(encoding="utf-8").splitlines():
@@ -1514,36 +1522,36 @@ for raw_line in rollback_map_path.read_text(encoding="utf-8").splitlines():
     if len(fields) != 3:
         raise SystemExit("[fail] Rollback image map is malformed during preserved frontend cleanup.")
     target, rollback, previous_image_id = fields
-    if target == "npcink-ai-cloud-frontend:prod":
+    if target == reference:
         matches.append((target, rollback, previous_image_id))
 
 if len(matches) != 1:
-    raise SystemExit("[fail] Preserved frontend rollback binding is missing or ambiguous.")
+    raise SystemExit(f"[fail] Preserved {service} rollback binding is missing or ambiguous.")
 target, rollback, previous_image_id = matches[0]
 if rollback == "-" or previous_image_id != expected_image_id:
-    raise SystemExit("[fail] Preserved frontend rollback binding does not match runtime evidence.")
+    raise SystemExit(f"[fail] Preserved {service} rollback binding does not match runtime evidence.")
 print("\t".join((target, rollback, previous_image_id)))
 PY
 	)" || return 1
 	IFS=$'\t' read -r target_reference rollback_reference expected_image_id <<<"${binding}"
 	observed_image_id="$(docker image inspect --format '{{.Id}}' "${rollback_reference}")" || {
-		echo "[fail] Preserved frontend rollback image tag is unavailable: ${rollback_reference}" >&2
+		echo "[fail] Preserved ${service} rollback image tag is unavailable: ${rollback_reference}" >&2
 		return 1
 	}
 	if [ "${observed_image_id}" != "${expected_image_id}" ]; then
-		echo "[fail] Preserved frontend rollback image identity drifted before cleanup." >&2
+		echo "[fail] Preserved ${service} rollback image identity drifted before cleanup." >&2
 		return 1
 	fi
 	if ! docker tag "${rollback_reference}" "${target_reference}"; then
-		echo "[fail] Preserved frontend release tag could not be restored before cleanup." >&2
+		echo "[fail] Preserved ${service} release tag could not be restored before cleanup." >&2
 		return 1
 	fi
 	observed_image_id="$(docker image inspect --format '{{.Id}}' "${target_reference}")" || return 1
 	if [ "${observed_image_id}" != "${expected_image_id}" ]; then
-		echo "[fail] Preserved frontend release tag has the wrong image identity." >&2
+		echo "[fail] Preserved ${service} release tag has the wrong image identity." >&2
 		return 1
 	fi
-	echo "[ok] Preserved frontend release tag was restored before rollback-tag cleanup."
+	echo "[ok] Preserved ${service} release tag was restored before rollback-tag cleanup."
 }
 
 write_first_install_pending_marker() {
@@ -2595,6 +2603,7 @@ record_preserved_frontend_identity() {
 	local container_ids=""
 	local container_count=0
 	local container_id=""
+	local redis_id=""
 
 	[ "${SKIP_FRONTEND_IMAGE}" = "1" ] || return 0
 	container_ids="$(compose_previous_release ps -q frontend)" || return 1
@@ -2604,9 +2613,13 @@ record_preserved_frontend_identity() {
 		return 1
 	fi
 	container_id="${container_ids}"
+	if [ "${RELEASE_PLAN_LANE}" = "backend" ]; then
+		redis_id="$(compose_previous_release ps -q redis)" || return 1
+		[ "$(printf '%s\n' "${redis_id}" | awk 'NF { count += 1 } END { print count + 0 }')" -eq 1 ] || return 1
+	fi
 	"${RELEASE_TOOL_PYTHON}" - \
 		"${PRESERVED_SERVICES_EVIDENCE}" "${RELEASE_DIR}" "${PREVIOUS_RELEASE_DIR}" \
-		"${container_id}" <<'PY'
+		"${container_id}" "${redis_id}" "${ROLLBACK_IMAGE_MAP}" <<'PY'
 from __future__ import annotations
 
 import json
@@ -2618,7 +2631,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-evidence_raw, release_raw, previous_raw, container_id = sys.argv[1:]
+evidence_raw, release_raw, previous_raw, container_id, redis_id, rollback_map = sys.argv[1:]
 evidence = Path(evidence_raw)
 release = Path(release_raw)
 previous = Path(previous_raw)
@@ -2671,6 +2684,25 @@ payload = {
         }
     },
 }
+if redis_id:
+    redis_image = subprocess.check_output(
+        ["docker", "inspect", "--format", "{{.Image}}", redis_id], text=True,
+    ).strip()
+    redis_running = subprocess.check_output(
+        ["docker", "inspect", "--format", "{{.State.Running}}", redis_id], text=True,
+    ).strip()
+    records = [line.split("\t") for line in Path(rollback_map).read_text().splitlines()]
+    matches = [row for row in records if len(row) == 3 and row[0] == "npcink-ai-cloud-external-redis:prod"]
+    if (
+        redis_running != "true" or re.fullmatch(r"sha256:[0-9a-f]{64}", redis_image) is None
+        or len(matches) != 1 or matches[0][1] == "-" or matches[0][2] != redis_image
+    ):
+        raise SystemExit("[fail] Preserved Redis does not match its running and rollback identities.")
+    previous_source = json.loads((previous / "release-bundle-manifest.json").read_text())["source"]["revision"]
+    payload["services"]["redis"] = {
+        "previous_release": str(previous), "source_revision": previous_source,
+        "target_daemon_image_id": redis_image,
+    }
 encoded = (
     json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
 ).encode("utf-8")
@@ -3823,9 +3855,10 @@ if ! rm -rf -- "${REMOTE_INCOMING_DIR}" || \
 fi
 CUTOVER_PHASE="finalize-rollback-image-tags"
 if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${FIRST_INSTALL_REPAIR}" != "1" ]; then
-	if ! restore_preserved_frontend_release_tag; then
+	if ! restore_preserved_service_release_tag || \
+		! restore_preserved_service_release_tag redis; then
 		record_post_commit_cleanup_failure \
-			"Release activated, but the preserved frontend release tag could not be restored."
+			"Release activated, but a preserved service release tag could not be restored."
 		exit 1
 	fi
 	if ! discard_rollback_image_tags; then

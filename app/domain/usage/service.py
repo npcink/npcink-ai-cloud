@@ -800,60 +800,71 @@ class UsageService:
         if normalized_end <= normalized_start:
             raise ValueError("projection end must be after start")
 
+        aggregates: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
-            runs = repository.list_runs(site_id)
-            provider_calls = repository.list_provider_calls(site_id)
+            # Retain only small metadata, not each run's input/policy payloads.
+            run_contexts: dict[str, tuple[str, str, str, str | None]] = {}
+            with repository.stream_router_performance_runs(
+                site_id=site_id,
+                start_at=normalized_start,
+                end_at=normalized_end,
+            ) as runs:
+                for run in runs:
+                    run_contexts[run.run_id] = (
+                        str(run.ability_name or "").strip(),
+                        str(run.channel or "").strip(),
+                        self._extract_router_preset_id(run),
+                        run.error_code,
+                    )
+            with repository.stream_router_performance_calls(
+                site_id=site_id,
+                start_at=normalized_start,
+                end_at=normalized_end,
+            ) as calls:
+                for provider_call in calls:
+                    created_at = self._normalize_datetime(provider_call.created_at)
+                    if created_at is None or not (normalized_start <= created_at < normalized_end):
+                        continue
 
-        runs_by_id = {run.run_id: run for run in runs}
-        aggregates: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+                    bucket_start = created_at.replace(minute=0, second=0, microsecond=0)
+                    bucket_gmt = self._format_datetime(bucket_start)
+                    context = run_contexts.get(provider_call.run_id)
+                    if context is None:
+                        continue
+                    ability_id, caller_id, preset_id, run_error_code = context
+                    instance_id = str(provider_call.instance_id or "").strip()
+                    if not bucket_gmt or not ability_id or not caller_id or not instance_id:
+                        continue
 
-        for provider_call in provider_calls:
-            created_at = self._normalize_datetime(provider_call.created_at)
-            if created_at is None or not (normalized_start <= created_at < normalized_end):
-                continue
+                    key = (bucket_gmt, ability_id, caller_id, instance_id)
+                    row = aggregates.get(key)
+                    if row is None:
+                        row = {
+                            "bucket_gmt": bucket_gmt,
+                            "ability_id": ability_id,
+                            "caller_id": caller_id,
+                            "preset_id": preset_id,
+                            "router_instance_id": instance_id,
+                            "selected_model_instance_id": instance_id,
+                            "request_total": 0,
+                            "success_total": 0,
+                            "guard_fail_total": 0,
+                            "quality_sum": 0.0,
+                            "quality_count": 0,
+                            "reward_sum": 0.0,
+                            "reward_count": 0,
+                            "avg_latency_ms": 0.0,
+                            "_latency_total": 0,
+                        }
+                        aggregates[key] = row
 
-            run = runs_by_id.get(provider_call.run_id)
-            if run is None:
-                continue
-
-            bucket_start = created_at.replace(minute=0, second=0, microsecond=0)
-            bucket_gmt = self._format_datetime(bucket_start)
-            ability_id = str(run.ability_name or "").strip()
-            caller_id = str(run.channel or "").strip()
-            instance_id = str(provider_call.instance_id or "").strip()
-            if not bucket_gmt or not ability_id or not caller_id or not instance_id:
-                continue
-
-            key = (bucket_gmt, ability_id, caller_id, instance_id)
-            row = aggregates.get(key)
-            if row is None:
-                preset_id = self._extract_router_preset_id(run)
-                row = {
-                    "bucket_gmt": bucket_gmt,
-                    "ability_id": ability_id,
-                    "caller_id": caller_id,
-                    "preset_id": preset_id,
-                    "router_instance_id": instance_id,
-                    "selected_model_instance_id": instance_id,
-                    "request_total": 0,
-                    "success_total": 0,
-                    "guard_fail_total": 0,
-                    "quality_sum": 0.0,
-                    "quality_count": 0,
-                    "reward_sum": 0.0,
-                    "reward_count": 0,
-                    "avg_latency_ms": 0.0,
-                    "_latency_total": 0,
-                }
-                aggregates[key] = row
-
-            row["request_total"] += 1
-            if not provider_call.error_code:
-                row["success_total"] += 1
-            if self._is_router_guard_failure(provider_call.error_code, run.error_code):
-                row["guard_fail_total"] += 1
-            row["_latency_total"] += max(0, int(provider_call.latency_ms))
+                    row["request_total"] += 1
+                    if not provider_call.error_code:
+                        row["success_total"] += 1
+                    if self._is_router_guard_failure(provider_call.error_code, run_error_code):
+                        row["guard_fail_total"] += 1
+                    row["_latency_total"] += max(0, int(provider_call.latency_ms))
 
         rows: list[dict[str, Any]] = []
         for key in sorted(aggregates.keys()):
@@ -1828,6 +1839,16 @@ class UsageService:
         window = self._resolve_logs_analytics_window(normalized_filters, now)
         unsupported_filters = self._logs_filters_require_unavailable_dimensions(normalized_filters)
 
+        if unsupported_filters:
+            return {
+                "now": now,
+                "window": window,
+                "runs_by_id": {},
+                "provider_calls": [],
+                "latest_seen_at": None,
+                "status_counts": defaultdict(int),
+            }
+
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
             runs = repository.list_runs(
@@ -1845,16 +1866,6 @@ class UsageService:
         filtered_calls: list[ProviderCallRecord] = []
         latest_seen_at: datetime | None = None
         status_counts: defaultdict[str, int] = defaultdict(int)
-
-        if unsupported_filters:
-            return {
-                "now": now,
-                "window": window,
-                "runs_by_id": runs_by_id,
-                "provider_calls": filtered_calls,
-                "latest_seen_at": latest_seen_at,
-                "status_counts": status_counts,
-            }
 
         for provider_call in provider_calls:
             run = runs_by_id.get(provider_call.run_id)

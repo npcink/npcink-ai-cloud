@@ -50,6 +50,53 @@ Interactive statistics continue to use ordinary fresh readers. Cloud remains
 the owner of runtime/service evidence; no WordPress registry, approval, prompt,
 workflow, or final-write authority moves to Cloud.
 
+## Latency-probe instance discovery
+
+The hourly latency probe needs only the most recently used distinct instance
+IDs for each active site: defaults are a six-hour lookback and at most 20 IDs.
+It filters calls by site and the inclusive lower time bound in SQL, reads only
+the instance-ID column in batches of 128, and closes the result cursor as soon
+as enough distinct IDs have been found. It never materializes full call history
+or call ORM objects for discovery. Timestamp descending, then call ID descending,
+retains the previous reverse-history tie order; IDs are stripped, empty IDs are
+skipped, and duplicates do not consume the instance limit. The previous
+lower-bound-only treatment of future timestamps is retained.
+
+A SQL call-row limit would lose older distinct instances behind repeated calls,
+so discovery streams until the distinct-ID limit or exhaustion. It bounds
+application buffering, not total database scanning/sorting or query duration;
+recent duplicate-heavy histories still require database-plan evidence before
+claiming lower RDS cost. No scheduler, index, accounting or existing projection
+contract changes. This optimization is not evidence of the cause or resolution
+of the 2026-11-12 production disk-read incident.
+
+## Other bounded statistics reads
+
+Provider health scanning filters calls to its existing inclusive 24-hour
+scoring window in SQL before loading them. It retains the existing scorer,
+selected-provider behavior, empty-instance handling and persisted reasons.
+Older and future calls cannot affect that scorer and are no longer loaded.
+This is a time-window bound, not a maximum recent-call row or byte budget.
+
+Router performance snapshots filter by call creation in the requested
+half-open window, without filtering the linked run's start time. Two streamed
+readers buffer 128 records at a time: one reads only matching runs' required
+fields, then reduces input/policy JSON to small per-run metadata; the other
+reads only required call fields. A run's input is not retransmitted for each
+retry/call, and result JSON and execution-input ciphertext are not selected.
+Both cursors close on exhaustion, early exit and consumer failure. Retain call
+timestamp/ID order so the first call still owns each bucket's preset. These
+ordinary reads do not promise a transaction-wide concurrent snapshot. Metadata
+and output groups still grow with distinct recent runs/buckets; one large input
+or a very busy requested window still needs measured memory validation.
+
+Logs analytics returns its existing empty projection before opening a statistics
+session when requested dimensions are known to be unavailable. Supported
+filters, public authentication and the empty result contract stay unchanged.
+Focused regression tests live in `tests/domain/test_statistics_read_bounds.py`.
+These source optimizations do not establish the production disk incident's
+cause or authorize changing cadence, retention, cleanup coverage or production.
+
 ## Bounded rollup saving
 
 Only `generate_rollups` uses the batch save entry point. It buffers at most

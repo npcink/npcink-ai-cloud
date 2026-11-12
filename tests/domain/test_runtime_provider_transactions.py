@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from app.adapters.providers.base import ProviderExecutionRequest, ProviderExecutionResult
-from app.core.db import get_engine, get_session
+from app.core.db import get_engine, get_session, worker_database_connection_retries
 from app.core.models import (
     CreditLedgerEntry,
     ProviderBudgetClaim,
@@ -29,6 +30,13 @@ from tests.domain.test_runtime_provider_execution_characterization import (
     runtime_harness,
     runtime_request,
 )
+
+
+@pytest.fixture(autouse=True, params=[False, True], ids=["default-session", "worker-session"])
+def database_acquisition_scope(request: pytest.FixtureRequest) -> Iterator[None]:
+    scope = worker_database_connection_retries("runtime_queue") if request.param else nullcontext()
+    with scope:
+        yield
 
 
 class InspectingProvider(RecordingProviderAdapter):

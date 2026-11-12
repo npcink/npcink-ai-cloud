@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.core.config import Settings, get_settings
-from app.core.db import require_database_connection
+from app.core.db import require_database_connection, worker_database_connection_retries
 from app.core.logging import configure_logging, get_logger
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
@@ -571,6 +571,11 @@ def main() -> None:
     if args.manual_task:
         print(json.dumps(manual_tasks[args.manual_task].runner(settings), sort_keys=True))
         return
+    _run_scheduled_worker(settings)
+
+
+@worker_database_connection_retries("ops_cadence")
+def _run_scheduled_worker(settings: Settings) -> None:
     logger = get_logger("npcink_ai_cloud.ops_cadence")
     heartbeat = WorkerHeartbeat(
         settings=settings,

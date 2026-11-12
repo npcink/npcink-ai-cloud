@@ -1,0 +1,30 @@
+{
+  "schema": "npcink.production_cleanup_baseline.v1",
+  "repository": "npcink/npcink-ai-cloud",
+  "installed_sha": "35bb9908e262b1e1c2be3938bdfa9bc5a1daba77",
+  "installed_tree": "ecd4db5788a70d8a9cf1ca83656c014300896595",
+  "manifest_sha256": "cf24d851c709e796cad0e4e8792abe468f6d63c30994ec7682e7f8d7dca7f945",
+  "bundle_sha256": "a7e64e89decf5f6b5fdf3abd9d7a903c99f5921beb48804647129d932f609b29",
+  "timing_sha256": "aacc9f6103cad2b20f9398d89eed3358fdb44d6659a6d1d6179d3f89ec5791c7",
+  "recovery_source_revision": "c7d872ae8b082926f42318487b370085772a449b",
+  "recovery_helper_sha256": "2562d32e36c13abb74a9668d1dd8bed0ec29e3cdf22585ccdad5967ed8bc851d",
+  "recovery_output_sha256": "7d809dba2ad86db074cb59517f897e5727de4cc1a979624019d35cd01195e19c",
+  "failed_marker_sha256": "b8fd2f3a71cc58ea6ffcea3d67f0b23f722ff14a0868f45d23947d2e17550b97",
+  "failed_workflow": {
+    "id": 42997960375,
+    "head_sha": "35bb9908e262b1e1c2be3938bdfa9bc5a1daba77",
+    "run_attempt": 1,
+    "updated_at": "2026-11-11T09:53:22Z",
+    "status": "completed",
+    "conclusion": "failure",
+    "event": "workflow_dispatch",
+    "head_branch": "production",
+    "path": ".github/workflows/deploy-production.yml"
+  },
+  "failed_phase": "finalize-rollback-image-tags",
+  "observed_at_utc": "2026-11-11T10:27:17.922587+00:00",
+  "recovery_completed_at_utc": "2026-11-11T10:25:35.557976+00:00",
+  "expires_at_utc": "2026-11-18T10:27:17.922587+00:00",
+  "observation_file": "cleanup-35bb9908-20261111.json",
+  "observation_sha256": "92415aa0c8e62f1c6fb4711039870c673abf77e660ae1e95ab1da968195fe859"
+}
