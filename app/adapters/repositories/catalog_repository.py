@@ -248,6 +248,9 @@ class CatalogRepository:
         self,
         instance_ids: list[str],
         site_id: str | None = None,
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> list[ProviderCallRecord]:
         if not instance_ids:
             return []
@@ -258,6 +261,10 @@ class CatalogRepository:
         if site_id:
             statement = statement.join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
             statement = statement.where(RunRecord.site_id == site_id)
+        if start_at is not None:
+            statement = statement.where(ProviderCallRecord.created_at >= start_at)
+        if end_at is not None:
+            statement = statement.where(ProviderCallRecord.created_at <= end_at)
         statement = statement.order_by(
             ProviderCallRecord.created_at.asc(),
             ProviderCallRecord.id.asc(),

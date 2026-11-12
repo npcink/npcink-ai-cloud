@@ -11,16 +11,8 @@ from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session, require_database_connection
 from app.core.logging import configure_logging, get_logger
-from app.core.models import SITE_STATUS_ACTIVE, ProviderCallRecord
+from app.core.models import SITE_STATUS_ACTIVE
 from app.domain.usage.rollup import UsageRollupService
-
-
-def _normalize_datetime(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
@@ -40,28 +32,6 @@ def _dict_items(value: object) -> list[dict[str, object]]:
     ]
 
 
-def _collect_recent_instance_ids(
-    provider_calls: list[ProviderCallRecord],
-    *,
-    since_at: datetime,
-    limit: int,
-) -> list[str]:
-    recent_ids: list[str] = []
-    seen: set[str] = set()
-    for provider_call in reversed(provider_calls):
-        created_at = _normalize_datetime(provider_call.created_at)
-        if created_at is None or created_at < since_at:
-            continue
-        instance_id = str(provider_call.instance_id or "").strip()
-        if not instance_id or instance_id in seen:
-            continue
-        recent_ids.append(instance_id)
-        seen.add(instance_id)
-        if len(recent_ids) >= limit:
-            break
-    return recent_ids
-
-
 def run_once(
     settings: Settings,
     *,
@@ -78,8 +48,8 @@ def run_once(
         )
         stats_repository = StatsRepository(session)
         recent_instance_ids_by_site = {
-            site.site_id: _collect_recent_instance_ids(
-                stats_repository.list_provider_calls(site.site_id),
+            site.site_id: stats_repository.list_recent_provider_instance_ids(
+                site_id=site.site_id,
                 since_at=since_at,
                 limit=settings.latency_probe_worker_instance_limit,
             )
