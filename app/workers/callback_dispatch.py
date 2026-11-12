@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
 from app.core.config import get_settings
-from app.core.db import require_database_connection
+from app.core.db import require_database_connection, worker_database_connection_retries
 from app.core.logging import configure_logging, get_logger
 from app.domain.runtime.service import RuntimeService
 from app.workers.heartbeat import WorkerHeartbeat
@@ -57,6 +57,7 @@ class _CallbackPollSchedule:
         return True
 
 
+@worker_database_connection_retries("callback_dispatch")
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)

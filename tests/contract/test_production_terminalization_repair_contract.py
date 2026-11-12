@@ -225,6 +225,109 @@ def test_cleanup_repair_rebinds_preserved_frontend_and_releases_lock(
     ).exists()
 
 
+@pytest.mark.parametrize(
+    "fault", [None, "runtime", "baseline", "rollback", "missing-map", "inherited"]
+)
+def test_backend_repair_preserves_redis_bound_to_previous_release(
+    tmp_path: Path,
+    fault: str | None,
+) -> None:
+    module = _load_module()
+    root, revision, _frontend_image, tags, service_images = _fixture(tmp_path)
+    state = root / ".release-state/release-current"
+    plan_path = root / "release-current/release/production-release-plan.json"
+    plan = json.loads(plan_path.read_text())
+    plan.update(base_sha="d" * 40, migration_required=False, runtime_config_required=False)
+    plan_path.write_text(json.dumps(plan))
+    previous = root / "release-previous"
+    previous.mkdir()
+    manifest_path = previous / "release-bundle-manifest.json"
+    _write(manifest_path, json.dumps({"source": {"revision": "d" * 40}}), 0o644)
+    previous_map = json.loads((state / "target-daemon-images.json").read_text())
+    previous_map["bundle"].update(
+        release_name=previous.name,
+        release_path=str(previous),
+        source_revision="d" * 40,
+        manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    )
+    old_redis = "sha256:" + "b" * 64
+    previous_map["roles"]["external_redis"]["target_daemon_image_id"] = old_redis
+    _write(
+        root / ".release-state/release-previous/target-daemon-images.json",
+        json.dumps(previous_map),
+        0o600,
+    )
+    with (state / "rollback-images.tsv").open("a") as stream:
+        stream.write(
+            f"npcink-ai-cloud-external-redis:prod\t"
+            f"npcink-ai-cloud-rollback:test-redis\t{old_redis}\n"
+        )
+    tags["npcink-ai-cloud-rollback:test-redis"] = old_redis
+    tags["npcink-ai-cloud-external-redis:prod"] = service_images["redis"]
+    service_images["redis"] = "sha256:" + "f" * 64 if fault == "runtime" else old_redis
+    if fault == "baseline":
+        plan["base_sha"] = "e" * 40
+        plan_path.write_text(json.dumps(plan))
+    if fault == "rollback":
+        map_path = state / "rollback-images.tsv"
+        map_path.write_text(map_path.read_text().replace(old_redis, "sha256:" + "e" * 64))
+    if fault == "missing-map":
+        (root / ".release-state/release-previous/target-daemon-images.json").unlink()
+    if fault == "inherited":
+        previous_map["roles"]["external_redis"]["target_daemon_image_id"] = "sha256:" + "e" * 64
+        _write(
+            root / ".release-state/release-previous/target-daemon-images.json",
+            json.dumps(previous_map),
+            0o600,
+        )
+        _write(
+            root / ".release-state/release-previous/preserved-runtime-services.json",
+            json.dumps(
+                {
+                    "schema": "npcink.preserved_runtime_services.v1",
+                    "release_name": previous.name,
+                    "release_path": str(previous),
+                    "services": {"redis": {"target_daemon_image_id": old_redis}},
+                }
+            ),
+            0o600,
+        )
+    if fault not in {None, "inherited"}:
+        messages = {
+            "runtime": "active redis image identity drifted",
+            "baseline": "release plan baseline",
+            "rollback": "rollback binding",
+            "missing-map": "target-daemon-images",
+        }
+        with pytest.raises((module.RepairError, FileNotFoundError), match=messages[fault]):
+            module.repair(
+                root,
+                revision,
+                "c" * 40,
+                module.CONFIRMATION,
+                expected_uid=os.getuid(),
+                docker_runner=_docker_fixture(service_images, tags),
+                health_check=lambda _url: None,
+            )
+        assert (root / ".deploy-lock").exists()
+        assert "npcink-ai-cloud-rollback:test-redis" in tags
+        return
+    receipt = module.repair(
+        root,
+        revision,
+        "c" * 40,
+        module.CONFIRMATION,
+        expected_uid=os.getuid(),
+        docker_runner=_docker_fixture(service_images, tags),
+        health_check=lambda _url: None,
+    )
+    assert receipt["status"] == "complete"
+    assert tags["npcink-ai-cloud-external-redis:prod"] == old_redis
+    preserved = json.loads((state / "preserved-runtime-services.json").read_text())
+    assert preserved["services"]["redis"]["target_daemon_image_id"] == old_redis
+    assert not (root / ".deploy-lock").exists()
+
+
 def test_cleanup_failure_restores_terminal_evidence_and_retains_lock(
     tmp_path: Path,
 ) -> None:

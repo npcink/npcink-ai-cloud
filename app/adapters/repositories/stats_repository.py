@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -18,7 +19,7 @@ from sqlalchemy import (
     select,
     values,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.models import (
     CatalogInstance,
@@ -168,6 +169,112 @@ class StatsRepository:
             ProviderCallRecord.id.asc(),
         )
         return list(self.session.scalars(statement))
+
+    @contextmanager
+    def stream_router_performance_runs(
+        self,
+        *,
+        site_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> Iterator[Iterator[RunRecord]]:
+        # Select by call time, not run start: delayed calls still belong here.
+        matching_runs = select(ProviderCallRecord.run_id).where(
+            ProviderCallRecord.created_at >= start_at,
+            ProviderCallRecord.created_at < end_at,
+        )
+        statement = (
+            select(RunRecord)
+            .where(RunRecord.run_id.in_(matching_runs))
+            .options(
+                load_only(
+                    RunRecord.ability_name,
+                    RunRecord.channel,
+                    RunRecord.policy_json,
+                    RunRecord.input_json,
+                    RunRecord.error_code,
+                    raiseload=True,
+                ),
+            )
+            .execution_options(yield_per=128)
+        )
+        if site_id:
+            statement = statement.where(RunRecord.site_id == site_id)
+        result = self.session.scalars(statement)
+        try:
+            yield iter(result)
+        finally:
+            result.close()
+
+    @contextmanager
+    def stream_router_performance_calls(
+        self,
+        *,
+        site_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> Iterator[Iterator[ProviderCallRecord]]:
+        statement = (
+            select(ProviderCallRecord)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(
+                ProviderCallRecord.created_at >= start_at,
+                ProviderCallRecord.created_at < end_at,
+            )
+            .options(
+                load_only(
+                    ProviderCallRecord.run_id,
+                    ProviderCallRecord.created_at,
+                    ProviderCallRecord.instance_id,
+                    ProviderCallRecord.error_code,
+                    ProviderCallRecord.latency_ms,
+                    raiseload=True,
+                )
+            )
+            .order_by(ProviderCallRecord.created_at.asc(), ProviderCallRecord.id.asc())
+            .execution_options(yield_per=128)
+        )
+        if site_id:
+            statement = statement.where(RunRecord.site_id == site_id)
+        result = self.session.scalars(statement)
+        try:
+            yield iter(result)
+        finally:
+            result.close()
+
+    def list_recent_provider_instance_ids(
+        self,
+        *,
+        site_id: str,
+        since_at: datetime,
+        limit: int,
+    ) -> list[str]:
+        if limit < 1:
+            raise ValueError("recent instance limit must be positive")
+        statement = (
+            select(ProviderCallRecord.instance_id)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(RunRecord.site_id == site_id, ProviderCallRecord.created_at >= since_at)
+            .order_by(ProviderCallRecord.created_at.desc(), ProviderCallRecord.id.desc())
+            .execution_options(yield_per=128)
+        )
+        # A call-row LIMIT could hide older distinct instances behind duplicates.
+        # Stream just IDs and close the server cursor even when we stop early.
+        recent_ids: list[str] = []
+        seen: set[str] = set()
+        result = self.session.scalars(statement)
+        try:
+            for raw_instance_id in result:
+                instance_id = str(raw_instance_id or "").strip()
+                if not instance_id or instance_id in seen:
+                    continue
+                recent_ids.append(instance_id)
+                seen.add(instance_id)
+                if len(recent_ids) >= limit:
+                    break
+        finally:
+            result.close()
+        return recent_ids
 
     def list_provider_calls_for_instance(
         self,
