@@ -2421,3 +2421,9 @@ M4/CI/合并/生产/人工接受另记，不以本地截图替代。
 焦点目标缺失。Escape 在本地完整回归中通过，生产异常的根因仍未单独证实，
 须在包含此修复的下一次前端发布后复验，不能由本地结果标为生产已解决。
 M4 candidate 已同步：基于5baa1a12、dirty3路径，source bundle0481e6bf，frontend source00123c12；同一定向浏览器用例通过（5.6s），无模型调用。只读健康返回相同candidate revision。当前状态：本地与M4候选已验证；CI、合并、M4 accepted、生产与人工接受分别待记录。
+
+2026-11-12后继验收：#1420已合入并随生产`6ef9e100`前端发布，精确CI/CodeQL和
+Deploy43171431374成功。生产device页取消、关闭后回到改名按钮；Enter打开及输入
+聚焦通过。自动化Escape未产生页面键盘事件，隔离fixture已证实此限制；操作者
+手动按Esc确认关闭并回到改名按钮，代理随后读取同一页面确认。未保存改名或调用
+模型。详见[生产收尾回执](history/production/2026/connection-maintenance-release-2026-11-12.md)。
