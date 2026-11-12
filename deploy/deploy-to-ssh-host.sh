@@ -679,6 +679,7 @@ LOCAL_TRANSFER_REQUEST_PATH="${LOCAL_TRANSFER_DIR}/release-transfer-request.json
 LOCAL_TRANSFER_PLAN_PATH="${LOCAL_TRANSFER_DIR}/release-transfer-plan.json"
 LOCAL_TRANSFER_BUNDLE_PATH="${LOCAL_TRANSFER_DIR}/deploy-bundle.tgz"
 LOCAL_TRANSFER_BUNDLE_CHECKSUM_PATH="${LOCAL_TRANSFER_BUNDLE_PATH}.sha256"
+LOCAL_ARTIFACT_REQUEST_PATH="${LOCAL_TRANSFER_DIR}/artifact-request.json"
 LOCAL_TRANSFER_NEEDS_CLEANUP=1
 UPLOAD_BUNDLE_PATH="${BUNDLE_PATH}"
 UPLOAD_BUNDLE_CHECKSUM_PATH="${BUNDLE_CHECKSUM_PATH}"
@@ -817,11 +818,37 @@ INVENTORY_EOF
 	fi
 fi
 
-echo "[info] Uploading deploy bundle payload"
-npcink_ai_cloud_run_timed "upload deploy bundle" \
-	scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_PATH}"
-npcink_ai_cloud_run_timed "upload deploy bundle checksum" \
-	scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_CHECKSUM_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_CHECKSUM_PATH}"
+DIRECT_ARTIFACT_TRANSFER=0
+# Selective transfer remains preferable to downloading a complete archive. Only
+# Actions supplies this exact-CI context; workstation and stage-only keep SCP.
+if [ "${SELECTIVE_TRANSFER}" = "0" ] && [ "${STAGE_ONLY}" = "0" ] && \
+	[ -n "${NPCINK_CLOUD_DEPLOY_ARTIFACT_RUN_ID:-}" ]; then
+	if (
+		umask 077
+		"${LOCAL_RELEASE_TOOL_PYTHON}" "${ROOT_DIR}/scripts/transfer-release-artifact.py" request \
+			--repository "${GITHUB_REPOSITORY:-}" \
+			--run-id "${NPCINK_CLOUD_DEPLOY_ARTIFACT_RUN_ID}" \
+			--source-sha "${GITHUB_SHA:-}" --bundle "${BUNDLE_PATH}" \
+			>"${LOCAL_ARTIFACT_REQUEST_PATH}"
+	) && scp "${SCP_ARGS[@]}" "${ROOT_DIR}/scripts/transfer-release-artifact.py" \
+		"${SSH_TARGET}:${REMOTE_PREFLIGHT_DIR}/scripts/transfer-release-artifact.py" && \
+		npcink_ai_cloud_run_timed "download deploy bundle from Actions artifact" \
+			ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+			"$(remote_shell_arg "${DEPLOY_HOST_PYTHON}") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts/transfer-release-artifact.py") receive --output-dir $(remote_shell_arg "${REMOTE_INCOMING_DIR}")" \
+			<"${LOCAL_ARTIFACT_REQUEST_PATH}"; then
+		DIRECT_ARTIFACT_TRANSFER=1
+	else
+		echo "[info] Direct artifact transfer unavailable; uploading the complete exact bundle over SSH."
+	fi
+fi
+
+if [ "${DIRECT_ARTIFACT_TRANSFER}" = "0" ]; then
+	echo "[info] Uploading deploy bundle payload"
+	npcink_ai_cloud_run_timed "upload deploy bundle" \
+		scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_PATH}"
+	npcink_ai_cloud_run_timed "upload deploy bundle checksum" \
+		scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_CHECKSUM_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_CHECKSUM_PATH}"
+fi
 if [ "${SELECTIVE_TRANSFER}" = "1" ]; then
 	npcink_ai_cloud_run_timed "verify selective remote deploy bundle before extraction" \
 		ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \

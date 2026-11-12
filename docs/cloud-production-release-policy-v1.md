@@ -1095,6 +1095,22 @@ loader, verifier, and manifest helper do not all declare the selective-transfer
 contract remain on the complete-transfer path, preserving older rollback and
 replay bundles.
 
+For a complete transfer from Actions, the deployer may instead let the host
+download the same exact CI artifact from GitHub's HTTPS blob storage. Resolve a
+single unexpired artifact bound to the successful production CI run and full
+source SHA, after local complete-bundle verification. Send its short-lived URL
+only through protected stdin over the already pinned SSH connection; never
+forward the GitHub token, log the URL, or pass it in process arguments. Accept
+only the bounded GitHub Actions blob origin, with TLS validation and no redirects.
+Before publishing any downloaded bundle, verify the Actions ZIP digest/size,
+the exact two-file member set, and the bundle digest/size/checksum against the
+locally verified original. The existing remote full verification, scan, source
+identity and deployment gates still run. Selective image transfer takes priority;
+workstation and stage-only uploads retain SCP. An unavailable or invalid direct
+download cleans its temporary files and falls back once to the original verified
+SCP path, without starting installation or changing application state. Bound
+the HTTPS download to 2 GiB and ten minutes; larger bundles use SCP.
+
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /
 `NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID` and the Runtime Data pair
