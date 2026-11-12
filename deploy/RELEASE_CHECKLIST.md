@@ -9,6 +9,24 @@
 
 ## 1. Purpose
 
+### Development-stage default (operator decision 2026-11-12)
+
+Ordinary runtime deployments use `deploy/release-smoke.sh --lightweight`: target
+2–3 minutes, health/workers/pages/anonymous rejection and one existing-site
+signed catalog read, with exact installed SHA and clean terminal state. No OTP,
+model calls, payment checks or external Trace are required for this default.
+Reuse deployment cutover evidence; do not repeat its waits. Missing internal
+token or site/key credentials fails closed. Full smoke stays on demand with
+its existing strict gates; unexecuted full acceptance is not passed.
+External Trace/Grafana setup is deferred, not a current development blocker.
+Login/reconnect, model, payment and migration changes require scoped acceptance.
+See [the canonical runbook](../docs/formal-release-smoke-entry-v1.md).
+
+The broad GA/complete-acceptance items below do not make every ordinary
+development release repeat a transaction, reconnect, real model request or
+external Trace integration. Exact version/bundle/security, database safety,
+first-install acceptance and explicit production authorization remain required.
+
 This checklist is the final gate before formally releasing Npcink AI Cloud.
 
 It is intentionally split into:
@@ -59,10 +77,10 @@ Every addition, update, or removal in
 
 Set `run_formal_release_smoke=true` only when every protected smoke credential
 is ready and the one-time Portal code will remain valid until the post-deploy
-step. A selected smoke fails closed. For a deployment that may exceed the
-default 10-minute code TTL, keep the input false, treat the recorded deferral as
-not-passed evidence, then refresh the code and immediately run the separate
-`Release Smoke` workflow after deployment.
+step. A selected smoke fails closed. When full acceptance is separately
+authorized and deployment may exceed the default 10-minute code TTL, keep the
+input false, treat the recorded deferral as not-passed evidence, then refresh
+the code and run the separate `Release Smoke` workflow after deployment.
 
 Current deployment authority is the fresh PostgreSQL 18 contract:
 
@@ -72,7 +90,7 @@ Current deployment authority is the fresh PostgreSQL 18 contract:
   and only then run `deploy/first-install-finalize.sh`;
 - ordinary deployment must report `installation_state=complete`, pass the
   candidate RDS PostgreSQL 18/TLS/Alembic preflight, and then run the existing
-  small-customer preflight and release smoke;
+  default lightweight smoke (or explicitly selected full release smoke);
 - any section explicitly labelled `Historical` or `non-normative` preserves
   evidence only. Its unchecked boxes are not current release gates and no
   historical activation or backup receipt is consumed by ordinary deployment.
@@ -103,7 +121,7 @@ Repository conclusion:
 - Cloud must not be treated as GA-ready while any remaining `Required` item is
   unchecked.
 
-Current open blockers:
+GA / complete-acceptance follow-ups (not all ordinary development-release blockers):
 
 | Blocker | Category | Owner | Verification |
 | --- | --- | --- | --- |
@@ -456,7 +474,7 @@ private runtime configuration or expand the receipt with customer fields.
   public health verification
 - [ ] no current release-project container remains for `caddy`, `jaeger`, or
   `otel-collector`
-- [ ] external OTLP release evidence is explicit for the release host:
+- [ ] for explicitly selected full formal acceptance, external OTLP evidence is explicit:
   - `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT`
   - `NPCINK_CLOUD_OTEL_TRACE_QUERY_URL`
 - [ ] a fresh Cloud trace exported through that endpoint is queryable through
@@ -492,7 +510,9 @@ All items in this section are `Required`.
 
 ## 5. Formal Release Smoke
 
-All items in this section are `Required`.
+This section is required when full formal acceptance is explicitly selected.
+For ordinary development-stage release, use the default lightweight mode in
+section 1; it does not satisfy the unexecuted items below.
 
 Prepare a local, untracked smoke env file:
 
@@ -519,7 +539,8 @@ Preferred GitHub Actions path:
   its explicit `installation_state` output. For `pending`, confirm both
   post-install steps were skipped, then follow the Setup, independent smoke,
   WordPress/RDS/observation, and finalization handoff. For `complete`, confirm
-  `Small-customer preflight` passed. If `run_formal_release_smoke=true`, require
+  `Lightweight release smoke` passed when full smoke was not selected. If
+  `run_formal_release_smoke=true`, require
   `Formal release smoke` to pass; missing or stale credentials fail the deploy
   job. If it was false, the summary is a deferral, not smoke evidence;
 - because the Portal code is single-use and expires after 10 minutes by

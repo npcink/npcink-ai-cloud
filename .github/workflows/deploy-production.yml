@@ -498,14 +498,27 @@ jobs:
             echo "6. Future ordinary deployments will then report \`complete\` and run their post-install gates."
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Small-customer preflight
-        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime'
+      - name: Lightweight release smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke == false
+        timeout-minutes: 3
         env:
+          NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ github.sha }}
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+          NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE: /home/runner/.ssh/npcink_prod_deploy_key
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
+          NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
+          NPCINK_CLOUD_RELEASE_SITE_ID: ${{ secrets.NPCINK_CLOUD_RELEASE_SITE_ID }}
+          NPCINK_CLOUD_RELEASE_KEY_ID: ${{ secrets.NPCINK_CLOUD_RELEASE_KEY_ID }}
+          NPCINK_CLOUD_RELEASE_KEY_SECRET: ${{ secrets.NPCINK_CLOUD_RELEASE_KEY_SECRET }}
         run: |
-          bash deploy/small-customer-trial-preflight.sh \
-            --base-url "${NPCINK_CLOUD_BASE_URL}" \
-            --require-alipay-enabled
+          set -euo pipefail
+          set +x
+          bash deploy/with-smoke-internal-tunnel.sh -- \
+            bash deploy/release-smoke.sh --lightweight --base-url "${NPCINK_CLOUD_BASE_URL}"
+          echo "Lightweight smoke passed: installed SHA/terminal state, health/workers, pages, anonymous rejection, signed catalog read. No login, model, payment or external Trace check." >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Formal release smoke
         if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke
@@ -615,7 +628,7 @@ jobs:
             echo "## Formal Release Smoke"
             echo ""
             echo "Not selected for this deploy. This is not passing formal-smoke evidence."
-            echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+            echo "Full login/model/Trace acceptance remains on demand; request fresh credentials only when that scoped acceptance is authorized."
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Record plan-scoped verification

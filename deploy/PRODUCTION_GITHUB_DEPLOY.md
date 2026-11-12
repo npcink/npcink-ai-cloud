@@ -62,9 +62,10 @@ the exact `production` revision selected for the run. In the current
 single-operator AI-development model, that manual dispatch is the one human
 production authorization. The GitHub Environment named `production` retains
 protected secrets and production-branch policy without adding a second hidden
-reviewer wait. The workflow then deploys and runs the small-customer preflight
-plus formal release smoke only when `run_formal_release_smoke` is explicitly
-selected. A selected smoke fails closed if any protected credential is missing
+reviewer wait. The workflow then deploys and runs a default read-only lightweight smoke
+(target 2–3 minutes, zero model calls), or full formal release smoke when
+`run_formal_release_smoke` is explicitly selected. A selected smoke fails closed
+if any protected credential is missing
 or stale; a default-off deferred smoke is recorded as not-passed evidence,
 never as a successful skip.
 
@@ -242,6 +243,11 @@ deploy helpers load the same class of values from
 `.deploy-secrets/workspace-target.env.sh` (see `deploy/WORKSPACE_TARGET.md`);
 CI uses GitHub Secrets only.
 
+Default lightweight smoke requires only the internal token and the existing
+release site ID/key ID/key secret listed below. It does not require admin,
+mailbox, OTP or external Trace. Missing required credentials fail closed.
+Payment, login/reconnect and model acceptance remain change-scoped.
+
 Protected formal release-smoke secrets used by either an explicitly selected
 deploy smoke or the separate `Release Smoke` workflow:
 
@@ -256,7 +262,8 @@ NPCINK_CLOUD_RELEASE_KEY_SECRET=<runtime smoke key secret>
 ```
 
 The Portal login code is single-use and expires after 10 minutes by default.
-Do not keep an old code as durable release configuration. If the deployment may
+Do not keep an old code as durable release configuration. Only when full
+acceptance is separately authorized: if the deployment may
 outlast that TTL, leave `run_formal_release_smoke=false`, finish the deploy,
 request and store a fresh code through the protected operator path, then
 immediately dispatch `Release Smoke` from `production`, pasting the successful
@@ -373,8 +380,10 @@ Runtime-data encryption, bootstrap, admin-session, service-settings, Portal
 JWT, database, and provider secrets stay in backend containers only.
 
 Production Compose does not run a trace collector or trace store. OTLP export
-is optional for ordinary runtime operation. Formal release requires explicit,
-operator-owned `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` and
+is optional for ordinary runtime operation and the default development-stage
+lightweight smoke. External Trace/Grafana setup is deferred under the
+2026-11-12 operator decision; complete formal acceptance, when selected,
+still requires explicit, operator-owned `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` and
 `NPCINK_CLOUD_OTEL_TRACE_QUERY_URL` values and evidence that a fresh Cloud trace
 is queryable.
 

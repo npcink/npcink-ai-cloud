@@ -32,9 +32,14 @@ EXPECTED_PROVIDER_ID="${NPCINK_CLOUD_EXPECTED_PROVIDER_ID:-}"
 EXPECTED_MODEL_ID="${NPCINK_CLOUD_EXPECTED_MODEL_ID:-}"
 EXPECTED_INSTANCE_ID="${NPCINK_CLOUD_EXPECTED_INSTANCE_ID:-}"
 SKIP_TERMS_CHECKS="${NPCINK_CLOUD_SKIP_TERMS_CHECKS:-0}"
+CATALOG_ONLY="0"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--catalog-only)
+			CATALOG_ONLY="1"
+			shift
+			;;
 		--base-url)
 			BASE_URL="$2"
 			shift 2
@@ -507,7 +512,11 @@ _http_request() {
 }
 
 http_request() {
-	_http_request "" "" "$@"
+	if [ "${CATALOG_ONLY}" = "1" ]; then
+		_http_request "3" "10" "$@"
+	else
+		_http_request "" "" "$@"
+	fi
 }
 
 observability_summary_request() {
@@ -546,6 +555,19 @@ signed_request() {
 		"X-Npcink-Nonce: ${nonce}" \
 		"Idempotency-Key: ${idempotency_key}"
 }
+
+if [ "${CATALOG_ONLY}" = "1" ]; then
+	http_request "GET" "${BASE_URL%/}/v1/catalog/models" ""
+	case "${HTTP_STATUS}" in
+		401 | 403) ;;
+		*) fail "unsigned catalog request must be rejected (got ${HTTP_STATUS})" ;;
+	esac
+	signed_request "GET" "/v1/catalog/models" "" "" "" ""
+	assert_status "${HTTP_STATUS}" "200" "signed catalog/models should succeed"
+	assert_json_non_empty "${HTTP_BODY}" "data.items" "catalog/models should return model list"
+	ok "Signed catalog read passed; no runtime execution performed"
+	exit 0
+fi
 
 ok "Waiting for cloud ready: ${BASE_URL}"
 if ! npcink_ai_cloud_wait_for_ready "${BASE_URL}" 20 2; then

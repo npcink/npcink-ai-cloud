@@ -3,6 +3,10 @@
 本记录接续[本次维护发布](connection-maintenance-release-2026-11-12.md)，
 仅处理正式 smoke 的当前条件和发布包传输，不开启新的产品功能。
 
+> 后续决策（2026-11-12）：操作者确认开发期采用零模型轻量 smoke，暂缓外部
+> Trace / Grafana 接入。下文保留此前调查和提案；当前执行口径以
+> [验收入口](../../../formal-release-smoke-entry-v1.md)为准，不继续将Trace列为必需待办。
+
 ## 正式 smoke 当前状态
 
 只读核对 installed manifest：生产应用仍为

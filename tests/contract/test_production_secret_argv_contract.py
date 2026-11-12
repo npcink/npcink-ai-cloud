@@ -296,6 +296,58 @@ if (path == "/internal/service/observability/summary"
     body["data"]["tracing"] = {"otlp_configured": False, "otlp_endpoint": "",
                                "trace_query_configured": False, "trace_query_url": ""}
 
+# Lightweight fixtures reject every write and verify the actual HMAC rather
+# than accepting any request that happens to contain a signature header.
+if os.environ.get("FAKE_LIGHTWEIGHT") == "1":
+    import hashlib
+    import hmac
+    method = args[args.index("-X") + 1] if "-X" in args else "GET"
+    if method != "GET":
+        raise SystemExit(98)
+    headers = dict((key.lower(), value.strip()) for key, _, value in
+                   (line.partition(":") for line in request_headers.splitlines()))
+    if path == "/v1/catalog/models":
+        canonical = "\n".join([
+            method, path, headers.get("x-npcink-site-id", ""),
+            headers.get("x-npcink-key-id", ""), headers.get("x-npcink-timestamp", ""),
+            headers.get("x-npcink-nonce", ""), headers.get("idempotency-key", ""),
+            headers.get("traceparent", ""), hashlib.sha256(b"").hexdigest(),
+        ])
+        expected = "sha256=" + hmac.new(
+            b"fake-hmac", canonical.encode(), hashlib.sha256).hexdigest()
+        if (not hmac.compare_digest(headers.get("x-npcink-signature", ""), expected)
+                or headers.get("x-npcink-site-id") != "site_runtime"
+                or headers.get("x-npcink-key-id") != "key_runtime"):
+            status, body = "401", {"status": "error"}
+    # Simulate case-insensitive HTTP/2 headers on the real public endpoint.
+    response_headers = [line.replace("Location:", "location:") for line in response_headers]
+    if path == "/admin/service-settings":
+        status = "307"
+        response_headers = ["", "location: https://cloud.example.test/admin/login?redirect=%2Fadmin%2Fservice-settings"]
+    failure = os.environ.get("LIGHTWEIGHT_FAILURE", "")
+    if (failure == "public_ready_open" and path == "/health/ready"
+            and urlparse(url).hostname != "127.0.0.1"):
+        status = "200"
+    elif (failure == "private_auth_open" and path == "/health/ready"
+            and urlparse(url).hostname == "127.0.0.1"):
+        status = "200"
+    elif failure == "worker_down" and path == "/health/operational-ready":
+        status = "503"
+    elif failure == "workers_empty" and path == "/health/operational-ready":
+        body["data"]["required_workers"] = []
+    elif failure == "page_down" and path == "/portal/login":
+        status = "502"
+    elif failure == "admin_open" and path == "/admin/service-settings":
+        status = "200"
+    elif failure == "admin_wrong_redirect" and path == "/admin/service-settings":
+        response_headers = ["", "location: https://other.example.test/admin/login"]
+    elif failure == "unsigned_catalog_open" and path == "/v1/catalog/models":
+        status = "200"
+    elif failure == "catalog_empty" and path == "/v1/catalog/models" and status == "200":
+        body["data"]["items"] = []
+    elif failure == "transport_timeout" and path == "/health/live":
+        raise SystemExit(28)
+
 response_headers[0] = f"HTTP/1.1 {status} Fixture"
 if output_path:
     serialized = body if isinstance(body, str) else json.dumps(body, separators=(",", ":"))
@@ -1650,3 +1702,151 @@ def test_smoke_rejects_unsafe_public_header_origin(public_origin: str) -> None:
     assert result.returncode != 0
     assert "public must be an HTTP(S) origin" in result.stderr
     assert "password" not in result.stderr
+
+
+def _lightweight_environment(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
+    fixture = _copy_fixture(tmp_path, "deploy/common.sh", "deploy/release-smoke.sh",
+                            "deploy/remote-smoke.sh")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _install_fake_curl(fake_bin)
+    temporary = tmp_path / "temporary"
+    temporary.mkdir()
+    log = tmp_path / "curl.log"
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith("NPCINK_CLOUD_")}
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "TMPDIR": str(temporary), "CURL_ARGV_LOG": str(log),
+        "FAKE_LIGHTWEIGHT": "1", "FAKE_TRACE_UNCONFIGURED": "1",
+        "FAKE_EDGE_DENY": "1", "FAKE_REQUIRE_CANONICAL_ORIGIN": "1",
+        "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "fake-internal",
+        "NPCINK_CLOUD_RELEASE_SITE_ID": "site_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_ID": "key_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_SECRET": "fake-hmac",
+        "FORBIDDEN_CURL_ENV_KEYS": ("NPCINK_CLOUD_INTERNAL_AUTH_TOKEN,NPCINK_CLOUD_SECRET,"
+                                    "NPCINK_CLOUD_ADMIN_KEY,NPCINK_CLOUD_PORTAL_LOGIN_CODE,"
+                                    "NPCINK_CLOUD_RELEASE_KEY_SECRET"),
+    })
+    return fixture, environment, log
+
+
+@pytest.mark.parametrize("from_env_file", [False, True])
+def test_lightweight_smoke_needs_no_trace_login_or_model_and_cleans_credentials(
+    tmp_path: Path, from_env_file: bool,
+) -> None:
+    fixture, environment, log = _lightweight_environment(tmp_path)
+    if from_env_file:
+        credentials = tmp_path / "smoke.env"
+        keys = ("NPCINK_CLOUD_INTERNAL_AUTH_TOKEN", "NPCINK_CLOUD_RELEASE_SITE_ID",
+                "NPCINK_CLOUD_RELEASE_KEY_ID", "NPCINK_CLOUD_RELEASE_KEY_SECRET")
+        credentials.write_text("\n".join(f"{key}={environment.pop(key)}" for key in keys)
+                               + "\nNPCINK_CLOUD_PORTAL_LOGIN_CODE=unused-otp-sentinel\n")
+        credentials.chmod(0o600)
+        environment["NPCINK_CLOUD_ENV_FILE"] = str(credentials)
+        environment["NPCINK_CLOUD_ADMIN_KEY"] = "unused-admin-sentinel"
+    cookie = tmp_path / "persisted-cookie"
+    cookie.write_text("existing-cookie-must-survive")
+    environment["NPCINK_CLOUD_PORTAL_COOKIE_JAR"] = str(cookie)
+    result = subprocess.run(
+        ["bash", str(fixture / "deploy/release-smoke.sh"), "--lightweight",
+         "--base-url", "https://cloud.example.test"], env=environment,
+        text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Lightweight release smoke passed" in result.stdout
+    assert "NOT a formal smoke pass" in result.stdout
+    calls = log.read_text().splitlines()
+    assert len(calls) == 11
+    assert all("\t-X\tGET\t" in call for call in calls)
+    assert all("--connect-timeout\t3" in call and "--max-time\t10" in call for call in calls)
+    assert sum("/v1/catalog/models" in call for call in calls) == 2
+    for forbidden in ("observability", "/runtime/", "/auth/", "alipay",
+                      "fake-hmac", "fake-internal", "unused-admin-sentinel",
+                      "unused-otp-sentinel"):
+        assert forbidden not in log.read_text() + result.stdout + result.stderr
+    assert cookie.read_text() == "existing-cookie-must-survive"
+    assert list((tmp_path / "temporary").iterdir()) == []
+
+
+@pytest.mark.parametrize("missing", ["NPCINK_CLOUD_INTERNAL_AUTH_TOKEN",
+    "NPCINK_CLOUD_RELEASE_SITE_ID", "NPCINK_CLOUD_RELEASE_KEY_ID",
+    "NPCINK_CLOUD_RELEASE_KEY_SECRET"])
+def test_lightweight_missing_credentials_fails_before_network(tmp_path: Path, missing: str) -> None:
+    fixture, environment, log = _lightweight_environment(tmp_path)
+    environment.pop(missing)
+    result = subprocess.run(
+        ["bash", str(fixture / "deploy/release-smoke.sh"), "--lightweight",
+         "--base-url", "https://cloud.example.test"], env=environment,
+        text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert not log.exists()
+
+
+@pytest.mark.parametrize("failure", ["public_ready_open", "private_auth_open", "worker_down",
+    "workers_empty", "page_down", "admin_open", "admin_wrong_redirect",
+    "unsigned_catalog_open", "catalog_empty",
+    "transport_timeout", "wrong_secret", "wrong_key"])
+def test_lightweight_smoke_fails_closed(tmp_path: Path, failure: str) -> None:
+    fixture, environment, log = _lightweight_environment(tmp_path)
+    environment["LIGHTWEIGHT_FAILURE"] = failure
+    if failure == "wrong_secret":
+        environment["NPCINK_CLOUD_RELEASE_KEY_SECRET"] = "wrong-hmac-sentinel"
+    if failure == "wrong_key":
+        environment["NPCINK_CLOUD_RELEASE_KEY_ID"] = "wrong-key"
+    result = subprocess.run(
+        ["bash", str(fixture / "deploy/release-smoke.sh"), "--lightweight",
+         "--base-url", "https://cloud.example.test"], env=environment,
+        text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "Lightweight release smoke passed" not in result.stdout
+    assert "wrong-hmac-sentinel" not in log.read_text() + result.stdout + result.stderr
+    assert list((tmp_path / "temporary").iterdir()) == []
+
+
+def test_lightweight_cannot_be_mixed_with_full_preflight(tmp_path: Path) -> None:
+    fixture, environment, log = _lightweight_environment(tmp_path)
+    result = subprocess.run(
+        ["bash", str(fixture / "deploy/release-smoke.sh"), "--lightweight", "--preflight-only"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0 and not log.exists()
+
+
+@pytest.mark.parametrize("marker", ["", ".deploy-lock", ".cutover-failed",
+                                   ".release-state/.release-one-off.lock", "wrong_sha"])
+def test_smoke_transport_remote_revision_check_rejects_dirty_terminal_state(
+    tmp_path: Path, marker: str,
+) -> None:
+    # Execute the actual read-only SSH payload against a disposable managed root.
+    wrapper = (ROOT / "deploy/with-smoke-internal-tunnel.sh").read_text()
+    script = wrapper.split("<<'REMOTE'\n", 1)[1].split("\nREMOTE\n", 1)[0]
+    current = tmp_path / "current"
+    current.mkdir()
+    (current / "release-bundle-manifest.json").write_text(
+        json.dumps({"source": {"revision": "a" * 40}}))
+    if marker and marker != "wrong_sha":
+        target = tmp_path / marker
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.symlink_to(tmp_path / "missing-target")  # Broken links must also block.
+    result = subprocess.run(
+        ["bash", "-s", "--", str(tmp_path), "b" * 40 if marker == "wrong_sha" else "a" * 40],
+        input=script, text=True, capture_output=True, check=False, timeout=10,
+    )
+    assert (result.returncode != 0) == bool(marker)
+
+
+def test_deploy_default_lightweight_smoke_does_not_need_full_acceptance_secrets() -> None:
+    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text()
+    step = workflow.split("      - name: Lightweight release smoke\n", 1)[1]
+    step = step.split("      - name:", 1)[0]
+    assert "inputs.run_formal_release_smoke == false" in step
+    assert "timeout-minutes: 3" in step
+    assert "with-smoke-internal-tunnel.sh" in step and "release-smoke.sh --lightweight" in step
+    for forbidden in ("NPCINK_CLOUD_ADMIN_KEY", "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL",
+                      "NPCINK_CLOUD_PORTAL_LOGIN_CODE", "alipay"):
+        assert forbidden not in step
+    assert "Small-customer preflight" not in workflow

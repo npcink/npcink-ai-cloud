@@ -2492,8 +2492,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "--skip-bundle-build" in deploy_workflow
     assert "pnpm/action-setup" not in deploy_workflow
     assert "docker/setup-buildx-action" not in deploy_workflow
-    assert "bash deploy/small-customer-trial-preflight.sh" in deploy_workflow
-    assert "--require-alipay-enabled" in deploy_workflow
+    assert "name: Lightweight release smoke" in deploy_workflow
+    assert "bash deploy/release-smoke.sh --lightweight --base-url" in deploy_workflow
+    assert "bash deploy/small-customer-trial-preflight.sh" not in deploy_workflow
+    assert "--require-alipay-enabled" not in deploy_workflow
     assert "bash deploy/release-smoke.sh --base-url" in deploy_workflow
     assert "--deploy-log" in deploy_workflow
     assert "--source-repository" in deploy_workflow
