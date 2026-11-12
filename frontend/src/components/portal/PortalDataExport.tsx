@@ -66,7 +66,7 @@ export function PortalDataExport() {
       <h3 className="text-base font-semibold">{t('portal.account.export_title')}</h3>
       <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.export_scope')}</p>
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>{t('portal.account.export_title')}</button>
-      <Modal isOpen={open} title={t('portal.account.export_title')} description={t('portal.account.export_scope')}
+      <Modal isOpen={open} title={t('portal.account.export_title')} size="xl"
         closeLabel={t('common.close')} onClose={close} showCloseButton={!busy} closeOnOverlay={!busy}
         footer={<>
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={close}>{t('common.close')}</button>
@@ -75,7 +75,22 @@ export function PortalDataExport() {
               : <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void send()}>{busy ? t('portal.account.export_busy') : t('portal.account.export_send')}</button>}
         </>}>
         <div className="space-y-3" aria-busy={busy}>
-          <p className="text-sm leading-6">{t('portal.account.export_email')}</p>
+          <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.account.export_included_title')}</h3>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t('portal.account.export_included_profile')}</li>
+              <li>{t('portal.account.export_included_support')}</li>
+            </ul>
+          </section>
+          <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.account.export_excluded_title')}</h3>
+            <p>{t('portal.account.export_excluded')}</p>
+            <p>{t('portal.account.export_report_limit')}</p>
+          </section>
+          <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.account.export_verification_title')}</h3>
+            <p>{t('portal.account.export_verification')}</p>
+          </section>
           {challenge && !ended ? <>
             <label className="block text-sm" htmlFor="personal-data-code">{t('portal.account.export_code')}</label>
             <input ref={input} id="personal-data-code" className="input w-full" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} disabled={busy} onChange={event => setCode(event.target.value.replace(/[^0-9]/g, ''))} />

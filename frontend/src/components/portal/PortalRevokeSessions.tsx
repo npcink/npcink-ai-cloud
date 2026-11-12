@@ -68,7 +68,7 @@ export function PortalRevokeSessions() {
       <Modal
         isOpen={open}
         title={t('portal.account.revoke_title')}
-        description={t('portal.account.revoke_impact')}
+        size="xl"
         closeLabel={t('common.close')}
         showCloseButton={!busy && outcome !== 'ended'}
         closeOnOverlay={!busy && outcome !== 'ended'}
@@ -88,7 +88,15 @@ export function PortalRevokeSessions() {
           </>
         )}
       >
-        <div aria-busy={busy}>
+        <div className="space-y-4 text-sm leading-6" aria-busy={busy}>
+          <section className="space-y-2">
+            <h3 className="font-semibold">{t('portal.account.revoke_scope_title')}</h3>
+            <p className="text-slate-600 dark:text-slate-300">{t('portal.account.revoke_scope')}</p>
+          </section>
+          <section className="space-y-2">
+            <h3 className="font-semibold">{t('portal.account.revoke_unaffected_title')}</h3>
+            <p className="text-slate-600 dark:text-slate-300">{t('portal.account.revoke_unaffected')}</p>
+          </section>
           {outcome ? <p role="alert" className="text-sm leading-6">{outcomeMessages[outcome]}</p> : null}
         </div>
       </Modal>

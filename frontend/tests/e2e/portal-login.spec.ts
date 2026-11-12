@@ -795,11 +795,68 @@ test('addon activation preview fails closed and can be retried', async ({ page }
   await expect(card.getByRole('alert')).toBeVisible();
   await expect(page.locator('[data-portal-bind="submit"]')).toBeDisabled();
   expect(calls.addonConnectionPayload()).toBeNull();
-  await card.getByRole('button', { name: /Retry|重试/i }).click();
+  await card.getByRole('button', { name: /Recheck connection conditions|重新检查连接条件/i }).click();
   await expect(page.locator('[data-portal-bind="submit"]')).toBeEnabled();
   await expect(card.getByRole('alert')).toHaveCount(0);
   expect(reads).toBe(2);
 });
+
+for (const scenario of [
+  { name: 'owned', code: 'service.portal_site_conflict', reason: '仍绑定在其他 Cloud 账户下', next: '登录原账户移除站点' },
+  { name: 'cooldown', code: 'service.site_relink_cooldown_active', reason: '冷却期尚未结束', next: '2027', details: { retry_after_at: '2027-02-10T02:00:00Z' } },
+  { name: 'unknown date', code: 'service.site_relink_cooldown_active', reason: '冷却期尚未结束', next: '暂时无法确认可重连时间' },
+  { name: 'invalid date', code: 'service.site_relink_cooldown_active', reason: '冷却期尚未结束', next: '暂时无法确认可重连时间', details: { retry_after_at: 'invalid-date' } },
+  { name: 'disabled', code: 'service.site_cross_account_relink_disabled', reason: '当前不允许', next: '使用原账户重新连接' },
+  { name: 'incomplete release', code: 'service.site_relink_release_incomplete', reason: '尚未确认原账户已完整释放', next: '联系支持核查释放状态' },
+  { name: 'unknown failure', code: 'service.unrecognized_connection_failure', reason: '暂时无法检查激活名额', next: '' },
+]) {
+  test(`addon connection explains ${scenario.name} without binding on recheck`, async ({ page }) => {
+    await page.context().addCookies([{ name: 'npcink_locale', value: 'zh-CN', url: BASE_URL }]);
+    await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+    const calls = await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+    let ready = false;
+    let reads = 0;
+    await page.route('**/addon-connections/preview', route => {
+      reads += 1;
+      return ready ? fulfillJson(route, {
+        site_id: 'site_npcink', site_status: 'inactive', required_release_count: 0, replacement_sites: [],
+      }) : fulfillError(route, 409, scenario.code, scenario.details);
+    });
+    await page.goto(`/portal?${new URLSearchParams({
+      connect: 'wordpress-addon', site_url: 'https://www.npc.ink', site_name: 'Npcink',
+      return_url: 'https://www.npc.ink/wp-admin/admin-post.php', state: 'denial-state',
+    })}`);
+    const card = page.locator('[data-portal-bind="card"]');
+    const alert = card.getByRole('alert');
+    const submit = card.locator('[data-portal-bind="submit"]');
+    await expect(alert.getByRole('heading', { name: '原因', exact: true })).toBeVisible();
+    await expect(alert).toContainText(scenario.reason);
+    if (scenario.next) {
+      await expect(alert.getByRole('heading', { name: '下一步', exact: true })).toBeVisible();
+      await expect(alert).toContainText(scenario.next);
+    } else {
+      await expect(alert).not.toContainText('其他 Cloud 账户');
+    }
+    if (scenario.code === 'service.site_relink_cooldown_active') {
+      await expect(alert.getByText('Free 服务和额度仍属于原账户。', { exact: true })).toBeVisible();
+    }
+    await expect(submit).toBeDisabled();
+    await expect(alert.locator('details code')).toBeHidden();
+    await alert.locator('summary').click();
+    await expect(alert.locator('details code')).toContainText('portal-login-e2e');
+    await alert.getByRole('button', { name: '重新检查连接条件' }).click();
+    await expect(alert).toBeVisible();
+    await expect.poll(() => reads).toBe(2);
+    await expect(submit).toBeDisabled();
+    expect(calls.addonConnectionPayload()).toBeNull();
+    ready = true;
+    await alert.getByRole('button', { name: '重新检查连接条件' }).click();
+    await expect(submit).toBeEnabled();
+    await expect(alert).toHaveCount(0);
+    expect(reads).toBe(3);
+    expect(calls.addonConnectionPayload()).toBeNull();
+  });
+}
 
 test('addon account change discards replacement consent while the next preview loads', async ({ page }) => {
   const calls = await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [

@@ -13,6 +13,7 @@ import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalErrorState, PortalLoadingState, PortalSignedOutState } from '@/components/portal/PortalPageState';
 import { Modal } from '@/components/ui/Modal';
+import { PortalSiteRemovalSummary, formatSiteRemovalDate } from '@/components/portal/PortalSiteRemovalSummary';
 import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalSiteMonitoring } from '@/hooks/usePortalSiteMonitoring';
 import { usePortalSiteKnowledge } from '@/hooks/usePortalSiteKnowledge';
@@ -153,7 +154,7 @@ function PortalSiteRecordContent() {
         if (alive) {
           setSiteRelinkPolicy(response.data);
           setExpectedRelinkAvailableAt(
-            formatDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
+            formatSiteRemovalDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
           );
         }
       })
@@ -357,17 +358,17 @@ function PortalSiteRecordContent() {
       ? t(
           'portal.remove_site_confirm_with_date',
           { date: expectedRelinkAvailableAt },
-          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account may try after approximately ${expectedRelinkAvailableAt}. Free service and credits stay with this account.`
+          `Another account may try reconnecting after approximately ${expectedRelinkAvailableAt}.`
         )
       : t(
           'portal.remove_site_confirm_disabled_with_date',
           { date: expectedRelinkAvailableAt },
-          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately. The cooldown is expected to end around ${expectedRelinkAvailableAt}, but cross-account relinking is currently disabled. Free service and credits stay with this account.`
+          `Cross-account relinking is currently disabled. The cooldown is expected to end around ${expectedRelinkAvailableAt}.`
         )
     : t(
         'portal.remove_site_confirm',
         {},
-        'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
+        'Another account must wait for the Cloud cooldown to end; the reconnect date is currently unavailable.'
       );
 
   const wpAdminUrl = getPortalWordPressAdminUrl(site);
@@ -635,8 +636,8 @@ function PortalSiteRecordContent() {
         onClose={closeRemoveModal}
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
-        title={t('portal.remove_site_action', {}, 'Remove site')}
-        description={removeSiteConfirmation}
+        title={t('portal.remove_site_title', {}, 'Remove this site?')}
+        size="xl"
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={closeRemoveModal} disabled={isRemovingSite}>
@@ -648,20 +649,12 @@ function PortalSiteRecordContent() {
           </>
         }
       >
-        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('portal.site_removal_target', {}, 'Site to remove from this account')}
-          </p>
-          <p className="break-words font-semibold text-slate-950 dark:text-white">{displayName}</p>
-          <p className="break-all">
-            {siteUrl || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
-          </p>
-          {removeError ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-              {removeError}
-            </p>
-          ) : null}
-        </div>
+        <PortalSiteRemovalSummary
+          siteName={displayName}
+          siteUrl={siteUrl}
+          relinkNotice={removeSiteConfirmation}
+          error={removeError}
+        />
       </Modal>
     </PortalPageStack>
   );
