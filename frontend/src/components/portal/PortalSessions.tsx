@@ -206,20 +206,26 @@ export function PortalSessions() {
           ) : null}
         </div>
       ) : null}
-      <Modal isOpen={Boolean(intent)} size="md" title={t(intent?.target ? 'portal.sessions.confirm_one' : 'portal.sessions.confirm_others')} closeLabel={t('common.close')} showCloseButton={!writing} closeOnOverlay={!writing} onClose={() => { if (!pending.current) setIntent(null); }} footer={(
+      <Modal isOpen={Boolean(intent)} size="xl" title={t(intent?.target ? 'portal.sessions.confirm_one' : 'portal.sessions.confirm_others')} closeLabel={t('common.close')} showCloseButton={!writing} closeOnOverlay={!writing} onClose={() => { if (!pending.current) setIntent(null); }} footer={(
         <><button type="button" className="btn btn-secondary" disabled={writing} onClick={() => setIntent(null)}>{t('common.cancel')}</button><button type="button" className="btn btn-primary" disabled={writing} onClick={() => void revoke()}>{t(writing ? 'portal.sessions.busy' : 'portal.sessions.sign_out')}</button></>
       )}>
         {intent?.target ? (
-          <div className="mb-3 space-y-1 text-sm">
-            <p className="break-words font-semibold">{intent.target.client_hint ?? t('portal.sessions.unknown')}</p>
+          <section className="mb-4 space-y-2 text-sm">
+            <h3 className="font-semibold">{t('portal.sessions.target_title')}</h3>
+            <p className="break-words">{intent.target.client_hint ?? t('portal.sessions.unknown')}</p>
             {intent.target.is_current ? <p>{t('portal.sessions.current')}</p> : null}
             {intent.target.client_hint ? <p className="text-xs text-slate-500">{t('portal.sessions.unverified')}</p> : null}
-            <p>{t(methodLabels[intent.target.auth_method])}</p>
-            <p className="text-xs text-slate-500">{t('portal.sessions.created')} {date(intent.target.created_at)}</p>
-            <p className="text-xs text-slate-500">{t('portal.sessions.expires')} {date(intent.target.expires_at)}</p>
-          </div>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-slate-600 dark:text-slate-300">
+              <dt>{t('portal.sessions.method')}</dt><dd>{t(methodLabels[intent.target.auth_method])}</dd>
+              <dt>{t('portal.sessions.created')}</dt><dd className="break-words">{date(intent.target.created_at)}</dd>
+              <dt>{t('portal.sessions.expires')}</dt><dd className="break-words">{date(intent.target.expires_at)}</dd>
+            </dl>
+          </section>
         ) : null}
-        <p className="text-sm leading-6">{t(intent?.target?.is_current ? 'portal.sessions.impact_current' : intent?.target ? 'portal.sessions.impact_one' : 'portal.sessions.impact_others')}</p>
+        <section className="space-y-2 text-sm leading-6">
+          <h3 className="font-semibold">{t('portal.sessions.effects_title')}</h3>
+          <p className="text-slate-600 dark:text-slate-300">{t(intent?.target?.is_current ? 'portal.sessions.impact_current' : intent?.target ? 'portal.sessions.impact_one' : 'portal.sessions.impact_others')}</p>
+        </section>
       </Modal>
     </div>
   );

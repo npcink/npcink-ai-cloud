@@ -3101,10 +3101,15 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     await actionScope.getByRole('button', { name: actionName }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('Attention Site');
-    await expect(dialog).toContainText(scenario === 'deactivate'
-      ? /Site whose Cloud service will stop|准备停用 Cloud 服务的站点/
-      : /Site to remove from this account|准备从当前账户移除的站点/);
     if (scenario === 'deactivate') {
+      await expect(dialog).toContainText(/Site whose Cloud service will stop|准备停用 Cloud 服务的站点/);
+    } else {
+      await expect(dialog.getByRole('heading', { name: /^(Site|站点)$/ })).toBeVisible();
+      await expect(dialog.getByRole('heading', { name: /After removal|移除后会发生/ })).toBeVisible();
+      await expect(dialog.getByRole('listitem')).toHaveCount(5);
+      await expect(dialog).toContainText(/Free service and credits|Free 服务和额度/);
+    }
+    if (scenario !== 'remove-from-detail') {
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
       await expect(actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i })).toBeFocused();

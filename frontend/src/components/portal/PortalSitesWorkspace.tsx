@@ -10,6 +10,7 @@ import { PortalEmptyState, PortalLoadingState } from '@/components/portal/Portal
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
 import { resolveCurrentAddonAccountId } from '@/lib/portal-addon-account-default';
 import { Modal } from '@/components/ui/Modal';
+import { PortalSiteRemovalSummary, formatSiteRemovalDate } from '@/components/portal/PortalSiteRemovalSummary';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
@@ -308,7 +309,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         if (!cancelled) {
           setSiteRelinkPolicy(response.data);
           setExpectedRelinkAvailableAt(
-            formatDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
+            formatSiteRemovalDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
           );
         }
       })
@@ -503,17 +504,17 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
       ? t(
           'portal.remove_site_confirm_with_date',
           { date: expectedRelinkAvailableAt },
-          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account may try after approximately ${expectedRelinkAvailableAt}. Free service and credits stay with this account.`
+          `Another account may try reconnecting after approximately ${expectedRelinkAvailableAt}.`
         )
       : t(
           'portal.remove_site_confirm_disabled_with_date',
           { date: expectedRelinkAvailableAt },
-          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately. The cooldown is expected to end around ${expectedRelinkAvailableAt}, but cross-account relinking is currently disabled. Free service and credits stay with this account.`
+          `Cross-account relinking is currently disabled. The cooldown is expected to end around ${expectedRelinkAvailableAt}.`
         )
     : t(
         'portal.remove_site_confirm',
         {},
-        'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
+        'Another account must wait for the Cloud cooldown to end; the reconnect date is currently unavailable.'
       );
 
   if (addonConnectMode) {
@@ -854,11 +855,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                 'All active-site slots are in use. Activating this site requires stopping Cloud service on other sites.'
               )
             : t('portal.activate_site_confirm', {}, 'Activate this site for Cloud runtime service?')
-          : t(
-              'portal.deactivate_site_confirm',
-              {},
-              'Cloud service will stop for this site. Its binding, credential, usage, and audit history will be preserved; WordPress content will not be deleted.'
-            )}
+          : undefined}
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
         footer={
           <>
@@ -879,11 +876,11 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
       >
         <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
           <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <h3 className="mb-2 font-semibold text-slate-950 dark:text-white">
               {pendingLifecycleStatus === 'active'
                 ? t('portal.site_activation_target', {}, 'Site to activate')
                 : t('portal.site_deactivation_target', {}, 'Site whose Cloud service will stop')}
-            </p>
+            </h3>
             <p className="break-words font-semibold text-slate-950 dark:text-white">
               {getPortalSiteDisplayName(pendingLifecycleSite)}
             </p>
@@ -892,6 +889,15 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
                 || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
             </p>
           </div>
+          {pendingLifecycleStatus === 'inactive' ? (
+            <section className="space-y-2 leading-6">
+              <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.site_deactivation_effects_title')}</h3>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>{t('portal.site_deactivation_stops')}</li>
+                <li>{t('portal.site_deactivation_preserves')}</li>
+              </ul>
+            </section>
+          ) : null}
           {activationNeedsSwap ? (
             <fieldset className="space-y-2">
               <legend className="font-medium text-slate-950 dark:text-white">
@@ -946,8 +952,8 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         returnFocusRef={removeReturnFocusRef}
-        title={t('portal.remove_site_action', {}, 'Remove site')}
-        description={removeSiteConfirmation}
+        title={t('portal.remove_site_title', {}, 'Remove this site?')}
+        size="xl"
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
         footer={
           <>
@@ -960,25 +966,12 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
           </>
         }
       >
-        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('portal.site_removal_target', {}, 'Site to remove from this account')}
-          </p>
-          <p className="break-words font-semibold text-slate-950 dark:text-white">
-            {getPortalSiteDisplayName(pendingRemoveSite)}
-          </p>
-          {pendingRemoveSite ? (
-            <p className="break-all">
-              {getPortalSiteUrl(pendingRemoveSite)
-                || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
-            </p>
-          ) : null}
-          {removeError ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-              {removeError}
-            </p>
-          ) : null}
-        </div>
+        <PortalSiteRemovalSummary
+          siteName={getPortalSiteDisplayName(pendingRemoveSite)}
+          siteUrl={getPortalSiteUrl(pendingRemoveSite)}
+          relinkNotice={removeSiteConfirmation}
+          error={removeError}
+        />
       </Modal>
     </section>
   );

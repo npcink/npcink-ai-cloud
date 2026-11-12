@@ -518,10 +518,26 @@ function AccountPageContent() {
         onClose={closeClosureDialog}
         closeLabel={t('common.close')}
         title={t(closureStep === 'review' ? 'portal.account.closure_review' : 'portal.account.closure_verify')}
-        description={t('portal.account.closure_impact')}
+        size="xl"
       >
         <div className="space-y-4" data-portal-account="closure-dialog">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{t('portal.account.closure_eligibility')}</p>
+          <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.account.closure_effects_title')}</h3>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t('portal.account.closure_effect_access')}</li>
+              <li>{t('portal.account.closure_effect_records')}</li>
+              <li>{t('portal.account.closure_effect_restore')}</li>
+            </ul>
+          </section>
+          <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('portal.account.closure_eligibility_title')}</h3>
+            <p>{t('portal.account.closure_self_service')}</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t('portal.account.closure_support_ownership')}</li>
+              <li>{t('portal.account.closure_support_commerce')}</li>
+            </ul>
+            <p>{t('portal.account.closure_checks')}</p>
+          </section>
           {closureStep === 'code' ? (
             <>
               <p className="text-sm" role="status">{t('portal.account.closure_sent', { email: closureEmail })}</p>

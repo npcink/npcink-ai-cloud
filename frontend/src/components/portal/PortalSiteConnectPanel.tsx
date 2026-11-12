@@ -5,6 +5,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
+import { ApiError } from '@/lib/errors';
+import { formatDate } from '@/lib/utils';
 import { portalClient, type PortalAddonConnectionAccount, type AddonActivationPreview } from '@/lib/portal-client';
 import { resolveDefaultAddonAccountId } from '@/lib/portal-addon-account-default';
 import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
@@ -12,6 +14,86 @@ import {
   formatPortalErrorMessage,
   formatPortalErrorReference,
 } from '@/lib/portal-error';
+
+type ConnectionFeedback = {
+  message: string;
+  nextStep?: string;
+  note?: string;
+  reference: string;
+};
+
+function connectionFeedback(error: unknown, t: ReturnType<typeof useLocale>['t'], fallback: string): ConnectionFeedback {
+  const feedback = {
+    message: formatPortalErrorMessage(error, t, fallback),
+    reference: formatPortalErrorReference(error),
+  };
+  if (!(error instanceof ApiError)) return feedback;
+  switch (error.errorCode) {
+    case 'service.portal_site_conflict':
+    case 'service.site_account_binding_conflict':
+      return {
+        ...feedback,
+        message: t('portal.bind_owned_reason'),
+        nextStep: t('portal.bind_owned_next'),
+      };
+    case 'service.site_relink_cooldown_active': {
+      const details = error.details;
+      const value = details && typeof details === 'object' && !Array.isArray(details)
+        ? (details as Record<string, unknown>).retry_after_at : undefined;
+      const date = typeof value === 'string' ? formatDate(value) : '';
+      return {
+        ...feedback,
+        message: t('portal.bind_cooldown_reason'),
+        nextStep: date ? t('portal.bind_cooldown_next', { date }) : t('portal.bind_cooldown_next_unknown'),
+        note: t('portal.bind_free_stays'),
+      };
+    }
+    case 'service.site_cross_account_relink_disabled':
+      return {
+        ...feedback,
+        message: t('portal.bind_cross_account_disabled_reason'),
+        nextStep: t('portal.bind_cross_account_disabled_next'),
+      };
+    case 'service.site_relink_release_incomplete':
+      return {
+        ...feedback,
+        message: t('portal.bind_release_incomplete_reason'),
+        nextStep: t('portal.bind_release_incomplete_next'),
+      };
+    default:
+      return feedback;
+  }
+}
+
+function ConnectionFeedbackNotice({ feedback, onRecheck }: {
+  feedback: ConnectionFeedback;
+  onRecheck?: () => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <div role="alert" className="space-y-3 border-t border-slate-200 pt-4 text-sm leading-6 dark:border-slate-800">
+      <h2 className="font-semibold text-rose-700 dark:text-rose-300">{t('portal.bind_feedback_title')}</h2>
+      <div className="space-y-1 text-slate-700 dark:text-slate-300">
+        <h3 className="font-medium text-slate-950 dark:text-white">{t('portal.bind_reason_label')}</h3>
+        <p>{feedback.message}</p>
+      </div>
+      {feedback.nextStep ? (
+        <div className="space-y-1 text-slate-700 dark:text-slate-300">
+          <h3 className="font-medium text-slate-950 dark:text-white">{t('portal.bind_next_step_label')}</h3>
+          <p>{feedback.nextStep}</p>
+        </div>
+      ) : null}
+      {feedback.note ? <p className="text-slate-600 dark:text-slate-400">{feedback.note}</p> : null}
+      {feedback.reference ? (
+        <details className="text-xs text-slate-500 dark:text-slate-400">
+          <summary className="cursor-pointer font-medium">{t('common.diagnostic_code')}</summary>
+          <code className="mt-2 block break-all">{feedback.reference}</code>
+        </details>
+      ) : null}
+      {onRecheck ? <button type="button" className="btn btn-secondary btn-sm" onClick={onRecheck}>{t('portal.bind_recheck')}</button> : null}
+    </div>
+  );
+}
 
 interface PortalSiteConnectPanelProps {
   accounts: PortalAddonConnectionAccount[];
@@ -51,8 +133,7 @@ export function PortalSiteConnectPanel({
     : defaultAccountId;
   const siteName = initialSiteName;
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [errorReference, setErrorReference] = useState('');
+  const [submitFailure, setSubmitFailure] = useState<ConnectionFeedback | null>(null);
   const siteUrl = initialSiteUrl.trim();
   const hasAddonConnectionContext = Boolean(siteUrl && addonReturnUrl && addonState);
   const hasSelectedEligibleAccount = accounts.some(
@@ -68,7 +149,7 @@ export function PortalSiteConnectPanel({
   const [previewVersion, setPreviewVersion] = useState(0);
   const previewContext = JSON.stringify([selectedAccountId, siteUrl, siteName, addonReturnUrl, addonState, previewVersion]);
   const [previewResult, setPreviewResult] = useState<{ context: string; data: AddonActivationPreview } | null>(null);
-  const [previewFailure, setPreviewFailure] = useState<{ context: string; message: string; reference: string } | null>(null);
+  const [previewFailure, setPreviewFailure] = useState<{ context: string; feedback: ConnectionFeedback } | null>(null);
   const [selection, setSelection] = useState<{ context: string; ids: string[] }>({ context: '', ids: [] });
   const preview = previewResult?.context === previewContext ? previewResult.data : null;
   const previewError = previewFailure?.context === previewContext ? previewFailure : null;
@@ -89,8 +170,7 @@ export function PortalSiteConnectPanel({
     }).catch(error => {
       if (!cancelled) setPreviewFailure({
         context: previewContext,
-        message: formatPortalErrorMessage(error, t, t('portal.bind_preview_failed')),
-        reference: formatPortalErrorReference(error),
+        feedback: connectionFeedback(error, t, t('portal.bind_preview_failed')),
       });
     });
     return () => { cancelled = true; };
@@ -99,26 +179,27 @@ export function PortalSiteConnectPanel({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setErrorMessage('');
-    setErrorReference('');
+    setSubmitFailure(null);
     if (!hasAddonConnectionContext) {
-      setErrorMessage(
-        t(
+      setSubmitFailure({
+        message: t(
           'portal.connect_site_failed',
           undefined,
           'The WordPress addon connection context is incomplete. Restart the connection from WordPress.'
-        )
-      );
+        ),
+        reference: '',
+      });
       return;
     }
     if (!hasSelectedEligibleAccount) {
-      setErrorMessage(
-        t(
+      setSubmitFailure({
+        message: t(
           'portal.connect_site_account_required_desc',
           undefined,
           'Select an active customer account before finishing this connection.'
-        )
-      );
+        ),
+        reference: '',
+      });
       return;
     }
 
@@ -144,9 +225,8 @@ export function PortalSiteConnectPanel({
       window.location.assign(response.data.redirect_url);
     } catch (error) {
       setPreviewVersion(version => version + 1);
-      setErrorReference(formatPortalErrorReference(error));
-      setErrorMessage(
-        formatPortalErrorMessage(
+      setSubmitFailure(
+        connectionFeedback(
           error,
           t,
           t('portal.connect_site_failed', undefined, 'Failed to connect the WordPress site.')
@@ -220,7 +300,7 @@ export function PortalSiteConnectPanel({
                     checked={selectedAccountId === account.account_id}
                     onChange={(event) => {
                       setSelectedAccountId(event.target.value);
-                      setErrorMessage('');
+                      setSubmitFailure(null);
                     }}
                     required
                   />
@@ -273,33 +353,13 @@ export function PortalSiteConnectPanel({
             </p>
           </div>
         ) : null}
-        {errorMessage ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-            <p>{errorMessage}</p>
-            {errorReference ? (
-              <details className="mt-2 text-xs">
-                <summary className="cursor-pointer font-medium">
-                  {t('common.diagnostic_code', {}, 'Reference code')}
-                </summary>
-                <code className="mt-2 inline-block break-all rounded bg-white/70 px-2 py-1 dark:bg-slate-950/40">
-                  {errorReference}
-                </code>
-              </details>
-            ) : null}
-          </div>
-        ) : null}
+        {submitFailure ? <ConnectionFeedbackNotice feedback={submitFailure} /> : null}
 
         {hasAddonConnectionContext && hasSelectedEligibleAccount && !preview && !previewError ? (
           <p className="text-sm text-slate-500" role="status">{t('portal.bind_checking')}</p>
         ) : null}
         {previewError ? (
-          <div role="alert" className="space-y-2 text-sm text-red-700 dark:text-red-200">
-            <p>{previewError.message}</p>
-            {previewError.reference ? <code className="block break-all text-xs">{previewError.reference}</code> : null}
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewVersion(version => version + 1)}>
-              {t('common.retry')}
-            </button>
-          </div>
+          <ConnectionFeedbackNotice feedback={previewError.feedback} onRecheck={() => setPreviewVersion(version => version + 1)} />
         ) : null}
         {preview && preview.required_release_count > 0 ? (
           <fieldset className="space-y-3" disabled={isSubmitting} data-portal-bind="replacements">
@@ -313,7 +373,7 @@ export function PortalSiteConnectPanel({
                   onChange={event => {
                     setSelection({ context: previewContext, ids: event.target.checked
                       ? [...replacementIds, site.site_id] : replacementIds.filter(id => id !== site.site_id) });
-                    setErrorMessage('');
+                    setSubmitFailure(null);
                   }} />
                 <span className="min-w-0 break-words">
                   <span className="block font-medium">{site.name || site.site_url}</span>

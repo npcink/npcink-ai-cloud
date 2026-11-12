@@ -398,24 +398,24 @@ export function CustomerAccessPanel({
         cancelLabel={t('common.cancel', {}, 'Cancel')}
         saveLabel={t('admin.accounts.confirm_disable_access', {}, 'Confirm disable')}
         savingLabel={t('common.saving', {}, 'Saving...')}
-        footerNotice={t(
-          'admin.accounts.disable_access_boundary',
-          {},
-          'This does not delete the customer account or its commercial records.'
-        )}
+        footerNotice={t('admin.accounts.disable_reason_notice')}
         width="compact"
         onClose={() => {
           if (!isDisabling) setDisableOpen(false);
         }}
         onSubmit={() => void disableAccess()}
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          {t(
-            'admin.accounts.disable_access_desc',
-            {},
-            'This immediately invalidates customer sessions and revokes active owner and QQ access. The customer account and commercial records remain intact.'
-          )}
-        </p>
+        <section className="space-y-2 text-sm">
+          <h3 className="font-semibold text-slate-950 dark:text-white">{t('admin.accounts.disable_identity_title')}</h3>
+          <p className="break-all text-slate-700 dark:text-slate-300">{identity?.email || identity?.principal_id}</p>
+        </section>
+        <section className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <h3 className="font-semibold text-slate-950 dark:text-white">{t('admin.accounts.disable_effects_title')}</h3>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>{t('admin.accounts.disable_effect_access')}</li>
+            <li>{t('admin.accounts.disable_effect_records')}</li>
+          </ul>
+        </section>
         <label className="block text-sm">
           <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">
             {t('admin.accounts.disable_reason_label', {}, 'Reason')}

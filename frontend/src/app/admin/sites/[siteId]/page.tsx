@@ -20,7 +20,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { ConfirmModal } from '@/components/ui/Modal';
+import { ConfirmModal, Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -1056,28 +1056,37 @@ function SiteDetailContent() {
         }}
       />
 
-      <ConfirmModal
+      <Modal
         isOpen={confirmRelinkClearOpen}
-        title={t(
-          'admin.site_detail.relink_clear_confirm_title',
-          undefined,
-          'Allow cross-account relink now?'
-        )}
-        message={t(
-          'admin.site_detail.relink_clear_confirm_desc',
-          undefined,
-          'This removes the remaining cooldown for this released site. It does not transfer the site, but another account can complete a verified Addon exchange immediately.'
-        )}
-        confirmLabel={t(
-          'admin.site_detail.relink_clear_confirm_action',
-          undefined,
-          'Remove cooldown'
-        )}
-        cancelLabel={t('common.cancel', undefined, 'Cancel')}
-        variant="danger"
+        size="xl"
+        title={t('admin.site_detail.relink_clear_confirm_title')}
+        closeLabel={t('common.close')}
         onClose={() => setConfirmRelinkClearOpen(false)}
-        onConfirm={() => void handleRelinkCooldownUpdate('clear')}
-      />
+        footer={(
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setConfirmRelinkClearOpen(false)}>{t('common.cancel')}</button>
+            <button type="button" className="btn btn-danger" onClick={() => {
+              void handleRelinkCooldownUpdate('clear');
+              setConfirmRelinkClearOpen(false);
+            }}>{t('admin.site_detail.relink_clear_confirm_action')}</button>
+          </>
+        )}
+      >
+        <div className="space-y-4 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <section className="space-y-2">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('admin.site_detail.relink_target_title')}</h3>
+            <p className="break-words font-medium text-slate-950 dark:text-white">{siteIdentity(site.site_name, site.site_url, site.site_id, t('admin.readability.unnamed_site'))}</p>
+            {site.site_url ? <p className="break-all">{site.site_url}</p> : null}
+          </section>
+          <section className="space-y-2">
+            <h3 className="font-semibold text-slate-950 dark:text-white">{t('admin.site_detail.relink_effects_title')}</h3>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t('admin.site_detail.relink_clear_confirm_desc')}</li>
+              <li>{t('admin.site_detail.relink_clear_exchange')}</li>
+            </ul>
+          </section>
+        </div>
+      </Modal>
     </BackofficePageStack>
   );
 }

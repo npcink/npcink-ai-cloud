@@ -20,7 +20,7 @@ for (const action of ["'clear'", "'reset'", "'set'"]) {
 }
 assert.match(
   page,
-  /setConfirmRelinkClearOpen\(true\)[\s\S]*<ConfirmModal[\s\S]*relink_clear_confirm_desc[\s\S]*handleRelinkCooldownUpdate\('clear'\)/,
+  /setConfirmRelinkClearOpen\(true\)[\s\S]*<Modal[\s\S]*isOpen=\{confirmRelinkClearOpen\}[\s\S]*handleRelinkCooldownUpdate\('clear'\)[\s\S]*relink_target_title[\s\S]*relink_clear_confirm_desc/,
   'immediate cross-account relink must require an explicit operator confirmation'
 );
 assert.match(
