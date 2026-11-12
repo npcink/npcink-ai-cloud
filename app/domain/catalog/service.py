@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -317,7 +317,9 @@ class CatalogService:
                 instance for instance in instances if instance.provider_id in selected_ids
             ]
             provider_calls = repository.list_provider_calls_for_instances(
-                [instance.instance_id for instance in selected_instances]
+                [instance.instance_id for instance in selected_instances],
+                start_at=now - timedelta(hours=24),
+                end_at=now,
             )
             provider_calls_by_instance: dict[str, list[ProviderCallRecord]] = {}
             for provider_call in provider_calls:

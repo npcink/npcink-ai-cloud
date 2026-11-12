@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -18,7 +19,7 @@ from sqlalchemy import (
     select,
     values,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.models import (
     CatalogInstance,
@@ -168,6 +169,78 @@ class StatsRepository:
             ProviderCallRecord.id.asc(),
         )
         return list(self.session.scalars(statement))
+
+    @contextmanager
+    def stream_router_performance_runs(
+        self,
+        *,
+        site_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> Iterator[Iterator[RunRecord]]:
+        # Select by call time, not run start: delayed calls still belong here.
+        matching_runs = select(ProviderCallRecord.run_id).where(
+            ProviderCallRecord.created_at >= start_at,
+            ProviderCallRecord.created_at < end_at,
+        )
+        statement = (
+            select(RunRecord)
+            .where(RunRecord.run_id.in_(matching_runs))
+            .options(
+                load_only(
+                    RunRecord.ability_name,
+                    RunRecord.channel,
+                    RunRecord.policy_json,
+                    RunRecord.input_json,
+                    RunRecord.error_code,
+                    raiseload=True,
+                ),
+            )
+            .execution_options(yield_per=128)
+        )
+        if site_id:
+            statement = statement.where(RunRecord.site_id == site_id)
+        result = self.session.scalars(statement)
+        try:
+            yield iter(result)
+        finally:
+            result.close()
+
+    @contextmanager
+    def stream_router_performance_calls(
+        self,
+        *,
+        site_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> Iterator[Iterator[ProviderCallRecord]]:
+        statement = (
+            select(ProviderCallRecord)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(
+                ProviderCallRecord.created_at >= start_at,
+                ProviderCallRecord.created_at < end_at,
+            )
+            .options(
+                load_only(
+                    ProviderCallRecord.run_id,
+                    ProviderCallRecord.created_at,
+                    ProviderCallRecord.instance_id,
+                    ProviderCallRecord.error_code,
+                    ProviderCallRecord.latency_ms,
+                    raiseload=True,
+                )
+            )
+            .order_by(ProviderCallRecord.created_at.asc(), ProviderCallRecord.id.asc())
+            .execution_options(yield_per=128)
+        )
+        if site_id:
+            statement = statement.where(RunRecord.site_id == site_id)
+        result = self.session.scalars(statement)
+        try:
+            yield iter(result)
+        finally:
+            result.close()
 
     def list_recent_provider_instance_ids(
         self,
