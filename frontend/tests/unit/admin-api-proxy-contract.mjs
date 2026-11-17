@@ -195,7 +195,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /catch \{\s*return buildErrorResponse\(\s*502,\s*options\.unreachableCode,\s*options\.unreachableMessage\s*\)/s,
+  /return buildErrorResponse\(\s*502,\s*options\.unreachableCode,\s*options\.unreachableMessage\s*\)/s,
   'admin proxy must return a stable public error without exposing network exception details'
 );
 

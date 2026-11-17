@@ -10,7 +10,14 @@ Status: active correctness contract. No new auth authority or automatic retry.
 - Backend forwarding must have a deadline that remains active until the body
   is consumed. Compose it with the caller's abort signal. Admin auth/session
   waits are 10 seconds; general Admin/Advisor and development handoffs are
-  12 seconds. Setup state retains 5 seconds; its other forwarding uses 12.
+  12 seconds. The exact Admin capability-probe POST instead uses its valid backend
+  probe budget (1–120 seconds; default 30) plus 3 seconds for completion, below
+  the browser's budget plus 5 seconds. Its edge proxy allows 130 seconds; other
+  Admin paths retain the ordinary edge wait. Malformed budgets are forwarded
+  unchanged under the ordinary BFF deadline for backend validation. Probe transport
+  failures mean unconfirmed evidence, not a Provider configuration failure; read
+  the latest evidence before another potentially billable probe. No automatic retry.
+  Setup state retains 5 seconds; its other forwarding uses 12.
   Portal's existing 12-second forwarding/client deadlines are retained.
 - Timeout means that the result is unconfirmed. Preserve authentication gates,
   safe same-origin redirect rules, cookies and idempotency keys. Never infer

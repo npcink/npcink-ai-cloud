@@ -1666,3 +1666,65 @@ for (const locale of ['en', 'zh']) {
     }, null, 2));
   });
 }
+
+for (const failure of [
+  { status: 504, code: 'proxy.admin_capability_probe_timeout' },
+  { status: 502, code: 'proxy.admin_post_unreachable' },
+]) {
+  test(`image probe ${failure.code} keeps its result unconfirmed without retrying`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const profiles = [{
+      ...initialProfiles[0], profile_id: 'image.ai', label: 'Image generation',
+      execution_kind: 'image_generation', tasks: ['image_generation'],
+      candidate_instance_ids: [], timeout_ms: 90000, max_timeout_ms: 120000, status: 'needs_candidates',
+    }];
+    const image = {
+      ...primaryInstance, instance_id: 'image.candidate', model_id: 'gpt-image-2.5-flare',
+      model_feature: 'image_generation', capability_tags: ['image_generation'],
+    };
+    const writes = await installRuntimeProfilesHarness(page, { profiles });
+    const imageProjection = {
+      ...projection(profiles),
+      available_instances: { ...projection(profiles).available_instances, image_generation: [image] },
+    };
+    await page.route('**/api/admin/runtime-profiles', route => route.fulfill({
+      contentType: 'application/json', body: JSON.stringify(envelope(imageProjection)),
+    }));
+    let probes = 0;
+    await page.route('**/api/admin/runtime-profiles/capability-probe', async route => {
+      probes += 1;
+      expect(route.request().postDataJSON()).toMatchObject({ capability: 'image_generation', timeout_ms: 90000 });
+      await route.fulfill({ status: failure.status, contentType: 'application/json', body: JSON.stringify({
+        ...envelope({}, 'Capability verification response unavailable'), status: 'error', error_code: failure.code,
+      }) });
+    });
+    await page.goto('/admin/runtime-profiles');
+    await profileRow(page, 'image.ai').getByRole('button').click();
+    const dialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
+    const candidate = candidateRow(page, image.instance_id);
+    const primary = candidate.getByRole('radio', { name: /primary|主模型/i });
+    await primary.check();
+    const verify = candidate.getByRole('button', { name: /Verify image|验证图片/i });
+    await verify.click();
+    const alert = dialog.locator('[data-ui="runtime-profile-probe-error"]');
+    await expect(alert).toContainText(image.model_id);
+    await expect(alert).toContainText(failure.code);
+    await expect(alert).toContainText(/result is unconfirmed|结果尚未确认/i);
+    await expect(alert).toContainText(/backend may still finish|后端可能仍会完成/i);
+    await expect(alert).toContainText(/latest verification status|最新验证状态/i);
+    await expect(alert).not.toContainText(/Check the Provider configuration|请检查 Provider 配置/i);
+    await expect(primary).toBeChecked();
+    await expect(verify).toBeEnabled();
+    expect(probes).toBe(1);
+    expect(writes).toHaveLength(0);
+    for (const width of [1440, 900]) {
+      await page.setViewportSize({ width, height: 1050 });
+      await expect(alert).toBeVisible();
+      const [dialogBox, alertBox] = await Promise.all([dialog.boundingBox(), alert.boundingBox()]);
+      expect(alertBox!.x).toBeGreaterThanOrEqual(dialogBox!.x);
+      expect(alertBox!.x + alertBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width);
+      await page.screenshot({ path: testInfo.outputPath(`probe-unconfirmed-${width}.png`), fullPage: true });
+    }
+    expect(probes).toBe(1);
+  });
+}
