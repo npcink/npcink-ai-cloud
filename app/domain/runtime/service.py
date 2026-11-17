@@ -3162,6 +3162,7 @@ class RuntimeService:
         *,
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
+        finish_reason: str | None = None,
     ) -> ProviderOutputDecision:
         if run.ability_name == article_review.ABILITY:
             try:
@@ -3182,6 +3183,7 @@ class RuntimeService:
         decision = self.wordpress_operation_runtime.prepare_provider_output(
             input_payload=input_payload,
             provider_output=provider_output,
+            finish_reason=finish_reason,
             grounded_context=grounded_context if isinstance(grounded_context, dict) else None,
         )
         if decision.accepted:

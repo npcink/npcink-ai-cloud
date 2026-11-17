@@ -110,3 +110,25 @@ def test_v2_malformed_declaration_returns_unchanged_review(tmp_path: Path) -> No
     assert result["candidate"] == source
     assert result["status"] == "REVIEW"
     assert result["structural_changes"] == 0
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("char", ["中", "😀", "a"])
+def test_signed_formatting_long_unicode_boundary(tmp_path: Path, version: str, char: str) -> None:
+    _, client = _build_client(tmp_path)
+    payload = _payload()
+    payload["contract_version"] = f"content_format_request.{version}"
+    source = "<p>" + char * 49993 + "</p>"
+    payload["input"].update(
+        content=source, source_sha256=hashlib.sha256(source.encode()).hexdigest()
+    )
+    response = _execute(client, payload, nonce="format-long")
+    assert response.status_code == 200, response.json()
+    data = response.json()["data"]
+    assert data["provider_call_count"] == 0 and data["result"]["candidate"] == source
+    source += char
+    payload["input"].update(
+        content=source, source_sha256=hashlib.sha256(source.encode()).hexdigest()
+    )
+    response = _execute(client, payload, nonce="format-over")
+    assert response.status_code == 400, response.json()

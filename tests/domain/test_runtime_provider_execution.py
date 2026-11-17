@@ -423,8 +423,11 @@ def test_context_preflight_skips_small_model_and_falls_back_without_upstream_cal
         }
 
 
+@pytest.mark.parametrize("source, estimated_tokens", [("a" * 300, 75), ("文😀" * 25000, 50000)])
 def test_context_preflight_fails_closed_without_rewriting_or_upstream_usage(
     database_url: str,
+    source: str,
+    estimated_tokens: int,
 ) -> None:
     provider = SequenceProvider("primary", [provider_success("must not run")])
     usage_recorder = RecordingUsageRecorder()
@@ -433,7 +436,7 @@ def test_context_preflight_fails_closed_without_rewriting_or_upstream_usage(
         controller=RecordingRunController(),
         usage_recorder=usage_recorder,
     )
-    input_payload = {"input": "a" * 300, "max_output_tokens": 20}
+    input_payload = {"input": source, "max_output_tokens": 20}
     original_payload = dict(input_payload)
 
     with get_session(database_url) as session:
@@ -471,10 +474,10 @@ def test_context_preflight_fails_closed_without_rewriting_or_upstream_usage(
         assert provider_calls[0].fallback_used is False
         assert usage_recorder.calls[0]["usage_context"] == {
             "context_preflight": "rejected",
-            "estimated_input_tokens": 75,
+            "estimated_input_tokens": estimated_tokens,
             "requested_output_tokens": 20,
             "context_safety_margin_tokens": 16,
-            "estimated_total_tokens": 111,
+            "estimated_total_tokens": estimated_tokens + 36,
             "context_window": 100,
         }
         assert "input" not in usage_recorder.calls[0]["usage_context"]
@@ -953,3 +956,52 @@ def test_provider_execution_module_and_service_keep_the_extraction_boundary() ->
     assert "provider_execution_service.execute_candidate_chain" in ast.unparse(
         candidate_method.body[0]
     )
+
+
+@pytest.mark.parametrize("reason", ["length", "max_tokens", "unknown", "responses_incomplete"])
+def test_wordpress_partial_output_is_failed_once_with_usage(database_url: str, reason: str) -> None:
+    result = provider_success("a partial paragraph")
+    result.finish_reason = reason
+    result.tokens_in, result.tokens_out, result.cost = 100, 50, 0.25
+    outcome = result
+    if reason == "responses_incomplete":
+        outcome = ProviderExecutionError(
+            "provider.output_contract_invalid", "incomplete", tokens_in=100,
+            tokens_out=50, cost=0.25, usage_context={"response_status": "incomplete"},
+        )
+    primary = SequenceProvider("primary", [outcome])
+    fallback = SequenceProvider("fallback", [provider_success("must not run")])
+    recorder = RecordingUsageRecorder()
+    from app.core.config import Settings
+    from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
+
+    runtime = WordPressOperationRuntime(settings=Settings(environment="test"), providers={})
+    service = execution_service(
+        providers={"primary": primary, "fallback": fallback},
+        controller=RecordingRunController(),
+        usage_recorder=recorder,
+        output_preparer=lambda run, **kwargs: runtime.prepare_provider_output(**kwargs),
+    )
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository, run_id="run_partial", policy={"allow_fallback": True, "max_retries": 2}
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "m", "i"), Candidate("fallback", "m", "i")],
+            input_payload={
+                "input": "original",
+                "metadata": {
+                    "source_surface": "wordpress_ai_connector",
+                    "task": "content_rewrite",
+                },
+            },
+        )
+        assert run.status == "failed" and run.error_code == "provider.output_incomplete"
+        assert primary.attempts == [0] and fallback.attempts == []
+        assert run.result_json is None
+        calls = repository.list_provider_calls(run.run_id)
+        assert len(calls) == 1
+        assert calls[0].tokens_out == 50 and calls[0].cost == 0.25

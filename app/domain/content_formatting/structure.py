@@ -6,7 +6,7 @@ import re
 from html import unescape
 from html.parser import HTMLParser
 
-from app.domain.content_formatting.engine import format_candidate
+from app.domain.content_formatting.engine import MAX_CANDIDATE_BYTES, format_candidate
 
 
 class ParagraphText(HTMLParser):
@@ -239,8 +239,7 @@ def repair_paragraph(raw: str) -> tuple[str, int]:
     markers = [
         marker
         for marker in ("*", "-", "+", "•")
-        if len(re.findall(r"<br\s*/?>\s*" + re.escape(marker) + r" [\u3400-\u9fff]", inner))
-        >= 2
+        if len(re.findall(r"<br\s*/?>\s*" + re.escape(marker) + r" [\u3400-\u9fff]", inner)) >= 2
     ]
     count = 0
     # A single consistent repeated marker is required. Do not guess when a
@@ -267,11 +266,7 @@ def repair_paragraph(raw: str) -> tuple[str, int]:
             if not label:
                 break
             value = unescape(re.sub(r"<a\b[^>]*>(.*?)</a>", r"\1", label[2]))
-            if (
-                not value.strip()
-                or len(value) > 120
-                or re.search(r"[<>。！？；!?;]", value)
-            ):
+            if not value.strip() or len(value) > 120 or re.search(r"[<>。！？；!?;]", value):
                 break
             labels.append(label[1])
         if len(labels) == len(rows) and len(set(labels)) == len(rows):
@@ -300,8 +295,7 @@ def repair_paragraph(raw: str) -> tuple[str, int]:
         return raw, 0
     rows.append(tail)
     return (
-        f"<!-- wp:paragraph -->\n<p>{intro}</p>\n<!-- /wp:paragraph -->\n\n"
-        + native_list(rows),
+        f"<!-- wp:paragraph -->\n<p>{intro}</p>\n<!-- /wp:paragraph -->\n\n" + native_list(rows),
         1,
     )
 
@@ -330,6 +324,8 @@ def format_structure(source: str) -> dict:
             repairs += count
     import hashlib
 
+    if len(candidate.encode("utf-8")) > MAX_CANDIDATE_BYTES:
+        raise ValueError("formatting candidate exceeds 512 KiB")
     result.update(
         contract_version="content_format_candidate.v2",
         candidate=candidate,

@@ -60,6 +60,14 @@ _ERROR_TAXONOMY: dict[str, ErrorTaxonomyEntry] = {
         retryable=False,
         fallback_eligible=False,
     ),
+    "provider.output_incomplete": ErrorTaxonomyEntry(
+        error_code="provider.output_incomplete", error_stage="provider_output",
+        retryable=False, fallback_eligible=False,
+    ),
+    "provider.output_too_large": ErrorTaxonomyEntry(
+        error_code="provider.output_too_large", error_stage="provider_output",
+        retryable=False, fallback_eligible=False,
+    ),
     "provider.context_overflow": ErrorTaxonomyEntry(
         error_code="provider.context_overflow",
         error_stage="provider",

@@ -154,6 +154,7 @@ class ProviderOutputPreparer(Protocol):
         *,
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
+        finish_reason: str | None = None,
     ) -> ProviderOutputDecision: ...
 
 
@@ -425,16 +426,28 @@ class RuntimeProviderExecutionService:
                         return
                 preflight_usage_context: dict[str, object] | None = None
                 try:
-                    preflight_usage_context = self.enforce_context_budget(
-                        provider_request
-                    )
+                    preflight_usage_context = self.enforce_context_budget(provider_request)
                     # Checkpoint admission, reservations and earlier attempt evidence;
                     # the open Session acquires a new connection only after Provider I/O.
                     repository.session.commit()
-                    provider_result = provider.execute(
-                        provider_request
-                    )
+                    provider_result = provider.execute(provider_request)
                 except ProviderExecutionError as error:
+                    if (error.usage_context or {}).get("response_status") in {
+                        "incomplete",
+                        "failed",
+                        "cancelled",
+                    }:
+                        decision = self.output_preparer(
+                            run,
+                            input_payload=input_payload,
+                            provider_output={
+                                "response_status": error.usage_context["response_status"]
+                            },
+                            finish_reason=str(error.usage_context["response_status"]),
+                        )
+                        if decision.error_code == "provider.output_incomplete":
+                            error.error_code = decision.error_code
+                            error.retryable = False
                     if preflight_usage_context:
                         error.usage_context = {
                             **preflight_usage_context,
@@ -482,6 +495,7 @@ class RuntimeProviderExecutionService:
                     run,
                     input_payload=input_payload,
                     provider_output=provider_result.output,
+                    finish_reason=provider_result.finish_reason,
                 )
                 if not decision.accepted:
                     last_error_code = decision.error_code
@@ -498,9 +512,15 @@ class RuntimeProviderExecutionService:
                         output_usage_context=decision.usage_context,
                         budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                     )
-                    if retry_count < max_retries:
+                    if retry_count < max_retries and decision.error_code not in {
+                        "provider.output_incomplete",
+                        "provider.output_too_large",
+                    }:
                         continue
-                    if allow_fallback:
+                    if allow_fallback and decision.error_code not in {
+                        "provider.output_incomplete",
+                        "provider.output_too_large",
+                    }:
                         break
                     self.run_controller.fail_run(
                         repository,
@@ -613,10 +633,10 @@ class RuntimeProviderExecutionService:
     def _safe_error_message(run: RunRecord, message: str) -> str:
         """Keep payload text out of durable/public errors for no-store runs."""
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
-        if (
-            str(policy.get("storage_mode") or "") == "no_store"
-            or run.data_classification in {"pii", "secret"}
-        ):
+        if str(policy.get("storage_mode") or "") == "no_store" or run.data_classification in {
+            "pii",
+            "secret",
+        }:
             return "runtime execution failed"
         return message
 

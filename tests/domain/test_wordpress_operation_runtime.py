@@ -41,7 +41,8 @@ def _operation_payload(
 ) -> dict[str, Any]:
     scene_text_field = (
         "source_text"
-        if task in {
+        if task
+        in {
             "title_generation",
             "content_summary",
             "content_rewrite",
@@ -88,15 +89,15 @@ def _operation_payload(
 @pytest.mark.parametrize(
     ("task", "source_text", "expected_max_tokens"),
     [
-            (
-                "title_generation",
-                "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
-                256,
-            ),
-            (
-                "content_summary",
-                "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
-                160,
+        (
+            "title_generation",
+            "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
+            256,
+        ),
+        (
+            "content_summary",
+            "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
+            160,
         ),
         (
             "content_rewrite",
@@ -159,7 +160,7 @@ def test_editorial_updates_provider_input_forbids_process_explanations() -> None
         )
     )
 
-    assert provider_input["max_tokens"] == 256
+    assert provider_input["max_tokens"] == 512
     assert "Return only the final revised content" in provider_input["input"]
     assert "never say that the task is impossible" in provider_input["input"]
     assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
@@ -184,9 +185,7 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
         )
     )
 
-    assert "Use only facts, names, products, organizations, and claims" in provider_input[
-        "input"
-    ]
+    assert "Use only facts, names, products, organizations, and claims" in provider_input["input"]
     assert "do not introduce concepts" in provider_input["input"].lower()
     assert "Return only the" in provider_input["input"]
     expected_source = "A bounded connector maps WordPress AI abilities to a hosted provider."
@@ -306,9 +305,10 @@ def test_editorial_updates_provider_input_preserves_scope_and_source_length() ->
     assert "Keep the result close to the source length" in provider_input["input"]
     assert "do not expand a short paragraph into an explanation" in provider_input["input"]
     assert "add background, product names, workflow claims" in provider_input["input"]
-    assert "Return the revised paragraph itself and retain its substantive words" in provider_input[
-        "input"
-    ]
+    assert (
+        "Return the revised paragraph itself and retain its substantive words"
+        in provider_input["input"]
+    )
 
 
 def test_editorial_updates_rejects_bounded_completion_wording_without_source_facts() -> None:
@@ -423,9 +423,7 @@ def test_editorial_updates_preserves_legal_user_markup_without_block_wrapper() -
         {"output_text": "Quarterly release schedule requires review."},
         input_payload={
             "metadata": {"task": "editorial_updates"},
-            "text": (
-                "<task-list><li>Quarterly release schedule requires review.</li></task-list>"
-            ),
+            "text": ("<task-list><li>Quarterly release schedule requires review.</li></task-list>"),
         },
     )
 
@@ -558,8 +556,7 @@ def test_content_rewrite_rejects_generic_revision_without_editable_source_overla
     normalized = runtime.normalize_provider_output(
         {
             "output_text": (
-                "This duplicate sentence requires a more concise revision suitable for "
-                "publication."
+                "This duplicate sentence requires a more concise revision suitable for publication."
             )
         },
         input_payload={
@@ -1227,10 +1224,13 @@ def test_title_generation_rejects_an_existing_scene_heading() -> None:
         input_payload=provider_input,
         provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
     )
-    assert runtime.output_quality_reason(
-        input_payload=provider_input,
-        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
-    ) == "title_unchanged"
+    assert (
+        runtime.output_quality_reason(
+            input_payload=provider_input,
+            provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+        )
+        == "title_unchanged"
+    )
 
 
 def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> None:
@@ -1263,8 +1263,7 @@ def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> 
     ("provider_text", "expected_reason"),
     [
         (
-            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。"
-            * 3,
+            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。" * 3,
             "title_length_exceeded",
         ),
         ("云端标题！！？？", "title_repeated_punctuation"),
@@ -1282,18 +1281,24 @@ def test_title_generation_reports_deterministic_quality_reasons(
         "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
     }
 
-    assert runtime.title_quality_reasons(
-        input_payload=input_payload,
-        provider_output={"output_text": provider_text},
-    )[0] == expected_reason
+    assert (
+        runtime.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output={"output_text": provider_text},
+        )[0]
+        == expected_reason
+    )
     assert runtime.is_empty_text_output(
         input_payload=input_payload,
         provider_output={"output_text": provider_text},
     )
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output={"output_text": provider_text},
-    ) == expected_reason
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output={"output_text": provider_text},
+        )
+        == expected_reason
+    )
 
 
 def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
@@ -1396,9 +1401,9 @@ def test_content_rewrite_output_preserves_long_selection_within_source_limit() -
     assert result["output_text"] == rewritten_text
 
 
-def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> None:
+def test_content_rewrite_output_remains_bounded_by_output_contract() -> None:
     runtime = _runtime()
-    rewritten_text = "边界内的改写句子呀。" * 1_300
+    rewritten_text = "边界内的改写句子呀。" * 8_000
 
     result = runtime.normalize_provider_output(
         {"output_text": rewritten_text},
@@ -1408,8 +1413,27 @@ def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> Non
         },
     )
 
-    assert len(result["output_text"]) == WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
-    assert result["output_text"] == rewritten_text[:WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS]
+    assert result == {}
+    decision = runtime.prepare_provider_output(
+        input_payload={"metadata": {"task": "content_rewrite"}, "text": "原始选区"},
+        provider_output={"output_text": rewritten_text},
+    )
+    assert not decision.accepted
+    assert decision.error_code == "provider.output_too_large"
+    assert decision.output == {}
+    # Every accepted provider text shape must be checked before normalization
+    # can clip it into an apparently successful transformation.
+    for output in (
+        {"text": rewritten_text},
+        {"content": rewritten_text},
+        {"choices": [{"text": rewritten_text}]},
+        {"choices": [{"message": {"content": rewritten_text}}]},
+    ):
+        payload = {"metadata": {"task": "content_rewrite"}, "text": "原始选区"}
+        assert runtime.normalize_provider_output(output, input_payload=payload) == {}
+        assert runtime.prepare_provider_output(
+            input_payload=payload, provider_output=output,
+        ).error_code == "provider.output_too_large"
 
 
 def test_empty_text_output_judgement_is_task_bounded() -> None:
@@ -1496,7 +1520,7 @@ def test_translation_quality_gate_rejects_unsafe_output(
 ) -> None:
     runtime = _runtime()
     source_text = (
-        '<content><p>这是一个需要完整翻译的中文段落，包含来源链接。'
+        "<content><p>这是一个需要完整翻译的中文段落，包含来源链接。"
         '<a href="https://example.test/docs">文档</a></p></content>'
     )
     if expected_reason == "translation_structure_drift":
@@ -1516,10 +1540,13 @@ def test_translation_quality_gate_rejects_unsafe_output(
         input_payload=input_payload,
         provider_output=provider_output,
     )
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output=provider_output,
-    ) == expected_reason
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        == expected_reason
+    )
 
 
 def test_translation_quality_gate_rejects_length_inflation() -> None:
@@ -1531,20 +1558,23 @@ def test_translation_quality_gate_rejects_length_inflation() -> None:
         "text": source_text,
     }
 
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output=provider_output,
-    ) == "translation_length_inflation"
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        == "translation_length_inflation"
+    )
 
 
 def test_translation_normalization_preserves_markup_and_links() -> None:
     runtime = _runtime()
     source_text = (
-        '<content><!-- wp:paragraph --><p>Translate this paragraph.</p>'
+        "<content><!-- wp:paragraph --><p>Translate this paragraph.</p>"
         '<a href="https://example.test/docs">Docs</a><!-- /wp:paragraph --></content>'
     )
     translated_text = (
-        '<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>'
+        "<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>"
         '<a href="https://example.test/docs">Dokumentation</a><!-- /wp:paragraph -->'
     )
     input_payload = {
@@ -1999,3 +2029,40 @@ def test_ability_number_bounds_preserve_fractional_values(value: float, accepted
         )
         is accepted
     )
+
+
+@pytest.mark.parametrize("task", ["content_rewrite", "content_translation", "editorial_updates"])
+def test_long_transformation_is_preserved_without_the_old_output_clipper(task: str) -> None:
+    runtime = _runtime()
+    source = "这是有关版本更新和发布检查的明确记录。" * 700
+    assert len(source) > 12000
+    normalized = runtime.normalize_provider_output(
+        {"output_text": source},
+        input_payload={
+            "metadata": {"task": task, "task_constraints": ["single_value"]},
+            "text": source,
+        },
+    )
+    assert normalized
+    assert normalized["output_text"] == source
+
+
+@pytest.mark.parametrize("task", ["content_rewrite", "content_translation", "editorial_updates"])
+@pytest.mark.parametrize("source", ["文" * 12000, "Long input. " * 1000], ids=["cjk", "ascii"])
+def test_transformation_default_budget_scales_with_source(task: str, source: str) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(task=task, request={"source_text": source})
+    )
+    assert provider_input["max_tokens"] > 512
+    assert provider_input["max_tokens"] == provider_input["max_output_tokens"]
+    assert provider_input["text"] == source.strip()
+
+
+def test_transformation_explicit_output_budget_remains_authoritative() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite", request={"source_text": "文" * 12000, "max_tokens": 800}
+        )
+    )
+    assert provider_input["max_tokens"] == 800

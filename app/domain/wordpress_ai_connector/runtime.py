@@ -30,7 +30,6 @@ from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
     WORDPRESS_OPERATION_CONTRACT,
-    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
     contains_inline_media_transport,
     resolve_site_knowledge_reference_mode,
@@ -47,6 +46,13 @@ from app.domain.wordpress_ai_connector.grounded_context import (
     normalize_grounded_output,
     render_evidence_pack,
     requires_evidence,
+)
+from app.domain.wordpress_ai_connector.output_policy import (
+    MAX_TRANSFORMATION_OUTPUT_CHARS,
+    MAX_TRANSFORMATION_OUTPUT_TOKENS,
+    TRANSFORMATION_TASKS,
+    completion_failure,
+    transformation_token_budget,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
     resolve_wordpress_ai_connector_profile_spec,
@@ -531,9 +537,13 @@ class WordPressOperationRuntime:
             }.get(task_family, 160),
         )
 
+        if task in TRANSFORMATION_TASKS:
+            default_max_tokens = transformation_token_budget(scene_text)
         max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=0)
         if max_tokens <= 0:
             max_tokens = default_max_tokens
+        if task in TRANSFORMATION_TASKS:
+            max_tokens = min(max_tokens, MAX_TRANSFORMATION_OUTPUT_TOKENS)
         if max_tokens > 0:
             provider_input["max_tokens"] = max_tokens
             provider_input["max_output_tokens"] = max_tokens
@@ -774,8 +784,19 @@ class WordPressOperationRuntime:
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
         grounded_context: dict[str, Any] | None = None,
+        finish_reason: str | None = None,
     ) -> ProviderOutputDecision:
         """Judge WordPress output without mutating run state or persisting diagnostics."""
+        failure = completion_failure(
+            input_payload, provider_output, finish_reason=finish_reason,
+            extracted_text=self._extract_provider_output_text(provider_output),
+        )
+        if failure:
+            return ProviderOutputDecision(
+                accepted=False, output={}, error_code=failure,
+                error_message="WordPress transformation output is incomplete or exceeds its limit",
+                usage_context={"output_quality_reason": failure.removeprefix("provider.")},
+            )
         normalization_input = {**input_payload}
         normalization_input.pop("_grounded_context", None)
         if grounded_context is not None:
@@ -834,6 +855,8 @@ class WordPressOperationRuntime:
             if isinstance(item, str) and str(item).strip()
         }
         output_text = self._extract_provider_output_text(output)
+        if completion_failure(input_payload, output, extracted_text=output_text):
+            return {}
         pack = input_payload.get("_grounded_context")
         if isinstance(pack, dict):
             schema = self._dict_or_empty(metadata.get("ability_output_schema"))
@@ -912,7 +935,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit={
-                    "content_rewrite": WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
+                    "content_rewrite": MAX_TRANSFORMATION_OUTPUT_CHARS,
                     "title_generation": 80,
                     "excerpt_generation": 180,
                     "content_summary": 220,
@@ -925,7 +948,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit=(
-                    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+                    MAX_TRANSFORMATION_OUTPUT_CHARS
                     if task in {"content_translation", "editorial_updates"}
                     else 320
                 ),

@@ -1360,7 +1360,7 @@ def test_p2_text_tasks_project_source_text_once_with_runtime_evidence(
         ({"source_text": ""}, "wordpress_operation.source_text_required"),
         ({"source_text": "   \n\t"}, "wordpress_operation.source_text_required"),
         ({"source_text": 42}, "wordpress_operation.source_text_required"),
-        ({"source_text": "x" * 12001}, "wordpress_operation.source_text_too_large"),
+        ({"source_text": "文" * 50001}, "wordpress_operation.source_text_too_large"),
         (
             {"source_text": "valid source", "prompt": "legacy prompt"},
             "wordpress_operation.prompt_forbidden",
@@ -1393,6 +1393,30 @@ def test_p2_text_source_contract_fails_closed_before_provider(
     assert response.status_code == 400
     assert response.json()["error_code"] == expected_error
     assert provider.requests == []
+
+
+@pytest.mark.parametrize("task", ["title_generation", "content_summary", "content_rewrite"])
+@pytest.mark.parametrize("source", ["文" * 4200, "文" * 50000, "<p>" + "文😀" * 24996 + "文</p>"])
+def test_long_source_preserved_through_fake_provider(
+    tmp_path: Path, task: str, source: str,
+) -> None:
+    # Includes markup and supplementary Unicode; no paid provider is used.
+    assert len(source) in {4200, WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS}
+    _, client, provider = _build_client(tmp_path)
+    response = _execute(
+        client,
+        _payload({"task": task, "request": {
+            "source_text": source,
+            "system_instruction": "Keep the local instruction.",
+        }}),
+        idempotency_key=f"long-source-{task}",
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "succeeded"
+    assert len(provider.requests) == 1
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["text"] == source
+    assert provider_input["input"].count(source) == 1
 
 
 def test_p2_text_task_allows_trimmed_empty_system_instruction(tmp_path: Path) -> None:
