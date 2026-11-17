@@ -34,6 +34,13 @@ const adminSupportDetailPageSource = readFileSync(adminSupportDetailPagePath, 'u
 const adminProxySource = readFileSync(adminProxyPath, 'utf8');
 const i18nSource = readFileSync(i18nPath, 'utf8');
 
+assert.match(portalSupportPageSource, /readSupportPrefill\(searchParams\)/);
+assert.match(portalSupportPageSource, /transition === 'preserve'\) return/);
+assert.match(portalSupportPageSource, /!initialSiteId \|\| initialSiteIsVisible/,
+  'Cross-account site links must not apply a diagnostic draft to an unrelated account');
+assert.match(portalSupportPageSource, /setTitle\(applyPrefill \? initialTitle : ''\)/);
+assert.match(portalSupportPageSource, /setDescription\(applyPrefill \? initialDescription : ''\)/);
+
 assert.match(
   portalNavbarSource,
   /href: '\/portal\/support'[\s\S]*portal\.nav_support_requests/,
