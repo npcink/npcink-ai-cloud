@@ -1032,6 +1032,11 @@ class RuntimeService:
             timeout_seconds=timeout_seconds,
         )
 
+    def get_run_by_idempotency(self, *, site_id: str, idempotency_key: str) -> dict[str, object]:
+        return self.run_lifecycle_service.get_run_by_idempotency(
+            site_id=site_id, idempotency_key=idempotency_key
+        )
+
     def get_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
         return self.run_lifecycle_service.get_run(run_id, site_id=site_id)
 

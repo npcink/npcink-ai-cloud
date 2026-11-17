@@ -27,6 +27,11 @@ A change is done only when all applicable items hold:
    historical-data state. Apply the relevant
    [audit regression rules](../historical-issue-closure-and-release-evidence-standard-v1.md#13-turn-audit-findings-into-executable-regressions);
    record failures, skips and targeted reruns without relabeling them a full green run.
+10. **Cross-system receipt recovery**, when touched, covers remote acceptance
+    followed by local save failure or caller exit, concurrent-intent preservation,
+    safe delayed-sender handling and subsequent progress after verified evidence.
+    Apply the [receipt and interruption rules](../historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers);
+    distinguish incident recovery from recurrence prevention and retain unresolved windows.
 
 Phase 1 product Done for the editor loop additionally follows
 [wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md).

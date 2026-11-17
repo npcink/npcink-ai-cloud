@@ -972,3 +972,29 @@ The additive Admin vector-profile `runtime` object reports actual environment,
 provider/model, dimensions, backend and index-space status without changing
 the production profile or existing credential/rebuild contracts. See the
 [local operations procedure](m4-preview-development-v1.md#unified-local-multimodal-embedding-2026-10-29).
+
+
+## Dispatch receipt recovery (2026-11-16 candidate)
+
+`GET /v1/runs/by-idempotency/{key}` is a signed `runtime:read` lookup of an
+existing durable run under the authenticated site. Keys use the runtime identifier
+alphabet (`A-Za-z0-9._:-`, 1–128 characters). It returns the existing run-detail
+projection used by `GET /v1/runs/{run_id}`, without input or generated result bodies.
+It does not execute, replay, enqueue, extend retention, resolve routing, mutate the
+run, or spend Provider credits. No schema migration or new truth store is added.
+A missing/other-site key returns `404 runtime.run_not_found` with no foreign run ID.
+Absence is not evidence that a delayed sender cannot still execute.
+
+Addon can recover a lost local receipt only after reading the located run and
+validating the existing exact Site Knowledge writer identity and normal executor
+terminal evidence. Running, unknown, auto-failed and mismatched records keep local
+suppression and the original payload. Cloud owns execution evidence; WordPress
+retains source consent/intents and all final WordPress writes. Deploy Cloud before
+the matching Addon; older Cloud leaves an unresolved owner protected rather than
+falling back to a new execution. Versions remain documentation recommendations,
+not runtime hard rejection. Local/M4 candidate evidence is not production proof.
+
+Changes at this seam also owe the [cross-system receipt and interruption evidence](historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers).
+An incident recovered by hand or improved diagnostics does not close recurrence;
+the caller must demonstrate durable receipt recovery and subsequent safe progress,
+with unresolved delayed-sender windows stated explicitly.

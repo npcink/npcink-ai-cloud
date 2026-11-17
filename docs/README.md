@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 修复 Cloud 成功但调用方没保存回执、重启后卡住的问题 | [跨系统回执与中断恢复要求](historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers) — 接受后保存失败/进程退出、真实 DB/cache、延迟 sender、恢复后推进及证据分层；Site Knowledge 实现见[运行时契约](site-knowledge-runtime-contract-v1.md#dispatch-receipt-recovery-2026-11-16-candidate) |
 | 连接验收残项与维护发布收尾 | [2026-11-12 生产及验收回执](history/production/2026/connection-maintenance-release-2026-11-12.md)接续[准备记录](history/engineering/2026/connection-maintenance-release-closeout-2026-11-12.md)；采样和续费已有独立安排，源码、候选、生产与聊天归档分别记账。 |
 | 接续主机高读盘事故、统计/worker修复和当前会话资源收尾 | [事故接续与开发复盘 — 2026-11-12](history/engineering/2026/host-io-incident-development-handoff-2026-11-12.md) — 三批源码交付、生产取证与未证实根因分开；保留历史验收限制、主检出角色及下一复核点 |
 | 核对激活发布、伪需求取舍、四项接续与本会话清理 | [激活流程与收尾复盘 — 2026-11-11](history/engineering/2026/activation-flow-closeout-and-lessons-2026-11-11.md) — 已合并/生产与待验收分开；唯一四项台账、归档和受保护资源；方法见[收尾规范§6.5](engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制) |
@@ -231,7 +232,7 @@ deleting the old decision history.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
-- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md) — source/runtime/release 证据分级；§13 归纳付费到期、退款并发与原文验签、幂等身份、分页/DST、队列及真实 CI 覆盖的反例与回归要求。
+- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md) — source/runtime/release 证据分级；§13 归纳付费到期、退款并发与原文验签、幂等身份、分页/DST、队列及真实 CI 覆盖；§15 要求跨系统回执持久化、中断恢复和安全推进反例。
 - [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](history/engineering/2026/historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
 - [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)

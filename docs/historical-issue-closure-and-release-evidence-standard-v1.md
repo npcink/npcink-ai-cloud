@@ -275,3 +275,56 @@ activate new alert infrastructure or expand the current product scope.
   Respect primary-checkout protection and preserve evidence before cleanup;
   a tool rejection is not permission to bypass it. Scope-wide cleanup requires
   the [stage-transition standard](repository-stage-transition-cleanup-standard-v1.md).
+
+## 15. Cross-System Receipts and Interrupted Callers
+
+Apply this section when changing remote acceptance, local receipt persistence,
+dispatch ownership or recovery after a caller exits. The 2026-11-16 Site Knowledge
+case confirmed a Cloud success without a locally saved run ID; both a post-acceptance
+CAS collision and an interrupted PHP caller reproduced the blocking owner. The
+historical evidence cannot distinguish which caused the original incident.
+
+Previous tests ran in the ordinary suite, but covered response loss followed by
+the local finalizer and pre-send concurrency. They omitted local persistence
+failure after remote acceptance; array SQL doubles also omitted real WordPress
+option-cache behavior. Treat this as a missing failure model, not a missing test
+runner. Incident recovery and actionable UI/support guidance did not close the
+recurrence defect.
+
+Required review and evidence for this seam:
+
+- Distinguish remote execution, local receipt persistence, subsequent progress
+  and the requested final data state. Inspect persistence/CAS return values;
+  remote success must not conceal a failed local save.
+- Persist a stable scoped recovery identity before dispatch and prove a fresh
+  process can reach recovery. A server idempotency key is insufficient when a
+  local owner prevents lookup/replay. Recovery must not silently create a new
+  intent, execution, Provider call or usage charge.
+- Bound CAS retries, reload authoritative state, invalidate stale request caches
+  and merge only owned fields while preserving concurrent intent. If cancellation
+  is claimed safe, identify the atomic send gate that fences a resumed sender;
+  elapsed time or a lease alone is not proof.
+- Inject accepted-but-save-failed, accepted-before-finalizer-exit, unsent-release
+  failure, conflict exhaustion and delayed-original-sender cases. Verify site,
+  credential and request identity isolation; reject running, mismatched and
+  untrusted terminal records. Missing/expired records, 404 and transport errors
+  do not prove no delayed sender remains.
+- Prove both conservative blocking and subsequent progress once trustworthy
+  matching evidence returns. Keep unresolved windows explicit rather than clearing
+  durable owners to pass a test. Separately verify the final data/presence contract.
+- Use independent real database connections/cache evidence for concurrency claims
+  and real process exit/restart evidence for restart claims. Label HTTP doubles;
+  record real signed network evidence separately. Assert execution/Provider/usage
+  counts, not merely successful response codes. Do not convert a shared-source
+  audit into a claim that every entrypoint passed live end-to-end validation.
+
+The owning behavior remains in the [Site Knowledge runtime contract](site-knowledge-runtime-contract-v1.md#dispatch-receipt-recovery-2026-11-16-candidate)
+and Addon's `docs/site-knowledge-full-index-delivery.md`. The dated case, source/test
+anchors, evidence ledger and remaining sending-before-HTTP uncertainty are in the
+Addon repository's `docs/site-knowledge-receipt-recovery-retrospective-2026-11-16.md`;
+its active `docs/verification-evidence-standard.md` carries the Addon failure matrix.
+Keep those lessons in Git as well as raw evidence outside disposable worktrees.
+Report incident recovery, prevention implementation, local tests, exact-SHA CI,
+M4 candidate/accepted, merge, production and human acceptance independently.
+These review requirements authorize neither production operations nor new control
+planes, telemetry infrastructure or paid observation runs.

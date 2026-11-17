@@ -375,6 +375,15 @@ class RuntimeRunLifecycleService:
 
         return processed
 
+    def get_run_by_idempotency(self, *, site_id: str, idempotency_key: str) -> dict[str, object]:
+        """Read an existing durable receipt; absence never authorizes a new execution."""
+        with get_session(self.database_url) as session:
+            run = RuntimeRepository(session).get_run_by_idempotency(site_id, idempotency_key)
+            if run is None:
+                raise RuntimeRunNotFoundError("")
+            run_id = run.run_id
+        return self.get_run(run_id, site_id=site_id)
+
     def get_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
