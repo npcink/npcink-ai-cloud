@@ -286,6 +286,17 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
         )
 
     normalized_request = dict(request)
+    if "rewrite_action" in request:
+        action = request["rewrite_action"]
+        if (
+            task != "content_rewrite"
+            or not isinstance(action, str)
+            or action not in {"shorten", "expand", "rephrase"}
+        ):
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.rewrite_action_invalid",
+                "rewrite_action requires content_rewrite and shorten, expand, or rephrase",
+            )
     if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
         normalized_request["source_text"] = validate_source_text_request(request)
         if "existing_title" in request:

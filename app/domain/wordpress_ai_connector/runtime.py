@@ -216,6 +216,7 @@ class WordPressOperationRuntime:
             or ""
         ).strip()
         existing_title = str(scene_request.get("existing_title") or "").strip()
+        rewrite_action = str(scene_request.get("rewrite_action") or "").strip()
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
@@ -257,8 +258,9 @@ class WordPressOperationRuntime:
                 "Rewrite only the supplied content according to the request. Return exactly "
                 "one rewritten version (one revised version) and nothing else. Preserve the "
                 "original meaning, facts, "
-                "names, numbers, links, and structure. Keep the result close to the source "
-                "length; do not expand a short paragraph into an explanation, add background, "
+                "names, numbers, links, and structure. Follow the local Ability's requested "
+                "length change; if none is requested, keep the result close to the source "
+                "length. Do not turn the result into an explanation, add unrelated background, "
                 "product names, workflow claims, or administrative context."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
@@ -346,6 +348,23 @@ class WordPressOperationRuntime:
             )
 
         fragments = [task_instruction]
+        if task == "content_rewrite":
+            length_instruction = {
+                "shorten": (
+                    "Condense the content to roughly half its current length; retain key facts."
+                ),
+                "expand": (
+                    "Expand to roughly 1.5 to 2 times the source length by clarifying supplied "
+                    "ideas, without inventing facts, examples presented as facts, or claims."
+                ),
+                "rephrase": (
+                    "Keep the result close to the source length while changing the wording."
+                ),
+            }.get(rewrite_action)
+            if length_instruction:
+                fragments.append(
+                    f"Requested rewrite action: {rewrite_action}. {length_instruction}"
+                )
         if task == "title_generation" and existing_title:
             fragments.append(
                 "Existing WordPress title: "
@@ -418,6 +437,13 @@ class WordPressOperationRuntime:
             )
         if system_instruction:
             fragments.append(system_instruction)
+        if title_output_schema:
+            fragments.append(
+                "Transport serialization takes precedence over plain-text output wording above: "
+                "plain title text requirements apply to the value of `title`, not the transport "
+                "envelope. Return only one JSON object with the single string field `title`; "
+                "put no quotes, Markdown, explanations, or alternatives inside that value."
+            )
         if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
             fragments.append(
                 "The scene is predominantly Simplified Chinese. Write every human-readable "
@@ -477,6 +503,8 @@ class WordPressOperationRuntime:
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
                 provider_input["metadata"]["target_language"] = target_language
+        if task == "content_rewrite" and rewrite_action:
+            provider_input["metadata"]["rewrite_action"] = rewrite_action
         if task == "title_generation" and existing_title:
             provider_input["metadata"]["existing_title"] = existing_title
         if title_output_schema:
@@ -539,6 +567,10 @@ class WordPressOperationRuntime:
 
         if task in TRANSFORMATION_TASKS:
             default_max_tokens = transformation_token_budget(scene_text)
+            if task == "content_rewrite" and rewrite_action == "expand":
+                default_max_tokens = min(
+                    MAX_TRANSFORMATION_OUTPUT_TOKENS, default_max_tokens * 2
+                )
         max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=0)
         if max_tokens <= 0:
             max_tokens = default_max_tokens

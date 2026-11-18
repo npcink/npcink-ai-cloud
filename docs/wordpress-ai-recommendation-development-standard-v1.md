@@ -187,3 +187,70 @@ remain deferred.
 When this standard conflicts with an active runtime contract, security policy,
 release policy, or current code/test authority, the active authority wins and
 this document must be updated.
+
+## 10. Native AI feature audits and prompt-role regressions
+
+When auditing the official WordPress AI editor, use the existing
+[capability matrix](wordpress-ai-capability-compatibility-matrix-v1.md) as the
+source-projection ledger. Record the installed AI version, Ability registration,
+Addon scene mapping, source/context/instruction roles, output shape, local
+review/write consumer, and evidence state separately. An enabled experiment,
+available text model, historical smoke, or HTTP 200 is insufficient to mark a
+new or changed Ability supported and useful.
+
+First fix common reproducible failures, then validate a bounded family. For
+each multi-action family, cover every semantic action through validation,
+projection and provider input. For resizing this means shorten, expand and
+rephrase; a generic rewrite happy path cannot prove all three. Check that
+default token budgets support the requested operation while preserving explicit
+caller budgets, model capacity, completeness guards and output ceilings.
+
+Compare the installed upstream message roles with the adapter's assumptions
+after an AI upgrade. Preserve opaque upstream source messages and additional
+context; do not parse tags or relocate article text into the instruction role.
+Include a source longer than the instruction cap to expose role duplication.
+Check final composed instructions for contradictory task/length/serialization
+requirements. JSON transport serialization and plain-text field content must
+have an explicit interpretation without rewriting locally owned prompts.
+
+Use real installed WordPress Abilities with synthetic inputs and intercepted
+HTTP for deterministic role/action/result tests, failing closed on unexpected
+outbound requests. Record article/meta fingerprints before/after. This proves
+local integration only. Keep browser review/adoption, live Cloud/provider
+execution, semantic quality, M4, merge and production as separate evidence;
+never issue paid calls just to fill an evidence row. Cover browser adoption
+when changing its consumer, and review any write-capable upstream consumer
+separately rather than inferring safety from a suggestion-only backend.
+
+The [2026-11-17 audit](history/engineering/2026/wordpress-editor-feature-audit-2026-11-17.md)
+records the initial failures and remaining draft-context, regeneration and
+unmapped-feature limits. Future batches must update dispositions rather than
+copy historical acceptance labels onto current source.
+
+
+## 11. Native editor saves and follow-up completion
+
+For a write-capable WordPress consumer, a resolved `savePost()` promise is not
+proof of persistence: core may resolve `undefined` after a failed or skipped
+save. Confirm the native failure state, post identity and saved raw content
+against the generated snapshot before retiring Notes or showing AI success.
+Keep generated content recoverable in the editor after an unconfirmed save.
+
+Do not silently include an existing unsaved draft in an AI-triggered whole-post
+save. Require the author to save first; stage generated blocks and recheck the
+post/content/dirty state before adoption. Guard rapid duplicate clicks, and
+release native save/autosave locks on every exit. Incomplete Notes pagination
+must abort the apply operation instead of acting on a partial instruction set.
+
+Partial block success and Note-completion failure are different outcomes:
+report saved/failed counts and a concrete reason, keep failed Notes pending,
+and expose the native Notes and revisions actions. Clear prior batch warnings
+when a new batch begins. Keep save consequences and failures visible; do not
+hide them in help text. Cover resolved-but-failed saves, partial generation,
+concurrent typing, duplicate clicks and failed completion in regression tests.
+
+Repair saves in the owning WordPress plugin, never in the Cloud connector.
+For a local upstream patch, retain the exact release base, source/test diff,
+asset hashes, original assets and rebuild/rollback procedure. Upstream upgrades
+may overwrite it; never label a local patch an official release. See the
+[editorial save batch](history/engineering/2026/wordpress-editorial-save-correctness-2026-11-17.md).

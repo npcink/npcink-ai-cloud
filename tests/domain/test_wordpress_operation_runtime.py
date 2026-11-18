@@ -281,12 +281,108 @@ def test_content_rewrite_provider_input_preserves_scope_and_source_length() -> N
     )
 
     assert "Return exactly one rewritten version" in provider_input["input"]
-    assert "Keep the result close to the source length" in provider_input["input"]
-    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert "Follow the local Ability's requested length change" in provider_input["input"]
+    assert "Do not turn the result into an explanation" in provider_input["input"]
     assert (
         "Preserve the original meaning, facts, names, numbers, links, and structure"
         in provider_input["input"]
     )
+
+
+@pytest.mark.parametrize("action", ["shorten", "expand", "rephrase"])
+def test_rewrite_action_survives_validation_and_controls_length(action: str) -> None:
+    payload = _operation_payload(
+        task="content_rewrite",
+        request={"source_text": "原始选区内容。" * 200, "rewrite_action": action},
+    )
+    payload["operation_contract"] = validate_wordpress_operation_contract(
+        payload["operation_contract"]
+    )
+    provider_input = _runtime().build_provider_input(payload)
+    assert provider_input["metadata"]["rewrite_action"] == action
+    assert f"Requested rewrite action: {action}." in provider_input["input"]
+    if action == "shorten":
+        assert "roughly half" in provider_input["input"]
+        assert "Keep the result close to the source length" not in provider_input["input"]
+    elif action == "expand":
+        assert "1.5 to 2 times" in provider_input["input"]
+        assert "Keep the result close to the source length" not in provider_input["input"]
+        baseline = _runtime().build_provider_input(
+            _operation_payload(
+                task="content_rewrite", request={"source_text": "原始选区内容。" * 200}
+            )
+        )
+        assert provider_input["max_tokens"] > baseline["max_tokens"]
+    else:
+        assert "Keep the result close to the source length" in provider_input["input"]
+
+
+@pytest.mark.parametrize("action", ["", "invent", None, [], 1])
+def test_rewrite_action_rejects_invalid_values(action: object) -> None:
+    with pytest.raises(WordPressOperationContractViolation, match="rewrite_action"):
+        validate_wordpress_operation_contract(
+            _operation_payload(task="content_rewrite", request={"rewrite_action": action})[
+                "operation_contract"
+            ]
+        )
+
+
+@pytest.mark.parametrize("explicit_budget", [1024, 100000])
+def test_expand_preserves_explicit_budget_with_existing_ceiling(explicit_budget: int) -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={
+                "source_text": "原始内容。" * 200,
+                "rewrite_action": "expand",
+                "max_tokens": explicit_budget,
+            },
+        )
+    )
+    assert provider_input["max_tokens"] == min(explicit_budget, 65536)
+    assert provider_input["max_output_tokens"] == provider_input["max_tokens"]
+
+
+def test_expand_default_budget_cannot_exceed_existing_ceiling() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={"source_text": "文" * 50000, "rewrite_action": "expand"},
+        )
+    )
+    assert provider_input["max_tokens"] == 65536
+
+
+def test_rewrite_action_cannot_change_other_tasks() -> None:
+    with pytest.raises(WordPressOperationContractViolation, match="rewrite_action"):
+        validate_wordpress_operation_contract(
+            _operation_payload(request={"rewrite_action": "expand"})["operation_contract"]
+        )
+
+
+def test_title_transport_contract_resolves_local_plain_text_instruction() -> None:
+    local_instruction = "Output only the title text. Do not wrap it in quotes."
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            request={
+                "system_instruction": local_instruction,
+                "task_contract": {
+                    "task_family": "generation",
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}},
+                    },
+                },
+            }
+        )
+    )
+    prompt = provider_input["input"]
+    assert local_instruction in prompt
+    assert prompt.index("Transport serialization takes precedence") > prompt.index(
+        local_instruction
+    )
+    assert "plain title text requirements apply to the value of `title`" in prompt
+    assert provider_input["response_format"]["type"] == "json_schema"
 
 
 def test_editorial_updates_provider_input_preserves_scope_and_source_length() -> None:

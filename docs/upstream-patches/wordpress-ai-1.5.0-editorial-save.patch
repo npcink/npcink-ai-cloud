@@ -1,0 +1,729 @@
+diff --git a/src/experiments/editorial-updates/components/EditorialUpdatesPlugin.tsx b/src/experiments/editorial-updates/components/EditorialUpdatesPlugin.tsx
+index ca8a710..98c4066 100644
+--- a/src/experiments/editorial-updates/components/EditorialUpdatesPlugin.tsx
++++ b/src/experiments/editorial-updates/components/EditorialUpdatesPlugin.tsx
+@@ -39,7 +39,7 @@ export default function EditorialUpdatesPlugin() {
+ 		: __( 'Apply Editorial Updates', 'ai' );
+ 
+ 	const buttonDescription = __(
+-		'Automatically applies pending editorial Notes to update your content.',
++		'Applies pending editorial Notes and saves the post. Save your current edits first.',
+ 		'ai'
+ 	);
+ 
+diff --git a/src/experiments/editorial-updates/hooks/useEditorialUpdates.ts b/src/experiments/editorial-updates/hooks/useEditorialUpdates.ts
+index f5e3ae0..8b34894 100644
+--- a/src/experiments/editorial-updates/hooks/useEditorialUpdates.ts
++++ b/src/experiments/editorial-updates/hooks/useEditorialUpdates.ts
+@@ -9,8 +9,9 @@ import apiFetch from '@wordpress/api-fetch';
+ import { dispatch, select, useSelect } from '@wordpress/data';
+ import { store as blockEditorStore } from '@wordpress/block-editor';
+ import { store as coreStore } from '@wordpress/core-data';
++import { store as editPostStore } from '@wordpress/edit-post';
+ import { store as editorStore } from '@wordpress/editor';
+-import { useState } from '@wordpress/element';
++import { useRef, useState } from '@wordpress/element';
+ import { __, _n, sprintf } from '@wordpress/i18n';
+ import { store as noticesStore } from '@wordpress/notices';
+ 
+@@ -33,6 +34,7 @@ import { runAbility } from '../../../utils/run-ability';
+ 
+ const BLOCK_PLACEHOLDER = '[[BLOCK_GOES_HERE]]';
+ const NOTICE_ID = 'wpai_editorial_updates_error';
++const SAVE_LOCK = 'wpai-editorial-updates';
+ 
+ interface BlockAttributes {
+ 	content?: string;
+@@ -217,6 +219,7 @@ export function useEditorialUpdates(): {
+ 	const [ isRefining, setIsRefining ] = useState< boolean >( false );
+ 	const [ progress, setProgress ] = useState< number >( 0 );
+ 	const [ total, setTotal ] = useState< number >( 0 );
++	const activeRun = useRef( false );
+ 
+ 	const postId = useSelect(
+ 		( sel ) => sel( editorStore ).getCurrentPostId() as number,
+@@ -270,17 +273,42 @@ export function useEditorialUpdates(): {
+ 	);
+ 
+ 	const runRefinement = async () => {
+-		if ( ! ensureProvider( NOTICE_ID ) ) {
++		if ( activeRun.current || ! ensureProvider( NOTICE_ID ) ) {
++			return;
++		}
++		const editor = select( editorStore );
++		if (
++			editor.isEditedPostDirty() ||
++			editor.isSavingPost() ||
++			editor.isPostSavingLocked() ||
++			! editor.isEditedPostSaveable()
++		) {
++			dispatch( noticesStore ).createErrorNotice(
++				__(
++					'Save your current edits and wait for saving to finish before applying Editorial Updates.',
++					'ai'
++				),
++				{ id: NOTICE_ID, isDismissible: true }
++			);
+ 			return;
+ 		}
+ 
++		activeRun.current = true;
+ 		setIsRefining( true );
+ 		setProgress( 0 );
+ 		setTotal( 0 );
+ 
+-		dispatch( noticesStore ).removeNotice( NOTICE_ID );
++		for ( const id of [
++			NOTICE_ID,
++			`${ NOTICE_ID }_blocks`,
++			`${ NOTICE_ID }_notes`,
++		] ) {
++			dispatch( noticesStore ).removeNotice( id );
++		}
+ 
+ 		try {
++			dispatch( editorStore ).lockPostSaving( SAVE_LOCK );
++			dispatch( editorStore ).lockPostAutosaving( SAVE_LOCK );
+ 			const content = select(
+ 				editorStore
+ 			).getEditedPostContent() as string;
+@@ -290,7 +318,11 @@ export function useEditorialUpdates(): {
+ 			const flatBlocks = flattenBlocks( allBlocks );
+ 
+ 			// Fetch pending Notes for this post.
+-			const pendingNotes = await fetchAllNotesByStatus( postId, 'hold' );
++			const pendingNotes = await fetchAllNotesByStatus(
++				postId,
++				'hold',
++				true
++			);
+ 
+ 			if ( pendingNotes.length === 0 ) {
+ 				dispatch( noticesStore ).createNotice(
+@@ -340,6 +372,11 @@ export function useEditorialUpdates(): {
+ 			let failedBlocksCount = 0;
+ 			let firstErrorMessage: string | null = null;
+ 			const notesToResolve: number[] = [];
++			const refinements: Array< {
++				clientId: string;
++				attribute: string;
++				content: string;
++			} > = [];
+ 
+ 			// Process in batches of 4 (similar to Editorial Notes)
+ 			const BATCH_SIZE = 4;
+@@ -404,6 +441,17 @@ export function useEditorialUpdates(): {
+ 								}
+ 							);
+ 
++							if (
++								typeof refinedContent !== 'string' ||
++								! refinedContent.trim()
++							) {
++								throw new Error(
++									__(
++										'No usable block content was returned. The original block is unchanged.',
++										'ai'
++									)
++								);
++							}
+ 							if (
+ 								refinedContent &&
+ 								refinedContent !== blockText
+@@ -421,10 +469,12 @@ export function useEditorialUpdates(): {
+ 									);
+ 								}
+ 
+-								dispatch(
+-									blockEditorStore
+-								).updateBlockAttributes( block.clientId, {
+-									[ attributeToUpdate ]: refinedContent,
++								// Stage results until the complete batch can be checked against
++								// the editor snapshot. A late result must not replace new edits.
++								refinements.push( {
++									clientId: block.clientId,
++									attribute: attributeToUpdate,
++									content: refinedContent,
+ 								} );
+ 
+ 								refinedBlocksCount++;
+@@ -455,19 +505,6 @@ export function useEditorialUpdates(): {
+ 				);
+ 			}
+ 
+-			// Resolve applied notes
+-			if ( notesToResolve.length > 0 ) {
+-				await Promise.all(
+-					notesToResolve.map( ( id ) =>
+-						resolveNote( id ).catch( () => null )
+-					)
+-				);
+-
+-				dispatch( coreStore ).invalidateResolutionForStoreSelector(
+-					'getEntityRecords'
+-				);
+-			}
+-
+ 			// If every block failed, surface an error notice.
+ 			if ( failedBlocksCount > 0 && refinedBlocksCount === 0 ) {
+ 				dispatch( noticesStore ).createErrorNotice(
+@@ -482,10 +519,65 @@ export function useEditorialUpdates(): {
+ 			}
+ 
+ 			if ( refinedBlocksCount > 0 ) {
+-				// Save the post so refinements are persisted and a revision is
+-				// created. This keeps the editor state clean — no "unsaved
+-				// changes" prompt when navigating to the revisions link.
++				const currentEditor = select( editorStore );
++				if (
++					currentEditor.getCurrentPostId() !== postId ||
++					currentEditor.getEditedPostContent() !== content ||
++					currentEditor.isEditedPostDirty() ||
++					currentEditor.isSavingPost()
++				) {
++					throw new Error(
++						__(
++							'The post changed while AI was working. No updates were applied or saved. Save your edits, then try again.',
++							'ai'
++						)
++					);
++				}
++				for ( const refinement of refinements ) {
++					dispatch( blockEditorStore ).updateBlockAttributes(
++						refinement.clientId,
++						{
++							[ refinement.attribute ]: refinement.content,
++						}
++					);
++				}
++				const expectedContent =
++					select( editorStore ).getEditedPostContent();
++				dispatch( editorStore ).unlockPostSaving( SAVE_LOCK );
++				// Native savePost resolves even on failure. Verify the saved record
++				// before retiring Notes; generated editor content stays recoverable.
+ 				await dispatch( editorStore ).savePost();
++				const savedEditor = select( editorStore );
++				if (
++					savedEditor.didPostSaveRequestFail() ||
++					savedEditor.isSavingPost() ||
++					savedEditor.getCurrentPostId() !== postId ||
++					savedEditor.getCurrentPostAttribute( 'content' ) !==
++						expectedContent
++				) {
++					throw new Error(
++						__(
++							'The post save could not be confirmed. Editor content is preserved and Notes remain pending. Check the Save status before trying again.',
++							'ai'
++						)
++					);
++				}
++
++				let unresolvedNotesCount = 0;
++				await Promise.all(
++					Array.from( new Set( notesToResolve ) ).map(
++						async ( id ) => {
++							try {
++								await resolveNote( id );
++							} catch {
++								unresolvedNotesCount++;
++							}
++						}
++					)
++				);
++				dispatch( coreStore ).invalidateResolutionForStoreSelector(
++					'getEntityRecords'
++				);
+ 				const { aiEditorialUpdatesData } = window as any;
+ 				const restBase = aiEditorialUpdatesData?.rest_base as
+ 					| string
+@@ -524,22 +616,73 @@ export function useEditorialUpdates(): {
+ 					  } )
+ 					: [];
+ 
+-				dispatch( noticesStore ).createSuccessNotice(
+-					sprintf(
+-						/* translators: %d: number of blocks refined. */
+-						_n(
+-							'%d block refined with AI.',
+-							'%d blocks refined with AI.',
++				const recoveryActions = [
++					{
++						label: __( 'Open Notes', 'ai' ),
++						onClick: () =>
++							(
++								dispatch( editPostStore ) as any
++							 ).openGeneralSidebar?.(
++								'edit-post/collab-sidebar'
++							),
++					},
++					...noticeActions,
++				];
++
++				if ( failedBlocksCount > 0 ) {
++					dispatch( noticesStore ).createWarningNotice(
++						sprintf(
++							/* translators: 1: saved blocks, 2: failed blocks, 3: first failure reason. */
++							__(
++								'Saved blocks: %1$d; failed blocks: %2$d. Failed Notes remain pending. Review them in the Notes sidebar before trying again. %3$s',
++								'ai'
++							),
+ 							refinedBlocksCount,
+-							'ai'
++							failedBlocksCount,
++							firstErrorMessage ?? ''
+ 						),
+-						refinedBlocksCount
+-					),
+-					{
+-						type: 'snackbar',
+-						actions: noticeActions,
+-					}
+-				);
++						{
++							id: `${ NOTICE_ID }_blocks`,
++							isDismissible: true,
++							actions: recoveryActions,
++						}
++					);
++				}
++				if ( unresolvedNotesCount > 0 ) {
++					dispatch( noticesStore ).createWarningNotice(
++						sprintf(
++							/* translators: %d: Notes that could not be resolved. */
++							__(
++								'The post was saved, but %d Notes could not be marked complete. Review the saved content and resolve those Notes in the Notes sidebar.',
++								'ai'
++							),
++							unresolvedNotesCount
++						),
++						{
++							id: `${ NOTICE_ID }_notes`,
++							isDismissible: true,
++							actions: recoveryActions,
++						}
++					);
++				}
++				if ( failedBlocksCount === 0 && unresolvedNotesCount === 0 ) {
++					dispatch( noticesStore ).createSuccessNotice(
++						sprintf(
++							/* translators: %d: number of blocks refined. */
++							_n(
++								'%d block refined with AI.',
++								'%d blocks refined with AI.',
++								refinedBlocksCount,
++								'ai'
++							),
++							refinedBlocksCount
++						),
++						{
++							type: 'snackbar',
++							actions: noticeActions,
++						}
++					);
++				}
+ 			} else {
+ 				dispatch( noticesStore ).createNotice(
+ 					'info',
+@@ -559,6 +702,9 @@ export function useEditorialUpdates(): {
+ 				}
+ 			);
+ 		} finally {
++			dispatch( editorStore ).unlockPostSaving( SAVE_LOCK );
++			dispatch( editorStore ).unlockPostAutosaving( SAVE_LOCK );
++			activeRun.current = false;
+ 			setIsRefining( false );
+ 		}
+ 	};
+diff --git a/src/utils/notes.ts b/src/utils/notes.ts
+index db251db..f10fc8f 100644
+--- a/src/utils/notes.ts
++++ b/src/utils/notes.ts
+@@ -6,6 +6,7 @@
+  * WordPress dependencies
+  */
+ import apiFetch from '@wordpress/api-fetch';
++import { __ } from '@wordpress/i18n';
+ 
+ /**
+  * Block types that can be reviewed and refined.
+@@ -41,13 +42,15 @@ export type NoteStatus = 'hold' | 'approve';
+ /**
+  * Fetches all Notes by status for a given post.
+  *
+- * @param postId The ID of the post to fetch Notes for.
+- * @param status The status of the Notes to fetch.
++ * @param postId          The ID of the post to fetch Notes for.
++ * @param status          The status of the Notes to fetch.
++ * @param requireComplete Whether an incomplete fetch must fail before applying updates.
+  * @return An array of Notes.
+  */
+ export async function fetchAllNotesByStatus(
+ 	postId: number,
+-	status: NoteStatus
++	status: NoteStatus,
++	requireComplete = false
+ ): Promise< ExistingNote[] > {
+ 	const notes: ExistingNote[] = [];
+ 	let page = 1;
+@@ -72,6 +75,14 @@ export async function fetchAllNotesByStatus(
+ 				`[AI Notes] Failed to fetch ${ status } Notes page ${ page }:`,
+ 				error
+ 			);
++			if ( requireComplete ) {
++				throw new Error(
++					__(
++						'The complete Notes list could not be loaded. Try again before applying updates.',
++						'ai'
++					)
++				);
++			}
+ 			return notes;
+ 		}
+ 	}
+diff --git a/tests/unit/editorial-updates.test.cjs b/tests/unit/editorial-updates.test.cjs
+new file mode 100644
+index 0000000..cdda602
+--- /dev/null
++++ b/tests/unit/editorial-updates.test.cjs
+@@ -0,0 +1,341 @@
++/** Regression tests of the actual hook with WordPress stores and transport doubles. */
++const { test } = require( 'node:test' );
++const assert = require( 'node:assert/strict' );
++const { readFileSync } = require( 'node:fs' );
++const { resolve, dirname } = require( 'node:path' );
++const vm = require( 'node:vm' );
++const ts = require( 'typescript' );
++
++function fixture( options = {} ) {
++	const count = options.count || 1;
++	const state = {
++		postId: 42,
++		dirty: !! options.dirty,
++		saveFailed: false,
++		blocks: Array.from( { length: count }, ( _, i ) => ( {
++			clientId: `block-${ i }`,
++			name: 'core/paragraph',
++			attributes: {
++				content: `Original ${ i }`,
++				metadata: { noteId: 101 + i },
++			},
++			innerBlocks: [],
++		} ) ),
++		calls: [],
++		notices: [],
++		noteStatuses: {},
++	};
++	const content = () => JSON.stringify( state.blocks );
++	state.savedContent = content();
++	const pending = state.blocks.map( ( block ) => ( {
++		id: block.attributes.metadata.noteId,
++		parent: 0,
++		content: { rendered: 'Fix the grammar.' },
++	} ) );
++	const editor = {
++		getCurrentPostId: () => state.postId,
++		getEditedPostContent: content,
++		getCurrentPostAttribute: () => state.savedContent,
++		isEditedPostDirty: () => state.dirty,
++		isSavingPost: () => !! options.saving,
++		isPostSavingLocked: () => false,
++		isEditedPostSaveable: () => true,
++		didPostSaveRequestFail: () => state.saveFailed,
++		getCurrentPostLastRevisionId: () => 77,
++		getEditorSettings: () => ( { disableVisualRevisions: true } ),
++	};
++	const editorDispatch = {
++		async savePost() {
++			state.calls.push( 'save' );
++			if ( options.unconfirmedSave ) {
++				return;
++			}
++			if ( options.saveFailure ) {
++				state.saveFailed = true;
++				return;
++			}
++			state.savedContent = content();
++			state.dirty = false;
++		},
++		lockPostSaving() {},
++		unlockPostSaving() {},
++		lockPostAutosaving() {},
++		unlockPostAutosaving() {},
++	};
++	const stores = {
++		editor,
++		blocks: {
++			getBlocks: () => state.blocks,
++			getBlock: ( id ) => state.blocks.find( ( b ) => b.clientId === id ),
++		},
++		core: { getEntityRecords: () => pending },
++	};
++	const actions = {
++		editor: editorDispatch,
++		blocks: {
++			updateBlockAttributes( id, attrs ) {
++				state.calls.push( `apply:${ id }` );
++				Object.assign(
++					state.blocks.find( ( b ) => b.clientId === id ).attributes,
++					attrs
++				);
++				state.dirty = true;
++			},
++		},
++		core: { invalidateResolutionForStoreSelector() {} },
++		notices: {
++			removeNotice() {},
++			...Object.fromEntries(
++				[
++					'createNotice',
++					'createErrorNotice',
++					'createWarningNotice',
++					'createSuccessNotice',
++				].map( ( kind ) => [
++					kind,
++					( ...args ) => state.notices.push( { kind, args } ),
++				] )
++			),
++		},
++	};
++	const mockData = {
++		select: ( store ) => stores[ store ],
++		dispatch: ( store ) => actions[ store ],
++		useSelect: ( callback ) => callback( ( store ) => stores[ store ] ),
++	};
++	const apiFetch = async ( request ) => {
++		if ( request.method === 'PUT' ) {
++			const id = Number( request.path.split( '/' ).pop() );
++			state.calls.push( `resolve:${ id }` );
++			if ( options.resolveFailure ) {
++				throw new Error( 'Note service unavailable' );
++			}
++			state.noteStatuses[ id ] = 'approved';
++			return { id, status: 'approved' };
++		}
++		if ( request.path.includes( '/revisions?' ) ) {
++			return [ { id: 77 } ];
++		}
++		if ( options.pageFailure ) {
++			if ( request.path.endsWith( 'page=1' ) ) {
++				return Array.from( { length: 100 }, ( _, i ) => ( {
++					...pending[ 0 ],
++					id: 101 + i,
++				} ) );
++			}
++			throw new Error( 'Notes page unavailable' );
++		}
++		return pending;
++	};
++	const mocks = {
++		'@wordpress/api-fetch': { default: apiFetch },
++		'@wordpress/data': mockData,
++		'@wordpress/block-editor': { store: 'blocks' },
++		'@wordpress/editor': { store: 'editor' },
++		'@wordpress/edit-post': { store: 'editPost' },
++		'@wordpress/core-data': { store: 'core' },
++		'@wordpress/notices': { store: 'notices' },
++		'@wordpress/blocks': {
++			serialize: ( blocks ) => JSON.stringify( blocks ),
++		},
++		'@wordpress/element': {
++			useState: ( value ) => [ value, () => {} ],
++			useRef: ( value ) => ( { current: value } ),
++		},
++		'@wordpress/i18n': {
++			__: ( text ) => text,
++			_n: ( one, many, n ) => ( n === 1 ? one : many ),
++			sprintf: ( text, ...values ) => {
++				let i = 0;
++				return text.replace( /%(?:(\d+)\$)?[ds]/g, ( _, index ) =>
++					String( values[ index ? Number( index ) - 1 : i++ ] )
++				);
++			},
++		},
++	};
++	const cache = new Map();
++	function load( path ) {
++		if ( cache.has( path ) ) {
++			return cache.get( path );
++		}
++		const result = { exports: {} };
++		cache.set( path, result.exports );
++		const source = ts.transpileModule( readFileSync( path, 'utf8' ), {
++			compilerOptions: {
++				module: ts.ModuleKind.CommonJS,
++				target: ts.ScriptTarget.ES2022,
++			},
++		} ).outputText;
++		const requireMock = ( id ) => {
++			if ( mocks[ id ] ) {
++				return { __esModule: true, ...mocks[ id ] };
++			}
++			if ( id.endsWith( '/provider-status' ) ) {
++				return { ensureProvider: () => true };
++			}
++			if ( id.endsWith( '/run-ability' ) ) {
++				return {
++					runAbility: async ( _, input ) => {
++						state.calls.push( `generate:${ input.block_content }` );
++						if ( options.onAbility ) {
++							return options.onAbility( input, state );
++						}
++						if (
++							options.partialFailure &&
++							input.block_content.endsWith( '1' )
++						) {
++							throw new Error( 'One block failed' );
++						}
++						return `Refined ${ input.block_content }`;
++					},
++				};
++			}
++			if ( id.startsWith( '.' ) ) {
++				return load( resolve( dirname( path ), `${ id }.ts` ) );
++			}
++			throw new Error( `Unexpected import ${ id }` );
++		};
++		vm.runInNewContext(
++			source,
++			{
++				exports: result.exports,
++				module: result,
++				require: requireMock,
++				window: {
++					aiEditorialUpdatesData: {
++						rest_base: 'posts',
++						admin_url: 'https://example.test/wp-admin/',
++					},
++				},
++				console: { warn() {} },
++				setTimeout,
++			},
++			{ filename: path }
++		);
++		return result.exports;
++	}
++	const hook = load(
++		resolve(
++			__dirname,
++			'../../src/experiments/editorial-updates/hooks/useEditorialUpdates.ts'
++		)
++	).useEditorialUpdates();
++	return { state, hook };
++}
++
++const successNotices = ( state ) =>
++	state.notices.filter( ( notice ) => notice.kind === 'createSuccessNotice' );
++
++test( 'save failure never resolves Notes or reports refinement success', async () => {
++	const { state, hook } = fixture( { saveFailure: true } );
++	await hook.runRefinement();
++	assert.equal(
++		state.calls.filter( ( call ) => call.startsWith( 'resolve:' ) ).length,
++		0
++	);
++	assert.equal( successNotices( state ).length, 0 );
++	assert.equal( state.dirty, true );
++	assert.match( String( state.notices.at( -1 ).args[ 0 ] ), /sav/i );
++} );
++test( 'native save resolves undefined: check persisted state before resolving Notes', async () => {
++	const { state, hook } = fixture();
++	await hook.runRefinement();
++	assert.ok(
++		state.calls.indexOf( 'save' ) < state.calls.indexOf( 'resolve:101' )
++	);
++	assert.equal( state.noteStatuses[ 101 ], 'approved' );
++	assert.equal( successNotices( state ).length, 1 );
++} );
++test( 'existing unsaved edits are preserved without generation or auto-save', async () => {
++	const { state, hook } = fixture( { dirty: true } );
++	await hook.runRefinement();
++	assert.deepEqual( state.calls, [] );
++	assert.equal( state.dirty, true );
++} );
++test( 'a save already in flight prevents a new batch', async () => {
++	const { state, hook } = fixture( { saving: true } );
++	await hook.runRefinement();
++	assert.deepEqual( state.calls, [] );
++} );
++test( 'typing during generation never gets overwritten or auto-saved', async () => {
++	const { state, hook } = fixture( {
++		onAbility: async ( input, current ) => {
++			current.blocks[ 0 ].attributes.content = 'New human draft';
++			current.dirty = true;
++			return 'Stale generated text';
++		},
++	} );
++	await hook.runRefinement();
++	assert.equal( state.blocks[ 0 ].attributes.content, 'New human draft' );
++	assert.ok( ! state.calls.includes( 'save' ) );
++	assert.deepEqual( state.noteStatuses, {} );
++} );
++test( 'partial failure saves only successful blocks and keeps a visible warning', async () => {
++	const { state, hook } = fixture( { count: 2, partialFailure: true } );
++	await hook.runRefinement();
++	assert.equal( state.noteStatuses[ 101 ], 'approved' );
++	assert.equal( state.noteStatuses[ 102 ], undefined );
++	assert.equal( state.blocks[ 1 ].attributes.content, 'Original 1' );
++	assert.equal( successNotices( state ).length, 0 );
++	assert.ok(
++		state.notices.some(
++			( notice ) =>
++				notice.kind === 'createWarningNotice' &&
++				/failed blocks: 1/.test( String( notice.args[ 0 ] ) )
++		)
++	);
++} );
++test( 'Note resolution failure is visible separately from a saved article', async () => {
++	const { state, hook } = fixture( { resolveFailure: true } );
++	await hook.runRefinement();
++	assert.equal( state.dirty, false );
++	assert.equal( successNotices( state ).length, 0 );
++	assert.ok(
++		state.notices.some(
++			( notice ) =>
++				notice.kind === 'createWarningNotice' &&
++				/Note/.test( String( notice.args[ 0 ] ) )
++		)
++	);
++} );
++test( 'rapid repeated clicks share one active batch', async () => {
++	let release;
++	const result = new Promise( ( done ) => {
++		release = done;
++	} );
++	const { state, hook } = fixture( { onAbility: () => result } );
++	const first = hook.runRefinement();
++	const second = hook.runRefinement();
++	await Promise.resolve();
++	release( 'Refined text' );
++	await Promise.all( [ first, second ] );
++	assert.equal(
++		state.calls.filter( ( call ) => call.startsWith( 'generate:' ) ).length,
++		1
++	);
++} );
++test( 'an incomplete Notes page aborts instead of applying a partial batch', async () => {
++	const { state, hook } = fixture( { pageFailure: true } );
++	await hook.runRefinement();
++	assert.deepEqual( state.calls, [] );
++	assert.ok(
++		state.notices.some( ( notice ) => notice.kind === 'createErrorNotice' )
++	);
++} );
++
++test( 'a resolved save with unchanged persisted content is not confirmation', async () => {
++	const { state, hook } = fixture( { unconfirmedSave: true } );
++	await hook.runRefinement();
++	assert.deepEqual( state.noteStatuses, {} );
++	assert.equal( successNotices( state ).length, 0 );
++	assert.equal( state.dirty, true );
++	assert.ok( state.notices.some( ( n ) => n.kind === 'createErrorNotice' ) );
++} );
++
++test( 'an empty model result never saves or completes Notes', async () => {
++	const { state, hook } = fixture( { onAbility: async () => '  ' } );
++	await hook.runRefinement();
++	assert.ok( ! state.calls.includes( 'save' ) );
++	assert.deepEqual( state.noteStatuses, {} );
++	assert.ok( state.notices.some( ( n ) => n.kind === 'createErrorNotice' ) );
++} );

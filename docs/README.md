@@ -70,6 +70,8 @@ product work or override the current Phase 1 expansion freeze.
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
 | 实现文章中文检查只读提示 | [语言检查 runtime v1](article-review-language-runtime-v1.md) — 后端候选；精确引文定位、pii/no_store、作者修改；Addon/Toolbox 接入待后续 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
+| 查编辑更新保存与 Notes 失败修复 | [第二批保存正确性](history/engineering/2026/wordpress-editorial-save-correctness-2026-11-17.md) — 上游本地补丁、重建/回滚与浏览器证据 |
+| 查编辑器功能清单、首批修复及待办 | [2026-11-17 功能审计](history/engineering/2026/wordpress-editor-feature-audit-2026-11-17.md) — AI 1.5 适配、测试和质量证据分开记录 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 逐项确认境内合规待办（生成式AI、标识、收款、数据） | [境内合规确认清单](compliance-confirmation-checklist-2026-09-23.md) — 工作底稿，非法律意见 |
