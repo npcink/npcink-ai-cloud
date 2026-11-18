@@ -323,3 +323,21 @@ an existing official translation. Recheck real PC geometry after deduplication;
 absence of overflow alone does not establish readable column widths. Retain
 rebuild/rollback receipts for each local upstream patch. See the
 [remaining-items record](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).
+
+
+## 14. Alternate-entry asynchronous results and error locality
+
+Verify every entry point independently: a passing title toolbar does not prove
+Rename modal behavior. Bind a pending result to post identity, title, excerpt,
+body and the original mounted form. Closing a form invalidates both late success
+and late failure; neither may change a reopened form or create unrelated notices.
+Keep duplicate-request protection independent from React's disabled rendering.
+
+Show failure and recovery actions inside the active modal, preserving the input.
+Avoid a simultaneous duplicate banner behind its backdrop. Preserve connector
+configuration links when moving provider failures into the form. Repeated-title
+recovery must name controls that exist in that entry point; use a structured
+internal error code rather than matching localized prose. Test delayed responses,
+changed context, closed/reopened forms, failures, duplicate candidates and explicit
+save boundaries. Browser evidence must include keyboard close/focus return and
+PC widths; source/utility coverage alone is insufficient.
