@@ -190,3 +190,24 @@ zero findings. The smaller test total versus the mixed precursor is expected:
 the separate capability UI tests are absent here. Exact logs are retained in
 `.runtime/security-release/`. The earlier M4 browser results remain candidate
 evidence, not clean-master or production acceptance.
+
+## CI closeout: Python security patch and runner mirror
+
+The first PR run found a pre-existing locked `opentelemetry-api` 1.45.1
+CVE-2026-126360 / GHSA-mf5v-w3w3-f6cg. The patch rejects oversized traceparent
+values before matching. Exposure requires a carrier preserving embedded
+newlines; this dependency finding is not evidence of exploitation here.
+The already available Dependabot #1435 lock diff is reused: API and SDK
+1.45.2, semantic-conventions 0.66b2; all other Python pins and lock revision
+are preserved.
+
+The frontend job passed lint, typing, unit tests and contracts, then failed
+before browser execution because the hosted runner's apt mirror list names
+us-east-2.ec2.archive.ubuntu.com. Reuse the bounded two-host allowlist fix and
+fixture coverage already prepared in #1438. This changes CI setup only and
+retains fail-closed rejection of arbitrary mirror hosts and security-source
+preservation. Neither referenced PR is merged by this task.
+
+The verification record is now indexed from docs/README.md; its initial
+reachability failure is fixed. These necessary CI/security repairs expand the
+initial frontend-only envelope without changing product runtime code.
