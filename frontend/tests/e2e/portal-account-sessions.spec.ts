@@ -97,7 +97,7 @@ for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark']) {
   test(`[F04-01 F04-02 F04-03] boundary Retry is single-flight and catches repeated 503 ${locale} ${theme}`, async ({ page, baseURL }, info) => {
     if (!baseURL) throw new Error('Bound isolated candidate required');
     const origin = new URL(baseURL).origin;
-    const state = { unexpected: [] as string[], errors: [] as string[], sessionReads: 0, challengeReads: 0, writes: [] as string[] };
+    const state = { unexpected: [] as string[], errors: [] as string[], sessionReads: 0, managementReads: 0, challengeReads: 0, writes: [] as string[] };
     installed.set(page, state);
     await page.setViewportSize({ width: 1440, height: 1050 });
     await page.context().addCookies([{ name: 'npcink_portal_session_token', value: 'boundary-fixture', url: origin }]);
@@ -119,6 +119,13 @@ for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark']) {
       if (url.origin === origin && request.method() === 'GET' && !url.pathname.startsWith('/api/')) return route.continue();
       if (url.origin === origin && request.method() === 'GET') {
         if (url.pathname === '/api/portal/session') {
+          // After recovery, TOTP settings independently inspect the management
+          // session with an explicit JSON Accept header. Keep that fail-closed
+          // read separate from the boundary's bootstrap/Retry single-flight.
+          if (request.headers()['accept'] === 'application/json') {
+            state.managementReads += 1;
+            return reply(route, {}, 503);
+          }
           state.sessionReads += 1;
           if (state.sessionReads === 2) await held;
           return state.sessionReads < 3 ? reply(route, {}, 503) : reply(route, {
@@ -143,8 +150,10 @@ for (const locale of ['zh-CN', 'en']) for (const theme of ['light', 'dark']) {
     await expect.poll(() => state.sessionReads).toBe(2); release();
     await expect.poll(() => state.challengeReads).toBe(2); await expect(retry).toBeVisible();
     await expect(page.getByRole('main').getByRole('alert')).toContainText('boundary-reference');
+    expect(state.managementReads).toBe(0);
     await capture(page, info, 'boundary-retry-503');
     await retry.click(); await expect(page.locator('[data-portal-account="sessions"]')).toBeVisible();
+    await expect.poll(() => state.managementReads).toBe(1);
     expect(state.sessionReads).toBe(3); expect(state.challengeReads).toBe(2); expect(state.writes).toEqual([]);
     expect(await page.evaluate(() => (window as unknown as { __portalUnhandled: string[] }).__portalUnhandled)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
