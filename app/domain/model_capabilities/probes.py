@@ -293,7 +293,20 @@ def probe_image_generation(
         trace_id=trace_id,
         input_payload={
             "prompt": "A simple solid blue square.",
-            "params": {"size": "256x256", "n": 1, "response_format": "b64_json"},
+            "params": (
+                {
+                    "size": "256x256",
+                    "n": 1,
+                    "response_format": "b64_json",
+                }
+                if endpoint_variant != "image_edits"
+                else {
+                    "n": 1,
+                    "image_bytes": _PROBE_IMAGE,
+                    "image_mime_type": "image/png",
+                    "image_filename": "capability-probe.png",
+                }
+            ),
         },
         policy={"capability_probe": True, "paid_probe_confirmation": True},
         timeout_ms=timeout_ms,

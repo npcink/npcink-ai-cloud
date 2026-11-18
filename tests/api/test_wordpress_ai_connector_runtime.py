@@ -44,6 +44,7 @@ from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.model_capabilities.probes import (
+    CapabilityProbeResult,
     audio_generation_probe_fingerprint,
     image_generation_probe_fingerprint,
     vision_probe_fingerprint,
@@ -4487,7 +4488,7 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
         "final_write_truth",
     ]
     assert data["boundary"]["direct_wordpress_write"] is False
-    assert len(data["profiles"]) == 6
+    assert len(data["profiles"]) == 7
     assert {profile["availability_state"] for profile in data["profiles"]} <= {"active", "paused"}
     audio_profile = next(
         profile for profile in data["profiles"] if profile["execution_kind"] == "audio_generation"
@@ -4557,6 +4558,15 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     assert image_generation["tasks"] == ["image_generation"]
     assert image_generation["candidate_instance_ids"] == ["openai-wp-ai-image-test"]
     assert image_generation["timeout_ms"] == 90000
+    image_editing = next(
+        profile
+        for profile in data["profiles"]
+        if profile["profile_id"] == "wp-ai.image-editing"
+    )
+    assert image_editing["execution_kind"] == "image_generation"
+    assert image_editing["routing_intent"] == "media.image_editing"
+    assert image_editing["tasks"] == ["image_editing"]
+    assert image_editing["candidate_instance_ids"] == []
     audio_generation = next(
         profile
         for profile in data["profiles"]
@@ -4855,6 +4865,101 @@ def test_capability_probe_records_metadata_only_audit_event(tmp_path: Path) -> N
             "error_code": "",
             "provider_payload_retained": False,
         }
+
+
+@pytest.mark.parametrize("error_code", ["provider.invalid_request", None])
+def test_failed_capability_probe_returns_valid_error_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_code: str | None,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+            CatalogCapabilityEvidence.capability == "image_generation",
+        ))
+        assert evidence is not None
+        evidence.checked_at = datetime.now(UTC) - timedelta(days=31)
+        session.commit()
+
+    calls = []
+
+    def failed_probe(**kwargs: Any) -> CapabilityProbeResult:
+        calls.append(kwargs)
+        return CapabilityProbeResult(state="verification_failed", error_code=error_code)
+
+    monkeypatch.setattr("app.api.routes.service.probe_image_generation", failed_probe)
+    response = client.post(
+        "/internal/service/admin/runtime-profiles/capability-probe",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="failed-probe-envelope")),
+        json={"capability": "image_generation", "instance_id": "openai-wp-ai-image-test"},
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["error_code"] == (error_code or "capability_probe.verification_failed")
+    assert body["data"]["state"] == "verification_failed"
+    assert body["data"]["error_code"] == error_code
+    assert len(calls) == 1
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        evidence = session.scalar(select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+            CatalogCapabilityEvidence.capability == "image_generation",
+        ))
+        assert evidence is not None
+        assert evidence.state == "verification_failed"
+        assert evidence.error_code == error_code
+
+
+@pytest.mark.parametrize(("profile_id", "endpoint_variant", "compatible"), [
+    ("wp-ai.image-editing", "image_generations", False),
+    ("wp-ai.image-editing", "image_edits", True),
+    ("wp-ai.image-generation", "image_edits", False),
+    ("wp-ai.image-generation", "image_generations", True),
+])
+def test_image_profile_projection_and_save_require_compatible_endpoint(
+    tmp_path: Path, profile_id: str, endpoint_variant: str, compatible: bool,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    instance_id = "openai-wp-ai-image-test"
+    with get_session(database_url) as session:
+        instance = session.get(CatalogInstance, instance_id)
+        assert instance is not None
+        instance.endpoint_variant = endpoint_variant
+        evidence = session.scalar(select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == instance_id,
+            CatalogCapabilityEvidence.capability == "image_generation",
+        ))
+        assert evidence is not None
+        evidence.route_fingerprint = image_generation_probe_fingerprint(
+            provider_connection_id="openai", model_id=instance.model_id,
+            endpoint_variant=endpoint_variant,
+        )
+        binding = session.get(RoutingBinding, profile_id)
+        assert binding is not None
+        binding.candidate_instance_ids = [instance_id]
+        session.commit()
+
+    projection = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers(),
+    ).json()["data"]
+    profile = next(item for item in projection["profiles"] if item["profile_id"] == profile_id)
+    assert profile["candidate_instance_ids"] == ([instance_id] if compatible else [])
+    payload = _runtime_profile_replacement_from_projection([profile])
+    payload[0]["candidate_instance_ids"] = [instance_id]
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="image-endpoint-save")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress", "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1", "profiles": payload,
+        },
+    )
+    assert response.status_code == (200 if compatible else 400), response.text
+    if not compatible:
+        assert "cannot use endpoint" in response.json()["message"]
+    assert provider.requests == []
 
 
 def test_capability_probe_refreshes_expired_evidence(tmp_path: Path) -> None:
@@ -5976,3 +6081,93 @@ def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypat
     assert not provider.requests
     with get_session(database_url) as session:
         assert session.get(RunRecord, data["run_id"]).error_code == "grounded_answer.no_evidence"
+
+
+def test_reference_image_edit_executes_signed_runtime_and_delivers_artifact(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
+    with get_session(database_url) as session:
+        instance = session.get(CatalogInstance, "openai-wp-ai-image-test")
+        assert instance is not None
+        instance.endpoint_variant = "image_edits"
+        evidence = session.scalar(select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == instance.instance_id,
+            CatalogCapabilityEvidence.capability == "image_generation",
+        ))
+        assert evidence is not None
+        evidence.route_fingerprint = image_generation_probe_fingerprint(
+            provider_connection_id="openai", model_id=instance.model_id,
+            endpoint_variant="image_edits",
+        )
+        binding = session.get(RoutingBinding, "wp-ai.image-editing")
+        assert binding is not None
+        binding.candidate_instance_ids = [instance.instance_id]
+        session.commit()
+
+    payload = _payload({"task": "image_editing", "request": {
+        "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+        "prompt": "Change the blue rectangle to green; preserve the white background.",
+    }})
+    # The validated task must select image execution even if the caller sends a
+    # stale text hint; the public endpoint is part of the regression surface.
+    response = _execute(client, payload, idempotency_key="wp-ai-reference-edit")
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "succeeded", data
+    assert data["profile_id"] == "wp-ai.image-editing"
+    assert data["result"]["contract_version"] == "cloud_connector_result.v1"
+    output = data["result"]["output"]
+    assert output["operation"] == "image.edit.v1"
+    assert output["suggestion_only"] is True
+    assert output["artifacts"][0]["operation"] == "image.edit.v1"
+    assert len(provider.requests) == 1
+    dispatched = provider.requests[0]
+    assert dispatched.execution_kind == "image_generation"
+    assert dispatched.endpoint_variant == "image_edits"
+    assert dispatched.input_payload["image_bytes"] == _generated_png_bytes()
+    assert dispatched.input_payload["prompt"] == (
+        payload["input"]["operation_contract"]["request"]["prompt"]
+    )
+    assert dispatched.policy["max_retries"] == 0
+    assert dispatched.policy["allow_fallback"] is False
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, data["run_id"])
+        assert run is not None
+        artifacts = session.scalars(
+            select(MediaArtifact).where(MediaArtifact.run_id == run.run_id)
+        ).all()
+        assert len(artifacts) == 1
+        assert artifacts[0].operation == "image.edit.v1"
+        assert artifacts[0].status == "available"
+        assert "image_bytes" not in json.dumps(run.result_json)
+        calls = session.scalars(
+            select(ProviderCallRecord).where(ProviderCallRecord.run_id == run.run_id)
+        ).all()
+        assert len(calls) == 1
+    artifact_id = output["artifacts"][0]["artifact_id"]
+    download_path = f"/v1/runtime/media/artifacts/{artifact_id}/download"
+    download = client.get(download_path, headers=build_auth_headers(
+        "GET", download_path, site_id="site_alpha", nonce="reference-edit-download",
+    ))
+    assert download.status_code == 200
+    assert hashlib.sha256(download.content).hexdigest() == output["artifacts"][0]["checksum"][7:]
+    ack_path = f"/v1/runtime/media/artifacts/{artifact_id}/delivery-ack"
+    ack_body = json.dumps({
+        "contract_version": "media_artifact_delivery_ack.v1",
+        "delivery_id": download.headers["x-npcink-delivery-id"],
+        "received_byte_size": len(download.content),
+        "received_checksum": output["artifacts"][0]["checksum"],
+    }).encode()
+    ack = client.post(ack_path, content=ack_body, headers=merge_json_headers(build_auth_headers(
+        "POST", ack_path, body=ack_body, site_id="site_alpha",
+        nonce="reference-edit-ack", idempotency_key="reference-edit-ack",
+    )))
+    assert ack.status_code == 200, ack.text
+    assert ack.json()["data"]["acknowledgement_scope"] == "verified_transfer_only"
+    replay = _execute(
+        client, payload, idempotency_key="wp-ai-reference-edit",
+        trace_id="tracewpaiimagerefineretry00000001",
+    )
+    assert replay.status_code == 200
+    assert replay.json()["data"]["run_id"] == data["run_id"]
+    assert len(provider.requests) == 1

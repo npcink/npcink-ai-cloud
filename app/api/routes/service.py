@@ -105,6 +105,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
     WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID,
+    wordpress_ai_profile_supports_endpoint,
 )
 from app.workers.ops_cadence import build_cadence_summary
 
@@ -1562,6 +1563,10 @@ def _build_hosted_runtime_profile_projection(
                     continue
                 instance = instances_by_id[instance_id]
                 model = models_by_id.get(instance.model_id)
+                if not wordpress_ai_profile_supports_endpoint(
+                    spec.profile_id, instance.endpoint_variant
+                ):
+                    continue
                 if not _hosted_runtime_instance_is_routing_eligible(instance, model):
                     continue
                 if not provider_model_allowlist.allows(
@@ -1739,6 +1744,12 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
+                if not wordpress_ai_profile_supports_endpoint(
+                    profile_id, instance.endpoint_variant
+                ):
+                    return [], (
+                        f"profile {profile_id} cannot use endpoint {instance.endpoint_variant}"
+                    )
                 feature_compatible = model_supports_execution_kind(
                     model.feature, spec.execution_kind
                 )
@@ -6411,6 +6422,10 @@ async def probe_admin_hosted_runtime_capability(
         status_code=status_code,
         content=build_envelope(
             status="ok" if probe_result.state == "verified" else "error",
+            error_code=(
+                "" if probe_result.state == "verified"
+                else probe_result.error_code or "capability_probe.verification_failed"
+            ),
             message=(
                 "Capability verification succeeded."
                 if probe_result.state == "verified"

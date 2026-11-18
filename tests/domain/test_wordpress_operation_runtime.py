@@ -808,6 +808,91 @@ def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() 
     assert "image-bytes" not in repr(source_artifact)
 
 
+def test_image_editing_provider_input_keeps_reference_pixels_transient() -> None:
+    runtime = _runtime()
+    source_artifact = LoadedArtifactInput(
+        artifact_id="art_0123456789abcdef0123456789abcdef",
+        content_type="image/png",
+        byte_size=11,
+        content_bytes=b"image-bytes",
+    )
+
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="image_editing",
+            request={
+                "source_artifact_id": source_artifact.artifact_id,
+                "prompt": "  Remove the background and keep the subject.  ",
+            },
+        ),
+        source_artifact=source_artifact,
+    )
+
+    assert provider_input["prompt"] == "Remove the background and keep the subject."
+    assert provider_input["image_bytes"] == b"image-bytes"
+    assert provider_input["image_mime_type"] == "image/png"
+    assert provider_input["image_filename"] == source_artifact.artifact_id + ".source"
+    assert provider_input["metadata"] == {
+        "source_surface": "wordpress_ai_connector",
+        "task": "image_editing",
+        "source_artifact_id": source_artifact.artifact_id,
+        "suggestion_only": True,
+    }
+    assert "image-bytes" not in repr(source_artifact)
+
+
+def test_image_editing_contract_normalizes_and_rejects_inline_media() -> None:
+    normalized = validate_wordpress_operation_contract(
+        {
+            "contract_version": "wordpress_operation.v1",
+            "task": "image_editing",
+            "request": {
+                "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+                "prompt": "  Make the sky warmer.  ",
+            },
+        }
+    )
+    assert normalized["request"] == {
+        "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+        "prompt": "Make the sky warmer.",
+    }
+
+    invalid_requests = [
+        {},
+        {"source_artifact_id": "art_0123456789abcdef0123456789abcdef"},
+        {
+            "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+            "prompt": "x" * 4001,
+        },
+        {
+            "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+            "prompt": "Edit this.",
+            "image_url": "https://example.test/private.png",
+        },
+        {
+            "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+            "prompt": "data:image/png;base64,aW1hZ2U=",
+        },
+    ]
+    expected_codes = [
+        "wordpress_operation.image_editing_source_artifact_id_invalid",
+        "wordpress_operation.image_editing_prompt_required",
+        "wordpress_operation.image_editing_prompt_too_large",
+        "wordpress_operation.image_editing_fields_forbidden",
+        "wordpress_operation.image_editing_inline_media_forbidden",
+    ]
+    for request, expected_code in zip(invalid_requests, expected_codes, strict=True):
+        with pytest.raises(WordPressOperationContractViolation) as error:
+            validate_wordpress_operation_contract(
+                {
+                    "contract_version": "wordpress_operation.v1",
+                    "task": "image_editing",
+                    "request": request,
+                }
+            )
+        assert error.value.error_code == expected_code
+
+
 def test_alt_text_contract_normalizes_values_without_materializing_omissions() -> None:
     normalized = validate_wordpress_operation_contract(
         {

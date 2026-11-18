@@ -31,6 +31,10 @@ from app.adapters.providers.compatibility import (
     normalize_openai_usage,
     normalize_provider_error_code,
 )
+from app.adapters.providers.image_capabilities import (
+    IMAGE_ENDPOINTS,
+    image_capability_declarations,
+)
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
@@ -76,6 +80,8 @@ ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS = frozenset(
         "context_window",
         "feature",
         "endpoint_variant",
+        "endpoint_variants",
+        "image_capabilities",
         "image_response_format",
         "price_input",
         "price_output",
@@ -151,8 +157,23 @@ def _normalize_model_metadata_overrides(
                     override[key] = feature
                 continue
             if key == "endpoint_variant":
-                if raw_value == "ollama_chat":
+                if raw_value in ("ollama_chat", "image_generations", "image_edits"):
                     override[key] = raw_value
+                continue
+            if key == "endpoint_variants":
+                if (
+                    isinstance(raw_value, list)
+                    and 1 <= len(raw_value) <= 2
+                    and all(item in ("image_generations", "image_edits") for item in raw_value)
+                ):
+                    override[key] = list(dict.fromkeys(raw_value))
+                continue
+            if key == "image_capabilities":
+                if (
+                    isinstance(raw_value, dict) and set(raw_value) == set(IMAGE_ENDPOINTS)
+                    and all(isinstance(enabled, bool) for enabled in raw_value.values())
+                ):
+                    override[key] = dict(raw_value)
                 continue
             if key == "image_response_format":
                 response_format = str(raw_value or "").strip().lower()
@@ -171,6 +192,7 @@ def _normalize_model_metadata_overrides(
         ):
             override.pop("feature", None)
             override.pop("endpoint_variant", None)
+            override.pop("endpoint_variants", None)
             override.pop("image_response_format", None)
         if override:
             normalized[model_id] = override
@@ -508,6 +530,23 @@ class OpenAIProviderAdapter:
         )
 
     def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        capability = next((
+            name for name, endpoint in IMAGE_ENDPOINTS.items()
+            if endpoint == request.endpoint_variant
+        ), None)
+        if capability:
+            upstream_id = self._resolve_runtime_model_id(request.model_id)
+            override = self.model_metadata_overrides.get(
+                upstream_id, self.model_metadata_overrides.get(request.model_id, {}),
+            )
+            choices = override.get("image_capabilities")
+            if isinstance(choices, dict) and choices.get(capability) is False:
+                # A stale catalog/binding must not dispatch an operation the
+                # operator just disabled, even if its next refresh fails.
+                raise ProviderExecutionError(
+                    "provider.invalid_request", "image capability disabled by operator",
+                    retryable=False,
+                )
         self._maybe_raise_simulated_error(request)
         if not self._http_enabled:
             if not self.allow_sample_execution:
@@ -550,7 +589,16 @@ class OpenAIProviderAdapter:
 
         try:
             with self._build_client(request.timeout_ms, request.endpoint_variant) as client:
-                response = self._post_with_compatibility_retry(client, endpoint_path, payload)
+                # Probes and multipart image edits use one upstream attempt.
+                # The chat compatibility rewrites do not apply to image edits.
+                response = (
+                    self._post_provider_request(client, endpoint_path, payload)
+                    if (
+                        request.policy.get("capability_probe")
+                        or request.endpoint_variant == "image_edits"
+                    )
+                    else self._post_with_compatibility_retry(client, endpoint_path, payload)
+                )
                 response.raise_for_status()
         except httpx.TimeoutException as error:
             raise ProviderExecutionError(
@@ -567,7 +615,7 @@ class OpenAIProviderAdapter:
             )
             error_message = (
                 IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
-                if result_request.endpoint_variant == "image_generations"
+                if result_request.endpoint_variant in {"image_generations", "image_edits"}
                 else (
                     VISION_PROVIDER_ERROR_MESSAGE
                     if result_request.execution_kind == "vision"
@@ -701,14 +749,25 @@ class OpenAIProviderAdapter:
         endpoint_path: str,
         payload: dict[str, Any],
     ) -> httpx.Response:
-        if endpoint_path != "/images/generations":
+        if endpoint_path not in {"/images/generations", "/images/edits"}:
             return client.post(endpoint_path, json=payload)
+
+        request_options: dict[str, Any] = {"json": payload}
+        if endpoint_path == "/images/edits":
+            files = payload.get("_multipart_files")
+            if not isinstance(files, list) or not files:
+                raise ProviderExecutionError(
+                    "provider.input_contract_invalid",
+                    "image edit request requires one source image",
+                )
+            form = {key: value for key, value in payload.items() if key != "_multipart_files"}
+            request_options = {"data": form, "files": files}
 
         with client.stream(
             "POST",
             endpoint_path,
-            json=payload,
             headers={"Accept-Encoding": "identity"},
+            **request_options,
         ) as streamed_response:
             content_length = streamed_response.headers.get("content-length")
             if content_length is not None:
@@ -789,9 +848,16 @@ class OpenAIProviderAdapter:
         base_url = self.base_url
         if endpoint_variant in {"ollama_chat", "ollama_embeddings"} and base_url.endswith("/v1"):
             base_url = base_url[:-3]
+        headers = self._build_http_headers()
+        if endpoint_variant == "image_edits":
+            # Let httpx encode the matching multipart boundary, including when
+            # the connection carries a JSON Content-Type override.
+            headers = {
+                key: value for key, value in headers.items() if key.lower() != "content-type"
+            }
         return httpx.Client(
             base_url=base_url,
-            headers=self._build_http_headers(),
+            headers=headers,
             timeout=timeout_seconds,
             transport=self.transport,
         )
@@ -824,8 +890,38 @@ class OpenAIProviderAdapter:
                 embedding_payload["encoding_format"] = options["encoding_format"]
             return "/embeddings", embedding_payload
 
-        if request.endpoint_variant == "image_generations":
+        if request.endpoint_variant == "image_edits":
+            image_bytes = options.get("image_bytes")
+            image_mime_type = options.get("image_mime_type")
+            if not isinstance(image_bytes, bytes) or not image_bytes:
+                raise ProviderExecutionError(
+                    "provider.input_contract_invalid",
+                    "image edit source bytes are required",
+                )
+            if not isinstance(image_mime_type, str) or not image_mime_type.strip():
+                raise ProviderExecutionError(
+                    "provider.input_contract_invalid",
+                    "image edit source mime type is required",
+                )
             image_payload: dict[str, Any] = {
+                "model": runtime_model_id,
+                "prompt": self._resolve_image_generation_prompt(options),
+                "_multipart_files": [
+                    (
+                        "image",
+                        (
+                            str(options.get("image_filename") or "source-image"),
+                            image_bytes,
+                            image_mime_type.strip(),
+                        ),
+                    )
+                ],
+            }
+            self._apply_image_edit_request_options(image_payload, options)
+            return "/images/edits", image_payload
+
+        if request.endpoint_variant == "image_generations":
+            image_payload = {
                 "model": runtime_model_id,
                 "prompt": self._resolve_image_generation_prompt(options),
             }
@@ -1001,7 +1097,7 @@ class OpenAIProviderAdapter:
                 cost_estimate_mode=cost_estimate.mode,
             )
 
-        if request.endpoint_variant == "image_generations":
+        if request.endpoint_variant in {"image_generations", "image_edits"}:
             usage = response_json.get("usage", {})
             normalized_usage = normalize_openai_usage(
                 usage,
@@ -1036,6 +1132,8 @@ class OpenAIProviderAdapter:
                 "candidate_count": len(media_candidates),
                 "usage": self._sanitize_image_generation_usage(usage),
             }
+            if request.endpoint_variant == "image_edits":
+                output["operation"] = "image.edit.v1"
             return ProviderExecutionResult(
                 output=output,
                 latency_ms=latency_ms,
@@ -1464,6 +1562,9 @@ class OpenAIProviderAdapter:
             "resolution",
             "quality",
             "size",
+            "image_bytes",
+            "image_mime_type",
+            "image_filename",
         ):
             if key in payload and key not in options:
                 options[key] = payload[key]
@@ -1598,6 +1699,18 @@ class OpenAIProviderAdapter:
             for key, value in options["extra"].items():
                 if isinstance(key, str) and key not in payload and key != "response_format":
                     payload[key] = value
+
+    @staticmethod
+    def _apply_image_edit_request_options(
+        payload: dict[str, Any],
+        options: dict[str, Any],
+    ) -> None:
+        if isinstance(options.get("n"), int):
+            payload["n"] = max(1, min(MAX_PROVIDER_IMAGE_COUNT, int(options["n"])))
+        for key in ("size", "quality", "user"):
+            value = options.get(key)
+            if isinstance(value, str) and value.strip():
+                payload[key] = value.strip()
 
     @staticmethod
     def _normalize_request_metadata(value: object) -> dict[str, str]:
@@ -1780,6 +1893,11 @@ class OpenAIProviderAdapter:
         }
 
         feature = self._infer_catalog_feature(model_id, effective_payload)
+        image_declarations = image_capability_declarations(
+            payload, metadata_override, image_feature=feature == "image_generation",
+        )
+        if any(item["supported"] for item in image_declarations.values()):
+            feature = "image_generation"
         tier = self._infer_catalog_tier(model_id, feature, effective_payload)
         region = self._infer_catalog_region(effective_payload)
         status = self._infer_catalog_status(effective_payload)
@@ -1793,6 +1911,12 @@ class OpenAIProviderAdapter:
             "endpoint_variant"
         ) == "ollama_chat":
             endpoint_variant = "ollama_chat"
+        endpoint_variants = [endpoint_variant]
+        if feature == "image_generation":
+            endpoint_variants = [
+                variant for capability, variant in IMAGE_ENDPOINTS.items()
+                if image_declarations[capability]["supported"]
+            ]
         runtime_pricing = self._runtime_cache_pricing(effective_payload)
         override_evidence = {
             key: metadata_override[key]
@@ -1845,6 +1969,7 @@ class OpenAIProviderAdapter:
                 "tier": tier,
                 "owned_by": payload.get("owned_by"),
                 "upstream_model_id": model_id,
+                "image_capability_declarations": image_declarations,
                 **({"runtime_pricing": runtime_pricing} if runtime_pricing else {}),
                 **(
                     {"operator_metadata_override": override_evidence}
@@ -1858,8 +1983,14 @@ class OpenAIProviderAdapter:
                         f"{self._slugify(self.provider_id)}-"
                         f"{self._slugify(region)}-"
                         f"{self._slugify(catalog_model_id)}"
+                        + (
+                            f"-{self._slugify(variant)}"
+                            if variant == "image_edits"
+                            and metadata_override.get("endpoint_variant") != "image_edits"
+                            else ""
+                        )
                     ),
-                    endpoint_variant=endpoint_variant,
+                    endpoint_variant=variant,
                     region=region,
                     capability_tags=self._build_catalog_capability_tags(
                         model_id,
@@ -1870,8 +2001,28 @@ class OpenAIProviderAdapter:
                     is_default=True,
                     weight=self._catalog_weight_for_tier(tier),
                 )
+                for variant in endpoint_variants
             ],
         )
+
+    def build_configured_catalog_candidate(self, model_id: str) -> CatalogModelSeed | None:
+        """Reuse declarations for enabled models missing from a partial list."""
+        upstream_id = self._resolve_runtime_model_id(model_id)
+        seed = self._build_catalog_model_seed({"id": upstream_id})
+        if seed is None:
+            return None
+        seed.raw_json = {
+            **(seed.raw_json or {}),
+            "catalog_source": "configured_selection",
+            "upstream_status": "missing_from_latest_catalog",
+        }
+        for instance in seed.instances:
+            instance.health_status = "unknown"
+            instance.is_default = False
+            instance.capability_tags = [
+                *instance.capability_tags, "configured_candidate", "upstream_missing",
+            ]
+        return seed
 
     def _runtime_cache_pricing(self, payload: dict[str, Any]) -> dict[str, float]:
         cache_read = self._coerce_float(
@@ -2135,10 +2286,21 @@ class OpenAIProviderAdapter:
             ("capability_tags",),
             ("metadata", "capability_tags"),
         )
+        feature_override = self.model_metadata_overrides.get(
+            model_id,
+            self.model_metadata_overrides.get(self._namespace_catalog_model_id(model_id), {}),
+        ).get("feature")
         if isinstance(explicit_tags, list):
             for tag in explicit_tags:
-                if isinstance(tag, str) and tag and tag not in tags:
-                    tags.append(tag)
+                if not isinstance(tag, str) or not tag or tag in tags:
+                    continue
+                if (
+                    feature_override
+                    and tag in {"text", "vision", "embedding", "image_generation"}
+                    and tag != feature
+                ):
+                    continue
+                tags.append(tag)
 
         model_key = str(model_id or "").strip().lower()
         commercial_tier = self._lookup_nested(

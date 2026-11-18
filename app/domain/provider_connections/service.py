@@ -24,6 +24,8 @@ from app.adapters.providers.base import (
 )
 from app.adapters.providers.openai import (
     ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
+    MAX_MODEL_METADATA_OVERRIDES,
+    OpenAIProviderAdapter,
     normalize_provider_image_output_hosts,
     normalize_provider_output_hosts,
 )
@@ -973,7 +975,7 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
-        snapshot = _merge_configured_catalog_candidates(row, snapshot)
+        snapshot = _merge_configured_catalog_candidates(row, snapshot, adapter=adapter)
         models = list(snapshot.models or [])
         catalog_sync = self._store_model_provider_catalog(row, snapshot)
         if catalog_sync.get("status") != "synced":
@@ -1235,6 +1237,23 @@ class ProviderConnectionAdminService:
         # This boolean is deliberately absent from the credential-redacted public
         # config. Editing/previewing a saved local connection must retain it.
         raw_config = _dict(payload.get("config"))
+        overrides = _dict(raw_config.get("model_metadata_overrides"))
+        for model_id, override in overrides.items():
+            if not isinstance(override, dict) or "image_capabilities" not in override:
+                continue
+            choices = override["image_capabilities"]
+            if (
+                len(overrides) > MAX_MODEL_METADATA_OVERRIDES
+                or not isinstance(model_id, str) or not model_id.strip() or len(model_id) > 191
+                or not isinstance(choices, dict)
+                or set(choices) != {"image_generation", "image_editing"}
+                or any(not isinstance(enabled, bool) for enabled in choices.values())
+            ):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_capabilities_invalid",
+                    "image capabilities require bounded model ids and two boolean flags "
+                    "(maximum 100 model overrides)",
+                )
         explicit_secretless = payload.get("secretless")
         secretless = (
             bool(raw_config.get("secretless"))
@@ -1585,6 +1604,8 @@ def _configured_model_namespace(config: dict[str, Any], provider_id: str) -> str
 def _merge_configured_catalog_candidates(
     row: ProviderConnection,
     snapshot: ProviderCatalogSnapshot,
+    *,
+    adapter: object = None,
 ) -> ProviderCatalogSnapshot:
     """Keep enabled models visible when an upstream catalog response is partial."""
 
@@ -1633,6 +1654,11 @@ def _merge_configured_catalog_candidates(
             ),
             {},
         )
+        if isinstance(adapter, OpenAIProviderAdapter):
+            candidate = adapter.build_configured_catalog_candidate(selected_model_id)
+            if candidate is not None and candidate.feature == "image_generation":
+                configured_candidates.append(candidate)
+                continue
         feature = _configured_candidate_feature(selected_model_id, preview_model)
         configured_candidates.append(
             CatalogModelSeed(
@@ -1880,6 +1906,9 @@ def _catalog_preview_model(model: Any) -> dict[str, Any]:
             _dict(getattr(model, "raw_json", {})).get("upstream_model_id") or ""
         ),
         "capability_tags": capability_tags,
+        "image_capability_declarations": _dict(
+            _dict(getattr(model, "raw_json", {})).get("image_capability_declarations")
+        ),
     }
 
 
