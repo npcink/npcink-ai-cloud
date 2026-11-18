@@ -444,7 +444,11 @@ class WordPressOperationRuntime:
                 "envelope. Return only one JSON object with the single string field `title`; "
                 "put no quotes, Markdown, explanations, or alternatives inside that value."
             )
-        if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
+        # Translation language belongs to the local Ability, including legacy
+        # callers that carry it only in their system instruction.
+        if task not in {"slug_generation", "content_translation"} and self._is_predominantly_cjk(
+            scene_text
+        ):
             fragments.append(
                 "The scene is predominantly Simplified Chinese. Write every human-readable "
                 "part of the result in Simplified Chinese, including suggestions and "

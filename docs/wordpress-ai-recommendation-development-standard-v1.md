@@ -254,3 +254,11 @@ For a local upstream patch, retain the exact release base, source/test diff,
 asset hashes, original assets and rebuild/rollback procedure. Upstream upgrades
 may overwrite it; never label a local patch an official release. See the
 [editorial save batch](history/engineering/2026/wordpress-editorial-save-correctness-2026-11-17.md).
+
+
+For translation, source-language inheritance must not override the local Ability's
+explicit target language, including legacy callers that supply it only in their
+system instruction. Test the complete composed input using predominantly Chinese
+source with English, another non-Chinese language and Traditional Chinese targets.
+A target-language metadata assertion alone cannot detect contradictory trailing
+instructions. Keep the existing source-language behavior for non-translation tasks.

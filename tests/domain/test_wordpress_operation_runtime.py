@@ -46,6 +46,7 @@ def _operation_payload(
             "title_generation",
             "content_summary",
             "content_rewrite",
+            "content_translation",
             "editorial_updates",
             "excerpt_generation",
             "meta_description",
@@ -244,6 +245,49 @@ def test_content_translation_provider_input_protects_gutenberg_structure() -> No
     assert "copy every block delimiter" in provider_input["input"]
     assert "same number and order of blocks" in provider_input["input"]
     assert provider_input["temperature"] == 0.0
+
+
+@pytest.mark.parametrize("target_language", ["en-us", "de-de", "ja", "zh-tw", "zh-cn"])
+def test_translation_target_language_is_not_overridden_by_chinese_source(
+    target_language: str,
+) -> None:
+    source = '<p>这是一段需要翻译的中文，保留链接和数字 2026。</p>'
+    local_instruction = f"Translate into {target_language}. Keep the HTML structure."
+    payload = _operation_payload(
+        task="content_translation",
+        request={
+            "source_text": source,
+            "target_language": target_language,
+            "system_instruction": local_instruction,
+        },
+    )
+    payload["operation_contract"] = validate_wordpress_operation_contract(
+        payload["operation_contract"]
+    )
+    provider_input = _runtime().build_provider_input(payload)
+    assert f"WordPress target language: {target_language}." in provider_input["input"]
+    assert "Write every human-readable part of the result in Simplified Chinese" not in (
+        provider_input["input"]
+    )
+    assert local_instruction in provider_input["input"]
+    assert provider_input["text"] == source
+    assert provider_input["metadata"]["target_language"] == target_language
+
+
+def test_translation_legacy_target_in_local_instruction_is_preserved() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_translation",
+            request={
+                "source_text": "这段中文要翻译成英文。",
+                "system_instruction": "Translate to English.",
+            },
+        )
+    )
+    assert "Translate to English." in provider_input["input"]
+    assert "Write every human-readable part of the result in Simplified Chinese" not in (
+        provider_input["input"]
+    )
 
 
 def test_editorial_notes_provider_input_requires_suggestion_for_objective_issue() -> None:
