@@ -1353,6 +1353,49 @@ def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
     assert normalized == {}
 
 
+@pytest.mark.parametrize(
+    ("output_text", "accepted"),
+    [
+        ("Review AI suggestions before saving", False),
+        ('"Review AI suggestions before saving"', False),
+        ('{"title":"Review AI suggestions before saving"}', True),
+    ],
+)
+def test_title_output_decision_uses_composed_ability_metadata(
+    output_text: str, accepted: bool
+) -> None:
+    runtime = _runtime()
+    payload = _operation_payload(
+        request={
+            "source_text": "Authors review AI suggestions before saving changes to the site.",
+            "task_contract": {
+                "contract_version": "ai_task_contract.v1",
+                "ability_name": "ai/title-generation",
+                "task": "title_generation",
+                "task_family": "generation",
+                "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"title": {"type": "string"}},
+                },
+                "write_posture": "suggestion_only",
+            },
+        },
+    )
+    provider_input = runtime.build_provider_input(payload)
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output={"output_text": output_text}
+    )
+
+    assert decision.accepted is accepted
+    if accepted:
+        assert decision.output["output_text"] == "Review AI suggestions before saving"
+    else:
+        assert decision.output == {}
+        assert decision.error_code == "provider.output_quality_rejected"
+        assert str(decision.usage_context["output_quality_reason"]).startswith("title_schema_")
+
+
 def test_title_generation_rejects_an_existing_scene_heading() -> None:
     runtime = _runtime()
     source = "# OneBlog - Typecho文字博客主题\n\n这是文章正文。"
@@ -1705,6 +1748,73 @@ def test_translation_quality_gate_rejects_length_inflation() -> None:
         )
         == "translation_length_inflation"
     )
+
+
+@pytest.mark.parametrize("target_language", ["en-us", "de-de"])
+def test_translation_allows_alphabetic_expansion_of_chinese(
+    target_language: str,
+) -> None:
+    source = "作者审阅建议后点击插入，这只修改草稿。保存文章是另一项操作，必须确认保存成功。" * 6
+    translated = {
+        "en-us": (
+            "The author reviews the suggestion and clicks Insert, which changes only the draft. "
+            "Saving the post is a separate action, and its success must be confirmed. "
+        ),
+        "de-de": (
+            "Der Autor prüft den Vorschlag und klickt auf Einfügen. Dadurch wird nur der Entwurf "
+            "geändert. Das Speichern des Beitrags ist ein eigener Schritt "
+            "und muss bestätigt werden. "
+        ),
+    }[target_language] * 6
+    assert len(source) >= 200
+    assert len(translated) > len(source) * 2.2
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": source,
+            "metadata": {"task": "content_translation", "target_language": target_language},
+        },
+        provider_output={"output_text": translated},
+    )
+    assert decision.accepted
+    assert decision.output["output_text"].strip() == translated.strip()
+
+
+@pytest.mark.parametrize("target_language", ["ja", "ja-JP", "ko", "ko_KR", "zh", ""])
+def test_translation_cjk_is_valid_for_cjk_or_unspecified_target(target_language: str) -> None:
+    # The unspecified legacy target may be supplied only in the local instruction.
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": "Save after reviewing the draft.",
+            "metadata": {"task": "content_translation", "target_language": target_language},
+        },
+        provider_output={"output_text": "草稿を確認してから保存してください。"},
+    )
+    assert decision.accepted
+
+
+def test_translation_does_not_reject_shared_kanji_as_untranslated_chinese() -> None:
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": "文章内容需要审阅，保存前确认当前标题和摘要。" * 6,
+            "metadata": {"task": "content_translation", "target_language": "ja"},
+        },
+        provider_output={
+            "output_text": (
+                "記事内容の確認が必要です。"
+                "保存前に現在の題名と要約を確認してください。"
+            ) * 6
+        },
+    )
+    assert decision.accepted
+
+
+def test_translation_rejects_cjk_expansion_after_script_normalization() -> None:
+    runtime = _runtime()
+    source = "保存前に記事内容を確認してください。" * 15
+    output = "保存前に記事内容と関係のない情報を大量に追加して確認してください。" * 40
+    assert runtime._translation_quality_reason(
+        source_text=source, output_text=output, target_language="ja"
+    ) == "translation_length_inflation"
 
 
 def test_translation_normalization_preserves_markup_and_links() -> None:

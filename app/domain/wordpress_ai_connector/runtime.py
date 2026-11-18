@@ -1578,7 +1578,8 @@ class WordPressOperationRuntime:
             return "translation_structure_drift"
 
         normalized_target = target_language.strip().lower().replace("_", "-")
-        if normalized_target not in {"zh-cn", "zh-tw", "zh-hans", "zh-hant"}:
+        target_base = normalized_target.split("-", 1)[0]
+        if target_base and target_base not in {"zh", "ja", "ko"}:
             source_cjk = cls._translation_visible_cjk_count(source_text)
             output_cjk = cls._translation_visible_cjk_count(output_text)
             if source_cjk == 0 and output_cjk >= 1:
@@ -1589,9 +1590,20 @@ class WordPressOperationRuntime:
             if source_cjk >= 80 and output_cjk >= max(20, int(source_cjk * 0.20)):
                 return "translation_untranslated_source"
 
-        if len(source_text) >= 200 and len(output_text) > int(len(source_text) * 2.2):
+        # CJK glyphs and alphabetic characters have different information density.
+        # Compare visible units (one CJK glyph or four other characters), rather
+        # than rejecting faithful Chinese-to-English translations for being longer.
+        if len(source_text) >= 200 and cls._translation_length_units(
+            output_text
+        ) > cls._translation_length_units(source_text) * 2.2:
             return "translation_length_inflation"
         return ""
+
+    @staticmethod
+    def _translation_length_units(value: str) -> int:
+        visible = re.sub(r"(?is)<[^>]+>|https?://[^\s\"'<>]+|```.*?```", " ", value)
+        cjk = len(re.findall(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", visible))
+        return cjk + math.ceil((len(visible) - cjk) / 4)
 
     @staticmethod
     def _contains_translation_refusal(output_text: str) -> bool:

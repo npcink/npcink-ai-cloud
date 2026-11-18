@@ -63,9 +63,14 @@ The [current batch](history/engineering/2026/wordpress-translation-and-feature-f
 adds draft-aware title regeneration in a local AI 1.5 patch, six translation
 language regressions, seven WordPress summary/translation/slug/classification/Notes
 cases, and four intercepted image/comment cases. Title review was browser-tested;
-comment analysis legitimately writes analysis metadata. Four free local-model
-natural samples are exploratory: summary omissions and title serialization remain
-quality limits, not a blanket acceptance of the mapped rows above. Full hosted
+comment analysis legitimately writes analysis metadata. The initial four free
+local-model samples omitted composed metadata during output evaluation and the
+native response format during direct HTTP execution; that acceptance claim is
+withdrawn. Full-chain replay correctly rejects the JSON-string title. A later
+single title uses the real Provider adapter/schema and passes; this is still one
+sample, not representative quality. Translation script/length false rejections
+have nine before-failing cases and 185 passing domain tests after correction;
+API tests pass 254. Summary omissions remain a quality limit. Full hosted
 execution, representative semantic accuracy and human adoption remain separate.
 
 The three unmapped abilities above remain unsupported: container labels need

@@ -15,7 +15,7 @@ Status: source candidate / draft PR；本地安装可查看，未合并、未发
 | 前两批提交 | Cloud `35749a01`、Addon `760b109`、本地 AI patch `a3a9771`；原有历史提交保留，非生产 |
 | 翻译语言冲突 | 确认 Cloud 对中文输入追加简体中文要求；翻译现在始终尊重本地 Ability 的目标语言，包含只在旧 system instruction 中传目标的调用 |
 | 总结/翻译/别名/分类/Notes | 真实 WordPress 1.5 Ability + fake HTTP 7 例，原始 source/额外背景/目标/策略/数量传输与结构化消费通过 |
-| 中文提示 | 完整 AI 1.5 审计基线仍有 180 缺口；固定 UI、组件默认域、动态 metadata 和暂停功能必须逐项区分，不全局覆盖默认域或翻译模型提示词 |
+| 中文提示 | 基线 180 缺口后按批次补齐；本轮另修复审计误分类，固定 UI/错误提示严格审计通过。动态 metadata、模型提示词与暂停边界保留，详见本轮复核 |
 | 标题、语义质量、图片/评论 | 标题草稿/历史/反馈已修复并验证；4 个免费模型自然样例和 4 项图片/评论确定性检查另列，保留质量限制 |
 | 未适配三项 | 容器标签、修订摘要、输入补全继续未适配；当前核心优先，不恢复暂停功能 |
 
@@ -124,10 +124,13 @@ hash，仅恢复这些文件，不回滚文章或覆盖其他插件资产。升�
 免费 M4 Ollama `qwen3.5:4b-q4_K_M`，各生成一次标题、摘要、英文翻译、缩短正文。
 未新增模型、未花费 Provider 费用、未写文章；不是经过认证的完整 hosted runtime、
 Site Knowledge 检索或生产模型验收。四次均自然 stop，耗时分别 11、6.22、13.33、
-8.02 秒；`prepare_provider_output` 接受不代表所有最终 schema/消费端都已验收。
+8.02 秒。**原先四项输出均被守卫接受的结论撤回**：旧验证脚本漏传组合后的 task metadata，
+直接 HTTP 脚本也漏传真实 Provider adapter 的 schema format；不能用它判断产品守卫。
 
 标题语义基本符合审阅/保存主题，但原始模型返回带引号的字符串而未遵守单字段
-JSON 指令，完整标题结果序列化仍需单独端到端样例。摘要遗漏部分失败与 Notes
+JSON 指令。完整 validator → input builder → output decision 回放会正确拒绝它
+（`title_schema_missing_title`），原产品 schema 守卫无需放宽。后续真实 adapter
+样例另列，不能与旧脚本混写为完整端到端验收。摘要遗漏部分失败与 Notes
 完成条件，将连接检查缩窄为“网络状态”，不能记为全面质量通过。英文翻译保留
 原文流程与限制；缩写保留人工审阅、插入/保存和任务限制。每类只有一个样例，
 没有代表性准确率或自然采用证据，不据此批量调提示词或宣称全部模型有效。
@@ -157,9 +160,8 @@ finally 删除。1 像素合成图片与合成模型输出只能证明传输/消
 ## 最终候选状态与独立阻塞
 
 Addon `5517876` 的 GitHub required/compatibility checks 全部通过；稳定上游阻塞
-lane 是 AI 1.4.0，本地 AI 1.5 另有以上证据。严格 AI 1.5 全量翻译审计仍为红：
-161 处（145 fixed UI、2 Ability error、14 default-domain），不把高频提示完成写成
-全量翻译完成。动态 metadata、模型提示词和默认域不能盲目全局替换。
+lane 是 AI 1.4.0，本地 AI 1.5 另有以上证据。该 SHA 的严格翻译审计仍有
+161 处缺口；这是历史检查点，本轮处置与新的误分类发现见下文，不能沿用为当前数量。
 
 Cloud `911be444` 已完成依赖变更后的 M4 candidate rebuild，tracing/health/connector
 188 项通过；此前 `bde779bf` connector domain/API 426 项通过。`1b0dc171` 仅收窄
@@ -168,7 +170,7 @@ optional usage_context 的错误状态读取，mypy 和 20 项 Provider 回归�
 属于各自精确 SHA。最终 M4 identity 和跨仓报告保存在本机证据，不将旧 SHA 写成
 当前 candidate 或 accepted。
 
-Cloud `1b0dc171` CI 的 frontend、backend-static、依赖审计、全部四个后端分片、
+Cloud `d0a79d76` CI 的 frontend、backend-static、依赖审计、全部四个后端分片、
 CodeQL 等通过。Python 3.14 Alpine image smoke 及其 backend 汇总门禁被
 CVE-2026-119170 阻塞：官方说明仅 Python 3.14.10 + OpenSSL FIPS 模式受影响，
 修复版本为 3.14.11；本轮查询的官方 `3.14.11-alpine3.24` tag 尚不存在。
@@ -179,3 +181,73 @@ CVE-2026-119170 阻塞：官方说明仅 Python 3.14.10 + OpenSSL FIPS 模式受
 截图、模型输入/输出、测试日志、安装 hash 与原资产；不包含认证 cookie、密钥或
 真实 SSH 目标。PR 均为 draft，未合并、未成为 M4 accepted、未发布生产；人工
 自然采用与代表性质量验证仍待进行。
+
+
+## 本轮复核：完整校验链与翻译误拦
+
+完整输入链新增三例标题回归：裸文本和 JSON 字符串拒绝，`{"title":"…"}`
+接受并抽取，不能因测试脚本缺 metadata 而放宽 schema。免费自然样例仅追加一次：
+通过真实 `OpenAIProviderAdapter.execute` 生成 Ollama 原生 `format`，以 mock HTTP
+transport 转发到现有免费 M4 loopback；返回单字段 JSON，完整守卫接受标题
+“AI 建议需先审阅再保存，自动与正式保存不同”，自然 stop，11.88 秒。
+未修改 M4 runtime/模型/配置；仍不属于认证 hosted runtime、检索或人工采用证据。
+
+完整回放也暴露真实翻译误拦：中文到英文/德文的字符数自然增长触发 2.2 倍阈值，
+而日文/韩文及泛 zh 被当作非中文，汉字被误判成混杂/未翻译。现在用可见文本单位
+比较增长（一个 Han/Kana/Hangul 字形或四个其他字符），去除 markup、URL 与 fenced
+code；仍保留 2.2 倍启发式和原先 200 字符触发条件。只有明确的非 zh/ja/ko 目标
+使用原 CJK 污染启发式；旧 system-only 目标不再被假定为非 CJK。拒绝回答、结构、
+完整性和硬预算守卫不变。语言启发式不是语义翻译准确性或全语言覆盖的保证。
+
+替换为旧函数的只读回归插件证明 **9 例修复前失败**；修复后 domain **185**、
+API **254** 通过（两套各自报告），Ruff、mypy 通过。另有日文过度扩写负例仍拒绝。
+旧四个自然样例完整回放：原标题正确拒绝，英文翻译在长度修复后接受，摘要与缩写
+接受；摘要先前语义遗漏仍存在，不把接受状态当作人工质量结论。
+
+## 本轮复核：固定中文提示与审计漏检
+
+先补齐 145 个固定 UI/错误 key；两个候选按精确源文件复核为注册 metadata
+（WebMCP 名称、语音 Ability 描述），不归 Addon 翻译。四个现有 AI 页面内的
+DataViews 默认域例外从 16 扩为 17 key，新增的 Filter 仅允许 `verb` context；
+设置/请求日志之外，两处为现有 MCP Access、Abilities Explorer 的确切 bundle。
+仍按 key、call form、context、domain、screen 限定，已有官方翻译优先。
+
+随后审查全部剩余分组，发现审计将 113 个真正 `WP_Error` 消息误归为 metadata、
+schema 或长提示词。旧正则只识别带 Please 的少数失败文案，严格门禁零缺口是假阴性。
+修复审计：PHP token 扫描只提取 `new WP_Error` 第二参数里的 ai-domain 文案，
+优先归为错误提示；注释、错误码、第三参数与邻近 schema 不因此加入。另复核四个
+现有 admin/revision bundle 中的 9 个固定提示。新增这 **122** 个翻译后，共补齐
+**267** 个 key；不翻译动态 Ability schema 或模型提示词，不启用新/暂停功能。
+
+最终安装版 AI 1.5.0 审计：1,326 个源 key，1,070 个 shim 条目，固定 UI、错误提示、
+未覆盖默认域均为 0；剩余 300 项为 72 metadata/开发文案、211 schema/JSON、17 长
+提示词，27 个 stale 留待核查。门禁是有界源码审计，不等于所有英文已翻译。
+浏览器仍见组件/字面量 PAGE、OF、Plugin、ACTIONS、Text；能力浏览器原有描述重复、
+列过宽也未在本批改版。未逐个触发全部错误态，不将字典覆盖写成逐态浏览器验收。
+
+本地四页（AI 设置、请求日志、能力浏览器、MCP 访问）PC 1440/1280 核查，包含
+真实 locale payload、默认域/错误 context/外来 domain 边界、显示选项及取消日志删除。
+未调用模型或 Ability、未安装/启用/保存功能；文章 279790 与功能设置指纹不变，
+临时认证及 MU helper 清理。只打开选项而不改动其值；外部 Gravatar 阻断单独记账。
+信息层级：常显的状态、动作与不确定性原位保留；按需入口沿用已有选项和帮助；
+技术证据放本记录；未移动或删除重复文案。Cloud Admin 路由未改，落实台账不适用。
+
+Addon PHP/边界、PHPStan、38 JS、WordPress.org、POT 与严格翻译检查通过。
+本批未改 bootstrap/默认状态/兼容下限，Playground 不重复作为本批专属证据。
+本地翻译通过源 symlink 立即生效；Cloud 运行时修改仍为 source candidate，M4 被另一
+候选占用，未覆盖、未成为 accepted；最新 CI 以精确提交另记，不继承历史全绿。
+本轮脚本、日志、回放和截图另存 `editor-localization-20261118/`，含 SHA-256 manifest。
+本轮工作区 whitespace 检查通过；整分支 `git diff --check origin/master...HEAD`
+会把两份已提交 unified patch 的上下文前缀（空格后接 tab/空白上下文行）报为
+whitespace，故该原始整分支命令并非绿色。两份 patch 的顺序 apply/rebuild 证据
+另存前批；不为消除文本载体的告警改坏 patch，也不将本轮局部检查冒充整分支通过。
+
+### 经验与后续边界
+
+- 测试链必须包含组合后的 metadata 和真实 adapter 的 schema format；夹具错误与
+  产品缺陷分别归因，撤回失真的验收记录，禁止为通过测试放宽产品约束。
+- 严格审计还要审查被排除分组；用源码调用位置识别错误消息，不能只凭词长或
+  “The/JSON”等前缀把用户错误提示归到 schema。新增负例防止 metadata 越界。
+- 不用全局提高输出限制解决跨文字密度误判；保留过度扩写、结构与硬预算负例。
+- 未映射三项、代表性语义质量/自然采用、上游本地补丁维护及镜像扫描阻塞仍独立
+  跟踪；本批不通过恢复暂停功能或覆盖他人 M4 来制造完成状态。

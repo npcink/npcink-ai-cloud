@@ -278,9 +278,24 @@ Compare post identity, title, excerpt and body snapshots before adoption, and
 keep the candidate/feedback recoverable with the failure visible inside the active
 review modal. Inserting a title changes the draft; saving remains explicit.
 
-Validate the final assembled prompt as well as the consumer. A low-level output
-guard accepting text does not establish final schema compliance, semantic quality
-or actual author adoption. Record natural sample inputs, raw output, stopping
+Validate the final assembled prompt as well as the consumer. Quality fixtures
+must use the full validator → `build_provider_input` → `prepare_provider_output`
+chain, including composed task metadata. Calling the guard with only source text
+can silently skip the Ability schema. Exercise the real Provider adapter's
+`response_format` serialization too; a handwritten HTTP request without the
+equivalent native format is not adapter evidence. Keep bare/string title results
+as negative cases and the schema object as a positive case; never weaken the
+product schema to accommodate an incomplete fixture.
+
+Translation length checks must account for script density instead of comparing
+raw Chinese and alphabetic character counts. Test both faithful cross-script
+expansion and excessive growth. Han characters are valid in Japanese and Korean;
+an unspecified legacy target is not evidence of a non-CJK target. These heuristics
+detect limited output defects, not semantic language accuracy. Retain refusal,
+structure, completeness and hard-budget guards.
+
+A guard accepting text does not establish semantic quality or actual author
+adoption. Record natural sample inputs, raw output, stopping
 reason, model identity and omissions; one sample per task is exploratory evidence.
 Never tune every prompt or enable an unmapped Ability based on a small sample.
 For comments and media, distinguish transport from semantic accuracy and record
