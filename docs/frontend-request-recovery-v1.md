@@ -29,6 +29,21 @@ Status: active correctness contract. No new auth authority or automatic retry.
 - Display localized, bounded error codes and support references. Never show
   credentials or arbitrary backend error bodies in recovery UI or receipts.
 
+## Capability-probe diagnosis and delivery checks
+
+- Correlate the request time/model, proxy duration and persisted capability
+  evidence before assigning a Provider failure. A proxy can stop waiting while
+  backend work continues. A persisted upstream failure remains a separate finding.
+- If a save succeeded but its readback failed during a preview restart, retain
+  the old snapshot and confirm with a bounded read. Do not repeat the write or
+  chargeable probe automatically to refresh UI state.
+- After shared M4 candidates change, verify the exact revision, deployed source
+  and loaded Nginx configuration before reusing a timeout-fix receipt. Healthy
+  endpoints alone cannot prove that the repaired path is deployed.
+- Keep local verification, historical candidate deployment, merge and current
+  acceptance separate. The [2026-11-18 audit](history/engineering/2026/capability-probe-timeout-closeout-audit-2026-11-18.md)
+  records the motivating incident and outstanding delivery work.
+
 ## 2026-10-27 finding and scope
 
 The reported Admin symptom was a login button remaining in submission. Source

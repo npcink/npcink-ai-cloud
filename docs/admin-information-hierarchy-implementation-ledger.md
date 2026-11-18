@@ -2767,3 +2767,15 @@ PC 证据为新增 spec 生成的 `probe-unconfirmed-1440.png` 与
 修复候选保留在 `codex/capability-probe-timeout`；当前 M4 仍承载另一未合并候选，
 本条不声明该修复已部署 M4、已合并、通过 CI 或生产验收。依赖构建曾触发既有
 Next.js 安全升级提醒，重试完成构建；依赖升级不在本次错误修复范围。
+
+
+### 2026-11-18 后继核对与证据更正
+
+上一段“未部署 M4”描述的是初始本地验证后的保留状态。用户随后授权同步，
+2026-11-17 12:38:32（Asia/Shanghai）已将干净提交 `a351540e842b` 部署为
+M4 candidate，健康与精确路径 130 秒配置已核实。2026-11-18 当前候选已替换为
+`70a127c4dc54`（`codex/support-ticket-prefill`），实查其 BFF 仍为 12 秒，
+运行 Nginx 也缺少本修复路径；因此不能将历史部署回执当成当前修复证据。
+实现仍仅本地，尚无本修复 PR、CI、merge、M4 accepted、生产或人工验收证明。
+完整历史对账、独立上游失败与保留条件见
+[2026-11-18 接续及开发复盘](history/engineering/2026/capability-probe-timeout-closeout-audit-2026-11-18.md)。
