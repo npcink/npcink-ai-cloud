@@ -4222,13 +4222,13 @@ def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
     assert "Return only the summary" in provider_input["input"]
-    assert provider_input["max_tokens"] == 160
+    assert provider_input["max_tokens"] == 512
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
     result_text = response.json()["data"]["result"]["output"]["output_text"]
     assert "**" not in result_text
     assert "###" not in result_text
     assert not result_text.endswith("2.")
-    assert len(result_text) <= 220
+    assert len(result_text) <= 2000
 
 
 def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
@@ -6000,3 +6000,40 @@ def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypat
     assert not provider.requests
     with get_session(database_url) as session:
         assert session.get(RunRecord, data["run_id"]).error_code == "grounded_answer.no_evidence"
+
+
+@pytest.mark.parametrize(
+    ("text", "finish_reason", "error_code"),
+    [
+        ("A completed first sentence. The essential limitation is", "length",
+         "provider.output_incomplete"),
+        ("A" * 2001, "stop", "provider.output_too_large"),
+    ],
+)
+def test_summary_failure_returns_no_partial_success_or_automatic_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    text: str, finish_reason: str, error_code: str,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        provider.requests.append(request)
+        return ProviderExecutionResult(
+            output={"output_text": text}, latency_ms=1, tokens_in=10,
+            tokens_out=160, cost=0, finish_reason=finish_reason,
+        )
+
+    monkeypatch.setattr(provider, "execute", execute)
+    response = _execute(
+        client,
+        _payload({"task": "content_summary", "request": {
+            "source_text": "Connection checks do not prove every task can run.",
+        }}),
+        idempotency_key="summary-completion-rejection",
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["result"] == {}
+    assert data["error_code"] == error_code
+    assert len(provider.requests) == 1

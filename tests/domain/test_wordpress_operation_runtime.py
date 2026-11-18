@@ -98,7 +98,7 @@ def _operation_payload(
         (
             "content_summary",
             "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
-            160,
+            512,
         ),
         (
             "content_rewrite",
@@ -2316,3 +2316,86 @@ def test_transformation_explicit_output_budget_remains_authoritative() -> None:
         )
     )
     assert provider_input["max_tokens"] == 800
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_summary_keeps_complete_multi_paragraph_output_beyond_old_clip(language: str) -> None:
+    first = (
+        "Authors review generated suggestions before inserting them into the draft. "
+        "Only an explicit save persists those edits; autosave and final save are distinct."
+        if language == "en"
+        else (
+            "作者需要先审阅生成建议，再将其插入草稿。只有明确保存才会把修改写入站点，"
+            "自动保存和正式保存是不同操作。"
+        ) * 4
+    )
+    last = (
+        "Connection checks validate the connection only. Individual tasks still depend on "
+        "the current ability, model support and input size. Open the linked settings or "
+        "diagnostics when a task fails instead of repeatedly checking the connection."
+        if language == "en"
+        else (
+            "连接检查只验证连接层面，具体任务仍取决于当前能力、模型支持和输入长度。"
+            "任务失败时应打开错误提示的设置或排障入口。"
+        )
+    )
+    summary = first + "\n\n" + last
+    assert len(summary) > 220
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": summary},
+    ))
+    assert provider_input["max_tokens"] == 512
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output={"output_text": summary},
+        finish_reason="stop",
+    )
+    assert decision.accepted
+    assert decision.output["output_text"] == summary
+
+
+@pytest.mark.parametrize("finish_reason,status", [
+    ("length", None), ("max_tokens", None), ("stop", "incomplete"),
+    ("stop", "cancelled"), ("stop", "failed"),
+])
+def test_summary_rejects_incomplete_output_before_trimming(
+    finish_reason: str, status: str | None,
+) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(_operation_payload(
+        task="content_summary",
+        request={"source_text": "Connection checks do not prove task support."},
+    ))
+    output = {"output_text": "The first point is complete. The important limitation is"}
+    if status:
+        output["response_status"] = status
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output=output, finish_reason=finish_reason,
+    )
+    assert not decision.accepted
+    assert decision.error_code == "provider.output_incomplete"
+    assert decision.output == {}
+
+
+def test_summary_rejects_oversized_output_without_silently_clipping() -> None:
+    runtime = _runtime()
+    payload = runtime.build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": "The article covers draft safety."},
+    ))
+    for output in (
+        {"output_text": "A" * 2001},
+        {"choices": [{"message": {"content": "A" * 2001}}]},
+    ):
+        decision = runtime.prepare_provider_output(
+            input_payload=payload, provider_output=output, finish_reason="stop",
+        )
+        assert not decision.accepted
+        assert decision.error_code == "provider.output_too_large"
+        assert decision.output == {}
+
+
+def test_summary_respects_explicit_caller_budget() -> None:
+    provider_input = _runtime().build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": "Only summarize this.", "max_tokens": 300},
+    ))
+    assert provider_input["max_tokens"] == 300

@@ -48,8 +48,10 @@ from app.domain.wordpress_ai_connector.grounded_context import (
     requires_evidence,
 )
 from app.domain.wordpress_ai_connector.output_policy import (
+    MAX_SUMMARY_OUTPUT_CHARS,
     MAX_TRANSFORMATION_OUTPUT_CHARS,
     MAX_TRANSFORMATION_OUTPUT_TOKENS,
+    SUMMARY_OUTPUT_TOKENS,
     TRANSFORMATION_TASKS,
     completion_failure,
     transformation_token_budget,
@@ -551,7 +553,7 @@ class WordPressOperationRuntime:
             "comment_reply_suggest": 180,
             "content_classification": 220,
             "content_rewrite": 512,
-            "content_summary": 160,
+            "content_summary": SUMMARY_OUTPUT_TOKENS,
             "editorial_updates": 256,
             "excerpt_generation": 140,
             "meta_description": 80,
@@ -830,7 +832,7 @@ class WordPressOperationRuntime:
         if failure:
             return ProviderOutputDecision(
                 accepted=False, output={}, error_code=failure,
-                error_message="WordPress transformation output is incomplete or exceeds its limit",
+                error_message="WordPress output is incomplete or exceeds its limit",
                 usage_context={"output_quality_reason": failure.removeprefix("provider.")},
             )
         normalization_input = {**input_payload}
@@ -974,7 +976,7 @@ class WordPressOperationRuntime:
                     "content_rewrite": MAX_TRANSFORMATION_OUTPUT_CHARS,
                     "title_generation": 80,
                     "excerpt_generation": 180,
-                    "content_summary": 220,
+                    "content_summary": MAX_SUMMARY_OUTPUT_CHARS,
                 }[task],
                 strip_explanation=task in {"title_generation", "content_rewrite"},
                 source_text=str(input_payload.get("text") or ""),
@@ -1984,7 +1986,15 @@ class WordPressOperationRuntime:
             )
         )
         if not text:
-            text = self._strip_markdown(raw_text)
+            text = (
+                "\n\n".join(
+                    self._strip_markdown(paragraph)
+                    for paragraph in re.split(r"\n\s*\n", raw_text)
+                    if paragraph.strip()
+                )
+                if task == "content_summary"
+                else self._strip_markdown(raw_text)
+            )
         if strip_explanation:
             text = re.split(
                 r"\s+(?:说明|解释|理由|Explanation|Reasoning)\s*[:：]|"

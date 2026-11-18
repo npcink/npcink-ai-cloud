@@ -301,3 +301,25 @@ Never tune every prompt or enable an unmapped Ability based on a small sample.
 For comments and media, distinguish transport from semantic accuracy and record
 legitimate analysis metadata writes separately from content/approval mutations.
 See the [followthrough evidence](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).
+
+
+## 13. Summary completion and native admin recovery
+
+A summary is short editorial output, not a search snippet. Its runtime default
+is 512 output tokens with a 2000-character safety ceiling; explicit caller token
+budgets remain authoritative. Preserve complete paragraphs below that ceiling.
+Reject reported incomplete/failed/cancelled output and abnormal finish reasons
+before normalization; reject oversized output instead of clipping it into a
+successful-looking summary. Do not alter local Ability prompts or grant Cloud
+write ownership to repair budgets. Tests must replay the real adapter output,
+check final composed metadata and verify that the final source limitation is
+still present. Single-model samples remain bounded evidence, not quality scores.
+
+Native admin fixes belong in native AI: deduplicate persisted field lists by
+first occurrence while preserving hidden and unavailable extension preferences.
+Keep unknown enum codes and explicit custom labels intact. A scoped component
+translation fallback must match its actual domain/context and stand down for
+an existing official translation. Recheck real PC geometry after deduplication;
+absence of overflow alone does not establish readable column widths. Retain
+rebuild/rollback receipts for each local upstream patch. See the
+[remaining-items record](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).
