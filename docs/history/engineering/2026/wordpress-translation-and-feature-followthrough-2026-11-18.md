@@ -49,3 +49,30 @@ builder：source 单次保留、system instruction、目标语言、分类策略
 - CI、M4、安装包及人工效果各自记录；生产发布需要单独的精确授权。
 - 规范补充：输出语言继承只适用于保留源语言的任务；翻译以明确目标为准，
   回归必须检查最终组合指令，不能只检查 target_language 字段存在。
+
+## 2026-11-18 本轮交付检查点
+
+- Cloud draft PR [#1438](https://github.com/npcink/npcink-ai-cloud/pull/1438)，
+  Addon draft PR [#361](https://github.com/npcink/npcink-cloud-addon/pull/361)；
+  均未请求自动合并。WordPress AI 补丁只保存在本地，不向上游发布。
+- Cloud `bde779bf` 已同步 M4 candidate；connector domain/API **426 通过**。
+  本地 297 项和 M4 426 项有重叠，不相加宣称独立覆盖。非 master accepted/生产证据。
+- Addon `760b109` 初轮 CI 14 项通过，包含 PHP 8.0/8.2/8.4、PHPStan、包检查和
+  WordPress AI 兼容检查；该兼容门禁稳定主线为 AI 1.4，不代替本地 AI 1.5。
+- Addon 后续 `0a477ec` 补齐 19 个固定编辑器 UI key（完整审计 180→161），
+  PHP、PHPStan、38 JS 检查通过。真实 PC 1440/1280 验证 locale 注册、标题审阅
+  弹窗和翻译进度；其余新增错误态与修订摘要未逐个浏览器触发。无草稿持久化，
+  用户原文未改动，临时草稿、MU helper 与会话已清理。最新提交 CI 另记。
+
+### CI 失败与修复
+
+Cloud 初轮 frontend 在浏览器依赖安装前失败：Ubuntu archive selector 只支持 Azure
+镜像，新 runner-images 支持 `us-east-2.ec2.archive.ubuntu.com`，因此 fail-closed。
+核对 actions/runner-images 当前 `configure-apt-sources.sh` 后，仅添加该确切镜像，
+保持未知来源拒绝、security stanza 和其他源不变；**31 项软件源回归通过**。
+没有放宽为任意域名或跳过浏览器安装。
+
+Python 审计报告锁定 `opentelemetry-api 1.45.1` 的 CVE-2026-126360；仅将 API/SDK
+升级到 1.45.2、配套 semantic-conventions 升至 0.66b2。其余锁定包保持不变；
+使用 CI 同版本 uv 0.12.10 确认锁文件有效，default/zilliz 两组审计通过。
+此记录是锁文件审计结果，不等同于生产可利用性结论或已部署修复。
