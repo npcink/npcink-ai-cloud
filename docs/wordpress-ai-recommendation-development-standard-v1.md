@@ -262,3 +262,27 @@ system instruction. Test the complete composed input using predominantly Chinese
 source with English, another non-Chinese language and Traditional Chinese targets.
 A target-language metadata assertion alone cannot detect contradictory trailing
 instructions. Keep the existing source-language behavior for non-translation tasks.
+
+
+## 12. Draft-aware regeneration and bounded quality evidence
+
+The WordPress owner may pass optional current title/excerpt, up to five prior
+candidates and bounded author feedback. An explicitly empty draft overrides saved
+metadata. The connector must preserve that distinction instead of reintroducing
+an old title downstream. Keep permission identity anchored to the same post;
+legacy callers without draft fields retain their existing behavior.
+
+Retain candidate history only for the local interaction. Block rapid duplicate
+requests; reject normalized exact repeats without an automatic Provider retry.
+Compare post identity, title, excerpt and body snapshots before adoption, and
+keep the candidate/feedback recoverable with the failure visible inside the active
+review modal. Inserting a title changes the draft; saving remains explicit.
+
+Validate the final assembled prompt as well as the consumer. A low-level output
+guard accepting text does not establish final schema compliance, semantic quality
+or actual author adoption. Record natural sample inputs, raw output, stopping
+reason, model identity and omissions; one sample per task is exploratory evidence.
+Never tune every prompt or enable an unmapped Ability based on a small sample.
+For comments and media, distinguish transport from semantic accuracy and record
+legitimate analysis metadata writes separately from content/approval mutations.
+See the [followthrough evidence](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).

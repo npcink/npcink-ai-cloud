@@ -57,6 +57,22 @@ within the existing 65,536-token ceiling. Explicit positive caller budgets and
 model/context/output completeness checks remain authoritative. This optional
 field does not transfer local prompt or final-write ownership to Cloud.
 
+## Followthrough — 2026-11-18
+
+The [current batch](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md)
+adds draft-aware title regeneration in a local AI 1.5 patch, six translation
+language regressions, seven WordPress summary/translation/slug/classification/Notes
+cases, and four intercepted image/comment cases. Title review was browser-tested;
+comment analysis legitimately writes analysis metadata. Four free local-model
+natural samples are exploratory: summary omissions and title serialization remain
+quality limits, not a blanket acceptance of the mapped rows above. Full hosted
+execution, representative semantic accuracy and human adoption remain separate.
+
+The three unmapped abilities above remain unsupported: container labels need
+local block adoption review; revision summaries need revision-pair/privacy/diff
+validation; type-ahead remains deferred pending core value and bounded call/privacy
+semantics. No generic fallback or feature activation was added.
+
 ## Verification states
 
 - **mapped + contract tested**: the Addon projection and Cloud contract have

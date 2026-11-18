@@ -1,0 +1,553 @@
+diff --git a/includes/Abilities/Title_Generation/Title_Generation.php b/includes/Abilities/Title_Generation/Title_Generation.php
+index 6f3f202..04525a3 100644
+--- a/includes/Abilities/Title_Generation/Title_Generation.php
++++ b/includes/Abilities/Title_Generation/Title_Generation.php
+@@ -46,6 +46,27 @@ class Title_Generation extends Abstract_Ability {
+ 					'sanitize_callback' => 'sanitize_text_field',
+ 					'description'       => esc_html__( 'Content to generate title suggestions for.', 'ai' ),
+ 				),
++				'current_title' => array(
++					'type' => 'string',
++					'maxLength' => 1000,
++					'description' => 'Current unsaved editor title, when supplied by the editor.',
++				),
++				'current_excerpt' => array(
++					'type' => 'string',
++					'maxLength' => 10000,
++					'description' => 'Current unsaved editor excerpt, including an explicitly empty excerpt.',
++				),
++				'previous_titles' => array(
++					'type' => 'array',
++					'maxItems' => 5,
++					'items' => array( 'type' => 'string', 'maxLength' => 1000 ),
++					'description' => 'Recent title candidates to avoid repeating. Request-local only.',
++				),
++				'feedback' => array(
++					'type' => 'string',
++					'maxLength' => 500,
++					'description' => 'Optional author guidance for this title suggestion.',
++				),
+ 				'context' => array(
+ 					'type'              => 'string',
+ 					'sanitize_callback' => 'sanitize_text_field',
+@@ -113,6 +134,33 @@ class Title_Generation extends Abstract_Ability {
+ 			$context = $args['context'] ?? '';
+ 		}
+ 
++		// Editor values override saved metadata, including intentionally cleared fields.
++		if ( is_array( $context ) ) {
++			foreach ( array( 'current_title' => 'title', 'current_excerpt' => 'excerpt' ) as $input_key => $context_key ) {
++				if ( array_key_exists( $input_key, $args ) ) {
++					$context[ $context_key ] = sanitize_text_field( $args[ $input_key ] );
++				}
++			}
++		}
++		$guidance = array();
++		foreach ( array( 'current_title', 'current_excerpt' ) as $key ) {
++			if ( ! is_array( $context ) && array_key_exists( $key, $args ) ) {
++				$guidance[ $key ] = sanitize_text_field( $args[ $key ] );
++			}
++		}
++		if ( ! empty( $args['previous_titles'] ) ) {
++			$guidance['previous_titles_to_avoid'] = wp_json_encode( $args['previous_titles'], JSON_UNESCAPED_UNICODE );
++		}
++		if ( ! empty( $args['feedback'] ) ) {
++			$guidance['author_feedback'] = sanitize_text_field( $args['feedback'] );
++		}
++		if ( $guidance ) {
++			if ( ! is_array( $context ) ) {
++				$context = array( 'additional_context' => $context );
++			}
++			$context = array_merge( $context, $guidance );
++		}
++
+ 		// If we have no content, return an error.
+ 		if ( empty( $content ) ) {
+ 			return new WP_Error(
+diff --git a/includes/Abilities/Title_Generation/system-instruction.php b/includes/Abilities/Title_Generation/system-instruction.php
+index b3d73ec..412df0e 100644
+--- a/includes/Abilities/Title_Generation/system-instruction.php
++++ b/includes/Abilities/Title_Generation/system-instruction.php
+@@ -18,6 +18,9 @@ Goal: You will be provided with content and optionally some additional context a
+ 
+ The title suggestion should follow these requirements:
+ 
++- Use current editor title/excerpt as draft context when provided; an empty draft value replaces saved metadata
++- Follow optional author feedback without inventing facts or contradicting the article
++- Do not repeat any previous_titles_to_avoid; vary the angle while staying faithful to the content
+ - Be no more than 80 characters
+ - Should not contain any markdown, bullets, numbering, or formatting - plain text only
+ - Should be distinct in tone and focus
+diff --git a/src/experiments/title-generation/components/RenameModalButton.tsx b/src/experiments/title-generation/components/RenameModalButton.tsx
+index 4434c7e..e239c6d 100644
+--- a/src/experiments/title-generation/components/RenameModalButton.tsx
++++ b/src/experiments/title-generation/components/RenameModalButton.tsx
+@@ -8,7 +8,7 @@
+ import { Button } from '@wordpress/components';
+ import { dispatch, useSelect } from '@wordpress/data';
+ import { store as editorStore, PostTypeSupportCheck } from '@wordpress/editor';
+-import { useState } from '@wordpress/element';
++import { useRef, useState } from '@wordpress/element';
+ import { __, sprintf } from '@wordpress/i18n';
+ import { store as noticesStore } from '@wordpress/notices';
+ 
+@@ -36,18 +36,23 @@ export default function RenameModalButton( {
+ 	inputElement,
+ 	formElement,
+ }: RenameModalButtonProps ): React.JSX.Element | null {
+-	const { postId, content } = useSelect( ( select ) => {
++	const { postId, content, title, excerpt } = useSelect( ( select ) => {
+ 		const editor = select( editorStore );
+ 
+ 		return {
+ 			postId: editor.getCurrentPostId(),
+ 			content: editor.getEditedPostContent() as string,
++			title: editor.getEditedPostAttribute( 'title' ) as string,
++			excerpt: editor.getEditedPostAttribute( 'excerpt' ) as string,
+ 		};
+ 	}, [] );
+ 
+ 	const [ isGenerating, setIsGenerating ] = useState< boolean >( false );
+ 	const [ hasGenerated, setHasGenerated ] = useState< boolean >( false );
+ 
++	const pending = useRef( false );
++	const previousTitles = useRef< string[] >( [] );
++
+ 	const { minContentLength } = getSettings();
+ 	const isContentTooShort = ! hasMinimumContent( content, minContentLength );
+ 
+@@ -74,7 +79,7 @@ export default function RenameModalButton( {
+ 	 * Handles generating a new title and populating the text input in the modal.
+ 	 */
+ 	const handleGenerate = async () => {
+-		if ( isGenerating ) {
++		if ( pending.current ) {
+ 			return;
+ 		}
+ 
+@@ -82,11 +87,27 @@ export default function RenameModalButton( {
+ 			return;
+ 		}
+ 
++		pending.current = true;
++		const initialValue = (
++			inputElement && document.body.contains( inputElement )
++				? inputElement
++				: formElement?.querySelector< HTMLInputElement >(
++						'input.components-text-control__input, input[type="text"]'
++				  )
++		)?.value;
+ 		setIsGenerating( true );
+ 		dispatch( noticesStore ).removeNotice( NOTICE_ID );
+ 
+ 		try {
+-			const result = await generateTitle( postId as number, content );
++			const result = await generateTitle( postId as number, content, {
++				currentTitle: initialValue ?? title,
++				currentExcerpt: excerpt,
++				previousTitles: previousTitles.current,
++			} );
++			previousTitles.current = [
++				...previousTitles.current,
++				result,
++			].slice( -5 );
+ 
+ 			const targetInput =
+ 				inputElement && document.body.contains( inputElement )
+@@ -95,6 +116,14 @@ export default function RenameModalButton( {
+ 							'input.components-text-control__input, input[type="text"]'
+ 					  );
+ 
++			if ( targetInput && targetInput.value !== initialValue ) {
++				throw new Error(
++					__(
++						'The title changed while AI was working. Your edit was kept. Generate again to use the current title.',
++						'ai'
++					)
++				);
++			}
+ 			if ( targetInput ) {
+ 				setInputValue( targetInput, result );
+ 				targetInput.focus();
+@@ -112,6 +141,7 @@ export default function RenameModalButton( {
+ 				isDismissible: true,
+ 			} );
+ 		} finally {
++			pending.current = false;
+ 			setIsGenerating( false );
+ 		}
+ 	};
+diff --git a/src/experiments/title-generation/components/TitleToolbar.tsx b/src/experiments/title-generation/components/TitleToolbar.tsx
+index 0fab548..8fe9159 100644
+--- a/src/experiments/title-generation/components/TitleToolbar.tsx
++++ b/src/experiments/title-generation/components/TitleToolbar.tsx
+@@ -10,11 +10,17 @@ import {
+ 	Flex,
+ 	FlexItem,
+ 	Modal,
++	Notice,
+ 	TextareaControl,
+ 	ToolbarGroup,
+ 	ToolbarButton,
+ } from '@wordpress/components';
+-import { dispatch, useDispatch, useSelect } from '@wordpress/data';
++import {
++	dispatch,
++	select as selectStore,
++	useDispatch,
++	useSelect,
++} from '@wordpress/data';
+ import { store as editorStore, PostTypeSupportCheck } from '@wordpress/editor';
+ import { useEffect, useRef, useState } from '@wordpress/element';
+ import { update } from '@wordpress/icons';
+@@ -43,13 +49,14 @@ interface TitleToolbarProps {
+ export default function TitleToolbar( {
+ 	isStandalone = false,
+ }: TitleToolbarProps ): React.JSX.Element | null {
+-	const { postId, title, content } = useSelect( ( select ) => {
++	const { postId, title, content, excerpt } = useSelect( ( select ) => {
+ 		const editor = select( editorStore );
+ 
+ 		return {
+ 			postId: editor.getCurrentPostId(),
+ 			title: editor.getEditedPostAttribute( 'title' ) as string,
+ 			content: editor.getEditedPostContent() as string,
++			excerpt: editor.getEditedPostAttribute( 'excerpt' ) as string,
+ 		};
+ 	}, [] );
+ 
+@@ -60,6 +67,25 @@ export default function TitleToolbar( {
+ 	const [ isOpen, setOpen ] = useState< boolean >( false );
+ 	const [ generatedTitle, setGeneratedTitle ] = useState< string >( '' );
+ 
++	const [ feedback, setFeedback ] = useState( '' );
++	const [ modalError, setModalError ] = useState( '' );
++	const previousTitles = useRef< string[] >( [] );
++	const pending = useRef( false );
++	const suggestionSource = useRef< string >( '' );
++	const snapshot = () => {
++		const editor = selectStore( editorStore );
++		return JSON.stringify( [
++			editor.getCurrentPostId(),
++			editor.getEditedPostAttribute( 'title' ),
++			editor.getEditedPostAttribute( 'excerpt' ),
++			editor.getEditedPostContent(),
++		] );
++	};
++	useEffect( () => {
++		previousTitles.current = [];
++		setFeedback( '' );
++	}, [ postId ] );
++
+ 	const generateButtonRef = useRef< HTMLButtonElement | null >( null );
+ 	const textAreaRef = useRef< HTMLTextAreaElement | null >( null );
+ 
+@@ -131,7 +157,7 @@ export default function TitleToolbar( {
+ 	 * Handles the toolbar Generate/Regenerate button click.
+ 	 */
+ 	const handleGenerate = async () => {
+-		if ( isGenerating ) {
++		if ( pending.current ) {
+ 			return;
+ 		}
+ 
+@@ -139,11 +165,24 @@ export default function TitleToolbar( {
+ 			return;
+ 		}
+ 
++		pending.current = true;
++		const source = snapshot();
++		setModalError( '' );
+ 		setIsGenerating( true );
+ 		dispatch( noticesStore ).removeNotice( NOTICE_ID );
+ 
+ 		try {
+-			const result = await generateTitle( postId as number, content );
++			const result = await generateTitle( postId as number, content, {
++				currentTitle: title,
++				currentExcerpt: excerpt,
++				previousTitles: previousTitles.current,
++				feedback,
++			} );
++			suggestionSource.current = source;
++			previousTitles.current = [
++				...previousTitles.current,
++				result,
++			].slice( -5 );
+ 			setGeneratedTitle( result );
+ 			openModal();
+ 		} catch ( error: any ) {
+@@ -156,6 +195,7 @@ export default function TitleToolbar( {
+ 				isDismissible: true,
+ 			} );
+ 		} finally {
++			pending.current = false;
+ 			setIsGenerating( false );
+ 		}
+ 	};
+@@ -165,11 +205,27 @@ export default function TitleToolbar( {
+ 	 * Fetches a new suggestion without closing the modal.
+ 	 */
+ 	const handleRegenerate = async () => {
++		if ( pending.current ) {
++			return;
++		}
++		pending.current = true;
++		const source = snapshot();
++		setModalError( '' );
+ 		setIsRegenerating( true );
+ 		dispatch( noticesStore ).removeNotice( NOTICE_ID );
+ 
+ 		try {
+-			const result = await generateTitle( postId as number, content );
++			const result = await generateTitle( postId as number, content, {
++				currentTitle: title,
++				currentExcerpt: excerpt,
++				previousTitles: previousTitles.current,
++				feedback,
++			} );
++			suggestionSource.current = source;
++			previousTitles.current = [
++				...previousTitles.current,
++				result,
++			].slice( -5 );
+ 			setGeneratedTitle( result );
+ 
+ 			focusTimeoutRef.current = setTimeout( () => {
+@@ -181,11 +237,9 @@ export default function TitleToolbar( {
+ 				typeof error === 'string'
+ 					? error
+ 					: error?.message ?? __( 'Failed to generate title.', 'ai' );
+-			dispatch( noticesStore ).createErrorNotice( message, {
+-				id: NOTICE_ID,
+-				isDismissible: true,
+-			} );
++			setModalError( message );
+ 		} finally {
++			pending.current = false;
+ 			setIsRegenerating( false );
+ 		}
+ 	};
+@@ -194,6 +248,18 @@ export default function TitleToolbar( {
+ 	 * Applies the generated title to the post and closes the modal.
+ 	 */
+ 	const handleInsert = () => {
++		if ( pending.current ) {
++			return;
++		}
++		if ( snapshot() !== suggestionSource.current ) {
++			setModalError(
++				__(
++					'The title, excerpt or content changed after this suggestion. Regenerate using your current draft before inserting.',
++					'ai'
++				)
++			);
++			return;
++		}
+ 		editPost( { title: generatedTitle } );
+ 		closeModal();
+ 	};
+@@ -250,6 +316,11 @@ export default function TitleToolbar( {
+ 							'ai'
+ 						) }
+ 					</p>
++					{ modalError && (
++						<Notice status="error" isDismissible={ false }>
++							{ modalError }
++						</Notice>
++					) }
+ 					<TextareaControl
+ 						rows={ 2 }
+ 						label={ __( 'Generated title', 'ai' ) }
+@@ -259,6 +330,18 @@ export default function TitleToolbar( {
+ 						disabled={ isRegenerating }
+ 						ref={ textAreaRef }
+ 					/>
++					<TextareaControl
++						label={ __( 'Title guidance (optional)', 'ai' ) }
++						help={ __(
++							'For example: shorter, focus on the practical steps. Recent suggestions are avoided automatically.',
++							'ai'
++						) }
++						value={ feedback }
++						onChange={ setFeedback }
++						maxLength={ 500 }
++						rows={ 2 }
++						disabled={ isRegenerating }
++					/>
+ 					<Flex
+ 						justify="flex-end"
+ 						gap="3"
+diff --git a/src/experiments/title-generation/index.scss b/src/experiments/title-generation/index.scss
+index 36ed7cf..36e58ec 100644
+--- a/src/experiments/title-generation/index.scss
++++ b/src/experiments/title-generation/index.scss
+@@ -4,6 +4,14 @@
+ 		color: #757575;
+ 	}
+ 
++	.components-notice {
++		margin: 0 0 16px;
++	}
++
++	.components-base-control + .components-base-control {
++		margin-top: 16px;
++	}
++
+ 	.components-textarea-control__input {
+ 		resize: none;
+ 	}
+diff --git a/src/experiments/title-generation/types.ts b/src/experiments/title-generation/types.ts
+index 9cd45ed..0c5e74c 100644
+--- a/src/experiments/title-generation/types.ts
++++ b/src/experiments/title-generation/types.ts
+@@ -5,10 +5,13 @@
+ /**
+  * Input parameters for the ai/title-generation ability.
+  */
+-export interface TitleGenerationAbilityInput {
++export interface TitleGenerationAbilityInput extends Record< string, unknown > {
+ 	content: string;
+ 	context: string;
+-	[ key: string ]: string | number | undefined;
++	current_title?: string;
++	current_excerpt?: string;
++	previous_titles?: string[];
++	feedback?: string;
+ }
+ 
+ /**
+@@ -25,3 +28,11 @@ export interface TitleGenerationData {
+ 	enabled: boolean;
+ 	minContentLength: number;
+ }
++
++/** Request-local context; never persisted or promoted into Cloud-owned settings. */
++export interface TitleGenerationContext {
++	currentTitle?: string;
++	currentExcerpt?: string;
++	previousTitles?: string[];
++	feedback?: string;
++}
+diff --git a/src/experiments/title-generation/utils.ts b/src/experiments/title-generation/utils.ts
+index 7d6da96..bd8d977 100644
+--- a/src/experiments/title-generation/utils.ts
++++ b/src/experiments/title-generation/utils.ts
+@@ -15,6 +15,7 @@ import type {
+ 	TitleGenerationAbilityInput,
+ 	GeneratedTitleData,
+ 	TitleGenerationData,
++	TitleGenerationContext,
+ } from './types';
+ 
+ export const NOTICE_ID = 'ai_title_generation_error';
+@@ -40,17 +41,34 @@ export const getSettings = (): TitleGenerationData => {
+  *
+  * @param postId  The ID of the post to generate a title for.
+  * @param content The content of the post to generate a title for.
++ * @param options Current editor context and optional regeneration guidance.
+  * @return A promise that resolves to the generated title.
+  */
+ export async function generateTitle(
+ 	postId: number,
+-	content: string
++	content: string,
++	options: TitleGenerationContext = {}
+ ): Promise< string > {
+ 	const params: TitleGenerationAbilityInput = {
+ 		context: postId.toString(),
+ 		content,
+ 	};
+ 
++	if ( options.currentTitle !== undefined ) {
++		params.current_title = options.currentTitle.slice( 0, 1000 );
++	}
++	if ( options.currentExcerpt !== undefined ) {
++		params.current_excerpt = options.currentExcerpt.slice( 0, 10000 );
++	}
++	if ( options.previousTitles !== undefined ) {
++		params.previous_titles = options.previousTitles
++			.slice( -5 )
++			.map( ( value ) => value.slice( 0, 1000 ) );
++	}
++	if ( options.feedback !== undefined ) {
++		params.feedback = options.feedback.slice( 0, 500 );
++	}
++
+ 	const response = await runAbility< GeneratedTitleData >(
+ 		'ai/title-generation',
+ 		params
+@@ -61,9 +79,24 @@ export async function generateTitle(
+ 		typeof response === 'object' &&
+ 		'title' in response &&
+ 		typeof response.title === 'string' &&
+-		response.title.length > 0
++		response.title.trim().length > 0
+ 	) {
+-		return response.title;
++		const title = response.title.trim();
++		if (
++			options.previousTitles?.some(
++				( previous ) =>
++					previous.trim().normalize( 'NFKC' ).toLocaleLowerCase() ===
++					title.normalize( 'NFKC' ).toLocaleLowerCase()
++			)
++		) {
++			throw new Error(
++				__(
++					'This repeats a recent title. Add a different angle in the title guidance and regenerate.',
++					'ai'
++				)
++			);
++		}
++		return title;
+ 	}
+ 
+ 	throw new Error( __( 'No title suggestion was generated.', 'ai' ) );
+diff --git a/tests/unit/title-generation.test.cjs b/tests/unit/title-generation.test.cjs
+new file mode 100644
+index 0000000..d7ade4d
+--- /dev/null
++++ b/tests/unit/title-generation.test.cjs
+@@ -0,0 +1,41 @@
++/** Executes the real title utility with only its WordPress Ability transport stubbed. */
++const { test } = require( 'node:test' );
++const assert = require( 'node:assert/strict' );
++const { readFileSync } = require( 'node:fs' );
++const vm = require( 'node:vm' );
++const ts = require( 'typescript' );
++function fixture( response ) {
++	const calls = [];
++	const exports = {};
++	const source = readFileSync( 'src/experiments/title-generation/utils.ts', 'utf8' );
++	vm.runInNewContext( ts.transpileModule( source, { compilerOptions: { module: ts.ModuleKind.CommonJS } } ).outputText, {
++		exports, require: ( id ) => id === '@wordpress/i18n' ? { __: ( s ) => s } : { runAbility: async ( ability, input ) => { calls.push( { ability, input } ); return response; } },
++	} );
++	return { generate: exports.generateTitle, calls };
++}
++test( 'draft context, permission anchor and feedback survive; bounded history excludes old candidates', async () => {
++	const f = fixture( { title: 'A useful title' } );
++	assert.equal( await f.generate( 42, 'Current draft body', { currentTitle: 'Unsaved title', currentExcerpt: '', feedback: 'Focus on practical steps', previousTitles: [ 'a', 'b', 'c', 'd', 'e', 'f' ] } ), 'A useful title' );
++	const p = f.calls[ 0 ].input;
++	assert.equal( p.context, '42' );
++	assert.equal( p.content, 'Current draft body' );
++	assert.equal( p.current_title, 'Unsaved title' );
++	assert.equal( p.current_excerpt, '' );
++	assert.equal( p.feedback, 'Focus on practical steps' );
++	assert.deepEqual( Array.from( p.previous_titles ), [ 'b', 'c', 'd', 'e', 'f' ] );
++} );
++test( 'legacy callers omit optional draft fields', async () => {
++	const f = fixture( { title: 'A title' } );
++	await f.generate( 42, 'Body' );
++	assert.deepEqual( Object.keys( f.calls[ 0 ].input ).sort(), [ 'content', 'context' ] );
++} );
++test( 'repeat candidate is rejected without another provider call', async () => {
++	const f = fixture( { title: ' Ａ Useful TITLE ' } );
++	await assert.rejects( f.generate( 42, 'Body', { previousTitles: [ 'A useful title' ] } ), /repeats a recent title/ );
++	assert.equal( f.calls.length, 1 );
++} );
++test( 'empty and malformed responses are rejected', async () => {
++	for ( const response of [ { title: '   ' }, { title: 7 }, null, 'Raw unexpected string' ] ) {
++		await assert.rejects( fixture( response ).generate( 42, 'Body' ), /No title suggestion/ );
++	}
++} );
