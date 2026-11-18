@@ -220,8 +220,8 @@ assert.match(
 );
 assert.match(
   providerPageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*<details data-ui="model-maintenance-table"[\s\S]*data-ui="model-filtered-batch-confirm"/,
-  'the reference provider editor must keep model controls in one stable toolbar and collapsed in-flow maintenance operations'
+  /data-ui="model-visibility-toolbar"[\s\S]*<div data-ui="model-maintenance-table"[\s\S]*data-ui="model-filtered-batch-confirm"/,
+  'the reference provider editor must keep model controls in one stable toolbar and inline in-flow maintenance operations'
 );
 assert.doesNotMatch(
   providerPageSource,

@@ -505,6 +505,7 @@ function profileLabelKey(profile: RuntimeProfile): string {
     'wp-ai.classification': 'profile_classification',
     'vision.ai': 'profile_vision_understanding',
     'wp-ai.image-generation': 'profile_image_generation',
+    'wp-ai.image-editing': 'profile_image_editing',
     'wp-ai.audio-generation': 'profile_audio_generation',
   };
   return keys[profile.profile_id] || '';
@@ -844,7 +845,11 @@ export default function RuntimeProfilesPage() {
       .map((instanceId) => instancesById.get(instanceId))
       .filter((instance): instance is RuntimeInstance => Boolean(instance));
     const merged = [...selected, ...available.filter((item) => !selectedIds.includes(item.instance_id))];
-    return merged;
+    return merged.filter((instance) => {
+      if (editingProfile.profile_id === 'wp-ai.image-editing') return instance.endpoint_variant === 'image_edits';
+      if (editingProfile.profile_id === 'wp-ai.image-generation') return instance.endpoint_variant !== 'image_edits';
+      return true;
+    });
   }, [data, editingProfile, instancesById]);
   const candidates = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
@@ -1123,6 +1128,7 @@ export default function RuntimeProfilesPage() {
       editorial_notes: copy('task_editorial_notes', 'Suggest editorial improvements'),
       alt_text_suggest: copy('task_alt_text_suggest', 'Suggest image alternative text'),
       image_generation: copy('task_image_generation', 'Generate an image'),
+      image_editing: copy('task_image_editing', 'Edit an image with a reference'),
       article_narration: copy('task_article_narration', 'Generate article narration audio'),
       article_audio_summary: copy('task_article_audio_summary', 'Generate article summary audio'),
     };
@@ -1566,13 +1572,10 @@ export default function RuntimeProfilesPage() {
               </AdminConfigurationTable>
             ) : null}
             <div className={profileAdvancedOpen ? 'hidden' : 'contents'}>
-            <details data-ui="runtime-profile-tasks" className="shrink-0 text-xs text-slate-500">
-              <summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary>
-              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-700 dark:text-slate-300">
-                {editingProfile.tasks.map(task => <li key={task} data-task-id={task} className="break-words">{taskLabel(task)}</li>)}
-              </ul>
-              <p className="mt-2">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p>
-            </details>
+            <div data-ui="runtime-profile-tasks" className="shrink-0 text-xs text-slate-500">
+              <p className="font-medium">{copy('task_list', 'Applicable tasks')}: {editingProfile.tasks.map(taskLabel).join(' · ') || '—'}</p>
+              <p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p>
+            </div>
             <div className="shrink-0 max-h-[45vh] overflow-y-auto">
               <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
@@ -1750,7 +1753,7 @@ export default function RuntimeProfilesPage() {
                                   disabled={Boolean(probingInstanceId)}
                                   onClick={() => void verifyInstance(instance, editingProfile.execution_kind, editingProfile.timeout_ms)}
                                 >
-                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy(`verify_${editingProfile.execution_kind}`, 'Verify capability')}
+                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy(`verify_${editingProfile.profile_id === 'wp-ai.image-editing' ? 'image_editing' : editingProfile.execution_kind}`, 'Verify capability')}
                                 </button>
                               ) : capabilityEvidence(instance, editingProfile.execution_kind)?.state === 'verified' ? (
                                 <span className="whitespace-nowrap text-xs text-emerald-600">{copy('verified', '已验证')}</span>

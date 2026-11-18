@@ -148,7 +148,8 @@ assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url'[
 assert.doesNotMatch(pageSource, /modelMoreFiltersOpen|action_more_filters/);
 assert.match(pageSource, /field_visibility_filter[\s\S]*filter_all_visibility/);
 assert.match(pageSource, /field_feature_filter[\s\S]*filter_all_features/);
-assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.match(pageSource, /<div data-ui="model-maintenance-table"/);
+assert.doesNotMatch(pageSource, /<details data-ui="(?:model-maintenance-table|model-filters|image-capability-fields)"/);
 assert.match(pageSource, /sourceScope: 'account'/);
 assert.match(pageSource, /<ModelReferencePanel/);
 assert.doesNotMatch(pageSource, /data-ui="model-(?:clear-all|metadata-gap-filter|list-scope)/);

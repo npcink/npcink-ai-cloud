@@ -220,7 +220,8 @@ assert.match(
   'A filtered-empty supplier queue must provide one direct reset action'
 );
 
-assert.match(pageSource, /accountModelCount > MODEL_VISIBILITY_PAGE_SIZE[\s\S]*<details data-ui="model-maintenance-table"/);
+assert.match(pageSource, /<div data-ui="model-maintenance-table"/);
+assert.doesNotMatch(pageSource, /<details data-ui="(?:model-maintenance-table|model-filters|image-capability-fields)"/);
 assert.doesNotMatch(pageSource, /data-ui="model-clear-all/);
 
 assert.doesNotMatch(

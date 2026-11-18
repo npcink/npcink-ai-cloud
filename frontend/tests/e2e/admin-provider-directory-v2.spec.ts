@@ -766,7 +766,7 @@ for (const locale of ['en', 'zh-CN']) {
     });
     await page.setViewportSize({ width: 1056, height: 800 });
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await testInfo.attach(`image-delivery-narrow-${locale}`, { body: await page.screenshot(), contentType: 'image/png' });
+    await testInfo.attach(`image-delivery-narrow-${locale}`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
   });
 }
 
@@ -882,7 +882,7 @@ test('editing a provider separates dense connection settings from model manageme
   await expect(dialog.getByText(/Include historical\/deprecated|含历史\/废弃/i)).toBeHidden();
   await expect(dialog.getByRole('button', { name: /More filters|更多筛选/i })).toHaveCount(0);
   const maintenanceDisclosure = dialog.locator('[data-ui="model-maintenance-table"]');
-  await expect(maintenanceDisclosure).toHaveCount(0);
+  await expect(maintenanceDisclosure).toBeVisible();
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -926,7 +926,7 @@ test('low-frequency provider settings open as compact panels and retain the draf
   await trigger.click();
   await expect(dialog.locator('.admin-workbench-dialog-compact')).toHaveCSS('max-width', '960px');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toBeVisible();
-  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot(), contentType: 'image/png' });
+  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
   await dialog.getByLabel(/Connection ID|连接 ID/i).fill('custom_runtime');
   await dialog.getByLabel(/Connection ID|连接 ID/i).press('Enter');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveValue('custom_runtime');
@@ -999,7 +999,7 @@ test('large model directories render one bounded page and reset pagination when 
   await expect(dialog.locator('[data-content-mode="contained"]')).toBeVisible();
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
   await expect(directory.locator('tbody tr')).toHaveCount(2);
-  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toBeVisible();
   await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
   const otherReferences = dialog.locator('[data-ui="model-reference-browse"]');
@@ -1039,7 +1039,6 @@ test('large model directories render one bounded page and reset pagination when 
   await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toHaveCount(0);
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
   await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeEnabled();
   await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
   await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
@@ -1706,7 +1705,7 @@ test('historical model visibility is a browser preference and survives reopening
 });
 
 
-test('model switches and collapsed tools fit the narrow PC preview in dark mode', async ({ page }, testInfo) => {
+test('model switches and direct tools fit the narrow PC preview in dark mode', async ({ page }, testInfo) => {
   await installProviderDirectoryHarness(page);
   await page.setViewportSize({ width: 1056, height: 733 });
   await page.goto('/admin/ai-resources');
@@ -1725,7 +1724,7 @@ test('model switches and collapsed tools fit the narrow PC preview in dark mode'
   const save = await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).boundingBox();
   expect(save!.y + save!.height).toBeLessThanOrEqual(733);
   await page.screenshot({ path: testInfo.outputPath('models-dark-1056.png'), animations: 'disabled' });
-  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toBeVisible();
   await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await expect(dialog.locator('[data-ui="model-reference-panel"]')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
@@ -1768,7 +1767,7 @@ test('supplier model names hide only the system namespace and expose saved model
   await pro.getByRole('switch').uncheck();
   await expect(dialog.getByRole('alert')).toContainText(/unavailable|无法再使用/);
   await expect(dialog.getByRole('button', { name: /Save supplier|保存供应商/ })).toBeInViewport();
-  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot(), contentType: 'image/png' });
+  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
   await dialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
 });
 
@@ -1820,6 +1819,7 @@ for (const width of [1056, 1440]) {
     const unsaved = dialog.getByRole('row').filter({ hasText: 'new-unsaved' });
     await unsaved.getByRole('switch').click();
     await expect(unsaved.getByRole('button', { name: /^Test |^测试 / })).toHaveCount(0);
+    await dialog.getByRole('row').filter({ hasText: 'gpt-5.5' }).locator('[data-ui="model-reference-details"] > summary').click();
     await dialog.getByRole('button', { name: /^Test gpt-5.5$|^测试 gpt-5.5$/ }).click();
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await expect(dialog.getByRole('heading', { name: /^Model test$|^模型测试$/ })).toBeVisible();
@@ -2106,3 +2106,121 @@ test('M07 malformed directory fails visibly instead of becoming an empty healthy
   await page.getByRole('button', { name: /Retry|重试/ }).click();
   await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/ })).toBeEnabled();
 });
+
+for (const locale of ['en', 'zh'] as const) {
+  test(`supplier unified model capabilities retain saved choices in ${locale}`, async ({ page }, testInfo) => {
+    const browserEvidence = observeAdminBrowserEvidence(page);
+    await page.addInitScript(value => localStorage.setItem('locale', value), locale);
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const modelId = 'gpt-image-2.5-flare';
+    const declaration = { supported: true };
+    const preview = {
+      provider_id: 'openai', display_name: 'MQZJ', adapter_type: 'openai',
+      model_count: 1, model_ids: [modelId], truncated: false,
+      models: [{ model_id: modelId, upstream_model_id: modelId, family: 'gpt-image', feature: 'image_generation',
+        status: 'available', is_deprecated: false, runtime_supported: true, verified: false,
+        capability_tags: ['image_generation'], image_capability_declarations: {
+          image_generation: declaration, image_editing: declaration,
+        } }],
+    };
+    const connection = {
+      ...connections[1], model_ids: [modelId],
+      config: { image_response_format: 'b64_json', model_metadata_overrides: {
+        [modelId]: { price_input: 5, endpoint_variants: ['image_generations', 'image_edits'], source: 'operator_previous', revision: 'v1' },
+      } }, metadata: { model_catalog_preview: preview },
+    };
+    await installProviderDirectoryHarness(page, { connections: [connection] });
+    let previewBody: Record<string, unknown> | undefined;
+    await page.route('**/api/admin/provider-connections/preview-catalog', async route => {
+      previewBody = route.request().postDataJSON();
+      await route.fulfill({ json: buildAdminApiEnvelope(preview) });
+    });
+    let submitted: Record<string, unknown> | undefined;
+    let saveAttempts = 0;
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      submitted = route.request().postDataJSON();
+      saveAttempts += 1;
+      if (saveAttempts === 1) {
+        await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('image declaration save failed', 'provider_connection.update_failed') });
+        return;
+      }
+      await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready' }) });
+    });
+    await page.goto('/admin/ai-resources?focus=model_ready&q=MQZJ');
+    await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('data-selected', 'true');
+    const trigger = page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ });
+    await trigger.click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    const fields = dialog.locator('[data-ui="model-capability-fields"]');
+    await expect(fields).toHaveCount(1);
+    await expect(fields).toBeHidden();
+    await dialog.locator('[data-ui="model-reference-details"] > summary').click();
+    const generation = fields.getByRole('checkbox').nth(0);
+    const editing = fields.getByRole('checkbox').nth(1);
+    await expect(generation).toBeChecked();
+    await expect(editing).toBeChecked();
+    await generation.uncheck();
+    await expect(dialog).toContainText(/changes do not verify|修改不代表已验证/);
+    await expect(fields.getByRole('combobox')).toHaveCount(1);
+    await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeVisible();
+    await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeDisabled();
+    await expect(dialog.locator('[data-ui="model-filtered-disable-request"]')).toContainText('(1)');
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    await expect(generation).not.toBeChecked();
+    await expect(editing).toBeChecked();
+    expect((previewBody?.config as Record<string, unknown>).model_metadata_overrides).toMatchObject({
+      [modelId]: { image_capabilities: { image_generation: false, image_editing: true }, price_input: 5 },
+    });
+    await testInfo.attach(`image-capabilities-${locale}-1440`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+    await page.setViewportSize({ width: 1056, height: 900 });
+    await expect(generation).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
+    await testInfo.attach(`image-capabilities-${locale}-1056`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+    // Closing and reopening retains the existing supplier form draft.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await trigger.click();
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-reference-details"] > summary').click();
+    await expect(generation).not.toBeChecked();
+    await expect(editing).toBeChecked();
+    // The same editor corrects text, vision and embedding, including stale image metadata.
+    const type = fields.getByRole('combobox');
+    for (const feature of ['text', 'vision', 'embedding']) {
+      await type.selectOption(feature);
+      await expect(fields.getByRole('checkbox')).toHaveCount(0);
+      await expect(type).toHaveValue(feature);
+      if (feature !== 'embedding') await expect(dialog.getByRole('button', { name: /^Test gpt-image-2.5-flare$|^测试 gpt-image-2.5-flare$/ })).toBeDisabled();
+    }
+    await type.selectOption('image_generation');
+    await expect(generation).toBeChecked();
+    await expect(editing).not.toBeChecked();
+    await generation.uncheck();
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+    await expect(dialog.getByRole('alert')).toContainText(/Failed to save provider connection|保存 provider 连接失败/);
+    await expect(generation).not.toBeChecked();
+    await expect(editing).not.toBeChecked();
+    await writeAdminVisualReceipt({
+      page, testInfo, route: '/admin/ai-resources', pageModel: 'queue',
+      testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog', 'capability-checkboxes', 'both-disabled', 'refreshed', 'dirty-reopened', 'pc-narrow'],
+      pageTitle: page.locator('main h1'), workingSurface: dialog.locator('[data-ui="model-visibility-directory"]'),
+      browserEvidence, expectedConsoleErrors: [/image declaration save failed/, /Failed to load resource.*503/], dataMode: 'mocked', humanAcceptance: 'pending', artifactId: `image-capabilities-${locale}`,
+      routeRuleResults: [
+        { id: 'single-primary-action', status: 'pass', evidence: 'supplier form retains its one save action; row disclosure adds no save' },
+        { id: 'textual-status', status: 'pass', evidence: 'compact capability labels beside model; verification caveat once in toolbar' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'generation and editing controls are within the model row' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'two native checkboxes expose explicit enabled and disabled states' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'existing dialog Escape and reopen preserve the draft' },
+        { id: 'context-stability', status: 'pass', evidence: 'catalog refresh retains choices and unrelated price override' },
+      ],
+      interactionResults: [{ id: 'image-capability-draft', status: 'pass', evidence: 'independent flags, both disabled, refresh and reopen checked in both languages at PC widths' }],
+    });
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(submitted).not.toHaveProperty('credential');
+    expect((submitted?.config as Record<string, unknown>).model_metadata_overrides).toMatchObject({
+      [modelId]: { image_capabilities: { image_generation: false, image_editing: false }, price_input: 5 },
+    });
+  });
+}

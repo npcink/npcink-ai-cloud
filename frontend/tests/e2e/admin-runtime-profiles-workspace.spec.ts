@@ -1024,10 +1024,10 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   await profileTable.screenshot({ path: testInfo.outputPath('runtime-profile-table-long-model-900.png'), animations: 'disabled' });
   await profileRow(page, 'route.short_text').getByRole('button').click();
   const tasks = page.locator('[data-ui="runtime-profile-tasks"]');
-  await tasks.locator('summary').click();
-  await expect(tasks.getByRole('listitem')).toHaveCount(7);
+  await expect(tasks).toBeVisible();
+  await expect(tasks.locator('summary')).toHaveCount(0);
   for (const name of [/Translate content|翻译正文内容/, /Generate an article excerpt|生成文章摘要/, /Generate an image prompt|生成图片提示词/, /Generate a search description|生成搜索摘要/, /Suggest an article URL slug|生成文章网址别名/, /Generate an article title|生成文章标题/, /Write an audio summary script|生成音频摘要文稿/]) {
-    await expect(tasks.getByRole('listitem').filter({ hasText: name })).toHaveCount(1);
+    await expect(tasks).toContainText(name);
   }
   await expect(tasks).not.toContainText('audio_summary_script');
   for (const width of [900, 1440]) {
@@ -1039,8 +1039,57 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   longLabelProjection.profiles[1].tasks = ['custom_future_task'];
   await page.reload();
   await profileRow(page, 'route.classification').getByRole('button').click();
-  await tasks.locator('summary').click();
   await expect(tasks).toContainText(/Unrecognized task: custom_future_task|未识别的任务：custom_future_task/);
+});
+
+test('dual purpose image model keeps separate generation and editing candidates and failure evidence', async ({ page }) => {
+  const writes = await installRuntimeProfilesHarness(page);
+  const generated = {
+    ...primaryInstance, instance_id: 'image.generate', model_id: 'gpt-image-2.5-flare',
+    model_feature: 'image_generation', endpoint_variant: 'image_generations',
+  };
+  const editable = {
+    ...generated, instance_id: 'image.edit',
+    endpoint_variant: 'image_edits',
+  };
+  const profiles = [...structuredClone(initialProfiles), {
+    ...initialProfiles[0], profile_id: 'wp-ai.image-editing', execution_kind: 'image_generation',
+    label: 'Image editing', candidate_instance_ids: [], tasks: ['image_editing'],
+  }, {
+    ...initialProfiles[0], profile_id: 'wp-ai.image-generation', execution_kind: 'image_generation',
+    label: 'Image generation', candidate_instance_ids: [], tasks: ['image_generation'],
+  }];
+  const data = projection(profiles);
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    await route.fulfill({ json: envelope({ ...data, available_instances: {
+      ...data.available_instances, image_generation: [generated, editable],
+    } }) });
+  });
+  let probes = 0;
+  await page.route('**/api/admin/runtime-profiles/capability-probe', async (route) => {
+    probes += 1;
+    expect(route.request().postDataJSON()).toMatchObject({ instance_id: editable.instance_id });
+    await route.fulfill({ status: 400, json: {
+      ...envelope({ capability: 'image_generation', state: 'verification_failed',
+        error_code: 'provider.invalid_request', source: 'provider_probe',
+        revision: 'failed-edit', checked_at: new Date().toISOString() }),
+      status: 'error', error_code: 'provider.invalid_request', message: 'Verification failed',
+    } });
+  });
+  await page.goto('/admin/runtime-profiles');
+  await profileRow(page, 'wp-ai.image-editing').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(candidateRow(page, generated.instance_id)).toHaveCount(0);
+  await candidateRow(page, editable.instance_id).getByRole('button', { name: /Verify image editing|验证图片编辑/ }).click();
+  await expect(page.getByRole('dialog')).toContainText('provider.invalid_request');
+  await expect(candidateRow(page, editable.instance_id)).toContainText(/Verification failed|验证失败/);
+  await expect(page.getByRole('dialog')).not.toContainText('client.invalid_envelope');
+  await page.keyboard.press('Escape');
+  await profileRow(page, 'wp-ai.image-generation').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(candidateRow(page, generated.instance_id)).toBeVisible();
+  await expect(candidateRow(page, editable.instance_id)).toHaveCount(0);
+  expect(probes).toBe(1);
+  expect(writes).toHaveLength(0);
 });
 
 // Saving text must never dispatch an unrelated, previously failed media probe.
@@ -1519,3 +1568,36 @@ test('Smart Ask shares editorial configuration and shows its missing-model recov
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(candidateRow(page, 'text.primary')).toBeVisible();
 });
+
+
+for (const locale of ['en', 'zh']) {
+  test(`applicable tasks stay visible beside runtime configuration in ${locale}`, async ({ page }, testInfo) => {
+    const browserEvidence = observeAdminBrowserEvidence(page);
+    await page.addInitScript(value => localStorage.setItem('locale', value), locale);
+    const profiles = structuredClone(initialProfiles);
+    profiles[0].tasks = ['content_translation', 'excerpt_generation', 'image_prompt_generation', 'meta_description', 'slug_generation', 'title_generation', 'audio_summary_script'];
+    await installRuntimeProfilesHarness(page, { profiles });
+    await page.goto('/admin/runtime-profiles');
+    await profileRow(page, 'route.short_text').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+    const scope = page.locator('[data-ui="runtime-profile-tasks"]');
+    await expect(scope.locator('summary')).toHaveCount(0);
+    await expect(scope).toContainText(/Generate an article title|生成文章标题/);
+    await expect(scope).not.toContainText('title_generation');
+    for (const width of [1440, 1056]) {
+      await page.setViewportSize({ width, height: width === 1440 ? 1050 : 900 });
+      await expect(scope).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await testInfo.attach(`task-scope-${locale}-${width}`, { body: await page.screenshot({ path: testInfo.outputPath(`task-scope-${locale}-${width}.png`) }), contentType: 'image/png' });
+    }
+    expect(browserEvidence.consoleErrors).toEqual([]);
+    writeFileSync(testInfo.outputPath('task-scope-review.json'), JSON.stringify({
+      route: '/admin/runtime-profiles', page_model: 'configuration', scope: 'task scope visibility only',
+      source_revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), source_dirty: true,
+      environment: process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || 'local', data_mode: 'mocked', viewports: [{ width: 1440, height: 1050 }, { width: 1056, height: 900 }],
+      tested_states: ['ready', 'dialog', 'seven localized task names', 'pc-narrow'],
+      results: { visible_scope: 'pass', no_toggle: 'pass', no_horizontal_overflow: 'pass', technical_update_time_retained: 'pass', human_visual_review: 'review_required' },
+      screenshot_paths: [`task-scope-${locale}-1440.png`, `task-scope-${locale}-1056.png`],
+      console_errors: browserEvidence.consoleErrors, network_failures: browserEvidence.networkFailures, human_acceptance: 'pending',
+    }, null, 2));
+  });
+}

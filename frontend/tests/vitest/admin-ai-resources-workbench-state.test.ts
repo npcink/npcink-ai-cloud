@@ -381,6 +381,7 @@ describe('AI resources provider form projection', () => {
       capabilityIds: 'text_generation',
       runtimeProfileIds: 'text.ai',
       modelIds: 'claude-sonnet-4',
+      modelMetadataOverrides: {},
       imageResponseFormat: 'url',
       imageOutputHosts: 'cdn.example.test',
       credential: '',
@@ -421,5 +422,70 @@ describe('AI resources provider reference ownership', () => {
       statusUrl: undefined,
       docsUrl: 'https://internal.example.test/provider-docs',
     });
+  });
+});
+
+describe('supplier image capability drafts', () => {
+  it('prefers the exact upstream override over its namespaced alias', async () => {
+    const { imageCapabilityOverrideKey } = await import('../../src/features/admin/ai-resources/model-capabilities');
+    const overrides = { 'gateway/custom': { source: 'alias' }, custom: { source: 'raw' } };
+    expect(imageCapabilityOverrideKey(overrides, 'custom', 'gateway')).toBe('custom');
+    expect(imageCapabilityOverrideKey({ 'gateway/custom': overrides['gateway/custom'] }, 'custom', 'gateway')).toBe('gateway/custom');
+  });
+
+  it('preserves metadata and unchecked choices on refresh/reopen', async () => {
+    const { updateImageCapabilities, imageCapabilities } = await import('../../src/features/admin/ai-resources/model-capabilities');
+    const modelId = 'gpt-image-2.5-flare';
+    const overrides = { [`gateway/${modelId}`]: {
+      endpoint_variants: ['image_generations', 'image_edits'], endpoint_variant: 'ollama_chat',
+      price_input: 5, source: 'previous', revision: 'v1',
+    } };
+    expect(imageCapabilities(overrides[`gateway/${modelId}`])).toEqual({ image_generation: true, image_editing: true });
+    const patched = updateImageCapabilities(overrides, modelId, `gateway/${modelId}`, { image_generation: false, image_editing: true });
+    expect(patched[modelId].price_input).toBe(5);
+    expect(patched[modelId].endpoint_variant).toBe('ollama_chat');
+    expect(patched).not.toHaveProperty(`gateway/${modelId}`);
+    const initial = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, { type: 'open_create', referenceProviderId: 'openai' });
+    const dirty = providerWorkbenchReducer(initial, { type: 'patch_form', patch: { modelMetadataOverrides: patched } });
+    const fetched = providerWorkbenchReducer(dirty, { type: 'set_catalog_preview', preview: null });
+    const reopened = providerWorkbenchReducer(providerWorkbenchReducer(fetched, { type: 'close' }), { type: 'reopen_draft' });
+    expect(reopened.providerConnectionForm.modelMetadataOverrides).toEqual(patched);
+    expect(hasProviderWorkbenchDraftChanges(reopened)).toBe(true);
+    expect(imageCapabilities(patched[modelId], { image_generation: { supported: true }, image_editing: { supported: false } })).toEqual({ image_generation: false, image_editing: true });
+  });
+
+  it('captures initial image values on save and retains them when provider metadata changes', async () => {
+    const { saveImageCapabilities } = await import('../../src/features/admin/ai-resources/model-capabilities');
+    const model = { model_id: 'gateway/image-alias', feature: 'image_generation', image_capability_declarations: {
+      image_generation: { supported: false }, image_editing: { supported: true },
+    } };
+    const saved = saveImageCapabilities({}, ['gateway/image-alias'], [model], 'gateway');
+    expect(saved['image-alias'].image_capabilities).toEqual({ image_generation: false, image_editing: true });
+    const refreshed = { ...model, image_capability_declarations: { image_generation: { supported: true }, image_editing: { supported: false } } };
+    expect(saveImageCapabilities(saved, ['gateway/image-alias'], [refreshed], 'gateway')).toEqual(saved);
+    expect(saveImageCapabilities({}, ['text-model'], [{ model_id: 'text-model', feature: 'text' }], '')).toEqual({});
+  });
+});
+
+
+describe('unified model capability corrections', () => {
+  it('changes type and filters consistently despite old image metadata while retaining transport and price', async () => {
+    const { updateModelFeature, imageCapabilities } = await import('../../src/features/admin/ai-resources/model-capabilities');
+    const { buildModelVisibilityRows } = await import('../../src/features/admin/ai-resources/model-reference-model');
+    const id = 'custom';
+    const initial = { [id]: { price_input: 5, endpoint_variant: 'image_edits', source: 'previous', revision: 'v1' } };
+    for (const feature of ['text', 'vision', 'embedding'] as const) {
+      const overrides = updateModelFeature(initial, id, id, feature);
+      expect(overrides[id]).toMatchObject({ feature, price_input: 5, endpoint_variant: 'image_edits', source: 'operator_admin' });
+      expect(imageCapabilities(overrides[id], { image_editing: { supported: true } }, 'image_generation')).toEqual({ image_generation: false, image_editing: false });
+      const rows = buildModelVisibilityRows({ references: [], catalogPreview: { ...catalogPreview,
+        models: [{ ...catalogPreview.models[0], model_id: id, feature: 'image_generation', verified: false, image_capability_declarations: { image_editing: { supported: true } } }],
+      }, selectedModelIds: [id], providerId: 'openai', search: '', featureFilter: feature === 'embedding' ? 'embedding' : 'text',
+      visibilityFilter: 'all', intelligenceFilter: 'all', showDeprecated: false, upstreamLabel: 'Account', manualLabel: 'Saved', enabledOnlyLabel: 'Saved',
+      metadataOverrides: overrides });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].feature).toBe(feature);
+      expect(rows[0].verified).toBe(false);
+    }
   });
 });
