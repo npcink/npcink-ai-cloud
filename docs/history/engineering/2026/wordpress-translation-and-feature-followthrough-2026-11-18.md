@@ -57,7 +57,7 @@ builder：source 单次保留、system instruction、目标语言、分类策略
   均未请求自动合并。WordPress AI 补丁只保存在本地，不向上游发布。
 - Cloud `bde779bf` 已同步 M4 candidate；connector domain/API **426 通过**。
   本地 297 项和 M4 426 项有重叠，不相加宣称独立覆盖。非 master accepted/生产证据。
-- Addon `760b109` 初轮 CI 14 项通过，包含 PHP 8.0/8.2/8.4、PHPStan、包检查和
+- Addon `760b109` 初轮 CI 通过，包含 PHP 8.0/8.2/8.4、PHPStan、包检查和
   WordPress AI 兼容检查；该兼容门禁稳定主线为 AI 1.4，不代替本地 AI 1.5。
 - Addon 后续 `0a477ec` 补齐 19 个固定编辑器 UI key（完整审计 180→161），
   PHP、PHPStan、38 JS 检查通过。真实 PC 1440/1280 验证 locale 注册、标题审阅
@@ -163,11 +163,13 @@ lane 是 AI 1.4.0，本地 AI 1.5 另有以上证据。严格 AI 1.5 全量翻�
 
 Cloud `911be444` 已完成依赖变更后的 M4 candidate rebuild，tracing/health/connector
 188 项通过；此前 `bde779bf` connector domain/API 426 项通过。`1b0dc171` 仅收窄
-optional usage_context 的错误状态读取，mypy 和 20 项 Provider 回归通过。最终文档
-提交后的 M4 identity 和跨仓报告保存在本机证据，不将旧 SHA 写成当前 accepted。
+optional usage_context 的错误状态读取，mypy 和 20 项 Provider 回归通过。最终同步前检查发现 M4 已被另一 `codex/wp-ai-image-editing` dirty candidate 替换；
+同步因依赖指纹不匹配以 42 拒绝，未覆盖该候选，也未追加 deploy。此前测试仍只
+属于各自精确 SHA。最终 M4 identity 和跨仓报告保存在本机证据，不将旧 SHA 写成
+当前 candidate 或 accepted。
 
-Cloud `1b0dc171` CI 的 frontend、backend-static、依赖审计、后端分片 1/3/4、
-CodeQL 等通过，分片 2 在此记录时仍运行。Python 3.14 Alpine image smoke 被
+Cloud `1b0dc171` CI 的 frontend、backend-static、依赖审计、全部四个后端分片、
+CodeQL 等通过。Python 3.14 Alpine image smoke 及其 backend 汇总门禁被
 CVE-2026-119170 阻塞：官方说明仅 Python 3.14.10 + OpenSSL FIPS 模式受影响，
 修复版本为 3.14.11；本轮查询的官方 `3.14.11-alpine3.24` tag 尚不存在。
 此为候选基础镜像扫描阻塞；未核实生产 FIPS 状态，不声称生产可利用或已修复。
