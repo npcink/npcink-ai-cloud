@@ -432,7 +432,8 @@ class RuntimeProviderExecutionService:
                     repository.session.commit()
                     provider_result = provider.execute(provider_request)
                 except ProviderExecutionError as error:
-                    if (error.usage_context or {}).get("response_status") in {
+                    response_status = (error.usage_context or {}).get("response_status")
+                    if response_status in {
                         "incomplete",
                         "failed",
                         "cancelled",
@@ -441,9 +442,9 @@ class RuntimeProviderExecutionService:
                             run,
                             input_payload=input_payload,
                             provider_output={
-                                "response_status": error.usage_context["response_status"]
+                                "response_status": response_status
                             },
-                            finish_reason=str(error.usage_context["response_status"]),
+                            finish_reason=str(response_status),
                         )
                         if decision.error_code == "provider.output_incomplete":
                             error.error_code = decision.error_code
