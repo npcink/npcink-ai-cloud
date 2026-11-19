@@ -602,95 +602,19 @@ test('detected provider image host stays contextual and requires evidence-bound 
   });
 });
 
-test('image delivery probe discovers the exact host without manual entry', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.setViewportSize({ width: 1440, height: 1050 });
-  await installProviderDirectoryHarness(page);
-  let approvalPayload: unknown = null;
-  await page.route('**/api/admin/provider-connections/model_ready/image-delivery-probes', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
-        probe_id: 'image-probe-browser',
-        connection_id: 'model_ready',
-        provider_id: 'openai',
-        model_id: 'gpt-image-2',
-        status: 'approval_required',
-        ok: false,
-        delivery_format: 'url',
-        detected_host: 'images.provider.example',
-        host_approved: false,
-        latency_ms: 321,
-        estimated_cost: 0.0123,
-        provider_call_billable: true,
-        tested_at: '2026-08-11T00:00:00Z',
-        message: 'provider image host approval is required',
-        receipt: {
-          event_kind: 'provider_connection.image_delivery_probe',
-          scope_kind: 'provider_connection',
-          scope_id: 'model_ready',
-          outcome: 'succeeded',
-        },
-      })),
-    });
-  });
-  await page.route('**/api/admin/provider-connections/model_ready/approve-image-host', async (route) => {
-    approvalPayload = route.request().postDataJSON();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
-        approved_image_output_host: 'images.provider.example',
-        evidence_probe_id: 'image-probe-browser',
-        receipt: {
-          event_kind: 'provider_connection.image_host_approve',
-          scope_kind: 'provider_connection',
-          scope_id: 'model_ready',
-          outcome: 'succeeded',
-        },
-      })),
-    });
-  });
-  await page.goto('/admin/ai-resources?focus=model_ready');
-
-  await page.locator('[data-connection-id="model_ready"]')
-    .getByRole('button', { name: /^Configure$|^配置$/i })
-    .click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByText(/may incur a small provider charge|可能收取少量费用/i)).toBeVisible();
-  await dialog.getByRole('button', { name: /Generate test image|生成测试图/i }).click();
-  await expect(dialog.getByText(/images\.provider\.example/)).toBeVisible();
-  await dialog.getByRole('button', { name: /Approve this exact host|批准此精确域名/i }).click();
-
-  expect(approvalPayload).toEqual({ evidence_probe_id: 'image-probe-browser' });
-  await expect(dialog.getByText(/Run the test again|再次测试/i)).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-});
-
 for (const locale of ['en', 'zh-CN']) {
-  test(`image delivery uses saved settings and preserves verification evidence in ${locale}`, async ({ page }, testInfo) => {
+  test(`supplier image delivery settings do not run verification in ${locale}`, async ({ page }, testInfo) => {
     const browserEvidence = observeAdminBrowserEvidence(page);
     await page.addInitScript(value => localStorage.setItem('locale', value), locale);
     await page.setViewportSize({ width: 1440, height: 1050 });
-    const fixtureConnections: SupplierConnection[] = structuredClone(connections);
-    const ready = fixtureConnections.find(connection => connection.connection_id === 'model_ready')!;
-    await installProviderDirectoryHarness(page, { connections: fixtureConnections });
+    await installProviderDirectoryHarness(page);
     let calls = 0;
     await page.route('**/api/admin/provider-connections/model_ready/image-delivery-probes', async route => {
       calls += 1;
-      if (calls === 1) {
-        ready.image_delivery_probe = { status: 'failed', model_id: 'image-model', tested_at: '2026-10-28T00:00:00Z' };
-        return route.fulfill({ status: 502, json: buildAdminApiErrorEnvelope('Image delivery test failed.', 'provider_connection.image_delivery_probe_failed') });
-      }
-      ready.image_delivery_probe = {
-        probe_id: 'image-probe-verified', status: 'ready', model_id: 'image-model',
-        delivery_format: 'base64', tested_at: '2026-10-28T00:01:00Z',
-      };
-      await route.fulfill({ json: buildAdminApiEnvelope({
-        ...ready.image_delivery_probe, connection_id: ready.connection_id, provider_id: ready.provider_id,
-        ok: true, host_approved: true, latency_ms: 1, estimated_cost: 0, provider_call_billable: true,
-      }) });
+      await route.abort();
+    });
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('image settings save failed', 'provider_connection.update_failed') });
     });
     await page.goto('/admin/ai-resources');
     await page.getByLabel(/^Status$|^状态$/i).selectOption('ready');
@@ -700,40 +624,22 @@ for (const locale of ['en', 'zh-CN']) {
     await configure.click();
     const dialog = page.getByRole('dialog');
     const delivery = dialog.locator('[data-configuration-row="image-delivery"]');
-    const generate = dialog.getByRole('button', { name: /Generate test image|生成测试图/i });
-    await expect(delivery.getByRole('status')).toContainText(/Not verified|未验证/i);
+    await expect(dialog.getByRole('button', { name: /Generate test image|生成测试图/i })).toHaveCount(0);
+    await expect(delivery).toContainText(/Base64 image|Base64 图片/i);
     await expect(dialog.locator('[data-configuration-row="image-response-format"]')).not.toBeVisible();
-    const name = dialog.getByLabel(/^Display name$|^显示名称$/i);
-    await name.fill('Unsaved image supplier');
-    await expect(generate).toBeDisabled();
-    await expect(delivery).toContainText(/Save your changes|请先保存修改/i);
-    expect(calls).toBe(0);
-    await name.fill('MQZJ');
-    await expect(generate).toBeEnabled();
-    await generate.click();
-    await expect(delivery.getByRole('status')).toContainText(/Failed|验证失败/i);
-    await page.keyboard.press('Escape');
-    await configure.click();
-    await expect(delivery.getByRole('status')).toContainText(/Failed|验证失败/i);
-    await generate.click();
-    await expect(delivery.getByRole('status')).toContainText(/Verified|已验证/i);
-    await expect(delivery).toContainText('image-model');
-    await page.keyboard.press('Escape');
-    await configure.click();
-    await expect(delivery.getByRole('status')).toContainText(/Verified|已验证/i);
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     const format = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
     await format.selectOption('url');
     await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
-    await expect(generate).toBeDisabled();
-    await expect(delivery.getByRole('status')).not.toContainText(/Verified|已验证/i);
+    await expect(delivery).toContainText(/Image URL|图片 URL/i);
+    await expect(delivery).toContainText(/Missing image download hosts|缺少图片下载域名/i);
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     const reopenedFormat = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
     await reopenedFormat.selectOption('b64_json');
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
-    await expect(generate).toBeEnabled();
-    expect(calls).toBe(2);
+    await expect(delivery).toContainText(/Base64 image|Base64 图片/i);
+    expect(calls).toBe(0);
     for (const notification of await page.getByRole('button', { name: 'Close notification', exact: true }).all()) await notification.click();
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('url');
@@ -745,23 +651,26 @@ for (const locale of ['en', 'zh-CN']) {
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
     await expect(dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i })).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath(`image-connection-${locale}-900.png`) });
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).click();
+    await expect(dialog.getByRole('alert')).toContainText(/Failed to save provider connection|保存 provider 连接失败/);
+    await expect(delivery).toContainText(/Image URL|图片 URL/i);
+    expect(calls).toBe(0);
     await writeAdminVisualReceipt({
       page, testInfo, route: '/admin/ai-resources', pageModel: 'queue', dataMode: 'mocked',
-      testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog', 'unverified', 'unsaved', 'failed', 'retry', 'verified', 'advanced', locale],
-      humanAcceptance: 'not_required', browserEvidence,
-      expectedConsoleErrors: [/Image delivery test failed\./, /^Failed to load resource: the server responded with a status of 502 \(Bad Gateway\)$/],
+      testedStates: ['ready', 'selected', 'filtered', 'dialog', 'unsaved', 'advanced', 'operation_error', locale],
+      humanAcceptance: 'pending', browserEvidence,
+      expectedConsoleErrors: [/image settings save failed/, /Failed to load resource.*503/],
       pageTitle: page.locator('main h1'), workingSurface: delivery,
       routeRuleResults: [
-        { id: 'single-primary-action', status: 'pass', evidence: 'Save supplier is primary; optional paid image test is secondary' },
-        { id: 'textual-status', status: 'pass', evidence: 'Unverified, failed, verified and unsaved states are distinct; tested model is named' },
-        { id: 'action-object-proximity', status: 'pass', evidence: 'Generate test image is beside its delivery state and cost notice' },
-        { id: 'distinct-interaction-states', status: 'pass', evidence: 'Unsaved changes disable the test and suppress stale success' },
-        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes the dialog; the Configure action opens it again' },
-        { id: 'context-stability', status: 'pass', evidence: 'Failure and success survive closing and reopening the supplier editor' },
+        { id: 'single-primary-action', status: 'pass', evidence: 'Save supplier is primary; no generation action remains' },
+        { id: 'textual-status', status: 'pass', evidence: 'Image response format and missing URL hosts are visible' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'Advanced settings are beside the image response format' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'URL and Base64 expose different host configuration states' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Returning from advanced settings restores focus to its trigger' },
+        { id: 'context-stability', status: 'pass', evidence: 'Changing panels preserves the image settings draft' },
       ],
       interactionResults: [
-        { id: 'saved-settings-only', status: 'pass', evidence: 'No probe during unsaved edits; only two explicit mocked calls' },
-        { id: 'verification-recovery', status: 'pass', evidence: 'Failure persists; retry replaces it with model-scoped success' },
+        { id: 'no-supplier-probe', status: 'pass', evidence: 'No old probe requests; verification is in Runtime Profiles' },
       ],
     });
     await page.setViewportSize({ width: 1056, height: 800 });

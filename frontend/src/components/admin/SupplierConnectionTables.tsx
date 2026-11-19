@@ -269,6 +269,7 @@ export function ModelSupplierTable({
               const providerLinks = referenceLinksForConnection(connection);
               const imageDeliveryRepair = connection.image_delivery_repair;
               const hasPendingImageHostRepair = imageDeliveryRepair?.status === 'pending'
+                && !imageDeliveryRepair.instance_id
                 && imageDeliveryRepair.reason_code === 'host_not_allowlisted'
                 && Boolean(
                   imageDeliveryRepair.detected_host

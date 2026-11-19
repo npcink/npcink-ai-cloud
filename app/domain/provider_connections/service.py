@@ -524,7 +524,9 @@ class ProviderConnectionAdminService:
             existing_hosts = list(normalize_provider_image_output_hosts(existing_hosts_input))
             if approved_host not in existing_hosts:
                 existing_hosts.append(approved_host)
-            config["image_response_format"] = "url"
+            # Runtime configuration verifies the saved format, not a format changed by approval.
+            if not evidence.get("instance_id"):
+                config["image_response_format"] = "url"
             config["image_output_hosts"] = existing_hosts
             capability_ids = _effective_capability_ids(config, row.provider_type)
             config["capability_ids"] = capability_ids
@@ -1342,6 +1344,11 @@ class ProviderConnectionAdminService:
                 "approved_at",
             ),
         )
+        repair_instance_id = _string(
+            _dict(metadata.get("image_delivery_repair")).get("instance_id")
+        )
+        if image_delivery_repair and repair_instance_id:
+            image_delivery_repair["instance_id"] = repair_instance_id
         image_delivery_probe = public_image_evidence(
             metadata,
             "image_delivery_probe",
@@ -1523,6 +1530,59 @@ def _image_delivery_probe_verification_inputs(row: ProviderConnection) -> dict[s
         "source_role": _string(row.source_role),
         "secret_ciphertext": _string(row.secret_ciphertext),
     }
+
+
+def runtime_image_host_repair(row: ProviderConnection) -> dict[str, str] | None:
+    evidence = _dict(_dict(row.metadata_json).get("image_delivery_repair"))
+    provider_id = _string(_dict(row.config_json).get("provider_id") or row.connection_id)
+    if (
+        evidence.get("evidence_kind") != "admin_probe"
+        or evidence.get("reason_code") != "host_not_allowlisted"
+        or evidence.get("status") not in ("pending", "approved")
+        or not all(evidence.get(key) for key in ("instance_id", "probe_id", "detected_host"))
+        or evidence.get("provider_id") != provider_id
+    ):
+        return None
+    return {
+        "connection_id": row.connection_id,
+        **{
+            key: _string(evidence[key])
+            for key in ("instance_id", "status", "probe_id", "detected_host")
+        },
+    }
+
+
+def record_runtime_image_probe(
+    row: ProviderConnection,
+    *,
+    instance_id: str,
+    provider_id: str,
+    model_id: str,
+    probe_id: str,
+    detected_host: str,
+    verified: bool,
+    now: datetime,
+) -> dict[str, str] | None:
+    metadata = dict(_dict(row.metadata_json))
+    if detected_host:
+        metadata["image_delivery_repair"] = {
+            "status": "pending",
+            "reason_code": "host_not_allowlisted",
+            "evidence_kind": "admin_probe",
+            "detected_host": detected_host,
+            "probe_id": probe_id,
+            "instance_id": instance_id,
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "observed_at": now.isoformat(),
+        }
+    elif verified:
+        repair = runtime_image_host_repair(row)
+        if repair and repair["instance_id"] == instance_id:
+            metadata.pop("image_delivery_repair")
+    row.metadata_json = metadata
+    repair = runtime_image_host_repair(row)
+    return repair if repair and repair["instance_id"] == instance_id else None
 
 
 def _select_image_delivery_probe_target(

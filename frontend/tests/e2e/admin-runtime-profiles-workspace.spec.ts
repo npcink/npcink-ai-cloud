@@ -1042,6 +1042,71 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   await expect(tasks).toContainText(/Unrecognized task: custom_future_task|未识别的任务：custom_future_task/);
 });
 
+for (const [locale, width] of [['en', 1440], ['zh-CN', 1056]] as const) {
+  test(`selected image model verifies delivery and retries after exact-host approval (${locale})`, async ({ page }, testInfo) => {
+    await page.addInitScript(value => localStorage.setItem('locale', value), locale);
+    await page.setViewportSize({ width, height: 1050 });
+    const writes = await installRuntimeProfilesHarness(page);
+    const image = { ...primaryInstance, instance_id: 'image.selected', model_id: 'image-model', model_feature: 'image_generation', endpoint_variant: 'image_generations' };
+    const other = { ...image, instance_id: 'image.other', model_id: 'other-image-model' };
+    const profile = { ...initialProfiles[0], profile_id: 'wp-ai.image-generation', execution_kind: 'image_generation', candidate_instance_ids: [], tasks: ['image_generation'] };
+    const data = projection([...initialProfiles, profile]);
+    const repair = { instance_id: image.instance_id, connection_id: 'supplier_image', probe_id: 'probe-image-selected', detected_host: 'images.provider.example', status: 'pending' };
+    let probes = 0;
+    let approvals = 0;
+    const evidence = { capability: 'image_generation', source: 'provider_probe', revision: 'probe', checked_at: new Date().toISOString() };
+    await page.route('**/api/admin/runtime-profiles', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({ json: envelope({ ...data, available_instances: { ...data.available_instances, image_generation: [
+        { ...image, image_host_repair: probes === 1 ? repair : null }, other,
+      ] } }) });
+    });
+    await page.route('**/api/admin/runtime-profiles/capability-probe', async (route) => {
+      probes += 1;
+      expect(route.request().postDataJSON()).toMatchObject({ capability: 'image_generation', instance_id: image.instance_id });
+      if (probes === 1) {
+        const error_code = 'runtime_profiles.image_host_approval_required';
+        await route.fulfill({ status: 409, json: { ...envelope({ ...evidence, state: 'verification_failed', error_code, image_host_repair: repair }), status: 'error', error_code } });
+      } else {
+        expect(approvals).toBe(1);
+        await route.fulfill({ json: envelope({ ...evidence, state: 'verified', error_code: '', image_host_repair: null }) });
+      }
+    });
+    await page.route('**/api/admin/provider-connections/supplier_image/approve-image-host', async (route) => {
+      approvals += 1;
+      expect(route.request().postDataJSON()).toEqual({ evidence_probe_id: repair.probe_id });
+      await route.fulfill({ json: envelope({ approved_image_output_host: repair.detected_host }) });
+    });
+    await page.goto('/admin/runtime-profiles');
+    const configure = profileRow(page, profile.profile_id).getByRole('button', { name: /^Configure$|^配置$/ });
+    await configure.click();
+    const dialog = page.getByRole('dialog');
+    const selected = candidateRow(page, image.instance_id);
+    const verify = selected.getByRole('button', { name: /Verify image generation|验证图片生成/ });
+    await expect(dialog.locator('[data-ui="capability-verification-notice"]')).toContainText(/charge|费用/);
+    await expect(verify).toBeDisabled();
+    await selected.getByRole('radio', { name: /image-model/ }).first().check();
+    await verify.click();
+    await expect(selected).toContainText(repair.detected_host);
+    await expect(candidateRow(page, other.instance_id)).not.toContainText(repair.detected_host);
+    await expect(selected).toContainText(/Host approval required|待批准图片域名/);
+    await expect(dialog.getByRole('button', { name: /Save usage|保存用途/ })).toBeEnabled();
+    await dialog.getByRole('button', { name: /Save usage|保存用途/ }).click();
+    expect(writes).toHaveLength(0);
+    expect(probes).toBe(1);
+    expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`image-host-pending-${width}.png`) });
+    await selected.getByRole('button', { name: /Approve this exact host|批准此精确域名/ }).click();
+    await expect(selected).toContainText(/Host approved|域名已批准/);
+    expect(probes).toBe(1);
+    await verify.click();
+    await expect(selected).toContainText(/Capability verified|能力已验证/);
+    expect(probes).toBe(2);
+    expect(writes).toHaveLength(0);
+    await page.screenshot({ path: testInfo.outputPath(`image-host-verified-${width}.png`) });
+  });
+}
+
 test('dual purpose image model keeps separate generation and editing candidates and failure evidence', async ({ page }) => {
   const writes = await installRuntimeProfilesHarness(page);
   const generated = {

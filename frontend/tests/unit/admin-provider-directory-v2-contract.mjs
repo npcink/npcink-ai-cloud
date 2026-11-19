@@ -183,9 +183,10 @@ assert.match(
 
 assert.match(
   pageSource,
-  /rowId="image-delivery"[\s\S]*imageDeliveryStatusLabel[\s\S]*image_delivery_test_not_proof_compact/,
-  'Image delivery must use concise configuration rows while retaining the separate-delivery-test boundary'
+  /rowId="image-delivery"[\s\S]*providerConnectionForm\.imageResponseFormat[\s\S]*provider_issue_image_output_hosts_missing/,
+  'Image delivery must show the configured format and missing hosts without starting model verification'
 );
+assert.doesNotMatch(pageSource, /\/image-delivery-probes/);
 assert.match(pageSource, /rowId="image-response-format"[\s\S]*rowId="image-output-hosts"/);
 assert.match(pageSource, /data-ui="image-delivery-advanced-trigger"[\s\S]*openProviderAdvancedPanel\('image'\)/);
 assert.match(pageSource, /data-ui="advanced-runtime-settings-trigger"[\s\S]*openProviderAdvancedPanel\('runtime'\)/);

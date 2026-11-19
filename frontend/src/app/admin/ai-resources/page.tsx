@@ -82,7 +82,6 @@ import {
   type ConnectionStatusFilter,
   type ProviderConnectionDeletePreflight,
   type ProviderConnectionTestResult,
-  type ProviderImageDeliveryProbeResult,
   type ProviderModelHealth,
   type SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
@@ -386,8 +385,6 @@ function AiResourcesContent() {
   const [modelTestTarget, setModelTestTarget] = useState<ModelTestTarget | null>(null);
   const [savingConnection, setSavingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [testingConnection, setTestingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [probingImageDelivery, setProbingImageDelivery] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
   const [approvingImageHost, setApprovingImageHost] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [preflightingDelete, setPreflightingDelete] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [deletingConnection, setDeletingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
@@ -834,10 +831,10 @@ function AiResourcesContent() {
     }
   }
 
-  async function approveDetectedImageHost(connection: Connection, probeId = '') {
+  async function approveDetectedImageHost(connection: Connection) {
     if (directoryStale || saveInFlight.current) return;
     const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
-    const evidenceProbeId = probeId || String(connection.image_delivery_repair?.probe_id || '');
+    const evidenceProbeId = String(connection.image_delivery_repair?.probe_id || '');
     if (!evidenceRunId && !evidenceProbeId) return;
     setApprovingImageHost(startAsyncOperation(connection.connection_id));
     setError('');
@@ -868,12 +865,9 @@ function AiResourcesContent() {
           ]).join(', '),
         });
       }
-      setImageDeliveryProbeResult((current) => current && current.probe_id === evidenceProbeId
-        ? { ...current, status: 'host_approved', host_approved: true }
-        : current);
       await loadResources();
       toast.success(
-        aiText('image_host_repair_success', 'Exact image host approved. Run the image delivery test again.'),
+        aiText('image_host_repair_success', 'Exact image host approved. Retry image generation.'),
         t('common.success')
       );
       setApprovingImageHost(succeedAsyncOperation(connection.connection_id));
@@ -884,47 +878,6 @@ function AiResourcesContent() {
       );
       setError(approvalMessage);
       setApprovingImageHost(failAsyncOperation(approvalMessage, connection.connection_id));
-    }
-  }
-
-  async function runImageDeliveryProbe(): Promise<void> {
-    const connectionId = providerConnectionForm.connectionId;
-    if (!canProbeImageDelivery || !connectionId) return;
-    setProbingImageDelivery(startAsyncOperation(connectionId));
-    setImageDeliveryProbeResult(null);
-    setError('');
-    try {
-      const response = await aiResourcesClient.request<ProviderImageDeliveryProbeResult & {
-        receipt?: AdminMutationReceiptPayload | null;
-      }>(
-        `/api/admin/provider-connections/${encodeURIComponent(connectionId)}/image-delivery-probes`,
-        { method: 'POST' }
-      );
-      setImageDeliveryProbeResult(response.data);
-      setLastReceipt(response.data.receipt || null);
-      await loadResources();
-      toast.success(
-        response.data.status === 'approval_required'
-          ? aiText('image_delivery_probe_host_detected', 'Image host detected. Approve the exact host to continue.')
-          : aiText('image_delivery_probe_passed', 'Image delivery test passed.'),
-        t('common.success')
-      );
-      setProbingImageDelivery(succeedAsyncOperation(connectionId));
-    } catch (probeError) {
-      const probeErrorCode = probeError instanceof ApiError ? probeError.errorCode : '';
-      const probeFallback = probeErrorCode === 'provider_connection.image_probe_model_required'
-        ? aiText('image_delivery_probe_model_required', 'Enable and save at least one image-generation model before testing delivery.')
-        : probeErrorCode === 'provider_connection.image_generation_not_enabled'
-          ? aiText('image_delivery_probe_capability_required', 'Enable image generation for this connection before testing delivery.')
-          : aiText('image_delivery_probe_failed', 'Image delivery test failed.');
-      const probeMessage = providerErrorMessage(
-        probeError,
-        probeFallback
-      );
-      setError(probeMessage);
-      setProbingImageDelivery(failAsyncOperation(probeMessage, connectionId));
-      await loadResources();
-
     }
   }
 
@@ -1162,8 +1115,6 @@ function AiResourcesContent() {
     if (directoryStale || saveInFlight.current) return;
     invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
-    setImageDeliveryProbeResult(null);
-    setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
     setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
@@ -1186,8 +1137,6 @@ function AiResourcesContent() {
     }
     invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
-    setImageDeliveryProbeResult(null);
-    setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
     setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
@@ -1212,7 +1161,6 @@ function AiResourcesContent() {
       return;
     }
     invalidateCatalogRequest();
-    setImageDeliveryProbeResult(null);
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
     setMessage('');
@@ -1476,26 +1424,7 @@ function AiResourcesContent() {
     const matches = (id: string) => [...modelIdentityKeys(id, modelNamespacePrefix)].some((key) => modelIdentityKeys(usage.model_id, modelNamespacePrefix).has(key));
     return (activeProviderConnection?.model_ids || []).some(matches) && !selectedProviderModelIds.some(matches);
   });
-  const activeImageDeliveryProbe = (imageDeliveryProbeResult?.connection_id === providerConnectionForm.connectionId
-    ? imageDeliveryProbeResult : null) || activeProviderConnection?.image_delivery_probe || null;
-  const activeImageDeliveryRepair = activeProviderConnection?.image_delivery_repair;
   const isSavingConnection = asyncOperationRunning(savingConnection);
-  const isProbingImageDelivery = asyncOperationRunning(probingImageDelivery, providerConnectionForm.connectionId);
-  const imageDeliveryFailed = activeImageDeliveryProbe?.status === 'failed'
-    || (probingImageDelivery.key === providerConnectionForm.connectionId && probingImageDelivery.status === 'failed');
-  const canProbeImageDelivery = providerFormMode === 'edit' && !providerDraftDirty
-    && providerConnectionForm.enabled && Boolean(activeProviderConnection?.configured)
-    && !isSavingConnection && !isProbingImageDelivery;
-  const imageDeliveryStatus = providerDraftDirty ? 'draft' : isProbingImageDelivery ? 'pending'
-    : imageDeliveryFailed ? 'failed' : activeImageDeliveryProbe?.status === 'ready' ? 'success'
-      : activeImageDeliveryProbe?.status === 'approval_required' ? 'warning' : 'inactive';
-  const imageDeliveryStatusLabel = providerDraftDirty
-    ? aiText('image_delivery_unsaved', 'Unsaved changes')
-    : isProbingImageDelivery ? aiText('image_delivery_probe_testing', 'Testing image delivery...')
-      : imageDeliveryFailed ? aiText('image_delivery_failed', 'Failed')
-        : activeImageDeliveryProbe?.status === 'ready' ? aiText('image_delivery_verified', 'Verified')
-          : activeImageDeliveryProbe?.status === 'approval_required' ? aiText('image_delivery_approval_required', 'Host approval required')
-            : aiText('image_delivery_not_verified', 'Not verified');
   const isLoadingModelReferences = asyncOperationRunning(loadingModelReferences);
   const isSyncingModelReferences = asyncOperationRunning(syncingModelReferences);
   const isFetchingProviderCatalog = asyncOperationRunning(fetchingProviderCatalog);
@@ -1823,7 +1752,7 @@ function AiResourcesContent() {
                             aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
                           />
                         )}
-                        detail={aiText('image_delivery_manual_host_note', 'Normally use the image delivery test. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.')}
+                        detail={aiText('image_delivery_manual_host_note', 'Verify the model in Runtime Profiles. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.')}
                       />
                     ) : null}
                   </AdminConfigurationTable>
@@ -2014,34 +1943,12 @@ function AiResourcesContent() {
                   <AdminConfigurationRow
                     rowId="image-delivery"
                     label={aiText('image_delivery_row_label', 'Image delivery')}
-                    value={(
-                      <span className="grid gap-1" role="status">
-                        <span><BackofficeStatusBadge label={imageDeliveryStatusLabel} status={imageDeliveryStatus} /></span>
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'ready' ? (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_verified_model', 'Tested model: {{model}}', {
-                              model: String(activeImageDeliveryProbe.model_id || '—'),
-                            })}
-                          </span>
-                        ) : null}
-                      </span>
-                    )}
+                    value={providerConnectionForm.imageResponseFormat === 'url' ? aiText('image_response_url', 'Image URL')
+                      : providerConnectionForm.imageResponseFormat === 'b64_json' ? aiText('image_response_base64', 'Base64 image')
+                        : aiText('image_response_provider_default', 'Provider / model default')}
                     detail={(
                       <span className="grid gap-2">
                         <span className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={!canProbeImageDelivery}
-                            onClick={() => void runImageDeliveryProbe()}
-                          >
-                            {isProbingImageDelivery
-                              ? aiText('image_delivery_probe_testing', 'Testing image delivery...')
-                              : aiText('image_delivery_probe_action', 'Generate test image')}
-                          </button>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_probe_cost_notice', 'Generates one test image and may incur a small provider charge.')}
-                          </span>
                           <button
                             ref={providerImageAdvancedTriggerRef}
                             data-ui="image-delivery-advanced-trigger"
@@ -2052,39 +1959,8 @@ function AiResourcesContent() {
                             {aiText('image_advanced_settings', 'Image delivery · Advanced settings')}
                           </button>
                         </span>
-                        {providerFormMode !== 'edit' || providerDraftDirty ? (
-                          <span className="text-xs text-amber-700 dark:text-amber-300">
-                            {aiText('image_delivery_probe_save_changes', 'Save your changes before generating a test image.')}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_test_not_proof_compact', 'Fetching the model catalog does not verify image generation.')}
-                          </span>
-                        )}
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'host_approved' ? (
-                          <span className="text-xs text-blue-700 dark:text-blue-300">
-                            {aiText('image_delivery_probe_host_approved', 'Exact host approved. Run the test again to validate the download.')}
-                          </span>
-                        ) : null}
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'approval_required' ? (
-                          <span role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <span>{aiText('image_delivery_probe_approval_required', 'Detected exact host: {{host}}', {
-                              host: String(activeImageDeliveryProbe.detected_host || ''),
-                            })}</span>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              disabled={isProbingImageDelivery || asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)}
-                              onClick={() => activeProviderConnection && void approveDetectedImageHost(
-                                activeProviderConnection,
-                                String(activeImageDeliveryProbe.probe_id || activeImageDeliveryRepair?.probe_id || '')
-                              )}
-                            >
-                              {asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)
-                                ? aiText('image_host_repair_approving', 'Approving...')
-                                : aiText('image_host_repair_action', 'Approve this exact host')}
-                            </button>
-                          </span>
+                        {providerConnectionForm.imageResponseFormat === 'url' && !providerConnectionForm.imageOutputHosts.trim() ? (
+                          <span className="text-xs text-amber-700 dark:text-amber-300">{aiText('provider_issue_image_output_hosts_missing', 'Missing image download hosts')}</span>
                         ) : null}
                       </span>
                     )}

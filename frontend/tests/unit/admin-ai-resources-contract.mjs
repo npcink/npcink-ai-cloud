@@ -132,10 +132,8 @@ assert.match(pageSource, /image_response_format: providerConnectionForm\.imageRe
 assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
 assert.match(pageSource, /imageOutputHostsAreExact\(imageOutputHosts\)/);
-assert.match(pageSource, /Fetching the model catalog does not verify image generation/);
-assert.match(pageSource, /Generate test image/);
-assert.match(pageSource, /may incur a small provider charge/);
-assert.match(pageSource, /image-delivery-probes/);
+assert.doesNotMatch(pageSource, /image-delivery-probes|Generate test image/);
+assert.match(pageSource, /Verify the model in Runtime Profiles/);
 assert.match(pageSource, /evidence_probe_id: evidenceProbeId/);
 assert.match(pageSource, /Manual exact hosts \(advanced\)/);
 assert.match(pageSource, /data-ui="model-visibility-toolbar"/);

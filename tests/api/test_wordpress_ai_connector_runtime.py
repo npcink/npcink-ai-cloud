@@ -41,6 +41,7 @@ from app.core.models import (
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.image_generation.provider_fetch import ProviderFetchedImage, _validate_provider_url
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.model_capabilities.probes import (
@@ -4909,6 +4910,115 @@ def test_failed_capability_probe_returns_valid_error_envelope(
         assert evidence is not None
         assert evidence.state == "verification_failed"
         assert evidence.error_code == error_code
+
+
+def test_runtime_image_probe_requires_exact_host_approval_before_fetch_and_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    instance_id = "openai-wp-ai-image-test"
+    host = "images.provider.example"
+    source_url = f"https://{host}/image.png?signature=private-fixture"
+    probe_path = "/internal/service/admin/runtime-profiles/capability-probe"
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "openai")
+        assert connection is not None
+        connection.config_json = {**connection.config_json, "image_response_format": ""}
+        evidence = session.scalar(select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == instance_id,
+        ))
+        assert evidence is not None
+        evidence.checked_at = datetime.now(UTC) - timedelta(days=31)
+        session.commit()
+
+    fetched = []
+    requests = []
+    invalid_image = False
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        requests.append(request)
+        if invalid_image:
+            return ProviderExecutionResult(
+                output={}, latency_ms=1, tokens_in=0, tokens_out=0, cost=0,
+            )
+        with get_session(database_url) as session:
+            connection = session.get(ProviderConnection, "openai")
+            assert connection is not None
+            hosts = tuple(connection.config_json.get("image_output_hosts", []))
+        return ProviderExecutionResult(
+            output={}, latency_ms=1, tokens_in=0, tokens_out=0, cost=0,
+            media_candidates=(
+                ProviderMediaCandidate(index=1, source_url=source_url, image_output_hosts=hosts),
+            ),
+        )
+
+    def fetch(url: str, *, allowed_hosts: tuple[str, ...], **kwargs: Any) -> ProviderFetchedImage:
+        _validate_provider_url(url, allowed_hosts=allowed_hosts)
+        fetched.append(url)
+        stream = io.BytesIO()
+        Image.new("RGB", (16, 16)).save(stream, format="PNG")
+        stream.seek(0)
+        return ProviderFetchedImage(stream, stream.getbuffer().nbytes, "image/png")
+
+    monkeypatch.setattr(provider, "provider_connection_id", "openai", raising=False)
+    monkeypatch.setattr(provider, "execute", execute)
+    monkeypatch.setattr("app.domain.model_capabilities.probes.fetch_provider_image_url", fetch)
+
+    def probe(key: str):
+        return client.post(probe_path, headers=build_internal_headers(idempotency_key=key), json={
+            "capability": "image_generation", "instance_id": instance_id,
+        })
+
+    pending = probe("image-probe-pending")
+    assert pending.status_code == 409, pending.text
+    assert "private-fixture" not in pending.text
+    repair = pending.json()["data"]["image_host_repair"]
+    assert repair == {
+        "status": "pending", "instance_id": instance_id, "connection_id": "openai",
+        "detected_host": host, "probe_id": repair["probe_id"],
+    }
+    assert pending.json()["data"]["routing_eligible"] is False
+    assert fetched == []
+
+    def projected_repair():
+        response = client.get(
+            "/internal/service/admin/runtime-profiles", headers=build_internal_headers(),
+        )
+        instances = response.json()["data"]["available_instances"]["image_generation"]
+        selected = next(item for item in instances if item["instance_id"] == instance_id)
+        return selected.get("image_host_repair")
+
+    assert projected_repair() == repair
+    rejected = client.post(
+        "/internal/service/admin/provider-connections/openai/approve-image-host",
+        headers=build_internal_headers(idempotency_key="image-probe-stale-approval"),
+        json={"evidence_probe_id": "old-probe-id"},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert projected_repair() == repair
+    approved = client.post(
+        "/internal/service/admin/provider-connections/openai/approve-image-host",
+        headers=build_internal_headers(idempotency_key="image-probe-approve"),
+        json={"evidence_probe_id": repair["probe_id"]},
+    )
+    assert approved.status_code == 200, approved.text
+    assert not approved.json()["data"]["connection"]["config"].get("image_response_format")
+    assert projected_repair() == {**repair, "status": "approved"}
+    assert len(requests) == 1 and fetched == []
+    invalid_image = True
+    failed = probe("image-probe-failed-retry")
+    assert failed.status_code == 400, failed.text
+    assert failed.json()["error_code"] == "capability_probe.image_invalid"
+    assert failed.json()["data"]["routing_eligible"] is False
+    assert projected_repair() == {**repair, "status": "approved"}
+    invalid_image = False
+    verified = probe("image-probe-retry")
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["data"]["routing_eligible"] is True
+    assert projected_repair() is None
+    assert fetched == [source_url]
+    assert [request.instance_id for request in requests] == [instance_id] * 3
+    assert [request.input_payload["params"] for request in requests] == [{"n": 1}] * 3
 
 
 @pytest.mark.parametrize(("profile_id", "endpoint_variant", "compatible"), [
