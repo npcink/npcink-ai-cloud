@@ -88,13 +88,15 @@ def _configure_archive(apt_root: Path) -> subprocess.CompletedProcess[str]:
     [
         "mirror+file:/etc/apt/apt-mirrors.txt",
         "http://azure.archive.ubuntu.com/ubuntu/",
+        "http://us-east-2.ec2.archive.ubuntu.com/ubuntu/",
         "http://archive.ubuntu.com/ubuntu/",
         "https://archive.ubuntu.com/ubuntu",
     ],
 )
 @pytest.mark.parametrize("shared_security_mirrorlist", [False, True])
+@pytest.mark.parametrize("cloud_mirror", ["azure.archive", "us-east-2.ec2.archive"])
 def test_ci_ubuntu_archive_preserves_security_and_other_sources(
-    tmp_path: Path, uri: str, shared_security_mirrorlist: bool
+    tmp_path: Path, uri: str, shared_security_mirrorlist: bool, cloud_mirror: str
 ) -> None:
     archive = ARCHIVE_STANZA.replace("mirror+file:/etc/apt/apt-mirrors.txt", uri)
     security = SECURITY_STANZA
@@ -103,6 +105,9 @@ def test_ci_ubuntu_archive_preserves_security_and_other_sources(
             "http://security.ubuntu.com/ubuntu/", "mirror+file:/etc/apt/apt-mirrors.txt"
         )
     source = _archive_fixture(tmp_path, archive, security)
+    (tmp_path / "apt-mirrors.txt").write_text(
+        RUNNER_MIRRORS.replace("azure.archive", cloud_mirror)
+    )
     before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
     result = _configure_archive(tmp_path)
     assert result.returncode == 0, result.stderr

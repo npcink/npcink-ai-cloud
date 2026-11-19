@@ -16,6 +16,8 @@ ARCHIVE = "https://archive.ubuntu.com/ubuntu"
 MIRROR_URI = "mirror+file:/etc/apt/apt-mirrors.txt"
 DIRECT_ARCHIVES = {
     "http://azure.archive.ubuntu.com/ubuntu",
+    "http://us-east-2.ec2.archive.ubuntu.com/ubuntu",
+    "https://us-east-2.ec2.archive.ubuntu.com/ubuntu",
     "https://azure.archive.ubuntu.com/ubuntu",
     "http://archive.ubuntu.com/ubuntu",
     ARCHIVE,
