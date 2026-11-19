@@ -551,7 +551,6 @@ async function proxyAdminRequest(
       options.unreachableMessage
     );
   }
-
 }
 
 export async function GET(
