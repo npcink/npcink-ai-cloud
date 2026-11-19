@@ -10,7 +10,14 @@ Status: active correctness contract. No new auth authority or automatic retry.
 - Backend forwarding must have a deadline that remains active until the body
   is consumed. Compose it with the caller's abort signal. Admin auth/session
   waits are 10 seconds; general Admin/Advisor and development handoffs are
-  12 seconds. Setup state retains 5 seconds; its other forwarding uses 12.
+  12 seconds. The exact Admin capability-probe POST instead uses its valid backend
+  probe budget (1–120 seconds; default 30) plus 3 seconds for completion, below
+  the browser's budget plus 5 seconds. Its edge proxy allows 130 seconds; other
+  Admin paths retain the ordinary edge wait. Malformed budgets are forwarded
+  unchanged under the ordinary BFF deadline for backend validation. Probe transport
+  failures mean unconfirmed evidence, not a Provider configuration failure; read
+  the latest evidence before another potentially billable probe. No automatic retry.
+  Setup state retains 5 seconds; its other forwarding uses 12.
   Portal's existing 12-second forwarding/client deadlines are retained.
 - Timeout means that the result is unconfirmed. Preserve authentication gates,
   safe same-origin redirect rules, cookies and idempotency keys. Never infer
@@ -21,6 +28,21 @@ Status: active correctness contract. No new auth authority or automatic retry.
   the user in a skeleton or leave a consumed code as the only action.
 - Display localized, bounded error codes and support references. Never show
   credentials or arbitrary backend error bodies in recovery UI or receipts.
+
+## Capability-probe diagnosis and delivery checks
+
+- Correlate the request time/model, proxy duration and persisted capability
+  evidence before assigning a Provider failure. A proxy can stop waiting while
+  backend work continues. A persisted upstream failure remains a separate finding.
+- If a save succeeded but its readback failed during a preview restart, retain
+  the old snapshot and confirm with a bounded read. Do not repeat the write or
+  chargeable probe automatically to refresh UI state.
+- After shared M4 candidates change, verify the exact revision, deployed source
+  and loaded Nginx configuration before reusing a timeout-fix receipt. Healthy
+  endpoints alone cannot prove that the repaired path is deployed.
+- Keep local verification, historical candidate deployment, merge and current
+  acceptance separate. The [2026-11-18 audit](history/engineering/2026/capability-probe-timeout-closeout-audit-2026-11-18.md)
+  records the motivating incident and outstanding delivery work.
 
 ## 2026-10-27 finding and scope
 

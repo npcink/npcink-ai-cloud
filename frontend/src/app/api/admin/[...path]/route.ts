@@ -510,16 +510,16 @@ async function proxyAdminRequest(
     }
   }
 
-  // Capability probes include a bounded provider call. Keep the ordinary admin
-  // deadline short, but allow this exact route its declared execution budget.
+  const isCapabilityProbe = method === 'POST'
+    && routeResolution.backendPath === '/internal/service/admin/runtime-profiles/capability-probe';
   let timeoutMs = 12_000;
-  if (method === 'POST' && routeResolution.backendPath === '/internal/service/admin/runtime-profiles/capability-probe') {
+  if (isCapabilityProbe) {
     try {
       const payload: unknown = JSON.parse(body || '{}');
       if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         const probeTimeout = 'timeout_ms' in payload ? payload.timeout_ms : 30_000;
         if (typeof probeTimeout === 'number' && Number.isInteger(probeTimeout) && probeTimeout >= 1_000 && probeTimeout <= 120_000) {
-          timeoutMs = Math.max(timeoutMs, probeTimeout + 5_000);
+          timeoutMs = probeTimeout + 3_000;
         }
       }
     } catch {
@@ -527,24 +527,30 @@ async function proxyAdminRequest(
     }
   }
 
-  let response: Response;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   try {
-    response = await fetch(buildBackendUrl(routeResolution.backendPath, request.nextUrl.search), {
+    const response = await fetch(buildBackendUrl(routeResolution.backendPath, request.nextUrl.search), {
       method,
       headers,
       body,
       cache: 'no-store',
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]),
+      signal: AbortSignal.any([request.signal, timeoutSignal]),
     });
+    return await forwardBackendJson(response);
   } catch {
+    if (isCapabilityProbe && timeoutSignal.aborted && !request.signal.aborted) {
+      return buildErrorResponse(
+        504,
+        'proxy.admin_capability_probe_timeout',
+        'capability verification result is unconfirmed'
+      );
+    }
     return buildErrorResponse(
       502,
       options.unreachableCode,
       options.unreachableMessage
     );
   }
-
-  return forwardBackendJson(response);
 }
 
 export async function GET(

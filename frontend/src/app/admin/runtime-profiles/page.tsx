@@ -976,6 +976,17 @@ export default function RuntimeProfilesPage() {
       ? cause.details as Record<string, unknown>
       : Object.create(null) as Record<string, unknown>;
     const errorCode = String(details.error_code || (cause instanceof ApiError ? cause.errorCode : '')).trim();
+    if ([
+      'proxy.admin_capability_probe_timeout',
+      'proxy.admin_post_unreachable',
+      'client.request_timeout',
+      'client.network_error',
+    ].includes(errorCode)) {
+      return copy('probe_result_unconfirmed', '{{model}}: the verification response timed out or was interrupted ({{code}}). The result is unconfirmed; the backend may still finish. Read the latest verification status before starting another potentially billable probe.', {
+        model: instance.model_id,
+        code: errorCode,
+      });
+    }
     if (errorCode.startsWith('provider.budget_')) {
       return copy('probe_failed_budget', '{{model}}: verification was blocked by the Provider budget ({{code}}). Check the budget configuration and remaining limit; this does not establish model capability.', {
         model: instance.model_id,
