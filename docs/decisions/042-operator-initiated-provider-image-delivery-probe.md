@@ -2,11 +2,34 @@
 
 ## Status
 
-Accepted.
+Accepted. The Admin entry point and model selection are amended below.
 
 ## Date
 
 2026-08-11.
+
+## Amendment: Verify the selected image model in Runtime Profiles (2026-11-19)
+
+Model Suppliers manages connections, enabled models, and saved delivery
+settings. It no longer offers a paid image-delivery test that implicitly picks
+the first model. In **Runtime Profiles → Image generation**, the operator
+selects a primary or fallback model and explicitly verifies that model before
+saving. Neither selection nor saving starts a Provider call.
+
+The existing instance-bound capability probe now checks image delivery in the
+same request, using the saved response format and model overrides. If the
+download is blocked for an unapproved host, the server records only the exact
+hostname and pending approval evidence for that instance in the existing
+connection metadata. The approval request sends the server-issued evidence ID,
+adds only that hostname to the connection, and preserves the saved response
+format. It does not verify the model. The operator must explicitly retry to
+confirm that download and image validation succeed. Failed retries do not count
+as verified. Provider-call costs and the existing download controls still apply.
+
+The implementation below describes the original supplier probe. Its internal
+endpoint and existing repair records remain compatible; the ordinary Admin UI
+does not start that probe. Formal-runtime failures and their existing repair
+entry are unaffected.
 
 ## Context
 

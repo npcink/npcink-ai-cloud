@@ -6,6 +6,7 @@ import type {
   ProviderCatalogPreviewModel,
 } from './provider-workbench-state';
 import type { SupplierConnection } from './types';
+import { imageCapabilityOverrideKey, modelFeature, type ModelMetadataOverrides } from './model-capabilities';
 import { modelIdentityKeys, upstreamModelId } from './model-reference-identity';
 
 export type ModelReferenceEntry = {
@@ -175,6 +176,8 @@ export function normalizeProviderCatalogPreview(value: unknown): ProviderCatalog
           runtime_supported: Boolean(item.runtime_supported),
           verified: Boolean(item.verified),
           capability_tags: Array.isArray(item.capability_tags) ? item.capability_tags.map(String) : [],
+          image_capability_declarations: item.image_capability_declarations && typeof item.image_capability_declarations === 'object'
+            ? item.image_capability_declarations as ProviderCatalogPreviewModel['image_capability_declarations'] : undefined,
         };
       })
       .filter((model) => model.model_id)
@@ -232,6 +235,7 @@ export function buildModelVisibilityRows({
   enabledOnlyLabel,
   sourceScope = 'all',
   namespacePrefix = providerId,
+  metadataOverrides = {},
 }: {
   references: ModelReferenceEntry[];
   catalogPreview: ProviderCatalogPreview | null;
@@ -247,6 +251,7 @@ export function buildModelVisibilityRows({
   enabledOnlyLabel: string;
   sourceScope?: 'all' | 'account' | 'reference';
   namespacePrefix?: string;
+  metadataOverrides?: ModelMetadataOverrides;
 }): ModelVisibilityRow[] {
   const selectedLookup = new Map<string, string>();
   for (const modelId of selectedModelIds) {
@@ -318,6 +323,11 @@ export function buildModelVisibilityRows({
         deprecated: false,
       });
     }
+  }
+  for (const row of rows.values()) {
+    const id = row.catalog?.upstream_model_id || upstreamModelId(row.modelId, namespacePrefix);
+    const override = metadataOverrides[imageCapabilityOverrideKey(metadataOverrides, id, namespacePrefix)];
+    row.feature = modelFeature(override, row.catalog?.image_capability_declarations, row.feature);
   }
   const normalizedSearch = search.trim().toLowerCase();
   return Array.from(rows.values())

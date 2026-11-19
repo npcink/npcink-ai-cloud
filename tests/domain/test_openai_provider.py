@@ -1560,6 +1560,227 @@ def test_openai_adapter_executes_image_generation_over_http() -> None:
     assert result.cost == 0.0013
 
 
+@pytest.mark.parametrize("declared", [
+    ["image_generations", "image_edits"], ["image_edits", "image_generations"],
+])
+def test_image_model_can_keep_generation_and_independent_edit_route(declared: list[str]) -> None:
+    payload = {"id": "gpt-image-2.5-flare"}
+    original = OpenAIProviderAdapter()._build_catalog_model_seed(payload)
+    adapter = OpenAIProviderAdapter(model_metadata_overrides={
+        payload["id"]: {"endpoint_variants": declared, "source": "operator", "revision": "v1"},
+    })
+    model = adapter._build_catalog_model_seed(payload)
+    assert original is not None and model is not None
+    assert model.instances[0] == original.instances[0]
+    assert [instance.endpoint_variant for instance in model.instances] == [
+        "image_generations", "image_edits",
+    ]
+    assert model.instances[1].instance_id == original.instances[0].instance_id + "-image-edits"
+    # Re-fetching the same declaration must preserve both route identities.
+    assert adapter._build_catalog_model_seed(payload) == model
+
+
+def test_explicit_edit_only_model_survives_metadata_normalization() -> None:
+    adapter = OpenAIProviderAdapter(model_metadata_overrides={
+        "grok-imagine-edit": {
+            "endpoint_variant": "image_edits", "source": "operator", "revision": "v1",
+        },
+    })
+    model = adapter._build_catalog_model_seed({"id": "grok-imagine-edit"})
+    assert model is not None
+    assert [instance.endpoint_variant for instance in model.instances] == ["image_edits"]
+
+
+@pytest.mark.parametrize("override", [
+    {"endpoint_variants": ["image_generations", "image_edits"]},
+    {"endpoint_variants": ["image_edits", "chat_completions"],
+     "source": "operator", "revision": "v1"},
+])
+def test_image_edit_route_requires_valid_operator_declaration(override: dict[str, object]) -> None:
+    adapter = OpenAIProviderAdapter(model_metadata_overrides={"gpt-image-custom-unknown": override})
+    model = adapter._build_catalog_model_seed({
+        "id": "gpt-image-custom-unknown", "endpoint_variants": ["image_generations", "image_edits"],
+    })
+    assert model is not None
+    assert [instance.endpoint_variant for instance in model.instances] == ["image_generations"]
+
+
+@pytest.mark.parametrize(("endpoint_variant", "probe"), [
+    ("image_edits", True), ("image_generations", True), ("image_edits", False),
+])
+def test_paid_image_probe_or_edit_does_not_make_compatibility_retry(
+    endpoint_variant: str, probe: bool,
+) -> None:
+    attempts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        return httpx.Response(400, json={"error": {"message": "temperature: only 1 is allowed"}})
+
+    request = _build_request(
+        execution_kind="image_generation", endpoint_variant=endpoint_variant,
+        model_id="image-test", input_payload={
+            "prompt": "Edit the reference",
+            "image_bytes": b"reference-image-bytes", "image_mime_type": "image/png",
+        },
+    )
+    request.policy["capability_probe"] = probe
+    adapter = OpenAIProviderAdapter(api_key="test-key", transport=httpx.MockTransport(handler))
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(request)
+    assert error.value.error_code == "provider.invalid_request"
+    assert len(attempts) == 1
+
+
+@pytest.mark.parametrize("extra_headers", [{}, {"content-type": "application/json"}])
+def test_openai_adapter_executes_image_edit_as_bounded_multipart(
+    extra_headers: dict[str, str],
+) -> None:
+    source_bytes = b"reference-image-bytes"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/images/edits")
+        assert request.headers["accept-encoding"] == "identity"
+        assert request.headers["authorization"] == "Bearer test-api-key"
+        content_type = request.headers["content-type"]
+        assert content_type.startswith("multipart/form-data; boundary=")
+        boundary = content_type.split("boundary=", 1)[1].encode("ascii")
+        body = request.content
+        assert body.startswith(b"--" + boundary + b"\r\n")
+        assert body.endswith(b"--" + boundary + b"--\r\n")
+        assert b'name="model"' in body
+        assert b"grok-imagine-1" in body
+        assert b'name="prompt"' in body
+        assert b"Remove the background" in body
+        assert b'name="image"; filename="source.png"' in body
+        assert b"Content-Type: image/png" in body
+        assert source_bytes in body
+        return httpx.Response(
+            200,
+            json={
+                "model": "grok-imagine-1",
+                "data": [
+                    {
+                        "b64_json": base64.b64encode(openai_provider.SAMPLE_IMAGE_PNG).decode(
+                            "ascii"
+                        ),
+                        "mime_type": "image/png",
+                    }
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+        extra_headers=extra_headers,
+    )
+    result = adapter.execute(
+        _build_request(
+            execution_kind="image_generation",
+            endpoint_variant="image_edits",
+            model_id="grok-imagine-1",
+            input_payload={
+                "prompt": "Remove the background",
+                "image_bytes": source_bytes,
+                "image_mime_type": "image/png",
+                "image_filename": "source.png",
+            },
+        )
+    )
+
+    assert result.output == {
+        "model_id": "grok-imagine-1",
+        "candidate_count": 1,
+        "usage": {},
+        "operation": "image.edit.v1",
+    }
+    assert len(result.media_candidates) == 1
+    assert result.media_candidates[0].content_bytes == openai_provider.SAMPLE_IMAGE_PNG
+
+
+def test_xai_image_edit_uses_json_image_url_payload() -> None:
+    source_bytes = b"reference-image-bytes"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/images/edits")
+        assert request.headers["content-type"] == "application/json"
+        payload = json.loads(request.content)
+        assert payload == {
+            "model": "grok-imagine-image",
+            "prompt": "Remove the background",
+            "n": 1,
+            "image": {
+                "url": (
+                    "data:image/png;base64," + base64.b64encode(source_bytes).decode("ascii")
+                )
+            },
+        }
+        return httpx.Response(
+            200,
+            json={
+                "model": "grok-imagine-image",
+                "data": [
+                    {
+                        "b64_json": base64.b64encode(openai_provider.SAMPLE_IMAGE_PNG).decode(
+                            "ascii"
+                        ),
+                        "mime_type": "image/png",
+                    }
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        base_url="https://api.x.ai/v1",
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+        extra_headers={"Content-Type": "multipart/form-data"},
+    )
+    result = adapter.execute(
+        _build_request(
+            execution_kind="image_generation",
+            endpoint_variant="image_edits",
+            model_id="grok-imagine-image",
+            input_payload={
+                "prompt": "Remove the background",
+                "image_bytes": source_bytes,
+                "image_mime_type": "image/png",
+                "params": {"n": 1, "size": "1024x1024", "quality": "high"},
+            },
+        )
+    )
+
+    assert result.output["operation"] == "image.edit.v1"
+    assert len(result.media_candidates) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("image_bytes", b""), ("image_mime_type", "")],
+)
+def test_openai_adapter_rejects_incomplete_image_edit_multipart_input(
+    field: str, value: object
+) -> None:
+    options: dict[str, object] = {
+        "prompt": "Edit this image",
+        "image_bytes": b"reference",
+        "image_mime_type": "image/png",
+    }
+    options[field] = value
+    adapter = OpenAIProviderAdapter(api_key="test-api-key")
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter._build_http_request(
+            _build_request(
+                execution_kind="image_generation",
+                endpoint_variant="image_edits",
+                model_id="grok-imagine-1",
+                input_payload=options,
+            )
+        )
+    assert error.value.error_code == "provider.input_contract_invalid"
+
+
 def test_openai_adapter_records_direct_image_cost_in_usd() -> None:
     adapter = OpenAIProviderAdapter(
         api_key="test-api-key",
@@ -1960,22 +2181,36 @@ def test_openai_adapter_enforces_candidate_count_and_aggregate_image_limits(
         adapter.execute(request)
 
 
+@pytest.mark.parametrize("endpoint_variant", ["image_generations", "image_edits"])
+@pytest.mark.parametrize("declared_length", [True, False])
 def test_openai_adapter_rejects_oversized_image_response_before_json_parsing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, endpoint_variant: str, declared_length: bool,
 ) -> None:
     monkeypatch.setattr(openai_provider, "MAX_PROVIDER_IMAGE_RESPONSE_BYTES", 16)
+
+    class OversizedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"x" * 10
+            yield b"x" * 7
+
     adapter = OpenAIProviderAdapter(
         api_key="test-api-key",
-        transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"x" * 17)),
+        transport=httpx.MockTransport(lambda _request: httpx.Response(
+            200, stream=OversizedStream(),
+            headers={"content-length": "17"} if declared_length else {},
+        )),
     )
 
     with pytest.raises(ProviderExecutionError) as error:
         adapter.execute(
             _build_request(
                 execution_kind="image_generation",
-                endpoint_variant="image_generations",
+                endpoint_variant=endpoint_variant,
                 model_id=GROK_IMAGINE_IMAGE_MODEL_ID,
-                input_payload={"prompt": "A small web illustration"},
+                input_payload={
+                    "prompt": "A small web illustration",
+                    "image_bytes": b"reference", "image_mime_type": "image/png",
+                },
             )
         )
 

@@ -53,6 +53,7 @@ export type SupplierConnection = {
     host_approved_at?: string;
   };
   image_delivery_repair?: {
+    instance_id?: string;
     status?: 'pending' | 'approved' | string;
     reason_code?: string;
     detected_host?: string;
@@ -129,26 +130,6 @@ export function isProviderConnectionDeletePreflight(
         && stringArray(record.shared_runtime_profile_ids);
     });
 }
-
-export type ProviderImageDeliveryProbeResult = {
-  probe_id: string;
-  connection_id: string;
-  provider_id: string;
-  model_id: string;
-  status: 'ready' | 'approval_required' | 'host_approved' | string;
-  ok: boolean;
-  delivery_format: 'url' | 'base64' | string;
-  detected_host?: string;
-  host_approved: boolean;
-  content_type?: string;
-  width?: number;
-  height?: number;
-  latency_ms: number;
-  estimated_cost: number;
-  provider_call_billable: true;
-  tested_at: string;
-  message: string;
-};
 
 export type ProviderConnectionTestResult = {
   connection_id: string;

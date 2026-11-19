@@ -47,6 +47,10 @@ WP_AI_CONNECTOR_ALT_TEXT_OPTIONAL_STRING_LIMITS = {
     "existing_caption": 240,
     "locale": 32,
 }
+WP_AI_CONNECTOR_IMAGE_EDITING_REQUEST_FIELDS = frozenset(
+    {"prompt", "source_artifact_id"}
+)
+WP_AI_CONNECTOR_IMAGE_EDITING_MAX_PROMPT_CHARS = 4000
 WP_AI_CONNECTOR_INLINE_MEDIA_PATTERN = re.compile(
     r"data:image/[a-z0-9.+-]+(?:;[^,]*)?;base64,",
     re.IGNORECASE,
@@ -78,6 +82,7 @@ WP_AI_CONNECTOR_ALLOWED_TASKS = frozenset(
         "meta_description",
         "slug_generation",
         "title_generation",
+        "image_editing",
     }
 )
 WP_AI_CONNECTOR_SOURCE_TEXT_TASKS = frozenset(
@@ -257,6 +262,8 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
         }
     if task == "alt_text_suggest":
         request = validate_alt_text_suggest_request(request)
+    elif task == "image_editing":
+        request = validate_image_editing_request(request)
 
     task_contract = request.get("task_contract")
     if task_contract is not None:
@@ -349,6 +356,49 @@ def validate_source_text_request(request: dict[str, Any]) -> str:
             "WordPress text scene source_text exceeds the 12000 character limit",
         )
     return normalized
+
+
+def validate_image_editing_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Validate the artifact-referenced single-image edit scene.
+
+    Reference pixels stay in the Cloud artifact store. The connector contract
+    carries only the artifact id and bounded user instruction; Provider-specific
+    multipart fields are assembled transiently by the runtime adapter.
+    """
+    if set(request) - WP_AI_CONNECTOR_IMAGE_EDITING_REQUEST_FIELDS:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.image_editing_fields_forbidden",
+            "Image editing accepts only source_artifact_id and prompt",
+        )
+    source_artifact_id = request.get("source_artifact_id")
+    if not isinstance(source_artifact_id, str) or not (
+        WP_AI_CONNECTOR_SOURCE_ARTIFACT_ID_PATTERN.fullmatch(source_artifact_id)
+    ):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.image_editing_source_artifact_id_invalid",
+            "Image editing requires a valid source_artifact_id",
+        )
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.image_editing_prompt_required",
+            "Image editing requires a nonempty prompt",
+        )
+    normalized_prompt = prompt.strip()
+    if len(normalized_prompt) > WP_AI_CONNECTOR_IMAGE_EDITING_MAX_PROMPT_CHARS:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.image_editing_prompt_too_large",
+            "Image editing prompt exceeds the scene runtime size limit",
+        )
+    if contains_inline_media_transport(request):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.image_editing_inline_media_forbidden",
+            "Image editing does not accept inline media transport",
+        )
+    return {
+        "source_artifact_id": source_artifact_id,
+        "prompt": normalized_prompt,
+    }
 
 
 def validate_system_instruction(request: dict[str, Any]) -> str:

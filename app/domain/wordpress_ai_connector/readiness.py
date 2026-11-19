@@ -8,6 +8,7 @@ from typing import Any
 from app.domain.routing.errors import RoutingError
 from app.domain.routing.service import RoutingService
 from app.domain.wordpress_ai_connector.routing_profiles import (
+    WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
 )
 
@@ -82,7 +83,16 @@ def build_wordpress_ai_capabilities(
         entitlement, entitlement_reason = _entitlement_state(policy, execution_kind, checked_at)
         routing_state, routing_reason = "configured", "configured"
         profiles = [
-            spec for spec in WP_AI_CONNECTOR_PROFILE_SPECS if spec.execution_kind == execution_kind
+            spec
+            for spec in WP_AI_CONNECTOR_PROFILE_SPECS
+            if spec.execution_kind == execution_kind
+            # Image editing is a separate task/profile that intentionally does
+            # not change the aggregate image-generation capability state while
+            # its Provider route is still unconfigured.
+            and not (
+                capability == "image_generation"
+                and spec.profile_id == WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID
+            )
         ]
         if not provider_ids:
             routing_state, routing_reason = "unavailable", "provider_unavailable"

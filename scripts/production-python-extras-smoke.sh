@@ -17,6 +17,12 @@ fail() {
 	exit 1
 }
 
+case "$#:${1:-}" in
+	0:) build_only=false ;;
+	1:--build-only) build_only=true ;;
+	*) fail 'Usage: production-python-extras-smoke.sh [--build-only]' ;;
+esac
+
 ok() {
 	echo "[ok] $*"
 }
@@ -142,8 +148,12 @@ PY
 }
 
 scan_image() {
+	if [ "${build_only}" = "true" ]; then
+		echo '[info] Build/import checks only; no vulnerability scan evidence was produced.'
+		return
+	fi
 	# The zilliz graph is the production bundle's dependency superset. Check it
-	# before merge so image CVEs are not discovered only after source promotion.
+	# for changes that affect image supply and for production promotion.
 	bash "${ROOT_DIR}/scripts/scan-production-images.sh" \
 		--image "api=$1" \
 		--platform "${NPCINK_CLOUD_IMAGE_PLATFORM:-linux/amd64}" \

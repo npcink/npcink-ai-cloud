@@ -736,13 +736,15 @@ function AdminPluginObservabilityContent() {
           {data.recentActivity.slice(0, recentExpanded ? 50 : 5).map((item, index) => <div data-ui="plugin-recent-record" key={`${item.eventId}-${index}`} className="border-t border-slate-200 p-3 text-sm dark:border-slate-800">
             <p>{activityStatus(item.status)} · {eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)} · {siteName(item.siteId)}</p>
             <p className="text-xs text-slate-500">{c('收到上报', 'Report received')}: {formatDate(item.receivedAt)}</p>
-            {item.run ? <details className="mt-2"><summary className="cursor-pointer">{c('查看对应运行', 'View linked run')}</summary>
-              <dl className="space-y-1 py-2"><dt>{c('运行状态', 'Run status')}</dt><dd>{activityStatus(item.run.status)}</dd>
+            {item.run ? <div className="mt-2" data-ui="linked-run">
+              <p className="flex flex-wrap items-center gap-3"><span>{c('运行状态', 'Run status')}: {activityStatus(item.run.status)}</span><Link className="text-blue-700 underline dark:text-blue-300" href={`/admin/troubleshooting?window=${windowHours}&site=${encodeURIComponent(item.siteId || '')}&run_id=${encodeURIComponent(item.run.runId)}`}>{c('查看此运行', 'Inspect this run')}</Link></p>
+              <details className="mt-1 text-xs text-slate-500"><summary className="cursor-pointer">{c('运行详情', 'Run details')}</summary>
+              <dl className="space-y-1 py-2">
                 <dt>{c('实际开始', 'Execution started')}</dt><dd>{formatDate(item.run.startedAt) || '—'}</dd>
                 <dt>{c('实际完成', 'Execution finished')}</dt><dd>{formatDate(item.run.finishedAt) || '—'}</dd>
-                <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd><dd><Link className="text-blue-700 underline dark:text-blue-300" href={`/admin/troubleshooting?window=${windowHours}&site=${encodeURIComponent(item.siteId || '')}&run_id=${encodeURIComponent(item.run.runId)}`}>{c('查看此运行', 'Inspect this run')}</Link></dd>
+                <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd>
                 {item.run.errorCode ? <><dt>{c('错误代码', 'Error code')}</dt><dd>{item.run.errorCode}</dd></> : null}
-              </dl></details> : <p className="text-xs text-slate-500">{c('未关联运行', 'No linked run')}</p>}
+              </dl></details></div> : <p className="text-xs text-slate-500">{c('未关联运行', 'No linked run')}</p>}
           </div>)}
           </div>
           {!data.recentActivity.length ? <p className="p-3 text-sm">{c('所选范围暂无近期上报。', 'No recent reports in this scope.')}</p> : null}
