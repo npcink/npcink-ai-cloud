@@ -180,7 +180,10 @@ class WordPressOperationRuntime:
 
     def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
-        if str(operation_contract.get("task") or "").strip() != "alt_text_suggest":
+        if str(operation_contract.get("task") or "").strip() not in {
+            "alt_text_suggest",
+            "image_editing",
+        }:
             return ""
         scene_request = self._dict_or_empty(operation_contract.get("request"))
         return str(scene_request.get("source_artifact_id") or "").strip()
@@ -202,6 +205,25 @@ class WordPressOperationRuntime:
                 scene_request=scene_request,
                 source_artifact=source_artifact,
             )
+        if task == "image_editing":
+            if source_artifact is None:
+                raise ValueError("image editing provider input requires loaded source artifact")
+            prompt = str(scene_request.get("prompt") or "").strip()
+            return {
+                # These fields are transient runtime input. They never appear
+                # in the external wordpress_operation.v1 request or its policy
+                # snapshot; the adapter uses them to encode the upstream request.
+                "prompt": prompt,
+                "image_bytes": source_artifact.content_bytes,
+                "image_mime_type": source_artifact.content_type,
+                "image_filename": f"{source_artifact.artifact_id}.source",
+                "metadata": {
+                    "source_surface": "wordpress_ai_connector",
+                    "task": "image_editing",
+                    "source_artifact_id": source_artifact.artifact_id,
+                    "suggestion_only": True,
+                },
+            }
 
         scene_text = str(
             scene_request.get(

@@ -28,7 +28,7 @@ assert.match(pageSource, /'vision\.ai': 'profile_vision_understanding'/);
 
 const routingSource = readFileSync(fromFrontendRoot('../app/domain/wordpress_ai_connector/routing_profiles.py'), 'utf8');
 const profileTaskBlocks = [...routingSource.matchAll(/tasks=\(([\s\S]*?)\),/g)];
-assert.equal(profileTaskBlocks.length, 6, 'task-name coverage must inspect all six hosted profile specifications');
+assert.equal(profileTaskBlocks.length, 7, 'task-name coverage must inspect all seven hosted profile specifications');
 for (const task of new Set(profileTaskBlocks.flatMap(match => [...match[1].matchAll(/"([^"]+)"/g)].map(item => item[1])))) {
   assert.ok(pageSource.includes(`${task}: copy('task_${task}',`), `${task} must have an operator-readable localized task name`);
 }

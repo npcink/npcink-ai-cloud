@@ -487,6 +487,9 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
     if _is_wordpress_ai_alt_text_payload(payload):
         return WP_AI_CONNECTOR_VISION_EXECUTION_KIND
     if _is_wordpress_ai_connector_payload(payload):
+        operation = payload.input.get("operation_contract")
+        if isinstance(operation, dict) and operation.get("task") == "image_editing":
+            return IMAGE_GENERATION_EXECUTION_KIND
         return WP_AI_CONNECTOR_EXECUTION_KIND
     return payload.execution_kind
 

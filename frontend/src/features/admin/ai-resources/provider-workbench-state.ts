@@ -1,5 +1,6 @@
 import type { SupplierConnection } from './types';
 import { modelIdentityKeys } from './model-reference-identity';
+import { modelMetadataOverrides, type ModelMetadataOverrides, type ImageCapabilityDeclarations } from './model-capabilities';
 
 export type ProviderCatalogPreviewModel = {
   model_id: string;
@@ -11,6 +12,7 @@ export type ProviderCatalogPreviewModel = {
   runtime_supported: boolean;
   verified: boolean;
   capability_tags: string[];
+  image_capability_declarations?: ImageCapabilityDeclarations;
 };
 
 export type ProviderCatalogPreview = {
@@ -85,6 +87,7 @@ export type ProviderConnectionForm = {
   capabilityIds: string;
   runtimeProfileIds: string;
   modelIds: string;
+  modelMetadataOverrides: ModelMetadataOverrides;
   imageResponseFormat: string;
   imageOutputHosts: string;
   credential: string;
@@ -102,6 +105,7 @@ export const EMPTY_PROVIDER_CONNECTION_FORM: ProviderConnectionForm = {
   capabilityIds: 'text_generation, image_generation',
   runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
   modelIds: '',
+  modelMetadataOverrides: {},
   imageResponseFormat: '',
   imageOutputHosts: '',
   credential: '',
@@ -357,6 +361,7 @@ export function buildProviderConnectionForm(
     capabilityIds: connection.capability_ids.join(', '),
     runtimeProfileIds: connection.runtime_profile_ids.join(', '),
     modelIds: (connection.model_ids || []).join(', '),
+    modelMetadataOverrides: modelMetadataOverrides(connection.config?.model_metadata_overrides),
     imageResponseFormat: String(connection.config?.image_response_format || ''),
     imageOutputHosts: Array.isArray(connection.config?.image_output_hosts)
       ? connection.config.image_output_hosts.map(String).join(', ')

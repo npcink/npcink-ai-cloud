@@ -602,95 +602,19 @@ test('detected provider image host stays contextual and requires evidence-bound 
   });
 });
 
-test('image delivery probe discovers the exact host without manual entry', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.setViewportSize({ width: 1440, height: 1050 });
-  await installProviderDirectoryHarness(page);
-  let approvalPayload: unknown = null;
-  await page.route('**/api/admin/provider-connections/model_ready/image-delivery-probes', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
-        probe_id: 'image-probe-browser',
-        connection_id: 'model_ready',
-        provider_id: 'openai',
-        model_id: 'gpt-image-2',
-        status: 'approval_required',
-        ok: false,
-        delivery_format: 'url',
-        detected_host: 'images.provider.example',
-        host_approved: false,
-        latency_ms: 321,
-        estimated_cost: 0.0123,
-        provider_call_billable: true,
-        tested_at: '2026-08-11T00:00:00Z',
-        message: 'provider image host approval is required',
-        receipt: {
-          event_kind: 'provider_connection.image_delivery_probe',
-          scope_kind: 'provider_connection',
-          scope_id: 'model_ready',
-          outcome: 'succeeded',
-        },
-      })),
-    });
-  });
-  await page.route('**/api/admin/provider-connections/model_ready/approve-image-host', async (route) => {
-    approvalPayload = route.request().postDataJSON();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({
-        approved_image_output_host: 'images.provider.example',
-        evidence_probe_id: 'image-probe-browser',
-        receipt: {
-          event_kind: 'provider_connection.image_host_approve',
-          scope_kind: 'provider_connection',
-          scope_id: 'model_ready',
-          outcome: 'succeeded',
-        },
-      })),
-    });
-  });
-  await page.goto('/admin/ai-resources?focus=model_ready');
-
-  await page.locator('[data-connection-id="model_ready"]')
-    .getByRole('button', { name: /^Configure$|^配置$/i })
-    .click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByText(/may incur a small provider charge|可能收取少量费用/i)).toBeVisible();
-  await dialog.getByRole('button', { name: /Generate test image|生成测试图/i }).click();
-  await expect(dialog.getByText(/images\.provider\.example/)).toBeVisible();
-  await dialog.getByRole('button', { name: /Approve this exact host|批准此精确域名/i }).click();
-
-  expect(approvalPayload).toEqual({ evidence_probe_id: 'image-probe-browser' });
-  await expect(dialog.getByText(/Run the test again|再次测试/i)).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-});
-
 for (const locale of ['en', 'zh-CN']) {
-  test(`image delivery uses saved settings and preserves verification evidence in ${locale}`, async ({ page }, testInfo) => {
+  test(`supplier image delivery settings do not run verification in ${locale}`, async ({ page }, testInfo) => {
     const browserEvidence = observeAdminBrowserEvidence(page);
     await page.addInitScript(value => localStorage.setItem('locale', value), locale);
     await page.setViewportSize({ width: 1440, height: 1050 });
-    const fixtureConnections: SupplierConnection[] = structuredClone(connections);
-    const ready = fixtureConnections.find(connection => connection.connection_id === 'model_ready')!;
-    await installProviderDirectoryHarness(page, { connections: fixtureConnections });
+    await installProviderDirectoryHarness(page);
     let calls = 0;
     await page.route('**/api/admin/provider-connections/model_ready/image-delivery-probes', async route => {
       calls += 1;
-      if (calls === 1) {
-        ready.image_delivery_probe = { status: 'failed', model_id: 'image-model', tested_at: '2026-10-28T00:00:00Z' };
-        return route.fulfill({ status: 502, json: buildAdminApiErrorEnvelope('Image delivery test failed.', 'provider_connection.image_delivery_probe_failed') });
-      }
-      ready.image_delivery_probe = {
-        probe_id: 'image-probe-verified', status: 'ready', model_id: 'image-model',
-        delivery_format: 'base64', tested_at: '2026-10-28T00:01:00Z',
-      };
-      await route.fulfill({ json: buildAdminApiEnvelope({
-        ...ready.image_delivery_probe, connection_id: ready.connection_id, provider_id: ready.provider_id,
-        ok: true, host_approved: true, latency_ms: 1, estimated_cost: 0, provider_call_billable: true,
-      }) });
+      await route.abort();
+    });
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('image settings save failed', 'provider_connection.update_failed') });
     });
     await page.goto('/admin/ai-resources');
     await page.getByLabel(/^Status$|^状态$/i).selectOption('ready');
@@ -700,40 +624,22 @@ for (const locale of ['en', 'zh-CN']) {
     await configure.click();
     const dialog = page.getByRole('dialog');
     const delivery = dialog.locator('[data-configuration-row="image-delivery"]');
-    const generate = dialog.getByRole('button', { name: /Generate test image|生成测试图/i });
-    await expect(delivery.getByRole('status')).toContainText(/Not verified|未验证/i);
+    await expect(dialog.getByRole('button', { name: /Generate test image|生成测试图/i })).toHaveCount(0);
+    await expect(delivery).toContainText(/Base64 image|Base64 图片/i);
     await expect(dialog.locator('[data-configuration-row="image-response-format"]')).not.toBeVisible();
-    const name = dialog.getByLabel(/^Display name$|^显示名称$/i);
-    await name.fill('Unsaved image supplier');
-    await expect(generate).toBeDisabled();
-    await expect(delivery).toContainText(/Save your changes|请先保存修改/i);
-    expect(calls).toBe(0);
-    await name.fill('MQZJ');
-    await expect(generate).toBeEnabled();
-    await generate.click();
-    await expect(delivery.getByRole('status')).toContainText(/Failed|验证失败/i);
-    await page.keyboard.press('Escape');
-    await configure.click();
-    await expect(delivery.getByRole('status')).toContainText(/Failed|验证失败/i);
-    await generate.click();
-    await expect(delivery.getByRole('status')).toContainText(/Verified|已验证/i);
-    await expect(delivery).toContainText('image-model');
-    await page.keyboard.press('Escape');
-    await configure.click();
-    await expect(delivery.getByRole('status')).toContainText(/Verified|已验证/i);
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     const format = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
     await format.selectOption('url');
     await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
-    await expect(generate).toBeDisabled();
-    await expect(delivery.getByRole('status')).not.toContainText(/Verified|已验证/i);
+    await expect(delivery).toContainText(/Image URL|图片 URL/i);
+    await expect(delivery).toContainText(/Missing image download hosts|缺少图片下载域名/i);
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     const reopenedFormat = dialog.getByLabel(/Provider image response|服务商图片返回方式/i);
     await reopenedFormat.selectOption('b64_json');
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
-    await expect(generate).toBeEnabled();
-    expect(calls).toBe(2);
+    await expect(delivery).toContainText(/Base64 image|Base64 图片/i);
+    expect(calls).toBe(0);
     for (const notification of await page.getByRole('button', { name: 'Close notification', exact: true }).all()) await notification.click();
     await dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i }).click();
     await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('url');
@@ -745,28 +651,31 @@ for (const locale of ['en', 'zh-CN']) {
     await dialog.getByRole('button', { name: /Back to connection settings|返回连接设置/i }).click();
     await expect(dialog.getByRole('button', { name: /Image delivery · Advanced settings|图片交付 · 高级设置/i })).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath(`image-connection-${locale}-900.png`) });
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).click();
+    await expect(dialog.getByRole('alert')).toContainText(/Failed to save provider connection|保存 provider 连接失败/);
+    await expect(delivery).toContainText(/Image URL|图片 URL/i);
+    expect(calls).toBe(0);
     await writeAdminVisualReceipt({
       page, testInfo, route: '/admin/ai-resources', pageModel: 'queue', dataMode: 'mocked',
-      testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog', 'unverified', 'unsaved', 'failed', 'retry', 'verified', 'advanced', locale],
-      humanAcceptance: 'not_required', browserEvidence,
-      expectedConsoleErrors: [/Image delivery test failed\./, /^Failed to load resource: the server responded with a status of 502 \(Bad Gateway\)$/],
+      testedStates: ['ready', 'selected', 'filtered', 'dialog', 'unsaved', 'advanced', 'operation_error', locale],
+      humanAcceptance: 'pending', browserEvidence,
+      expectedConsoleErrors: [/image settings save failed/, /Failed to load resource.*503/],
       pageTitle: page.locator('main h1'), workingSurface: delivery,
       routeRuleResults: [
-        { id: 'single-primary-action', status: 'pass', evidence: 'Save supplier is primary; optional paid image test is secondary' },
-        { id: 'textual-status', status: 'pass', evidence: 'Unverified, failed, verified and unsaved states are distinct; tested model is named' },
-        { id: 'action-object-proximity', status: 'pass', evidence: 'Generate test image is beside its delivery state and cost notice' },
-        { id: 'distinct-interaction-states', status: 'pass', evidence: 'Unsaved changes disable the test and suppress stale success' },
-        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes the dialog; the Configure action opens it again' },
-        { id: 'context-stability', status: 'pass', evidence: 'Failure and success survive closing and reopening the supplier editor' },
+        { id: 'single-primary-action', status: 'pass', evidence: 'Save supplier is primary; no generation action remains' },
+        { id: 'textual-status', status: 'pass', evidence: 'Image response format and missing URL hosts are visible' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'Advanced settings are beside the image response format' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'URL and Base64 expose different host configuration states' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Returning from advanced settings restores focus to its trigger' },
+        { id: 'context-stability', status: 'pass', evidence: 'Changing panels preserves the image settings draft' },
       ],
       interactionResults: [
-        { id: 'saved-settings-only', status: 'pass', evidence: 'No probe during unsaved edits; only two explicit mocked calls' },
-        { id: 'verification-recovery', status: 'pass', evidence: 'Failure persists; retry replaces it with model-scoped success' },
+        { id: 'no-supplier-probe', status: 'pass', evidence: 'No old probe requests; verification is in Runtime Profiles' },
       ],
     });
     await page.setViewportSize({ width: 1056, height: 800 });
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await testInfo.attach(`image-delivery-narrow-${locale}`, { body: await page.screenshot(), contentType: 'image/png' });
+    await testInfo.attach(`image-delivery-narrow-${locale}`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
   });
 }
 
@@ -882,7 +791,7 @@ test('editing a provider separates dense connection settings from model manageme
   await expect(dialog.getByText(/Include historical\/deprecated|含历史\/废弃/i)).toBeHidden();
   await expect(dialog.getByRole('button', { name: /More filters|更多筛选/i })).toHaveCount(0);
   const maintenanceDisclosure = dialog.locator('[data-ui="model-maintenance-table"]');
-  await expect(maintenanceDisclosure).toHaveCount(0);
+  await expect(maintenanceDisclosure).toBeVisible();
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -926,7 +835,7 @@ test('low-frequency provider settings open as compact panels and retain the draf
   await trigger.click();
   await expect(dialog.locator('.admin-workbench-dialog-compact')).toHaveCSS('max-width', '960px');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toBeVisible();
-  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot(), contentType: 'image/png' });
+  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot({ path: testInfo.outputPath('provider-advanced-panel-pc.png') }), contentType: 'image/png' });
   await dialog.getByLabel(/Connection ID|连接 ID/i).fill('custom_runtime');
   await dialog.getByLabel(/Connection ID|连接 ID/i).press('Enter');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveValue('custom_runtime');
@@ -999,7 +908,7 @@ test('large model directories render one bounded page and reset pagination when 
   await expect(dialog.locator('[data-content-mode="contained"]')).toBeVisible();
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
   await expect(directory.locator('tbody tr')).toHaveCount(2);
-  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toBeVisible();
   await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await dialog.locator('[data-ui="model-reference-browse"] > summary').click();
   const otherReferences = dialog.locator('[data-ui="model-reference-browse"]');
@@ -1039,7 +948,6 @@ test('large model directories render one bounded page and reset pagination when 
   await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toHaveCount(0);
-  await dialog.locator('[data-ui="model-maintenance-table"] > summary').click();
   await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeEnabled();
   await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
   await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
@@ -1706,7 +1614,7 @@ test('historical model visibility is a browser preference and survives reopening
 });
 
 
-test('model switches and collapsed tools fit the narrow PC preview in dark mode', async ({ page }, testInfo) => {
+test('model switches and direct tools fit the narrow PC preview in dark mode', async ({ page }, testInfo) => {
   await installProviderDirectoryHarness(page);
   await page.setViewportSize({ width: 1056, height: 733 });
   await page.goto('/admin/ai-resources');
@@ -1725,7 +1633,7 @@ test('model switches and collapsed tools fit the narrow PC preview in dark mode'
   const save = await dialog.getByRole('button', { name: /Save supplier|保存供应商/i }).boundingBox();
   expect(save!.y + save!.height).toBeLessThanOrEqual(733);
   await page.screenshot({ path: testInfo.outputPath('models-dark-1056.png'), animations: 'disabled' });
-  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toHaveCount(0);
+  await expect(dialog.locator('[data-ui="model-maintenance-table"]')).toBeVisible();
   await dialog.getByRole('tab', { name: /Reference information|参考资料/i }).click();
   await expect(dialog.locator('[data-ui="model-reference-panel"]')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
@@ -1756,11 +1664,14 @@ test('supplier model names hide only the system namespace and expose saved model
   await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   const flash = dialog.getByRole('row').filter({ hasText: 'deepseek-flash' });
-  await expect(flash).toContainText(/Text · Image input|文本 · 支持图片输入/);
-  await expect(flash.getByText('Internal ID: deepseek/deepseek-flash', { exact: false })).toBeHidden();
+  await expect(flash.getByText('deepseek-flash', { exact: true })).toBeVisible();
+  await expect(flash.getByText(/^(Text · vision|文本 · 视觉)$/i).first()).toBeVisible();
+  await expect(flash.getByText(/^(Account returned|账户返回)$/)).toBeVisible();
+  const internalId = flash.getByText(/^(Internal ID|内部 ID): deepseek\/deepseek-flash$/);
+  await expect(internalId).toBeAttached();
+  await expect(internalId).toBeHidden();
   await flash.locator('summary').click();
-  await expect(flash).toContainText('deepseek/deepseek-flash');
-  await expect(flash).toContainText(/Capabilities declared|能力来自账户目录声明/);
+  await expect(internalId).toBeVisible();
   const old = dialog.getByRole('row').filter({ hasText: 'deepseek-v4-flash' });
   await expect(old).toContainText(/Saved; not returned|已保存，目录未返回/);
   const pro = dialog.getByRole('row').filter({ hasText: 'deepseek-v4-pro' });
@@ -1768,7 +1679,7 @@ test('supplier model names hide only the system namespace and expose saved model
   await pro.getByRole('switch').uncheck();
   await expect(dialog.getByRole('alert')).toContainText(/unavailable|无法再使用/);
   await expect(dialog.getByRole('button', { name: /Save supplier|保存供应商/ })).toBeInViewport();
-  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot(), contentType: 'image/png' });
+  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot({ path: testInfo.outputPath('supplier-identity-narrow-pc.png') }), contentType: 'image/png' });
   await dialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
 });
 
@@ -1820,6 +1731,7 @@ for (const width of [1056, 1440]) {
     const unsaved = dialog.getByRole('row').filter({ hasText: 'new-unsaved' });
     await unsaved.getByRole('switch').click();
     await expect(unsaved.getByRole('button', { name: /^Test |^测试 / })).toHaveCount(0);
+    await dialog.getByRole('row').filter({ hasText: 'gpt-5.5' }).locator('[data-ui="model-reference-details"] > summary').click();
     await dialog.getByRole('button', { name: /^Test gpt-5.5$|^测试 gpt-5.5$/ }).click();
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await expect(dialog.getByRole('heading', { name: /^Model test$|^模型测试$/ })).toBeVisible();
@@ -2013,6 +1925,9 @@ test('M04 supplier draft survives cancelled back navigation and only discards af
   await page.goto('/admin');
   await page.locator('a[href="/admin/ai-resources"]').first().click();
   const dialog = await openReadySupplier(page);
+  // Opening the supplier replaces the current URL asynchronously.
+  const focusedSupplierUrl = /\/admin\/ai-resources\?focus=model_ready$/;
+  await expect(page).toHaveURL(focusedSupplierUrl);
   await dialog.getByLabel(/Display name|显示名称/).fill('Unsaved supplier draft');
   await page.evaluate(() => window.history.back());
   const confirm = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
@@ -2021,7 +1936,7 @@ test('M04 supplier draft survives cancelled back navigation and only discards af
   await page.keyboard.press('Escape');
   await expect(confirm).toBeHidden();
   await expect(dialog.getByLabel(/Display name|显示名称/)).toHaveValue('Unsaved supplier draft');
-  await expect(page).toHaveURL(/\/admin\/ai-resources/);
+  await expect(page).toHaveURL(focusedSupplierUrl);
   await page.evaluate(() => window.history.back());
   await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
   await expect(page).toHaveURL(/\/admin$/);
@@ -2106,3 +2021,121 @@ test('M07 malformed directory fails visibly instead of becoming an empty healthy
   await page.getByRole('button', { name: /Retry|重试/ }).click();
   await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/ })).toBeEnabled();
 });
+
+for (const locale of ['en', 'zh'] as const) {
+  test(`supplier unified model capabilities retain saved choices in ${locale}`, async ({ page }, testInfo) => {
+    const browserEvidence = observeAdminBrowserEvidence(page);
+    await page.addInitScript(value => localStorage.setItem('locale', value), locale);
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const modelId = 'gpt-image-2.5-flare';
+    const declaration = { supported: true };
+    const preview = {
+      provider_id: 'openai', display_name: 'MQZJ', adapter_type: 'openai',
+      model_count: 1, model_ids: [modelId], truncated: false,
+      models: [{ model_id: modelId, upstream_model_id: modelId, family: 'gpt-image', feature: 'image_generation',
+        status: 'available', is_deprecated: false, runtime_supported: true, verified: false,
+        capability_tags: ['image_generation'], image_capability_declarations: {
+          image_generation: declaration, image_editing: declaration,
+        } }],
+    };
+    const connection = {
+      ...connections[1], model_ids: [modelId],
+      config: { image_response_format: 'b64_json', model_metadata_overrides: {
+        [modelId]: { price_input: 5, endpoint_variants: ['image_generations', 'image_edits'], source: 'operator_previous', revision: 'v1' },
+      } }, metadata: { model_catalog_preview: preview },
+    };
+    await installProviderDirectoryHarness(page, { connections: [connection] });
+    let previewBody: Record<string, unknown> | undefined;
+    await page.route('**/api/admin/provider-connections/preview-catalog', async route => {
+      previewBody = route.request().postDataJSON();
+      await route.fulfill({ json: buildAdminApiEnvelope(preview) });
+    });
+    let submitted: Record<string, unknown> | undefined;
+    let saveAttempts = 0;
+    await page.route('**/api/admin/provider-connections/model_ready', async route => {
+      submitted = route.request().postDataJSON();
+      saveAttempts += 1;
+      if (saveAttempts === 1) {
+        await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('image declaration save failed', 'provider_connection.update_failed') });
+        return;
+      }
+      await route.fulfill({ json: buildAdminApiEnvelope({ connection_id: 'model_ready' }) });
+    });
+    await page.goto('/admin/ai-resources?focus=model_ready&q=MQZJ');
+    await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('data-selected', 'true');
+    const trigger = page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/ });
+    await trigger.click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    const fields = dialog.locator('[data-ui="model-capability-fields"]');
+    await expect(fields).toHaveCount(1);
+    await expect(fields).toBeHidden();
+    await dialog.locator('[data-ui="model-reference-details"] > summary').click();
+    const generation = fields.getByRole('checkbox').nth(0);
+    const editing = fields.getByRole('checkbox').nth(1);
+    await expect(generation).toBeChecked();
+    await expect(editing).toBeChecked();
+    await generation.uncheck();
+    await expect(dialog).toContainText(/changes do not verify|修改不代表已验证/);
+    await expect(fields.getByRole('combobox')).toHaveCount(1);
+    await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeVisible();
+    await expect(dialog.locator('[data-ui="model-filtered-enable-request"]')).toBeDisabled();
+    await expect(dialog.locator('[data-ui="model-filtered-disable-request"]')).toContainText('(1)');
+    await dialog.locator('[data-ui="model-sync-primary"]').click();
+    await expect(generation).not.toBeChecked();
+    await expect(editing).toBeChecked();
+    expect((previewBody?.config as Record<string, unknown>).model_metadata_overrides).toMatchObject({
+      [modelId]: { image_capabilities: { image_generation: false, image_editing: true }, price_input: 5 },
+    });
+    await testInfo.attach(`image-capabilities-${locale}-1440`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+    await page.setViewportSize({ width: 1056, height: 900 });
+    await expect(generation).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1056);
+    await testInfo.attach(`image-capabilities-${locale}-1056`, { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+    // Closing and reopening retains the existing supplier form draft.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await trigger.click();
+    await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
+    await dialog.locator('[data-ui="model-reference-details"] > summary').click();
+    await expect(generation).not.toBeChecked();
+    await expect(editing).toBeChecked();
+    // The same editor corrects text, vision and embedding, including stale image metadata.
+    const type = fields.getByRole('combobox');
+    for (const feature of ['text', 'vision', 'embedding']) {
+      await type.selectOption(feature);
+      await expect(fields.getByRole('checkbox')).toHaveCount(0);
+      await expect(type).toHaveValue(feature);
+      if (feature !== 'embedding') await expect(dialog.getByRole('button', { name: /^Test gpt-image-2.5-flare$|^测试 gpt-image-2.5-flare$/ })).toBeDisabled();
+    }
+    await type.selectOption('image_generation');
+    await expect(generation).toBeChecked();
+    await expect(editing).not.toBeChecked();
+    await generation.uncheck();
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+    await expect(dialog.getByRole('alert')).toContainText(/Failed to save provider connection|保存 provider 连接失败/);
+    await expect(generation).not.toBeChecked();
+    await expect(editing).not.toBeChecked();
+    await writeAdminVisualReceipt({
+      page, testInfo, route: '/admin/ai-resources', pageModel: 'queue',
+      testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog', 'capability-checkboxes', 'both-disabled', 'refreshed', 'dirty-reopened', 'pc-narrow'],
+      pageTitle: page.locator('main h1'), workingSurface: dialog.locator('[data-ui="model-visibility-directory"]'),
+      browserEvidence, expectedConsoleErrors: [/image declaration save failed/, /Failed to load resource.*503/], dataMode: 'mocked', humanAcceptance: 'pending', artifactId: `image-capabilities-${locale}`,
+      routeRuleResults: [
+        { id: 'single-primary-action', status: 'pass', evidence: 'supplier form retains its one save action; row disclosure adds no save' },
+        { id: 'textual-status', status: 'pass', evidence: 'compact capability labels beside model; verification caveat once in toolbar' },
+        { id: 'action-object-proximity', status: 'pass', evidence: 'generation and editing controls are within the model row' },
+        { id: 'distinct-interaction-states', status: 'pass', evidence: 'two native checkboxes expose explicit enabled and disabled states' },
+        { id: 'dialog-focus-recovery', status: 'pass', evidence: 'existing dialog Escape and reopen preserve the draft' },
+        { id: 'context-stability', status: 'pass', evidence: 'catalog refresh retains choices and unrelated price override' },
+      ],
+      interactionResults: [{ id: 'image-capability-draft', status: 'pass', evidence: 'independent flags, both disabled, refresh and reopen checked in both languages at PC widths' }],
+    });
+    await dialog.getByRole('button', { name: /Save supplier|保存供应商/ }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(submitted).not.toHaveProperty('credential');
+    expect((submitted?.config as Record<string, unknown>).model_metadata_overrides).toMatchObject({
+      [modelId]: { image_capabilities: { image_generation: false, image_editing: false }, price_input: 5 },
+    });
+  });
+}

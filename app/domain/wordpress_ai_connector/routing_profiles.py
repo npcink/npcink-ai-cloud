@@ -9,7 +9,17 @@ WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID = "wp-ai.short-text"
 WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID = "wp-ai.editorial"
 WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID = "wp-ai.classification"
 WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID = "wp-ai.image-generation"
+WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID = "wp-ai.image-editing"
 WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID = "wp-ai.audio-generation"
+
+
+def wordpress_ai_profile_supports_endpoint(profile_id: str, endpoint_variant: str) -> bool:
+    if profile_id == WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID:
+        return endpoint_variant == "image_edits"
+    if profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID:
+        return endpoint_variant != "image_edits"
+    return True
+
 
 WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
@@ -17,6 +27,7 @@ WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     VISION_AI_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
+    WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
 )
 
@@ -135,6 +146,26 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         description=(
             "Cloud-managed text-to-image generation for the WordPress AI media "
             "library feature."
+        ),
+    ),
+    WordPressAIConnectorProfileSpec(
+        profile_id=WP_AI_CONNECTOR_IMAGE_EDITING_PROFILE_ID,
+        group_id="image_editing",
+        routing_intent="media.image_editing",
+        label="Image editing",
+        # Keep the global execution kind stable while the connector proves the
+        # separate edit contract and provider endpoint. The task/profile remain
+        # independent so generation evidence cannot masquerade as edit support.
+        execution_kind="image_generation",
+        tasks=("image_editing",),
+        ordered_tiers=("image-editing", "quality", "default"),
+        timeout_ms=90_000,
+        max_timeout_ms=90_000,
+        allow_fallback=False,
+        max_retries=0,
+        description=(
+            "Cloud-managed single-reference image editing for the WordPress AI "
+            "media library feature."
         ),
     ),
     WordPressAIConnectorProfileSpec(
