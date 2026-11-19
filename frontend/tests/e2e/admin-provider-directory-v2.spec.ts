@@ -835,7 +835,7 @@ test('low-frequency provider settings open as compact panels and retain the draf
   await trigger.click();
   await expect(dialog.locator('.admin-workbench-dialog-compact')).toHaveCSS('max-width', '960px');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toBeVisible();
-  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+  await testInfo.attach('provider-advanced-panel-pc', { body: await page.screenshot({ path: testInfo.outputPath('provider-advanced-panel-pc.png') }), contentType: 'image/png' });
   await dialog.getByLabel(/Connection ID|连接 ID/i).fill('custom_runtime');
   await dialog.getByLabel(/Connection ID|连接 ID/i).press('Enter');
   await expect(dialog.getByLabel(/Connection ID|连接 ID/i)).toHaveValue('custom_runtime');
@@ -1664,11 +1664,14 @@ test('supplier model names hide only the system namespace and expose saved model
   await dialog.getByRole('tab', { name: /Model management|模型管理/ }).click();
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   const flash = dialog.getByRole('row').filter({ hasText: 'deepseek-flash' });
-  await expect(flash).toContainText(/Text · Image input|文本 · 支持图片输入/);
-  await expect(flash.getByText('Internal ID: deepseek/deepseek-flash', { exact: false })).toBeHidden();
+  await expect(flash.getByText('deepseek-flash', { exact: true })).toBeVisible();
+  await expect(flash.getByText(/^(Text · vision|文本 · 视觉)$/i).first()).toBeVisible();
+  await expect(flash.getByText(/^(Account returned|账户返回)$/)).toBeVisible();
+  const internalId = flash.getByText(/^(Internal ID|内部 ID): deepseek\/deepseek-flash$/);
+  await expect(internalId).toBeAttached();
+  await expect(internalId).toBeHidden();
   await flash.locator('summary').click();
-  await expect(flash).toContainText('deepseek/deepseek-flash');
-  await expect(flash).toContainText(/Capabilities declared|能力来自账户目录声明/);
+  await expect(internalId).toBeVisible();
   const old = dialog.getByRole('row').filter({ hasText: 'deepseek-v4-flash' });
   await expect(old).toContainText(/Saved; not returned|已保存，目录未返回/);
   const pro = dialog.getByRole('row').filter({ hasText: 'deepseek-v4-pro' });
@@ -1676,7 +1679,7 @@ test('supplier model names hide only the system namespace and expose saved model
   await pro.getByRole('switch').uncheck();
   await expect(dialog.getByRole('alert')).toContainText(/unavailable|无法再使用/);
   await expect(dialog.getByRole('button', { name: /Save supplier|保存供应商/ })).toBeInViewport();
-  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot({ path: testInfo.outputPath(`capabilities-${locale}-${page.viewportSize()?.width}.png`) }), contentType: 'image/png' });
+  await testInfo.attach('supplier-identity-narrow-pc', { body: await page.screenshot({ path: testInfo.outputPath('supplier-identity-narrow-pc.png') }), contentType: 'image/png' });
   await dialog.getByRole('button', { name: /^Cancel$|^取消$/ }).click();
 });
 
