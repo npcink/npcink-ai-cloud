@@ -76,14 +76,6 @@ Every addition, update, or removal in
   active exception state
 
 Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-107496 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-107496 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-88823 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-88823 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95691 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95691 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95692 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95692 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
 
 Require the independent review record for #1439; stop if FIPS use is found or
 required, the candidate changes, or the CNA scope broadens. Remove this entry
