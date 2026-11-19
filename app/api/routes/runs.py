@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -148,6 +148,32 @@ async def list_recent_nightly_inspection_runs(
         revision="m1",
         trace_id=auth.trace_id,
     )
+
+
+@router.get("/by-idempotency/{idempotency_key}")
+async def get_run_by_idempotency(
+    request: Request,
+    idempotency_key: Annotated[
+        str, Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    ],
+) -> Any:
+    auth = await authorize_public_request(
+        request, require_idempotency=False, required_scope="runtime:read"
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    service = _get_runtime_read_service(request)
+    try:
+        run = await run_in_threadpool(
+            service.get_run_by_idempotency,
+            site_id=auth.site_id,
+            idempotency_key=idempotency_key,
+        )
+    except RuntimeRunNotFoundError as error:
+        return _run_error_response(
+            status_code=404, error_code=error.error_code, message=error.message, run_id=""
+        )
+    return build_envelope(status="ok", data=run, revision="m2", trace_id=auth.trace_id)
 
 
 @router.get("/{run_id}")

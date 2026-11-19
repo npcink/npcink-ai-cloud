@@ -2422,6 +2422,22 @@ test('account-level support stays available without a selected site context', as
   expect(calls.accountProjectionRequestCount()).toBe(0);
 });
 
+test('a same-page support prefill keeps the loaded ticket list', async ({ page }) => {
+  await installPortalMocks(page, { withoutSelectedContext: true });
+  await page.goto('/portal/support');
+  const ticket = page.locator('[data-portal-support="tickets-table"]')
+    .getByText(/Payment order status looks wrong|支付订单状态看起来不对/i);
+  await expect(ticket).toBeVisible();
+
+  await page.evaluate(() => {
+    window.history.pushState(null, '', '/portal/support?new=1&topic=site&title=Support+prefill');
+  });
+  const dialog = page.getByRole('dialog', { name: /Submit ticket|提交工单/i });
+  await expect(dialog.getByRole('textbox', { name: /Title|标题/i })).toHaveValue('Support prefill');
+  await dialog.getByRole('button', { name: /Cancel|取消/i }).click();
+  await expect(ticket).toBeVisible();
+});
+
 test('closed ticket makes the reopen-on-reply behavior explicit', async ({ page }) => {
   await installPortalMocks(page);
 

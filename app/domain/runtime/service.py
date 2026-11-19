@@ -1032,6 +1032,11 @@ class RuntimeService:
             timeout_seconds=timeout_seconds,
         )
 
+    def get_run_by_idempotency(self, *, site_id: str, idempotency_key: str) -> dict[str, object]:
+        return self.run_lifecycle_service.get_run_by_idempotency(
+            site_id=site_id, idempotency_key=idempotency_key
+        )
+
     def get_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
         return self.run_lifecycle_service.get_run(run_id, site_id=site_id)
 
@@ -3162,6 +3167,7 @@ class RuntimeService:
         *,
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
+        finish_reason: str | None = None,
     ) -> ProviderOutputDecision:
         if run.ability_name == article_review.ABILITY:
             try:
@@ -3182,6 +3188,7 @@ class RuntimeService:
         decision = self.wordpress_operation_runtime.prepare_provider_output(
             input_payload=input_payload,
             provider_output=provider_output,
+            finish_reason=finish_reason,
             grounded_context=grounded_context if isinstance(grounded_context, dict) else None,
         )
         if decision.accepted:

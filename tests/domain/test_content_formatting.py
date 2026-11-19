@@ -124,3 +124,12 @@ def test_mismatched_protected_block_still_rejects_whole_document() -> None:
     result = format_candidate(source, "html")
     assert result["status"] == "REVIEW"
     assert result["candidate"] == source
+
+
+@pytest.mark.parametrize("char", ["中", "😀", "a"])
+def test_formatting_unicode_input_boundary(char: str) -> None:
+    source = "<p>" + char * 49993 + "</p>"
+    assert len(source) == 50000
+    assert format_candidate(source, "html")["candidate"] == source
+    with pytest.raises(ValueError):
+        format_candidate(source + char, "html")

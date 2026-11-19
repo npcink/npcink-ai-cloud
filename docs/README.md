@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 修复 Cloud 成功但调用方没保存回执、重启后卡住的问题 | [跨系统回执与中断恢复要求](historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers) — 接受后保存失败/进程退出、真实 DB/cache、延迟 sender、恢复后推进及证据分层；Site Knowledge 实现见[运行时契约](site-knowledge-runtime-contract-v1.md#dispatch-receipt-recovery-2026-11-16-candidate) |
 | 连接验收残项与维护发布收尾 | [2026-11-12 生产及验收回执](history/production/2026/connection-maintenance-release-2026-11-12.md)接续[准备记录](history/engineering/2026/connection-maintenance-release-closeout-2026-11-12.md)；采样和续费已有独立安排，源码、候选、生产与聊天归档分别记账。 |
 | 接续主机高读盘事故、统计/worker修复和当前会话资源收尾 | [事故接续与开发复盘 — 2026-11-12](history/engineering/2026/host-io-incident-development-handoff-2026-11-12.md) — 三批源码交付、生产取证与未证实根因分开；保留历史验收限制、主检出角色及下一复核点 |
 | 核对激活发布、伪需求取舍、四项接续与本会话清理 | [激活流程与收尾复盘 — 2026-11-11](history/engineering/2026/activation-flow-closeout-and-lessons-2026-11-11.md) — 已合并/生产与待验收分开；唯一四项台账、归档和受保护资源；方法见[收尾规范§6.5](engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制) |
@@ -69,6 +70,9 @@ product work or override the current Phase 1 expansion freeze.
 | 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
 | 实现文章中文检查只读提示 | [语言检查 runtime v1](article-review-language-runtime-v1.md) — 后端候选；精确引文定位、pii/no_store、作者修改；Addon/Toolbox 接入待后续 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
+| 查后续提交、翻译与功能族验证 | [2026-11-18 后续落实](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md) — 语言冲突、确定性验证与当前交付状态 |
+| 查编辑更新保存与 Notes 失败修复 | [第二批保存正确性](history/engineering/2026/wordpress-editorial-save-correctness-2026-11-17.md) — 上游本地补丁、重建/回滚与浏览器证据 |
+| 查编辑器功能清单、首批修复及待办 | [2026-11-17 功能审计](history/engineering/2026/wordpress-editor-feature-audit-2026-11-17.md) — AI 1.5 适配、测试和质量证据分开记录 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 逐项确认境内合规待办（生成式AI、标识、收款、数据） | [境内合规确认清单](compliance-confirmation-checklist-2026-09-23.md) — 工作底稿，非法律意见 |
@@ -231,7 +235,7 @@ deleting the old decision history.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
-- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md) — source/runtime/release 证据分级；§13 归纳付费到期、退款并发与原文验签、幂等身份、分页/DST、队列及真实 CI 覆盖的反例与回归要求。
+- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md) — source/runtime/release 证据分级；§13 归纳付费到期、退款并发与原文验签、幂等身份、分页/DST、队列及真实 CI 覆盖；§15 要求跨系统回执持久化、中断恢复和安全推进反例。
 - [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](history/engineering/2026/historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
 - [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
@@ -599,3 +603,5 @@ merge gates.
 - [Article review context extension](article-review-context-runtime-v1.md) — compatible logic/risk runtime contract.
 
 - [客户服务通知：范围、入口和发送契约](customer-service-notifications-v1.md) — 2026-11-03 有界手动站内通知；[需求闭环与经验总结](history/admin/2026/records/customer-service-notifications-2026-11-03.md#最终收尾与需求矩阵--2026-11-03)，区分已交付、延后和生产状态。
+
+- [WordPress 文本预算落实与回归规范](wordpress-text-budget-followthrough-2026-11-17.md) — 四步预算调整、完整性、Unicode 与分层验证证据。

@@ -1362,7 +1362,7 @@ def test_p2_text_tasks_project_source_text_once_with_runtime_evidence(
         ({"source_text": ""}, "wordpress_operation.source_text_required"),
         ({"source_text": "   \n\t"}, "wordpress_operation.source_text_required"),
         ({"source_text": 42}, "wordpress_operation.source_text_required"),
-        ({"source_text": "x" * 12001}, "wordpress_operation.source_text_too_large"),
+        ({"source_text": "文" * 50001}, "wordpress_operation.source_text_too_large"),
         (
             {"source_text": "valid source", "prompt": "legacy prompt"},
             "wordpress_operation.prompt_forbidden",
@@ -1395,6 +1395,30 @@ def test_p2_text_source_contract_fails_closed_before_provider(
     assert response.status_code == 400
     assert response.json()["error_code"] == expected_error
     assert provider.requests == []
+
+
+@pytest.mark.parametrize("task", ["title_generation", "content_summary", "content_rewrite"])
+@pytest.mark.parametrize("source", ["文" * 4200, "文" * 50000, "<p>" + "文😀" * 24996 + "文</p>"])
+def test_long_source_preserved_through_fake_provider(
+    tmp_path: Path, task: str, source: str,
+) -> None:
+    # Includes markup and supplementary Unicode; no paid provider is used.
+    assert len(source) in {4200, WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS}
+    _, client, provider = _build_client(tmp_path)
+    response = _execute(
+        client,
+        _payload({"task": task, "request": {
+            "source_text": source,
+            "system_instruction": "Keep the local instruction.",
+        }}),
+        idempotency_key=f"long-source-{task}",
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "succeeded"
+    assert len(provider.requests) == 1
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["text"] == source
+    assert provider_input["input"].count(source) == 1
 
 
 def test_p2_text_task_allows_trimmed_empty_system_instruction(tmp_path: Path) -> None:
@@ -4200,13 +4224,13 @@ def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
     assert "Return only the summary" in provider_input["input"]
-    assert provider_input["max_tokens"] == 160
+    assert provider_input["max_tokens"] == 512
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
     result_text = response.json()["data"]["result"]["output"]["output_text"]
     assert "**" not in result_text
     assert "###" not in result_text
     assert not result_text.endswith("2.")
-    assert len(result_text) <= 220
+    assert len(result_text) <= 2000
 
 
 def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
@@ -6191,6 +6215,43 @@ def test_grounded_queued_failure_has_same_evidence_semantics(tmp_path, monkeypat
     assert not provider.requests
     with get_session(database_url) as session:
         assert session.get(RunRecord, data["run_id"]).error_code == "grounded_answer.no_evidence"
+
+
+@pytest.mark.parametrize(
+    ("text", "finish_reason", "error_code"),
+    [
+        ("A completed first sentence. The essential limitation is", "length",
+         "provider.output_incomplete"),
+        ("A" * 2001, "stop", "provider.output_too_large"),
+    ],
+)
+def test_summary_failure_returns_no_partial_success_or_automatic_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    text: str, finish_reason: str, error_code: str,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+
+    def execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        provider.requests.append(request)
+        return ProviderExecutionResult(
+            output={"output_text": text}, latency_ms=1, tokens_in=10,
+            tokens_out=160, cost=0, finish_reason=finish_reason,
+        )
+
+    monkeypatch.setattr(provider, "execute", execute)
+    response = _execute(
+        client,
+        _payload({"task": "content_summary", "request": {
+            "source_text": "Connection checks do not prove every task can run.",
+        }}),
+        idempotency_key="summary-completion-rejection",
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["result"] == {}
+    assert data["error_code"] == error_code
+    assert len(provider.requests) == 1
 
 
 def test_reference_image_edit_executes_signed_runtime_and_delivers_artifact(tmp_path: Path) -> None:

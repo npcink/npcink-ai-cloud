@@ -30,7 +30,6 @@ from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
     WORDPRESS_OPERATION_CONTRACT,
-    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
     contains_inline_media_transport,
     resolve_site_knowledge_reference_mode,
@@ -47,6 +46,15 @@ from app.domain.wordpress_ai_connector.grounded_context import (
     normalize_grounded_output,
     render_evidence_pack,
     requires_evidence,
+)
+from app.domain.wordpress_ai_connector.output_policy import (
+    MAX_SUMMARY_OUTPUT_CHARS,
+    MAX_TRANSFORMATION_OUTPUT_CHARS,
+    MAX_TRANSFORMATION_OUTPUT_TOKENS,
+    SUMMARY_OUTPUT_TOKENS,
+    TRANSFORMATION_TASKS,
+    completion_failure,
+    transformation_token_budget,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
     resolve_wordpress_ai_connector_profile_spec,
@@ -232,6 +240,7 @@ class WordPressOperationRuntime:
             or ""
         ).strip()
         existing_title = str(scene_request.get("existing_title") or "").strip()
+        rewrite_action = str(scene_request.get("rewrite_action") or "").strip()
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
@@ -273,8 +282,9 @@ class WordPressOperationRuntime:
                 "Rewrite only the supplied content according to the request. Return exactly "
                 "one rewritten version (one revised version) and nothing else. Preserve the "
                 "original meaning, facts, "
-                "names, numbers, links, and structure. Keep the result close to the source "
-                "length; do not expand a short paragraph into an explanation, add background, "
+                "names, numbers, links, and structure. Follow the local Ability's requested "
+                "length change; if none is requested, keep the result close to the source "
+                "length. Do not turn the result into an explanation, add unrelated background, "
                 "product names, workflow claims, or administrative context."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
@@ -362,6 +372,23 @@ class WordPressOperationRuntime:
             )
 
         fragments = [task_instruction]
+        if task == "content_rewrite":
+            length_instruction = {
+                "shorten": (
+                    "Condense the content to roughly half its current length; retain key facts."
+                ),
+                "expand": (
+                    "Expand to roughly 1.5 to 2 times the source length by clarifying supplied "
+                    "ideas, without inventing facts, examples presented as facts, or claims."
+                ),
+                "rephrase": (
+                    "Keep the result close to the source length while changing the wording."
+                ),
+            }.get(rewrite_action)
+            if length_instruction:
+                fragments.append(
+                    f"Requested rewrite action: {rewrite_action}. {length_instruction}"
+                )
         if task == "title_generation" and existing_title:
             fragments.append(
                 "Existing WordPress title: "
@@ -434,7 +461,18 @@ class WordPressOperationRuntime:
             )
         if system_instruction:
             fragments.append(system_instruction)
-        if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
+        if title_output_schema:
+            fragments.append(
+                "Transport serialization takes precedence over plain-text output wording above: "
+                "plain title text requirements apply to the value of `title`, not the transport "
+                "envelope. Return only one JSON object with the single string field `title`; "
+                "put no quotes, Markdown, explanations, or alternatives inside that value."
+            )
+        # Translation language belongs to the local Ability, including legacy
+        # callers that carry it only in their system instruction.
+        if task not in {"slug_generation", "content_translation"} and self._is_predominantly_cjk(
+            scene_text
+        ):
             fragments.append(
                 "The scene is predominantly Simplified Chinese. Write every human-readable "
                 "part of the result in Simplified Chinese, including suggestions and "
@@ -493,6 +531,8 @@ class WordPressOperationRuntime:
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
                 provider_input["metadata"]["target_language"] = target_language
+        if task == "content_rewrite" and rewrite_action:
+            provider_input["metadata"]["rewrite_action"] = rewrite_action
         if task == "title_generation" and existing_title:
             provider_input["metadata"]["existing_title"] = existing_title
         if title_output_schema:
@@ -535,7 +575,7 @@ class WordPressOperationRuntime:
             "comment_reply_suggest": 180,
             "content_classification": 220,
             "content_rewrite": 512,
-            "content_summary": 160,
+            "content_summary": SUMMARY_OUTPUT_TOKENS,
             "editorial_updates": 256,
             "excerpt_generation": 140,
             "meta_description": 80,
@@ -553,9 +593,17 @@ class WordPressOperationRuntime:
             }.get(task_family, 160),
         )
 
+        if task in TRANSFORMATION_TASKS:
+            default_max_tokens = transformation_token_budget(scene_text)
+            if task == "content_rewrite" and rewrite_action == "expand":
+                default_max_tokens = min(
+                    MAX_TRANSFORMATION_OUTPUT_TOKENS, default_max_tokens * 2
+                )
         max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=0)
         if max_tokens <= 0:
             max_tokens = default_max_tokens
+        if task in TRANSFORMATION_TASKS:
+            max_tokens = min(max_tokens, MAX_TRANSFORMATION_OUTPUT_TOKENS)
         if max_tokens > 0:
             provider_input["max_tokens"] = max_tokens
             provider_input["max_output_tokens"] = max_tokens
@@ -796,8 +844,19 @@ class WordPressOperationRuntime:
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
         grounded_context: dict[str, Any] | None = None,
+        finish_reason: str | None = None,
     ) -> ProviderOutputDecision:
         """Judge WordPress output without mutating run state or persisting diagnostics."""
+        failure = completion_failure(
+            input_payload, provider_output, finish_reason=finish_reason,
+            extracted_text=self._extract_provider_output_text(provider_output),
+        )
+        if failure:
+            return ProviderOutputDecision(
+                accepted=False, output={}, error_code=failure,
+                error_message="WordPress output is incomplete or exceeds its limit",
+                usage_context={"output_quality_reason": failure.removeprefix("provider.")},
+            )
         normalization_input = {**input_payload}
         normalization_input.pop("_grounded_context", None)
         if grounded_context is not None:
@@ -856,6 +915,8 @@ class WordPressOperationRuntime:
             if isinstance(item, str) and str(item).strip()
         }
         output_text = self._extract_provider_output_text(output)
+        if completion_failure(input_payload, output, extracted_text=output_text):
+            return {}
         pack = input_payload.get("_grounded_context")
         if isinstance(pack, dict):
             schema = self._dict_or_empty(metadata.get("ability_output_schema"))
@@ -934,10 +995,10 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit={
-                    "content_rewrite": WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
+                    "content_rewrite": MAX_TRANSFORMATION_OUTPUT_CHARS,
                     "title_generation": 80,
                     "excerpt_generation": 180,
-                    "content_summary": 220,
+                    "content_summary": MAX_SUMMARY_OUTPUT_CHARS,
                 }[task],
                 strip_explanation=task in {"title_generation", "content_rewrite"},
                 source_text=str(input_payload.get("text") or ""),
@@ -947,7 +1008,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit=(
-                    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+                    MAX_TRANSFORMATION_OUTPUT_CHARS
                     if task in {"content_translation", "editorial_updates"}
                     else 320
                 ),
@@ -1541,7 +1602,8 @@ class WordPressOperationRuntime:
             return "translation_structure_drift"
 
         normalized_target = target_language.strip().lower().replace("_", "-")
-        if normalized_target not in {"zh-cn", "zh-tw", "zh-hans", "zh-hant"}:
+        target_base = normalized_target.split("-", 1)[0]
+        if target_base and target_base not in {"zh", "ja", "ko"}:
             source_cjk = cls._translation_visible_cjk_count(source_text)
             output_cjk = cls._translation_visible_cjk_count(output_text)
             if source_cjk == 0 and output_cjk >= 1:
@@ -1552,9 +1614,20 @@ class WordPressOperationRuntime:
             if source_cjk >= 80 and output_cjk >= max(20, int(source_cjk * 0.20)):
                 return "translation_untranslated_source"
 
-        if len(source_text) >= 200 and len(output_text) > int(len(source_text) * 2.2):
+        # CJK glyphs and alphabetic characters have different information density.
+        # Compare visible units (one CJK glyph or four other characters), rather
+        # than rejecting faithful Chinese-to-English translations for being longer.
+        if len(source_text) >= 200 and cls._translation_length_units(
+            output_text
+        ) > cls._translation_length_units(source_text) * 2.2:
             return "translation_length_inflation"
         return ""
+
+    @staticmethod
+    def _translation_length_units(value: str) -> int:
+        visible = re.sub(r"(?is)<[^>]+>|https?://[^\s\"'<>]+|```.*?```", " ", value)
+        cjk = len(re.findall(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", visible))
+        return cjk + math.ceil((len(visible) - cjk) / 4)
 
     @staticmethod
     def _contains_translation_refusal(output_text: str) -> bool:
@@ -1935,7 +2008,15 @@ class WordPressOperationRuntime:
             )
         )
         if not text:
-            text = self._strip_markdown(raw_text)
+            text = (
+                "\n\n".join(
+                    self._strip_markdown(paragraph)
+                    for paragraph in re.split(r"\n\s*\n", raw_text)
+                    if paragraph.strip()
+                )
+                if task == "content_summary"
+                else self._strip_markdown(raw_text)
+            )
         if strip_explanation:
             text = re.split(
                 r"\s+(?:说明|解释|理由|Explanation|Reasoning)\s*[:：]|"

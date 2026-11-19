@@ -41,10 +41,12 @@ def _operation_payload(
 ) -> dict[str, Any]:
     scene_text_field = (
         "source_text"
-        if task in {
+        if task
+        in {
             "title_generation",
             "content_summary",
             "content_rewrite",
+            "content_translation",
             "editorial_updates",
             "excerpt_generation",
             "meta_description",
@@ -88,15 +90,15 @@ def _operation_payload(
 @pytest.mark.parametrize(
     ("task", "source_text", "expected_max_tokens"),
     [
-            (
-                "title_generation",
-                "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
-                256,
-            ),
-            (
-                "content_summary",
-                "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
-                160,
+        (
+            "title_generation",
+            "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
+            256,
+        ),
+        (
+            "content_summary",
+            "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
+            512,
         ),
         (
             "content_rewrite",
@@ -159,7 +161,7 @@ def test_editorial_updates_provider_input_forbids_process_explanations() -> None
         )
     )
 
-    assert provider_input["max_tokens"] == 256
+    assert provider_input["max_tokens"] == 512
     assert "Return only the final revised content" in provider_input["input"]
     assert "never say that the task is impossible" in provider_input["input"]
     assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
@@ -184,9 +186,7 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
         )
     )
 
-    assert "Use only facts, names, products, organizations, and claims" in provider_input[
-        "input"
-    ]
+    assert "Use only facts, names, products, organizations, and claims" in provider_input["input"]
     assert "do not introduce concepts" in provider_input["input"].lower()
     assert "Return only the" in provider_input["input"]
     expected_source = "A bounded connector maps WordPress AI abilities to a hosted provider."
@@ -247,6 +247,49 @@ def test_content_translation_provider_input_protects_gutenberg_structure() -> No
     assert provider_input["temperature"] == 0.0
 
 
+@pytest.mark.parametrize("target_language", ["en-us", "de-de", "ja", "zh-tw", "zh-cn"])
+def test_translation_target_language_is_not_overridden_by_chinese_source(
+    target_language: str,
+) -> None:
+    source = '<p>这是一段需要翻译的中文，保留链接和数字 2026。</p>'
+    local_instruction = f"Translate into {target_language}. Keep the HTML structure."
+    payload = _operation_payload(
+        task="content_translation",
+        request={
+            "source_text": source,
+            "target_language": target_language,
+            "system_instruction": local_instruction,
+        },
+    )
+    payload["operation_contract"] = validate_wordpress_operation_contract(
+        payload["operation_contract"]
+    )
+    provider_input = _runtime().build_provider_input(payload)
+    assert f"WordPress target language: {target_language}." in provider_input["input"]
+    assert "Write every human-readable part of the result in Simplified Chinese" not in (
+        provider_input["input"]
+    )
+    assert local_instruction in provider_input["input"]
+    assert provider_input["text"] == source
+    assert provider_input["metadata"]["target_language"] == target_language
+
+
+def test_translation_legacy_target_in_local_instruction_is_preserved() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_translation",
+            request={
+                "source_text": "这段中文要翻译成英文。",
+                "system_instruction": "Translate to English.",
+            },
+        )
+    )
+    assert "Translate to English." in provider_input["input"]
+    assert "Write every human-readable part of the result in Simplified Chinese" not in (
+        provider_input["input"]
+    )
+
+
 def test_editorial_notes_provider_input_requires_suggestion_for_objective_issue() -> None:
     runtime = _runtime()
     provider_input = runtime.build_provider_input(
@@ -282,12 +325,108 @@ def test_content_rewrite_provider_input_preserves_scope_and_source_length() -> N
     )
 
     assert "Return exactly one rewritten version" in provider_input["input"]
-    assert "Keep the result close to the source length" in provider_input["input"]
-    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert "Follow the local Ability's requested length change" in provider_input["input"]
+    assert "Do not turn the result into an explanation" in provider_input["input"]
     assert (
         "Preserve the original meaning, facts, names, numbers, links, and structure"
         in provider_input["input"]
     )
+
+
+@pytest.mark.parametrize("action", ["shorten", "expand", "rephrase"])
+def test_rewrite_action_survives_validation_and_controls_length(action: str) -> None:
+    payload = _operation_payload(
+        task="content_rewrite",
+        request={"source_text": "原始选区内容。" * 200, "rewrite_action": action},
+    )
+    payload["operation_contract"] = validate_wordpress_operation_contract(
+        payload["operation_contract"]
+    )
+    provider_input = _runtime().build_provider_input(payload)
+    assert provider_input["metadata"]["rewrite_action"] == action
+    assert f"Requested rewrite action: {action}." in provider_input["input"]
+    if action == "shorten":
+        assert "roughly half" in provider_input["input"]
+        assert "Keep the result close to the source length" not in provider_input["input"]
+    elif action == "expand":
+        assert "1.5 to 2 times" in provider_input["input"]
+        assert "Keep the result close to the source length" not in provider_input["input"]
+        baseline = _runtime().build_provider_input(
+            _operation_payload(
+                task="content_rewrite", request={"source_text": "原始选区内容。" * 200}
+            )
+        )
+        assert provider_input["max_tokens"] > baseline["max_tokens"]
+    else:
+        assert "Keep the result close to the source length" in provider_input["input"]
+
+
+@pytest.mark.parametrize("action", ["", "invent", None, [], 1])
+def test_rewrite_action_rejects_invalid_values(action: object) -> None:
+    with pytest.raises(WordPressOperationContractViolation, match="rewrite_action"):
+        validate_wordpress_operation_contract(
+            _operation_payload(task="content_rewrite", request={"rewrite_action": action})[
+                "operation_contract"
+            ]
+        )
+
+
+@pytest.mark.parametrize("explicit_budget", [1024, 100000])
+def test_expand_preserves_explicit_budget_with_existing_ceiling(explicit_budget: int) -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={
+                "source_text": "原始内容。" * 200,
+                "rewrite_action": "expand",
+                "max_tokens": explicit_budget,
+            },
+        )
+    )
+    assert provider_input["max_tokens"] == min(explicit_budget, 65536)
+    assert provider_input["max_output_tokens"] == provider_input["max_tokens"]
+
+
+def test_expand_default_budget_cannot_exceed_existing_ceiling() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={"source_text": "文" * 50000, "rewrite_action": "expand"},
+        )
+    )
+    assert provider_input["max_tokens"] == 65536
+
+
+def test_rewrite_action_cannot_change_other_tasks() -> None:
+    with pytest.raises(WordPressOperationContractViolation, match="rewrite_action"):
+        validate_wordpress_operation_contract(
+            _operation_payload(request={"rewrite_action": "expand"})["operation_contract"]
+        )
+
+
+def test_title_transport_contract_resolves_local_plain_text_instruction() -> None:
+    local_instruction = "Output only the title text. Do not wrap it in quotes."
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            request={
+                "system_instruction": local_instruction,
+                "task_contract": {
+                    "task_family": "generation",
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}},
+                    },
+                },
+            }
+        )
+    )
+    prompt = provider_input["input"]
+    assert local_instruction in prompt
+    assert prompt.index("Transport serialization takes precedence") > prompt.index(
+        local_instruction
+    )
+    assert "plain title text requirements apply to the value of `title`" in prompt
+    assert provider_input["response_format"]["type"] == "json_schema"
 
 
 def test_editorial_updates_provider_input_preserves_scope_and_source_length() -> None:
@@ -306,9 +445,10 @@ def test_editorial_updates_provider_input_preserves_scope_and_source_length() ->
     assert "Keep the result close to the source length" in provider_input["input"]
     assert "do not expand a short paragraph into an explanation" in provider_input["input"]
     assert "add background, product names, workflow claims" in provider_input["input"]
-    assert "Return the revised paragraph itself and retain its substantive words" in provider_input[
-        "input"
-    ]
+    assert (
+        "Return the revised paragraph itself and retain its substantive words"
+        in provider_input["input"]
+    )
 
 
 def test_editorial_updates_rejects_bounded_completion_wording_without_source_facts() -> None:
@@ -423,9 +563,7 @@ def test_editorial_updates_preserves_legal_user_markup_without_block_wrapper() -
         {"output_text": "Quarterly release schedule requires review."},
         input_payload={
             "metadata": {"task": "editorial_updates"},
-            "text": (
-                "<task-list><li>Quarterly release schedule requires review.</li></task-list>"
-            ),
+            "text": ("<task-list><li>Quarterly release schedule requires review.</li></task-list>"),
         },
     )
 
@@ -558,8 +696,7 @@ def test_content_rewrite_rejects_generic_revision_without_editable_source_overla
     normalized = runtime.normalize_provider_output(
         {
             "output_text": (
-                "This duplicate sentence requires a more concise revision suitable for "
-                "publication."
+                "This duplicate sentence requires a more concise revision suitable for publication."
             )
         },
         input_payload={
@@ -1301,6 +1438,49 @@ def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
     assert normalized == {}
 
 
+@pytest.mark.parametrize(
+    ("output_text", "accepted"),
+    [
+        ("Review AI suggestions before saving", False),
+        ('"Review AI suggestions before saving"', False),
+        ('{"title":"Review AI suggestions before saving"}', True),
+    ],
+)
+def test_title_output_decision_uses_composed_ability_metadata(
+    output_text: str, accepted: bool
+) -> None:
+    runtime = _runtime()
+    payload = _operation_payload(
+        request={
+            "source_text": "Authors review AI suggestions before saving changes to the site.",
+            "task_contract": {
+                "contract_version": "ai_task_contract.v1",
+                "ability_name": "ai/title-generation",
+                "task": "title_generation",
+                "task_family": "generation",
+                "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"title": {"type": "string"}},
+                },
+                "write_posture": "suggestion_only",
+            },
+        },
+    )
+    provider_input = runtime.build_provider_input(payload)
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output={"output_text": output_text}
+    )
+
+    assert decision.accepted is accepted
+    if accepted:
+        assert decision.output["output_text"] == "Review AI suggestions before saving"
+    else:
+        assert decision.output == {}
+        assert decision.error_code == "provider.output_quality_rejected"
+        assert str(decision.usage_context["output_quality_reason"]).startswith("title_schema_")
+
+
 def test_title_generation_rejects_an_existing_scene_heading() -> None:
     runtime = _runtime()
     source = "# OneBlog - Typecho文字博客主题\n\n这是文章正文。"
@@ -1312,10 +1492,13 @@ def test_title_generation_rejects_an_existing_scene_heading() -> None:
         input_payload=provider_input,
         provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
     )
-    assert runtime.output_quality_reason(
-        input_payload=provider_input,
-        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
-    ) == "title_unchanged"
+    assert (
+        runtime.output_quality_reason(
+            input_payload=provider_input,
+            provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+        )
+        == "title_unchanged"
+    )
 
 
 def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> None:
@@ -1348,8 +1531,7 @@ def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> 
     ("provider_text", "expected_reason"),
     [
         (
-            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。"
-            * 3,
+            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。" * 3,
             "title_length_exceeded",
         ),
         ("云端标题！！？？", "title_repeated_punctuation"),
@@ -1367,18 +1549,24 @@ def test_title_generation_reports_deterministic_quality_reasons(
         "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
     }
 
-    assert runtime.title_quality_reasons(
-        input_payload=input_payload,
-        provider_output={"output_text": provider_text},
-    )[0] == expected_reason
+    assert (
+        runtime.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output={"output_text": provider_text},
+        )[0]
+        == expected_reason
+    )
     assert runtime.is_empty_text_output(
         input_payload=input_payload,
         provider_output={"output_text": provider_text},
     )
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output={"output_text": provider_text},
-    ) == expected_reason
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output={"output_text": provider_text},
+        )
+        == expected_reason
+    )
 
 
 def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
@@ -1481,9 +1669,9 @@ def test_content_rewrite_output_preserves_long_selection_within_source_limit() -
     assert result["output_text"] == rewritten_text
 
 
-def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> None:
+def test_content_rewrite_output_remains_bounded_by_output_contract() -> None:
     runtime = _runtime()
-    rewritten_text = "边界内的改写句子呀。" * 1_300
+    rewritten_text = "边界内的改写句子呀。" * 8_000
 
     result = runtime.normalize_provider_output(
         {"output_text": rewritten_text},
@@ -1493,8 +1681,27 @@ def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> Non
         },
     )
 
-    assert len(result["output_text"]) == WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
-    assert result["output_text"] == rewritten_text[:WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS]
+    assert result == {}
+    decision = runtime.prepare_provider_output(
+        input_payload={"metadata": {"task": "content_rewrite"}, "text": "原始选区"},
+        provider_output={"output_text": rewritten_text},
+    )
+    assert not decision.accepted
+    assert decision.error_code == "provider.output_too_large"
+    assert decision.output == {}
+    # Every accepted provider text shape must be checked before normalization
+    # can clip it into an apparently successful transformation.
+    for output in (
+        {"text": rewritten_text},
+        {"content": rewritten_text},
+        {"choices": [{"text": rewritten_text}]},
+        {"choices": [{"message": {"content": rewritten_text}}]},
+    ):
+        payload = {"metadata": {"task": "content_rewrite"}, "text": "原始选区"}
+        assert runtime.normalize_provider_output(output, input_payload=payload) == {}
+        assert runtime.prepare_provider_output(
+            input_payload=payload, provider_output=output,
+        ).error_code == "provider.output_too_large"
 
 
 def test_empty_text_output_judgement_is_task_bounded() -> None:
@@ -1581,7 +1788,7 @@ def test_translation_quality_gate_rejects_unsafe_output(
 ) -> None:
     runtime = _runtime()
     source_text = (
-        '<content><p>这是一个需要完整翻译的中文段落，包含来源链接。'
+        "<content><p>这是一个需要完整翻译的中文段落，包含来源链接。"
         '<a href="https://example.test/docs">文档</a></p></content>'
     )
     if expected_reason == "translation_structure_drift":
@@ -1601,10 +1808,13 @@ def test_translation_quality_gate_rejects_unsafe_output(
         input_payload=input_payload,
         provider_output=provider_output,
     )
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output=provider_output,
-    ) == expected_reason
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        == expected_reason
+    )
 
 
 def test_translation_quality_gate_rejects_length_inflation() -> None:
@@ -1616,20 +1826,90 @@ def test_translation_quality_gate_rejects_length_inflation() -> None:
         "text": source_text,
     }
 
-    assert runtime.output_quality_reason(
-        input_payload=input_payload,
-        provider_output=provider_output,
+    assert (
+        runtime.output_quality_reason(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        == "translation_length_inflation"
+    )
+
+
+@pytest.mark.parametrize("target_language", ["en-us", "de-de"])
+def test_translation_allows_alphabetic_expansion_of_chinese(
+    target_language: str,
+) -> None:
+    source = "作者审阅建议后点击插入，这只修改草稿。保存文章是另一项操作，必须确认保存成功。" * 6
+    translated = {
+        "en-us": (
+            "The author reviews the suggestion and clicks Insert, which changes only the draft. "
+            "Saving the post is a separate action, and its success must be confirmed. "
+        ),
+        "de-de": (
+            "Der Autor prüft den Vorschlag und klickt auf Einfügen. Dadurch wird nur der Entwurf "
+            "geändert. Das Speichern des Beitrags ist ein eigener Schritt "
+            "und muss bestätigt werden. "
+        ),
+    }[target_language] * 6
+    assert len(source) >= 200
+    assert len(translated) > len(source) * 2.2
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": source,
+            "metadata": {"task": "content_translation", "target_language": target_language},
+        },
+        provider_output={"output_text": translated},
+    )
+    assert decision.accepted
+    assert decision.output["output_text"].strip() == translated.strip()
+
+
+@pytest.mark.parametrize("target_language", ["ja", "ja-JP", "ko", "ko_KR", "zh", ""])
+def test_translation_cjk_is_valid_for_cjk_or_unspecified_target(target_language: str) -> None:
+    # The unspecified legacy target may be supplied only in the local instruction.
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": "Save after reviewing the draft.",
+            "metadata": {"task": "content_translation", "target_language": target_language},
+        },
+        provider_output={"output_text": "草稿を確認してから保存してください。"},
+    )
+    assert decision.accepted
+
+
+def test_translation_does_not_reject_shared_kanji_as_untranslated_chinese() -> None:
+    decision = _runtime().prepare_provider_output(
+        input_payload={
+            "text": "文章内容需要审阅，保存前确认当前标题和摘要。" * 6,
+            "metadata": {"task": "content_translation", "target_language": "ja"},
+        },
+        provider_output={
+            "output_text": (
+                "記事内容の確認が必要です。"
+                "保存前に現在の題名と要約を確認してください。"
+            ) * 6
+        },
+    )
+    assert decision.accepted
+
+
+def test_translation_rejects_cjk_expansion_after_script_normalization() -> None:
+    runtime = _runtime()
+    source = "保存前に記事内容を確認してください。" * 15
+    output = "保存前に記事内容と関係のない情報を大量に追加して確認してください。" * 40
+    assert runtime._translation_quality_reason(
+        source_text=source, output_text=output, target_language="ja"
     ) == "translation_length_inflation"
 
 
 def test_translation_normalization_preserves_markup_and_links() -> None:
     runtime = _runtime()
     source_text = (
-        '<content><!-- wp:paragraph --><p>Translate this paragraph.</p>'
+        "<content><!-- wp:paragraph --><p>Translate this paragraph.</p>"
         '<a href="https://example.test/docs">Docs</a><!-- /wp:paragraph --></content>'
     )
     translated_text = (
-        '<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>'
+        "<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>"
         '<a href="https://example.test/docs">Dokumentation</a><!-- /wp:paragraph -->'
     )
     input_payload = {
@@ -2084,3 +2364,123 @@ def test_ability_number_bounds_preserve_fractional_values(value: float, accepted
         )
         is accepted
     )
+
+
+@pytest.mark.parametrize("task", ["content_rewrite", "content_translation", "editorial_updates"])
+def test_long_transformation_is_preserved_without_the_old_output_clipper(task: str) -> None:
+    runtime = _runtime()
+    source = "这是有关版本更新和发布检查的明确记录。" * 700
+    assert len(source) > 12000
+    normalized = runtime.normalize_provider_output(
+        {"output_text": source},
+        input_payload={
+            "metadata": {"task": task, "task_constraints": ["single_value"]},
+            "text": source,
+        },
+    )
+    assert normalized
+    assert normalized["output_text"] == source
+
+
+@pytest.mark.parametrize("task", ["content_rewrite", "content_translation", "editorial_updates"])
+@pytest.mark.parametrize("source", ["文" * 12000, "Long input. " * 1000], ids=["cjk", "ascii"])
+def test_transformation_default_budget_scales_with_source(task: str, source: str) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(task=task, request={"source_text": source})
+    )
+    assert provider_input["max_tokens"] > 512
+    assert provider_input["max_tokens"] == provider_input["max_output_tokens"]
+    assert provider_input["text"] == source.strip()
+
+
+def test_transformation_explicit_output_budget_remains_authoritative() -> None:
+    provider_input = _runtime().build_provider_input(
+        _operation_payload(
+            task="content_rewrite", request={"source_text": "文" * 12000, "max_tokens": 800}
+        )
+    )
+    assert provider_input["max_tokens"] == 800
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_summary_keeps_complete_multi_paragraph_output_beyond_old_clip(language: str) -> None:
+    first = (
+        "Authors review generated suggestions before inserting them into the draft. "
+        "Only an explicit save persists those edits; autosave and final save are distinct."
+        if language == "en"
+        else (
+            "作者需要先审阅生成建议，再将其插入草稿。只有明确保存才会把修改写入站点，"
+            "自动保存和正式保存是不同操作。"
+        ) * 4
+    )
+    last = (
+        "Connection checks validate the connection only. Individual tasks still depend on "
+        "the current ability, model support and input size. Open the linked settings or "
+        "diagnostics when a task fails instead of repeatedly checking the connection."
+        if language == "en"
+        else (
+            "连接检查只验证连接层面，具体任务仍取决于当前能力、模型支持和输入长度。"
+            "任务失败时应打开错误提示的设置或排障入口。"
+        )
+    )
+    summary = first + "\n\n" + last
+    assert len(summary) > 220
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": summary},
+    ))
+    assert provider_input["max_tokens"] == 512
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output={"output_text": summary},
+        finish_reason="stop",
+    )
+    assert decision.accepted
+    assert decision.output["output_text"] == summary
+
+
+@pytest.mark.parametrize("finish_reason,status", [
+    ("length", None), ("max_tokens", None), ("stop", "incomplete"),
+    ("stop", "cancelled"), ("stop", "failed"),
+])
+def test_summary_rejects_incomplete_output_before_trimming(
+    finish_reason: str, status: str | None,
+) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(_operation_payload(
+        task="content_summary",
+        request={"source_text": "Connection checks do not prove task support."},
+    ))
+    output = {"output_text": "The first point is complete. The important limitation is"}
+    if status:
+        output["response_status"] = status
+    decision = runtime.prepare_provider_output(
+        input_payload=provider_input, provider_output=output, finish_reason=finish_reason,
+    )
+    assert not decision.accepted
+    assert decision.error_code == "provider.output_incomplete"
+    assert decision.output == {}
+
+
+def test_summary_rejects_oversized_output_without_silently_clipping() -> None:
+    runtime = _runtime()
+    payload = runtime.build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": "The article covers draft safety."},
+    ))
+    for output in (
+        {"output_text": "A" * 2001},
+        {"choices": [{"message": {"content": "A" * 2001}}]},
+    ):
+        decision = runtime.prepare_provider_output(
+            input_payload=payload, provider_output=output, finish_reason="stop",
+        )
+        assert not decision.accepted
+        assert decision.error_code == "provider.output_too_large"
+        assert decision.output == {}
+
+
+def test_summary_respects_explicit_caller_budget() -> None:
+    provider_input = _runtime().build_provider_input(_operation_payload(
+        task="content_summary", request={"source_text": "Only summarize this.", "max_tokens": 300},
+    ))
+    assert provider_input["max_tokens"] == 300

@@ -2537,6 +2537,161 @@ Addon 连接页对归属、冷却、跨账户禁用、释放不完整显示原�
 Npcink交换，人工成品视觉接受待确认。详见[最终状态补记](history/portal/2026/confirmation-feedback-closeout-2026-11-12.md#最终状态补记--2026-11-12)。
 本次后继只补文档状态，不扩大已整改入口、真实环境或人工接受范围。
 
+## Portal support draft handoff — 2026-11-16
+
+Existing queue + new-ticket dialog; no new panel, API, persistence, or submission
+path. Optional `title` (191) and `description` (4000) query hints extend the
+existing `new=1&topic=site&site=…` browser link. All hints are untrusted plain text;
+site-related hints apply only for sites visible to the authenticated account.
+The Portal login and second-factor return retain the query. The user edits and
+explicitly submits the draft. Same-scope session refresh preserves edits and
+closed dialogs; account/site context changes clear them without replaying the
+old diagnostic link.
+
+| Priority | Treatment | Verification |
+| --- | --- | --- |
+| 常显 | Existing editable topic/site/title/description, validation and explicit Submit remain in the dialog. | Focused form/browser flow; no ticket submitted. |
+| 按需 | Existing help remains; Addon keeps full metadata in Fault information copy fallback. | Older Cloud forms can still accept manual copy. |
+| 技术证据 | Link carries bounded issue/site/operation metadata only; no credentials or retained content. | Addon render contract, Cloud prefill bounds and site-visibility contract. |
+| 删除重复 | Addon manual title/paste steps become one review-and-submit instruction. | Same dialog layout and actions retained. |
+
+Evidence is task-local under the 2026-11-16 support-prefill browser receipt;
+local/candidate verification does not imply merge, accepted promotion or
+production deployment. No screenshot baseline is updated.
+
+## WordPress Addon 概览：知识库状态与对齐（2026-11-16）
+
+页面模型：连接器概览；操作者判断是否开启自动更新、当前是否需处理，以及去哪里查
+收录明细。仅修改 Addon 的概览呈现和翻译，不改派发、回执恢复、许可或 Cloud API。
+已核对 Addon `docs/admin-surface-standard.md` 的 2026-11-04 取舍：三页签、开关
+稳定挂载、健康态不提供手动更新、排除内容保留嵌套入口、隐私仍折叠。
+
+| 信息层级 | 处置与入口 | 核对结果 |
+| --- | --- | --- |
+| 常显 | 标题与即时保存开关同排；简短当前状态与发送时间同排，两个查看入口在下方；异常及下一步继续常显 | 本机 PC 1440×1050、1024×900，无横向溢出；标题/开关居中、链接同基线 |
+| 按需 | 用途与自动更新机制移入默认收起的“功能说明”，位于异步替换区域外；短时间可展开完整站点时间。额度、隐私、排除和 Cloud 明细仍沿用既有入口 | 原入口已核对；本次后继按鼠标和键盘分别检查说明、时间的展开/收起；未改变许可或内容 |
+| 技术证据 | 已确认本地 buffer=0、maintenance idle，而 Cloud 抽样 not_indexed_count=1；后者不是运行中证据，也不能推定该项就是已排除项 | 取消“缺口数量→更新中”推断；PHP 回归覆盖抽样缺口/已完成 cursor、等待发送及原失败/恢复状态 |
+| 删除重复 | 移除“正在自动更新，无需操作”与“更新中”的重复表达；时间改为“最近发送到 Cloud” | 不暗示发送等于收录完成；隐藏保存反馈和空 noscript 不再占据额外网格行 |
+
+浏览器证据：当次独立证据目录中的 `overview-before-1440.jpg`、
+`overview-after-1440.jpg`、`overview-after-1024.jpg`、`overview-result.jpg` 和
+`overview-layout-receipt.json`。正常状态已做 PC 浏览器检查；过期读取/自动刷新曾在
+真实页面观察到，随后读取恢复。失败、等待、恢复等分支以现有 PHP 渲染回归验证，
+未在真实站点制造故障或开启/关闭知识库来取得截图。控制台无 error/warn；未做完整
+网络失败事件采集，该项保留 unmeasured，不把页面恢复写成全链路网络验收。
+
+本地 UI 候选与规范已更新；没有更新 golden、没有 M4 UI 验收、合并或生产部署。
+人工视觉接受仍为 review_required；本条不改变同会话此前运行时修复的独立证据状态。
+
+后继精简按用户反馈取消用途和更新机制常显；上面的“常显/按需”行已按最终布局
+更新。旧 `overview-*` 截图保留修改前后的历史含义，新的当前候选证据使用
+`overview-compact-1440.jpg`、`overview-compact-1024.jpg`、
+`overview-compact-expanded.jpg`、`overview-compact-result.jpg` 和
+`overview-compact-receipt.json`。时间分组使用站点日历的今天/昨天，避免跨时区、
+跨年和 DST 时误用 24 小时差；完整秒级日期按需展开，不删存储精度。
+
+后继验证：Addon 全量回归、PHPStan、JS 32 项、Addon 翻译新鲜度、打包及严格
+Plugin Check 通过；真实 WordPress 的站点时区/夏令时日历探针 5/5 通过。
+独立的 `ai:i18n:check` 未通过：本机上游 WordPress AI 插件由前次证据的
+1.4.0 变为 1.5.0，当前审计报告 UI coverage gaps=255。该审计针对上游插件
+兼容翻译，须另项处理；不以旧版本审计替代当前结果，也不把全部 missing strings
+都视为固定 UI 翻译缺陷。本次未修改上游插件或其兼容翻译层，不宣称全门禁通过。
+
+## WordPress AI 1.5 设置页翻译补齐（2026-11-16）
+
+后继按用户截图补齐 AI 设置页的 89 条固定文案，沿用 Addon 的 `ai` 域兼容层，
+官方译文优先；上游插件、功能开关、Cloud/API 和前序回执逻辑均未改动。
+常显：页面说明、分组说明、功能标签、自动运行提示及功能后果仍在原位。
+按需：信息按钮中的运行时机、发送内容和请求次数仍沿用原弹出层。
+技术证据：审计来源和版本写入验收记录；删除重复：不适用，本轮仅补翻译。
+
+实际挂载路径已确认；当前 PC 页面检查截图中的两处英文、同页其他标签和
+信息按钮内容。证据使用 `ai15-settings-before.jpg`、`ai15-settings-after.jpg`、
+`ai15-settings-usage.jpg`、`ai15-settings-result.jpg` 及
+`ai15-settings-receipt.json`。不以字典命中替代浏览器验收。
+全局严格审计缺口从 255 降至 180，剩余其他界面缺口继续单独记账；本条不将
+此前失败改写为通过。人工视觉接受待确认，CI/合并/生产未执行。
+
+## WordPress 文章编辑器错误提示导航（2026-11-16）
+
+页面模型：文章工作区内的原生错误通知；任务是知道下一步并进入既有排查入口。
+只改 Addon 提示与导航，不改文章、生成调用、Cloud API 或故障判定。
+
+| 信息层级 | 处置与入口 | 验证 |
+| --- | --- | --- |
+| 常显 | 失败结论、完整路径、复制动作及“打开故障排查（新标签页）”链接；无权限则指引找管理员 | 源码 fixture 重现旧错误；权限分支为确定性回归 |
+| 按需 | 打开 Checks，展开既有排查信息，锚点定位复制按钮；普通访问保留原折叠规则 | 浏览器点击打开新标签页，复制反馈“已复制”；编辑器保留且文章未修改 |
+| 技术证据 | 既有技术详情仍折叠，保留复制实现；异常保持纯文本 | PHP 渲染及 JS notice 回归；没有付费 AI 请求 |
+| 删除重复 | 笼统“到检查页联系客服”替换为具体路径和下一步；不新增诊断面板 | 精确匹配 Addon 错误，保留无关通知、关闭和已有动作 |
+
+证据目录 `01a1e282-815d-7332-b08c-71217440e6c6`：
+`editor-error-link.jpg`、`editor-error-destination.jpg`、
+`editor-error-link-receipt.json`。本机 Edge PC 1912×918，复制按钮可见，落地页无
+横向溢出。编辑器有既有上游弃用、iframe 样式和未消费 preload 警告，落地页未见
+error/warn；完整网络失败采集为 unmeasured。未扩大为窄 PC 或真实生成失败验收。
+
+浏览器 cookie 当前选择另一份 `wp-ai-15-connector` 候选。临时、限定请求的本地
+fixture 加载本轮源码，验证后已删除，原候选选择器与 cookie 未改。源码浏览器
+通过不代表当前候选已集成或普通刷新生效。全量回归、JS、PHPStan、翻译新鲜度、
+打包/包校验、严格 Plugin Check 通过；CI/合并/M4/生产未执行，人工视觉接受为
+review_required。经验写入 Addon `docs/admin-surface-standard.md` 的
+Editor failure navigation 节。
+
+## 同类失败提示导航补齐（2026-11-16）
+
+后继检查 Addon 编辑器错误文案、检查页、知识库恢复/容量、账号读取失败及生成测试。
+源码排查与真实浏览器范围分别记录，不将文本搜索或已有回归视作全站逐入口验收。
+
+| 层级 | 本轮处置与入口 | 证据 |
+| --- | --- | --- |
+| 常显 | 11 类额外编辑器错误补连接检查、套餐积分或排查链接；原因和等待指引保留；无权限明确找管理员 | PHP 配置与 JS 多通知/权限回归，浏览器代表性错误样本 |
+| 按需 | “联系客服”从 Portal 首页改为站点新工单表单；旁边提供复制排查信息锚点和粘贴提交步骤 | Edge 实际到达套餐页、连接检查与已选站点的工单弹窗；复制成功，未提交 |
+| 技术证据 | 原技术详情/复制信息保留；配置构建不得伪写“最近 AI 错误” | 无调用公共错误记录器、无付费生成；真实故障恢复未验证 |
+| 删除重复 | 知识库丢弃更新提示使用实际“更新知识库”名称，移除只跳回本区的重复链接，保留恢复按钮与投递详情 | 丢弃状态 PHP 回归；不是现场故障浏览器验收 |
+
+已有明确操作的知识库容量、延迟更新、投递错误、套餐读取失败和生成测试保留，
+不为修复导航重写原判断或加自动重试。详情及逐入口处置见 Addon
+`docs/editor-error-guidance-audit-2026-11-16.md`。
+
+证据：本会话目录的 `guidance-audit-receipt.json`、`guidance-editor-1440.jpg`、
+`guidance-connection-target.jpg`、`guidance-checks-1440.jpg`、
+`guidance-support-destination.jpg`。错误和 readiness 不可用为本地显示 fixture，
+保留原候选选择器/cookie，临时 fixture 已清理；未改当前候选 checkout。
+初始编辑器实测 1440×1050；窄 PC override 未稳定生效，后续实测 1912×918/914，
+窄 PC 单列 unmeasured，不从文件名推断截图宽度。编辑器有既有上游警告，检查页
+未见 error/warn；完整网络失败采集为 unmeasured。源码与本地验证、当前候选集成、
+CI/合并/M4/生产/人工视觉接受分开记账，后几项本轮均未完成。
+
+收尾补记：候选 symlink 与选择器随后已不在本地环境中，本任务没有删除它们。
+无 fixture 参数的普通文章编辑器已加载源码 Addon 的脚本与 12 条错误规则，三个
+操作标签均为中文；证据 `guidance-live-source.jpg`。因此当前普通本机页面已加载
+修复，前段“未改候选”的记录仍保留当时含义；不据此推导真实生成已恢复或已发布。
+另补“知识库关闭 + 丢弃更新”回归：先指引开启，再更新，不指向当前不存在的按钮。
+
+## 检查通过与生成失败的证据范围（2026-11-17）
+
+用户真实标题生成在本地报 `cloud_wp_ai_connector_request_too_large`，尚未 HTTP
+投递。此前“完整检查通过，一切正常”实际只验证存活和签名额度读取，且本地输入
+大小错误被归入稍后重试/联系客服；前一轮导航检查没有覆盖这两条语义。
+
+| 层级 | 处置与入口 | 本轮证据 |
+| --- | --- | --- |
+| 常显 | 检查页主状态旁说明连接检查不执行生成、也不修复编辑器失败；详细检查按钮和成功通知明确连接/账号访问范围；六类输入大小错误指引精简输入或提示词/分段处理，无需删除原文 | 真实文章再次触发本地超限，新提示生效；真实只读检查通过 |
+| 按需 | 原排查信息及 AI 试用入口保留，不新增面板 | 检查按钮从排查信息可操作，保持回到 Checks |
+| 技术证据 | 保留原始错误码和时间；检查成功不清除生成失败记录 | 客户端零 HTTP 超限回归、存活/签名读取范围回归及历史失败保留断言 |
+| 删除重复 | 移除“一切正常”的无证据结论 | 新成功通知为“连接与账号访问检查通过，尚未测试 AI 生成” |
+
+PC Edge 实测 1912×914，无横向溢出。证据同会话目录
+`check-scope-receipt-20261117.json`、`check-scope-editor-20261117.jpg`、
+`check-scope-result-20261117.jpg`；具体根因、现有限制、源码门禁及未测项见 Addon
+`docs/editor-error-guidance-audit-2026-11-16.md` 的 2026-11-17 后继节。
+本次无伪造返回或输入样本；临时阻止运行时 POST 的本地保护从未触发，验证后删除。
+文章已保存字段指纹相同；浏览器 Save 在标题聚焦后变为可用，未点击保存，
+不声称内存草稿标记保持不变。未执行付费生成、未证明该长文可通过现有上限，
+不以文案修复宣称生成已恢复。CI、合并、M4、生产未执行；窄 PC、完整网络失败
+采集为 unmeasured，人工视觉接受为 review_required。既有特色图失败和上游
+翻译/编辑器控制台问题未在此改动中解决；检查页的 viewport transition 旧错误保留记录。
+
 ### 2026-11-17 供应商图片能力勾选（简化后的开发候选）
 
 范围：`/admin/ai-resources` 的 queue → 供应商配置工作台 → 模型管理；

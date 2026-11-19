@@ -1,0 +1,428 @@
+From 7c9381c3645e7c7d4a76fe611cc0baaed3f89649 Mon Sep 17 00:00:00 2001
+From: Air <1355471563@qq.com>
+Date: Wed, 18 Nov 2026 11:15:59 +0800
+Subject: [PATCH] fix(admin): recover duplicate columns and localize log enums
+
+---
+ .../components/LogDetailModal.tsx             | 14 ++---
+ .../ai-request-logs/components/LogsTable.tsx  | 19 ++----
+ src/admin/ai-request-logs/labels.ts           | 40 +++++++++++++
+ .../components/ListView.tsx                   |  5 +-
+ .../components/ProviderBadge.tsx              | 24 +++++++-
+ src/experiments/abilities-explorer/fields.tsx |  7 ++-
+ src/experiments/abilities-explorer/index.scss | 13 +++-
+ .../abilities-explorer/view-storage.ts        | 12 ++--
+ tests/unit/admin-lists.test.cjs               | 59 +++++++++++++++++++
+ 9 files changed, 158 insertions(+), 35 deletions(-)
+ create mode 100644 src/admin/ai-request-logs/labels.ts
+ create mode 100644 tests/unit/admin-lists.test.cjs
+
+diff --git a/src/admin/ai-request-logs/components/LogDetailModal.tsx b/src/admin/ai-request-logs/components/LogDetailModal.tsx
+index d7031e6..1fd1c9a 100644
+--- a/src/admin/ai-request-logs/components/LogDetailModal.tsx
++++ b/src/admin/ai-request-logs/components/LogDetailModal.tsx
+@@ -10,6 +10,7 @@ import { __, sprintf } from '@wordpress/i18n';
+  */
+ import { useCopyToClipboardFeedback } from '../../../hooks/use-copy-to-clipboard-feedback';
+ import type { LogEntry } from '../types';
++import { getLogLabel } from '../labels';
+ 
+ interface LogDetailModalProps {
+ 	log: LogEntry;
+@@ -21,12 +22,6 @@ const formatTimestamp = ( timestamp: string ): string => {
+ 	return dateI18n( `${ formats.date } ${ formats.time }`, timestamp + 'Z' );
+ };
+ 
+-const formatKindLabel = ( value: string ): string =>
+-	value
+-		.split( '_' )
+-		.map( ( part ) => part.charAt( 0 ).toUpperCase() + part.slice( 1 ) )
+-		.join( ' ' );
+-
+ const formatTokensPerSecond = ( value: number | null ): string => {
+ 	if ( value === null ) {
+ 		return '-';
+@@ -150,7 +145,8 @@ const LogDetailModal: React.FC< LogDetailModalProps > = ( {
+ 					<span
+ 						className={ `ai-request-logs__status ai-request-logs__status--${ log.status }` }
+ 					>
+-						{ getStatusIcon( log.status ) } { log.status }
++						{ getStatusIcon( log.status ) }{ ' ' }
++						{ getLogLabel( log.status ) }
+ 					</span>
+ 				</div>
+ 
+@@ -176,12 +172,12 @@ const LogDetailModal: React.FC< LogDetailModalProps > = ( {
+ 							</tr>
+ 							<tr>
+ 								<th>{ __( 'Type', 'ai' ) }</th>
+-								<td>{ log.type }</td>
++								<td>{ getLogLabel( log.type ) }</td>
+ 							</tr>
+ 							{ requestKind && (
+ 								<tr>
+ 									<th>{ __( 'Request Kind', 'ai' ) }</th>
+-									<td>{ formatKindLabel( requestKind ) }</td>
++									<td>{ getLogLabel( requestKind ) }</td>
+ 								</tr>
+ 							) }
+ 							{ log.user_id && (
+diff --git a/src/admin/ai-request-logs/components/LogsTable.tsx b/src/admin/ai-request-logs/components/LogsTable.tsx
+index 137c628..34b5a7a 100644
+--- a/src/admin/ai-request-logs/components/LogsTable.tsx
++++ b/src/admin/ai-request-logs/components/LogsTable.tsx
+@@ -20,6 +20,7 @@ import { rotateRight } from '@wordpress/icons';
+  */
+ import type { ProviderMetadata } from '../../types/providers';
+ import { DEFAULT_VIEW_FIELDS } from '../query';
++import { getLogLabel } from '../labels';
+ import type { FilterOptions, LogEntry, LogsQuery } from '../types';
+ 
+ interface LogsTableProps {
+@@ -100,12 +101,6 @@ const getStatusClass = ( status: string ): string => {
+ 	}
+ };
+ 
+-const formatSelectLabel = ( value: string ): string =>
+-	value
+-		.split( '_' )
+-		.map( ( part ) => part.charAt( 0 ).toUpperCase() + part.slice( 1 ) )
+-		.join( ' ' );
+-
+ const getRequestKind = ( entry: LogEntry ): string => {
+ 	const raw = entry.context?.request_kind;
+ 	return typeof raw === 'string' ? raw : 'text';
+@@ -476,9 +471,7 @@ const LogsTable: React.FC< LogsTableProps > = ( {
+ 										item
+ 									) }` }
+ 								>
+-									{ formatSelectLabel(
+-										getRequestKind( item )
+-									) }
++									{ getLogLabel( getRequestKind( item ) ) }
+ 								</span>
+ 							</div>
+ 							{ ( sourceLabel || item.error_message ) && (
+@@ -511,14 +504,14 @@ const LogsTable: React.FC< LogsTableProps > = ( {
+ 				enableSorting: true,
+ 				enableHiding: false,
+ 				elements: filterOptions.types.map( ( value ) => ( {
+-					label: formatSelectLabel( value ),
++					label: getLogLabel( value ),
+ 					value,
+ 				} ) ),
+ 				filterBy: {
+ 					operators: [ 'is' as const ],
+ 				},
+ 				render: ( { item }: { item: LogEntry } ) => (
+-					<span>{ formatSelectLabel( item.type ) }</span>
++					<span>{ getLogLabel( item.type ) }</span>
+ 				),
+ 			},
+ 			{
+@@ -629,7 +622,7 @@ const LogsTable: React.FC< LogsTableProps > = ( {
+ 				label: __( 'Status', 'ai' ),
+ 				enableSorting: true,
+ 				elements: filterOptions.statuses.map( ( value ) => ( {
+-					label: formatSelectLabel( value ),
++					label: getLogLabel( value ),
+ 					value,
+ 				} ) ),
+ 				filterBy: {
+@@ -641,7 +634,7 @@ const LogsTable: React.FC< LogsTableProps > = ( {
+ 							item.status
+ 						) }` }
+ 					>
+-						{ formatSelectLabel( item.status ) }
++						{ getLogLabel( item.status ) }
+ 					</span>
+ 				),
+ 			},
+diff --git a/src/admin/ai-request-logs/labels.ts b/src/admin/ai-request-logs/labels.ts
+new file mode 100644
+index 0000000..21efc2f
+--- /dev/null
++++ b/src/admin/ai-request-logs/labels.ts
+@@ -0,0 +1,40 @@
++/**
++ * WordPress dependencies
++ */
++import { __ } from '@wordpress/i18n';
++
++/**
++ * Localizes known log enums, leaving extension codes intact for investigation.
++ * Provider, model, operation and source names are deliberately not enums here.
++ *
++ * @param value The stored enum value.
++ * @return The UI label, or the original unknown code.
++ */
++export function getLogLabel( value: string ): string {
++	switch ( value ) {
++		case 'success':
++			return __( 'Success', 'ai' );
++		case 'error':
++			return __( 'Error', 'ai' );
++		case 'timeout':
++			return __( 'Timeout', 'ai' );
++		case 'ai_client':
++			return __( 'AI Client', 'ai' );
++		case 'mcp_tool':
++			return __( 'MCP Tool', 'ai' );
++		case 'ability':
++			return __( 'Ability', 'ai' );
++		case 'text':
++			return __( 'Text', 'ai' );
++		case 'image':
++			return __( 'Image', 'ai' );
++		case 'audio':
++			return __( 'Audio', 'ai' );
++		case 'embeddings':
++			return __( 'Embeddings', 'ai' );
++		case 'metadata':
++			return __( 'Metadata', 'ai' );
++		default:
++			return value;
++	}
++}
+diff --git a/src/experiments/abilities-explorer/components/ListView.tsx b/src/experiments/abilities-explorer/components/ListView.tsx
+index 37bd01e..8255618 100644
+--- a/src/experiments/abilities-explorer/components/ListView.tsx
++++ b/src/experiments/abilities-explorer/components/ListView.tsx
+@@ -57,7 +57,10 @@ const DEFAULT_VIEW: View = {
+ 	fields: [ ...DEFAULT_VISIBLE_FIELDS ],
+ 	layout: {
+ 		styles: {
+-			description: { width: '50%' },
++			name: { width: '22%' },
++			description: { width: '40%' },
++			slug: { width: '28%' },
++			provider: { width: '10%' },
+ 		},
+ 	},
+ };
+diff --git a/src/experiments/abilities-explorer/components/ProviderBadge.tsx b/src/experiments/abilities-explorer/components/ProviderBadge.tsx
+index 778e7f4..f584cfc 100644
+--- a/src/experiments/abilities-explorer/components/ProviderBadge.tsx
++++ b/src/experiments/abilities-explorer/components/ProviderBadge.tsx
+@@ -1,3 +1,8 @@
++/**
++ * WordPress dependencies
++ */
++import { __ } from '@wordpress/i18n';
++
+ /**
+  * Internal dependencies
+  */
+@@ -21,8 +26,19 @@ const toClassSuffix = ( provider: string ): string =>
+  * @param provider The provider.
+  * @return The label.
+  */
+-export const getProviderLabel = ( provider: string ): string =>
+-	getSettings().providerLabels[ provider ] ?? provider;
++export const getProviderLabel = ( provider: string ): string => {
++	// REST labels may use the server locale; known origins use the UI locale.
++	switch ( provider ) {
++		case 'Core':
++			return __( 'Core', 'ai' );
++		case 'Plugin':
++			return __( 'Plugin', 'ai' );
++		case 'Theme':
++			return __( 'Theme', 'ai' );
++		default:
++			return getSettings().providerLabels[ provider ] ?? provider;
++	}
++};
+ 
+ interface ProviderBadgeProps {
+ 	/** The provider. */
+@@ -49,7 +65,9 @@ export default function ProviderBadge( {
+ 				provider
+ 			) }` }
+ 		>
+-			{ label ?? getProviderLabel( provider ) }
++			{ label && label !== provider
++				? label
++				: getProviderLabel( provider ) }
+ 		</span>
+ 	);
+ }
+diff --git a/src/experiments/abilities-explorer/fields.tsx b/src/experiments/abilities-explorer/fields.tsx
+index 3015879..daf4182 100644
+--- a/src/experiments/abilities-explorer/fields.tsx
++++ b/src/experiments/abilities-explorer/fields.tsx
+@@ -31,7 +31,6 @@ export const DEFAULT_VISIBLE_FIELDS: readonly string[] = [
+ 	'description',
+ 	'slug',
+ 	PROVIDER_FIELD_ID,
+-	'description',
+ ];
+ 
+ /** Every built-in field ID. These win over extension fields. */
+@@ -137,7 +136,11 @@ export function getBuiltInFields( items: AbilityListItem[] ): AbilityField[] {
+ 			enableGlobalSearch: true,
+ 			filterBy: false,
+ 			getValue: ( { item } ) => item.slug,
+-			render: ( { item } ) => <code>{ item.slug }</code>,
++			render: ( { item } ) => (
++				<code className="ai-abilities-explorer__slug">
++					{ item.slug }
++				</code>
++			),
+ 		},
+ 		{
+ 			id: PROVIDER_FIELD_ID,
+diff --git a/src/experiments/abilities-explorer/index.scss b/src/experiments/abilities-explorer/index.scss
+index ac3cacc..74cdd7c 100644
+--- a/src/experiments/abilities-explorer/index.scss
++++ b/src/experiments/abilities-explorer/index.scss
+@@ -162,12 +162,23 @@
+ 		vertical-align: top;
+ 	}
+ 
++	.dataviews-view-table__cell-content-wrapper {
++		min-width: 0;
++	}
++
+ 	// Descriptions wrap rather than run off the table (#588: never trimmed).
+ 	.ai-abilities-explorer__description {
+ 		display: block;
+-		min-width: 24em;
++		min-width: 12em;
+ 		max-width: 48em;
+ 		white-space: normal;
++		overflow-wrap: anywhere;
++	}
++
++	.ai-abilities-explorer__slug {
++		min-width: 20ch;
++		white-space: normal;
++		overflow-wrap: anywhere;
+ 	}
+ 
+ 	// The Name cell: the name on one clipped line, the row actions under it.
+diff --git a/src/experiments/abilities-explorer/view-storage.ts b/src/experiments/abilities-explorer/view-storage.ts
+index d15d7b5..b113b6d 100644
+--- a/src/experiments/abilities-explorer/view-storage.ts
++++ b/src/experiments/abilities-explorer/view-storage.ts
+@@ -103,7 +103,7 @@ export function loadSavedView(): SavedView | null {
+ 	return {
+ 		type: stored.type,
+ 		layout: isJsonRecord( stored.layout ) ? stored.layout : {},
+-		fields: stored.fields,
++		fields: mergeFieldIds( stored.fields, [] ),
+ 		sort: readSort( stored.sort ),
+ 		perPage:
+ 			typeof perPage === 'number' &&
+@@ -129,7 +129,7 @@ function keepUnregisteredFields(
+ 	previous: string[],
+ 	registered: string[]
+ ): string[] {
+-	const next = [ ...visible ];
++	const next = mergeFieldIds( visible, [] );
+ 
+ 	previous.forEach( ( id, index ) => {
+ 		if ( ! registered.includes( id ) && ! next.includes( id ) ) {
+@@ -152,7 +152,7 @@ export function saveView(
+ 	seenFields: string[],
+ 	registered: string[]
+ ): void {
+-	const visible = view.fields ?? [];
++	const visible = mergeFieldIds( view.fields ?? [], [] );
+ 	const previous = loadSavedView();
+ 
+ 	const record: StoredRecord = {
+@@ -167,7 +167,7 @@ export function saveView(
+ 		perPage: view.perPage ?? 0,
+ 		seenFields: previous
+ 			? mergeFieldIds( seenFields, previous.seenFields )
+-			: seenFields,
++			: mergeFieldIds( seenFields, [] ),
+ 	};
+ 
+ 	try {
+@@ -185,7 +185,7 @@ export function saveView(
+  * @return The merged list.
+  */
+ export function mergeFieldIds( first: string[], second: string[] ): string[] {
+-	return [ ...first, ...second.filter( ( id ) => ! first.includes( id ) ) ];
++	return [ ...new Set( [ ...first, ...second ] ) ];
+ }
+ 
+ /**
+@@ -205,7 +205,7 @@ export function appendNewFields(
+ 		( id ) => ! seen.includes( id ) && ! visible.includes( id )
+ 	);
+ 
+-	return additions.length > 0 ? [ ...visible, ...additions ] : visible;
++	return mergeFieldIds( visible, additions );
+ }
+ 
+ /**
+diff --git a/tests/unit/admin-lists.test.cjs b/tests/unit/admin-lists.test.cjs
+new file mode 100644
+index 0000000..4bfc10a
+--- /dev/null
++++ b/tests/unit/admin-lists.test.cjs
+@@ -0,0 +1,59 @@
++/** Replays persisted duplicate columns and tests locale labels without mutating IDs. */
++const { test } = require( 'node:test' );
++const assert = require( 'node:assert/strict' );
++const { readFileSync } = require( 'node:fs' );
++const vm = require( 'node:vm' );
++const ts = require( 'typescript' );
++function load( file, stubs = {}, window = {} ) {
++	const exports = {};
++	vm.runInNewContext( ts.transpileModule( readFileSync( file, 'utf8' ), { compilerOptions: {
++		target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, jsxFactory: 'h',
++	} } ).outputText, {
++		exports, window, Set, h: ( tag, props, ...children ) => ( { tag, props, children } ),
++		require: ( id ) => stubs[ id ] || { isJsonRecord: ( v ) => v !== null && typeof v === 'object' && ! Array.isArray( v ) },
++	} );
++	return exports;
++}
++const base = { type: 'table', fields: [ 'description', 'slug', 'provider', 'description' ], page: 1, perPage: 20,
++	sort: { field: 'name', direction: 'asc' }, layout: { styles: { description: { width: '50%' } } } };
++test( 'legacy duplicate fields recover while hidden and unavailable extension preferences survive', () => {
++	const f = load( 'src/experiments/abilities-explorer/view-storage.ts' );
++	const saved = { type: 'table', fields: [ 'slug', 'description', 'missing', 'description', 'missing' ],
++		seenFields: [ 'slug', 'description', 'provider', 'missing', 'hidden' ],
++		sort: { field: 'slug', direction: 'desc' }, perPage: 50, layout: { density: 'compact', styles: { slug: { width: '22%' } } } };
++	const r = f.restoreView( base, saved, [ 'slug', 'description', 'provider', 'hidden', 'new' ], [ 'description', 'provider', 'hidden', 'new', 'new' ], [ 'table' ] );
++	assert.deepEqual( Array.from( r.view.fields ), [ 'slug', 'description', 'missing', 'new' ] );
++	assert.equal( r.view.perPage, 50 ); assert.equal( r.view.sort.direction, 'desc' );
++	assert.equal( r.view.layout.density, 'compact' );
++	assert.equal( r.view.layout.styles.slug.width, '22%' );
++	assert.equal( r.view.layout.styles.description.width, '50%' );
++	assert.equal( new Set( r.seenFields ).size, r.seenFields.length );
++	const defaults = f.restoreView( base, null, [], [ 'description', 'slug' ], [ 'table' ] );
++	assert.deepEqual( Array.from( defaults.view.fields ), [ 'description', 'slug', 'provider' ] );
++} );
++test( 'saving repairs stored duplicates without deleting temporarily unavailable columns', () => {
++	let stored = JSON.stringify( { version: 1, type: 'table', fields: [ 'slug', 'missing', 'missing', 'description' ], seenFields: [ 'missing' ], sort: null, layout: {}, perPage: 20 } );
++	const f = load( 'src/experiments/abilities-explorer/view-storage.ts', {}, { localStorage: { getItem: () => stored, setItem: ( k, v ) => { stored = v; } } } );
++	f.saveView( { ...base, fields: [ 'slug', 'slug' ] }, [ 'slug', 'slug' ], [ 'slug', 'description' ] );
++	const r = JSON.parse( stored );
++	assert.deepEqual( r.fields, [ 'slug', 'missing' ] );
++	assert.deepEqual( r.seenFields, [ 'slug', 'missing' ] );
++	assert.equal( r.fields.includes( 'description' ), false );
++} );
++test( 'known log enums use UI locale while unknown extension codes remain exact', () => {
++	const f = load( 'src/admin/ai-request-logs/labels.ts', { '@wordpress/i18n': { __: ( s, d ) => `${ d }:${ s }` } } );
++	for ( const [ value, label ] of [ [ 'success', 'Success' ], [ 'timeout', 'Timeout' ], [ 'text', 'Text' ], [ 'ai_client', 'AI Client' ] ] ) {
++		assert.equal( f.getLogLabel( value ), `ai:${ label }` );
++	}
++	assert.equal( f.getLogLabel( 'Vendor_HTTP_v2' ), 'Vendor_HTTP_v2' );
++} );
++test( 'origin badges translate raw REST labels and retain explicit custom labels', () => {
++	const f = load( 'src/experiments/abilities-explorer/components/ProviderBadge.tsx', {
++		'@wordpress/i18n': { __: ( s ) => `译:${ s }` },
++		'../settings': { getSettings: () => ( { providerLabels: { Plugin: 'Plugin', Custom: 'Custom Label' } } ) },
++	} );
++	assert.equal( f.default( { provider: 'Plugin', label: 'Plugin' } ).children[ 0 ], '译:Plugin' );
++	assert.equal( f.default( { provider: 'Plugin', label: 'Explicit Label' } ).children[ 0 ], 'Explicit Label' );
++	assert.equal( f.getProviderLabel( 'Custom' ), 'Custom Label' );
++	assert.equal( f.getProviderLabel( 'Vendor_v2' ), 'Vendor_v2' );
++} );
+-- 
+2.54.0 (Apple Git-157)
+

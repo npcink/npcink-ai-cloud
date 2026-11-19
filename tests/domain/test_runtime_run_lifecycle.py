@@ -672,6 +672,7 @@ def test_lifecycle_dependency_boundary_and_runtime_service_facades() -> None:
     for method_name in (
         "process_next_queued_run",
         "process_queued_runs",
+        "get_run_by_idempotency",
         "get_run",
         "get_run_result",
         "cancel_run",
@@ -684,7 +685,7 @@ def test_lifecycle_dependency_boundary_and_runtime_service_facades() -> None:
         assert isinstance(statement.value, ast.Call)
         assert ast.unparse(statement.value.func).startswith("self.run_lifecycle_service.")
 
-    assert ".get_run_by_idempotency(" not in service_source
+    assert "repository.get_run_by_idempotency(" not in service_source
     assert ".get_run_by_idempotency(" not in artifact_coordination_source
     service_idempotent_replay_calls = service_source.count(".get_idempotent_replay(")
     artifact_idempotent_replay_calls = artifact_coordination_source.count(".get_idempotent_replay(")

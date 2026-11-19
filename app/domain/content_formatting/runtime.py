@@ -6,7 +6,11 @@ from uuid import uuid4
 
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import get_session
-from app.domain.content_formatting.engine import MAX_CONTENT_BYTES, format_candidate
+from app.domain.content_formatting.engine import (
+    MAX_CONTENT_BYTES,
+    MAX_CONTENT_CHARS,
+    format_candidate,
+)
 from app.domain.content_formatting.structure import format_structure
 from app.domain.runtime.errors import RuntimeExecutionContractError
 from app.domain.runtime.models import RuntimeExecutionResponse, RuntimeRequest
@@ -55,7 +59,11 @@ def _validate(request: RuntimeRequest) -> tuple[str, str]:
         raise RuntimeExecutionContractError(
             "content_format.invalid_input", "content must be valid UTF-8"
         ) from error
-    if len(encoded) > MAX_CONTENT_BYTES or source_format not in {"html", "markdown"}:
+    if (
+        len(source) > MAX_CONTENT_CHARS
+        or len(encoded) > MAX_CONTENT_BYTES
+        or source_format not in {"html", "markdown"}
+    ):
         raise RuntimeExecutionContractError(
             "content_format.invalid_input", "content exceeds bounds or format is unsupported"
         )
@@ -153,11 +161,16 @@ def execute_formatting(
             ),
         )
         service.commercial_service.record_run_acceptance(session=session, run=run)
-        result = (
-            format_structure(source)
-            if request.contract_version == "content_format_request.v2"
-            else format_candidate(source, source_format)
-        )
+        try:
+            result = (
+                format_structure(source)
+                if request.contract_version == "content_format_request.v2"
+                else format_candidate(source, source_format)
+            )
+        except ValueError as error:
+            raise RuntimeExecutionContractError(
+                "content_format.output_too_large", "formatting result exceeds its bounded contract"
+            ) from error
         service.run_lifecycle_service.succeed_run(
             repository,
             run,

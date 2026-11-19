@@ -187,3 +187,157 @@ remain deferred.
 When this standard conflicts with an active runtime contract, security policy,
 release policy, or current code/test authority, the active authority wins and
 this document must be updated.
+
+## 10. Native AI feature audits and prompt-role regressions
+
+When auditing the official WordPress AI editor, use the existing
+[capability matrix](wordpress-ai-capability-compatibility-matrix-v1.md) as the
+source-projection ledger. Record the installed AI version, Ability registration,
+Addon scene mapping, source/context/instruction roles, output shape, local
+review/write consumer, and evidence state separately. An enabled experiment,
+available text model, historical smoke, or HTTP 200 is insufficient to mark a
+new or changed Ability supported and useful.
+
+First fix common reproducible failures, then validate a bounded family. For
+each multi-action family, cover every semantic action through validation,
+projection and provider input. For resizing this means shorten, expand and
+rephrase; a generic rewrite happy path cannot prove all three. Check that
+default token budgets support the requested operation while preserving explicit
+caller budgets, model capacity, completeness guards and output ceilings.
+
+Compare the installed upstream message roles with the adapter's assumptions
+after an AI upgrade. Preserve opaque upstream source messages and additional
+context; do not parse tags or relocate article text into the instruction role.
+Include a source longer than the instruction cap to expose role duplication.
+Check final composed instructions for contradictory task/length/serialization
+requirements. JSON transport serialization and plain-text field content must
+have an explicit interpretation without rewriting locally owned prompts.
+
+Use real installed WordPress Abilities with synthetic inputs and intercepted
+HTTP for deterministic role/action/result tests, failing closed on unexpected
+outbound requests. Record article/meta fingerprints before/after. This proves
+local integration only. Keep browser review/adoption, live Cloud/provider
+execution, semantic quality, M4, merge and production as separate evidence;
+never issue paid calls just to fill an evidence row. Cover browser adoption
+when changing its consumer, and review any write-capable upstream consumer
+separately rather than inferring safety from a suggestion-only backend.
+
+The [2026-11-17 audit](history/engineering/2026/wordpress-editor-feature-audit-2026-11-17.md)
+records the initial failures and remaining draft-context, regeneration and
+unmapped-feature limits. Future batches must update dispositions rather than
+copy historical acceptance labels onto current source.
+
+
+## 11. Native editor saves and follow-up completion
+
+For a write-capable WordPress consumer, a resolved `savePost()` promise is not
+proof of persistence: core may resolve `undefined` after a failed or skipped
+save. Confirm the native failure state, post identity and saved raw content
+against the generated snapshot before retiring Notes or showing AI success.
+Keep generated content recoverable in the editor after an unconfirmed save.
+
+Do not silently include an existing unsaved draft in an AI-triggered whole-post
+save. Require the author to save first; stage generated blocks and recheck the
+post/content/dirty state before adoption. Guard rapid duplicate clicks, and
+release native save/autosave locks on every exit. Incomplete Notes pagination
+must abort the apply operation instead of acting on a partial instruction set.
+
+Partial block success and Note-completion failure are different outcomes:
+report saved/failed counts and a concrete reason, keep failed Notes pending,
+and expose the native Notes and revisions actions. Clear prior batch warnings
+when a new batch begins. Keep save consequences and failures visible; do not
+hide them in help text. Cover resolved-but-failed saves, partial generation,
+concurrent typing, duplicate clicks and failed completion in regression tests.
+
+Repair saves in the owning WordPress plugin, never in the Cloud connector.
+For a local upstream patch, retain the exact release base, source/test diff,
+asset hashes, original assets and rebuild/rollback procedure. Upstream upgrades
+may overwrite it; never label a local patch an official release. See the
+[editorial save batch](history/engineering/2026/wordpress-editorial-save-correctness-2026-11-17.md).
+
+
+For translation, source-language inheritance must not override the local Ability's
+explicit target language, including legacy callers that supply it only in their
+system instruction. Test the complete composed input using predominantly Chinese
+source with English, another non-Chinese language and Traditional Chinese targets.
+A target-language metadata assertion alone cannot detect contradictory trailing
+instructions. Keep the existing source-language behavior for non-translation tasks.
+
+
+## 12. Draft-aware regeneration and bounded quality evidence
+
+The WordPress owner may pass optional current title/excerpt, up to five prior
+candidates and bounded author feedback. An explicitly empty draft overrides saved
+metadata. The connector must preserve that distinction instead of reintroducing
+an old title downstream. Keep permission identity anchored to the same post;
+legacy callers without draft fields retain their existing behavior.
+
+Retain candidate history only for the local interaction. Block rapid duplicate
+requests; reject normalized exact repeats without an automatic Provider retry.
+Compare post identity, title, excerpt and body snapshots before adoption, and
+keep the candidate/feedback recoverable with the failure visible inside the active
+review modal. Inserting a title changes the draft; saving remains explicit.
+
+Validate the final assembled prompt as well as the consumer. Quality fixtures
+must use the full validator → `build_provider_input` → `prepare_provider_output`
+chain, including composed task metadata. Calling the guard with only source text
+can silently skip the Ability schema. Exercise the real Provider adapter's
+`response_format` serialization too; a handwritten HTTP request without the
+equivalent native format is not adapter evidence. Keep bare/string title results
+as negative cases and the schema object as a positive case; never weaken the
+product schema to accommodate an incomplete fixture.
+
+Translation length checks must account for script density instead of comparing
+raw Chinese and alphabetic character counts. Test both faithful cross-script
+expansion and excessive growth. Han characters are valid in Japanese and Korean;
+an unspecified legacy target is not evidence of a non-CJK target. These heuristics
+detect limited output defects, not semantic language accuracy. Retain refusal,
+structure, completeness and hard-budget guards.
+
+A guard accepting text does not establish semantic quality or actual author
+adoption. Record natural sample inputs, raw output, stopping
+reason, model identity and omissions; one sample per task is exploratory evidence.
+Never tune every prompt or enable an unmapped Ability based on a small sample.
+For comments and media, distinguish transport from semantic accuracy and record
+legitimate analysis metadata writes separately from content/approval mutations.
+See the [followthrough evidence](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).
+
+
+## 13. Summary completion and native admin recovery
+
+A summary is short editorial output, not a search snippet. Its runtime default
+is 512 output tokens with a 2000-character safety ceiling; explicit caller token
+budgets remain authoritative. Preserve complete paragraphs below that ceiling.
+Reject reported incomplete/failed/cancelled output and abnormal finish reasons
+before normalization; reject oversized output instead of clipping it into a
+successful-looking summary. Do not alter local Ability prompts or grant Cloud
+write ownership to repair budgets. Tests must replay the real adapter output,
+check final composed metadata and verify that the final source limitation is
+still present. Single-model samples remain bounded evidence, not quality scores.
+
+Native admin fixes belong in native AI: deduplicate persisted field lists by
+first occurrence while preserving hidden and unavailable extension preferences.
+Keep unknown enum codes and explicit custom labels intact. A scoped component
+translation fallback must match its actual domain/context and stand down for
+an existing official translation. Recheck real PC geometry after deduplication;
+absence of overflow alone does not establish readable column widths. Retain
+rebuild/rollback receipts for each local upstream patch. See the
+[remaining-items record](history/engineering/2026/wordpress-translation-and-feature-followthrough-2026-11-18.md).
+
+
+## 14. Alternate-entry asynchronous results and error locality
+
+Verify every entry point independently: a passing title toolbar does not prove
+Rename modal behavior. Bind a pending result to post identity, title, excerpt,
+body and the original mounted form. Closing a form invalidates both late success
+and late failure; neither may change a reopened form or create unrelated notices.
+Keep duplicate-request protection independent from React's disabled rendering.
+
+Show failure and recovery actions inside the active modal, preserving the input.
+Avoid a simultaneous duplicate banner behind its backdrop. Preserve connector
+configuration links when moving provider failures into the form. Repeated-title
+recovery must name controls that exist in that entry point; use a structured
+internal error code rather than matching localized prose. Test delayed responses,
+changed context, closed/reopened forms, failures, duplicate candidates and explicit
+save boundaries. Browser evidence must include keyboard close/focus return and
+PC widths; source/utility coverage alone is insufficient.

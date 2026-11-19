@@ -8,7 +8,9 @@ from typing import Any
 
 from markdown_it import MarkdownIt
 
-MAX_CONTENT_BYTES = 100_000
+MAX_CONTENT_CHARS = 50_000
+MAX_CONTENT_BYTES = 256 * 1024
+MAX_CANDIDATE_BYTES = 512 * 1024
 RESULT_CONTRACT = "content_format_candidate.v1"
 _CJK = r"\u3400-\u4dbf\u4e00-\u9fff"
 _SPACING = re.compile(rf"(?<=[{_CJK}])(?=[A-Za-z0-9])|(?<=[A-Za-z0-9])(?=[{_CJK}])")
@@ -191,8 +193,12 @@ def _markdown_ranges(source: str) -> tuple[list[tuple[int, int]], bool]:
 def format_candidate(source: str, source_format: str) -> dict[str, Any]:
     if source_format not in {"html", "markdown"}:
         raise ValueError("format must be html or markdown")
-    if not source or len(source.encode("utf-8")) > MAX_CONTENT_BYTES:
-        raise ValueError("content must contain 1 to 100000 UTF-8 bytes")
+    if (
+        not source
+        or len(source) > MAX_CONTENT_CHARS
+        or len(source.encode("utf-8")) > MAX_CONTENT_BYTES
+    ):
+        raise ValueError("content must contain 1 to 50000 characters within 256 KiB")
     ranges, review = _html_ranges(source) if source_format == "html" else _markdown_ranges(source)
     pieces = []
     cursor = 0
@@ -207,6 +213,8 @@ def format_candidate(source: str, source_format: str) -> dict[str, Any]:
         cursor = end
     pieces.append(source[cursor:])
     candidate = "".join(pieces)
+    if len(candidate.encode("utf-8")) > MAX_CANDIDATE_BYTES:
+        raise ValueError("formatting candidate exceeds 512 KiB")
     invariant = re.sub(r"\s", "", source) == re.sub(r"\s", "", candidate)
     return {
         "contract_version": RESULT_CONTRACT,

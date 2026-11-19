@@ -38,8 +38,8 @@ import {
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { cn, formatDate } from '@/lib/utils';
+import { readSupportPrefill, supportDraftTransition, SUPPORT_TOPICS, type SupportDraftScope } from '@/lib/portal-support-prefill';
 
-const SUPPORT_TOPICS = ['billing', 'payment', 'site', 'usage', 'account', 'general'] as const;
 const SUPPORT_STATUSES: Array<PortalSupportRequestStatus | ''> = ['', 'open', 'in_progress', 'resolved', 'closed'];
 const PAGE_SIZE = 10;
 
@@ -57,8 +57,10 @@ function PortalSupportContent() {
   const { session, isLoading, isAuthenticated, selectSite } = useSession();
   const selectedContextSite = session?.selected_context?.site || null;
   const contextSiteId = selectedContextSite?.site_id || '';
-  const initialTopic = String(searchParams?.get('topic') || 'general').toLowerCase();
-  const initialSiteId = searchParams?.get('site') || '';
+  const prefill = readSupportPrefill(searchParams);
+  const { topic: initialTopic, siteId: initialSiteId, title: initialTitle, description: initialDescription } = prefill;
+  const linkKey = JSON.stringify(prefill);
+  const accountEmail = session?.email || '';
   const initialSiteIsVisible = getVisiblePortalSites(session?.sites || [])
     .some((site) => site.site_id === initialSiteId);
   const shouldOpenForm = searchParams?.get('new') === '1';
@@ -81,6 +83,7 @@ function PortalSupportContent() {
   const [siteId, setSiteId] = useState('');
   const contextSiteIdRef = useRef(contextSiteId);
   const requestVersionRef = useRef(0);
+  const draftScopeRef = useRef<SupportDraftScope | null>(null);
 
   const loadRequests = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
@@ -120,40 +123,46 @@ function PortalSupportContent() {
   }, [isAuthenticated, offset, statusFilter, t]);
 
   useLayoutEffect(() => {
-    const previousContextSiteId = contextSiteIdRef.current;
-    contextSiteIdRef.current = contextSiteId;
-    requestVersionRef.current += 1;
-    setItems([]);
-    setTotal(0);
-    setOffset(0);
-    setStatusFilter('');
-    setListError('');
-    setListErrorCode('');
+    if (isLoading) return;
+    const nextScope = { email: accountEmail, contextSiteId, linkKey };
+    const previousScope = draftScopeRef.current;
+    const transition = supportDraftTransition(previousScope, nextScope);
+    if (transition === 'preserve') return;
+    draftScopeRef.current = isAuthenticated ? nextScope : null;
+    const applyPrefill = isAuthenticated && transition === 'prefill'
+      && (!initialSiteId || initialSiteIsVisible);
+    if (!previousScope || transition === 'clear' || !isAuthenticated) {
+      contextSiteIdRef.current = contextSiteId;
+      requestVersionRef.current += 1;
+      setItems([]);
+      setTotal(0);
+      setOffset(0);
+      setStatusFilter('');
+      setListError('');
+      setListErrorCode('');
+      setIsListLoading(Boolean(isAuthenticated));
+    }
     setFormError('');
     setNotice('');
-    setIsListLoading(Boolean(isAuthenticated));
     setIsSubmitting(false);
-    setShowForm(Boolean(
-      shouldOpenForm
-      && (!previousContextSiteId || previousContextSiteId === contextSiteId)
-    ));
+    setShowForm(applyPrefill && shouldOpenForm);
     setTopic(
       SUPPORT_TOPICS.includes(initialTopic as (typeof SUPPORT_TOPICS)[number])
         ? initialTopic
         : 'general'
     );
-    setTitle('');
-    setDescription('');
-    setSiteId(initialSiteIsVisible ? initialSiteId : '');
-  }, [contextSiteId, initialSiteId, initialSiteIsVisible, initialTopic, isAuthenticated, shouldOpenForm]);
+    setTitle(applyPrefill ? initialTitle : '');
+    setDescription(applyPrefill ? initialDescription : '');
+    setSiteId(applyPrefill && initialSiteIsVisible ? initialSiteId : '');
+  }, [accountEmail, contextSiteId, initialDescription, initialTitle, initialSiteId, initialSiteIsVisible, initialTopic, isAuthenticated, isLoading, linkKey, shouldOpenForm]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isLoading || !isAuthenticated) return;
     void loadRequests();
     return () => {
       requestVersionRef.current += 1;
     };
-  }, [contextSiteId, isAuthenticated, loadRequests]);
+  }, [accountEmail, contextSiteId, isAuthenticated, isLoading, loadRequests]);
 
   const accountSites = getVisiblePortalSites(session?.sites || []);
   const visibleSites = accountSites;

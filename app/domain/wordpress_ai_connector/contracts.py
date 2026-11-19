@@ -14,7 +14,7 @@ WP_AI_CONNECTOR_VISION_EXECUTION_KIND = "vision"
 WP_AI_CONNECTOR_VISION_ABILITY_FAMILY = "vision"
 WP_AI_CONNECTOR_VISION_DATA_CLASSIFICATION = "internal"
 WP_AI_CONNECTOR_MAX_PROMPT_CHARS = 12000
-WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
+WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS = 50000
 WP_AI_CONNECTOR_MAX_SYSTEM_INSTRUCTION_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
 WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS = 160
 WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS = 60
@@ -293,6 +293,17 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
         )
 
     normalized_request = dict(request)
+    if "rewrite_action" in request:
+        action = request["rewrite_action"]
+        if (
+            task != "content_rewrite"
+            or not isinstance(action, str)
+            or action not in {"shorten", "expand", "rephrase"}
+        ):
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.rewrite_action_invalid",
+                "rewrite_action requires content_rewrite and shorten, expand, or rephrase",
+            )
     if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
         normalized_request["source_text"] = validate_source_text_request(request)
         if "existing_title" in request:
@@ -353,7 +364,8 @@ def validate_source_text_request(request: dict[str, Any]) -> str:
     if len(normalized) > WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS:
         raise WordPressOperationContractViolation(
             "wordpress_operation.source_text_too_large",
-            "WordPress text scene source_text exceeds the 12000 character limit",
+            "WordPress text scene source_text exceeds the "
+            f"{WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS} character limit",
         )
     return normalized
 
