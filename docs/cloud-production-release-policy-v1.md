@@ -193,7 +193,18 @@ must use the digest-locked candidates recorded in
 `CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
 `frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
-2026-10-25 and were retired on 2026-10-27. The canonical CVE allowlist is empty.
+2026-10-25 and were retired on 2026-10-27.
+
+Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
+
+`release-security` owns the single-image exception from #1439. The CPython
+CNA limits this regression to OpenSSL FIPS mode; the exact candidate's FIPS
+state has not been established. This is risk acceptance, not a finding of
+non-applicability. Stop if FIPS use is found or required, the candidate changes,
+or the CNA broadens the affected scope. Remove the exception when moving to a
+fixed base digest and rerun the exact image scan. See the independent review
+requirement below. This exception does not authorize production promotion or deployment.
+
 The locked upstream bases carry OpenSSL 3.5.9-r0, pcre2 10.49-r0 and zlib
 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.
 The [bounded service-image patch contract](patched-service-images-v1.md)

@@ -374,10 +374,8 @@ REQUIRED_FIELDS = (
     "expires_on",
 )
 ALLOWED_OWNERS = ("release-security",)
-WINDOW_MARKER = "images are active from 2026-10-11 until 2026-10-25"
-RETAG_MARKER = "time-boxed CVE exceptions for the retag-only"
-CHECKLIST_ACTIVE_MARKER = "the canonical CVE allowlist is empty again after the bounded redis/nginx"
-CHECKLIST_STABLE_MARKER = "canonical CVE allowlist is empty"
+ACTIVE_MARKER = "Active image CVE exception: "
+EMPTY_MARKER = "canonical CVE allowlist is empty"
 
 
 def fail(message: str) -> None:
@@ -403,6 +401,7 @@ if not isinstance(max_exception_days, int) or max_exception_days <= 0:
 
 today = datetime.datetime.now(datetime.timezone.utc).date()
 seen_keys: set[tuple[str, str, str, str]] = set()
+expected_markers = []
 for index, entry in enumerate(payload["entries"]):
     if not isinstance(entry, dict):
         fail(f"CVE allowlist entry {index} must be an object")
@@ -436,20 +435,13 @@ for index, entry in enumerate(payload["entries"]):
             f"CVE exception beyond the {max_exception_days}-day horizon: "
             f"{label} expires {expires}"
         )
+    expected_markers.append(f"{ACTIVE_MARKER}{' '.join(key)} through {expires} (UTC).")
 
-policy_text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
-checklist_text = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
-active = bool(payload["entries"])
-if active:
-    if RETAG_MARKER not in policy_text or WINDOW_MARKER not in policy_text:
-        fail("policy doc must state the active retag-only exception window")
-    if CHECKLIST_ACTIVE_MARKER not in checklist_text:
-        fail("release checklist must document the bounded exception window closure path")
-else:
-    if RETAG_MARKER in policy_text or WINDOW_MARKER in policy_text:
-        fail("policy doc still states an exception window while the allowlist is empty")
-    if CHECKLIST_STABLE_MARKER not in checklist_text:
-        fail("release checklist must state the canonical allowlist policy")
+for path in map(pathlib.Path, sys.argv[2:4]):
+    text = path.read_text(encoding="utf-8")
+    documented = sorted(line for line in text.splitlines() if line.startswith(ACTIVE_MARKER))
+    if documented != sorted(expected_markers) or (EMPTY_MARKER in text) == bool(expected_markers):
+        fail(f"{path.name} must state the exact active CVE exception set or its empty state")
 PY
 then
 	echo "[fail] CVE allowlist validation failed (invalid, expired, or out-of-window entries)" >&2
