@@ -19,7 +19,7 @@ product work or override the current Phase 1 expansion freeze.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 修复 Cloud 成功但调用方没保存回执、重启后卡住的问题 | [跨系统回执与中断恢复要求](historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers) — 接受后保存失败/进程退出、真实 DB/cache、延迟 sender、恢复后推进及证据分层；Site Knowledge 实现见[运行时契约](site-knowledge-runtime-contract-v1.md#dispatch-receipt-recovery-2026-11-16-candidate) |
-| 核对能力验证超时修复与收尾 | [11 月 19 日集成与接续](history/engineering/2026/capability-probe-timeout-integration-2026-11-19.md) — 接续[11 月 18 日历史审计](history/engineering/2026/capability-probe-timeout-closeout-audit-2026-11-18.md)，记录主干部分替代、剩余差异、独立上游问题处置与精确退休条件 |
+| 核对能力验证超时修复与收尾 | [11 月 19 日合并与 M4 专项验收回执](history/engineering/2026/capability-probe-timeout-acceptance-2026-11-19.md) — #1443 已合并并部署 M4 accepted；关联[集成复盘](history/engineering/2026/capability-probe-timeout-integration-2026-11-19.md)，独立导航/上游问题及精确退休边界分别记账 |
 | 连接验收残项与维护发布收尾 | [2026-11-12 生产及验收回执](history/production/2026/connection-maintenance-release-2026-11-12.md)接续[准备记录](history/engineering/2026/connection-maintenance-release-closeout-2026-11-12.md)；采样和续费已有独立安排，源码、候选、生产与聊天归档分别记账。 |
 | 接续主机高读盘事故、统计/worker修复和当前会话资源收尾 | [事故接续与开发复盘 — 2026-11-12](history/engineering/2026/host-io-incident-development-handoff-2026-11-12.md) — 三批源码交付、生产取证与未证实根因分开；保留历史验收限制、主检出角色及下一复核点 |
 | 核对激活发布、伪需求取舍、四项接续与本会话清理 | [激活流程与收尾复盘 — 2026-11-11](history/engineering/2026/activation-flow-closeout-and-lessons-2026-11-11.md) — 已合并/生产与待验收分开；唯一四项台账、归档和受保护资源；方法见[收尾规范§6.5](engineering/zero-backlog-closeout-efficiency-standard-v1.md#65-价值等价扫描误报与发布收尾的限定控制) |
