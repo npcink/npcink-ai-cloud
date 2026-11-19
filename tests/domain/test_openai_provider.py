@@ -1699,6 +1699,62 @@ def test_openai_adapter_executes_image_edit_as_bounded_multipart(
     assert result.media_candidates[0].content_bytes == openai_provider.SAMPLE_IMAGE_PNG
 
 
+def test_xai_image_edit_uses_json_image_url_payload() -> None:
+    source_bytes = b"reference-image-bytes"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/images/edits")
+        assert request.headers["content-type"] == "application/json"
+        payload = json.loads(request.content)
+        assert payload == {
+            "model": "grok-imagine-image",
+            "prompt": "Remove the background",
+            "n": 1,
+            "image": {
+                "url": (
+                    "data:image/png;base64," + base64.b64encode(source_bytes).decode("ascii")
+                )
+            },
+        }
+        return httpx.Response(
+            200,
+            json={
+                "model": "grok-imagine-image",
+                "data": [
+                    {
+                        "b64_json": base64.b64encode(openai_provider.SAMPLE_IMAGE_PNG).decode(
+                            "ascii"
+                        ),
+                        "mime_type": "image/png",
+                    }
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        base_url="https://api.x.ai/v1",
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+        extra_headers={"Content-Type": "multipart/form-data"},
+    )
+    result = adapter.execute(
+        _build_request(
+            execution_kind="image_generation",
+            endpoint_variant="image_edits",
+            model_id="grok-imagine-image",
+            input_payload={
+                "prompt": "Remove the background",
+                "image_bytes": source_bytes,
+                "image_mime_type": "image/png",
+                "params": {"n": 1, "size": "1024x1024", "quality": "high"},
+            },
+        )
+    )
+
+    assert result.output["operation"] == "image.edit.v1"
+    assert len(result.media_candidates) == 1
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [("image_bytes", b""), ("image_mime_type", "")],

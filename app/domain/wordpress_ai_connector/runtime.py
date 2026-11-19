@@ -212,7 +212,7 @@ class WordPressOperationRuntime:
             return {
                 # These fields are transient runtime input. They never appear
                 # in the external wordpress_operation.v1 request or its policy
-                # snapshot; the OpenAI adapter consumes them for multipart only.
+                # snapshot; the adapter uses them to encode the upstream request.
                 "prompt": prompt,
                 "image_bytes": source_artifact.content_bytes,
                 "image_mime_type": source_artifact.content_type,

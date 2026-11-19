@@ -753,7 +753,7 @@ class OpenAIProviderAdapter:
             return client.post(endpoint_path, json=payload)
 
         request_options: dict[str, Any] = {"json": payload}
-        if endpoint_path == "/images/edits":
+        if endpoint_path == "/images/edits" and not self._uses_xai_json_image_edits():
             files = payload.get("_multipart_files")
             if not isinstance(files, list) or not files:
                 raise ProviderExecutionError(
@@ -796,6 +796,13 @@ class OpenAIProviderAdapter:
                 request=streamed_response.request,
                 extensions=streamed_response.extensions,
             )
+
+    def _uses_xai_json_image_edits(self) -> bool:
+        """xAI's image edit endpoint uses JSON ImageUrl inputs, not multipart."""
+        try:
+            return urlsplit(self.base_url).hostname == "api.x.ai"
+        except ValueError:
+            return False
 
     @staticmethod
     def _response_reports_unsupported_parameter(
@@ -850,8 +857,7 @@ class OpenAIProviderAdapter:
             base_url = base_url[:-3]
         headers = self._build_http_headers()
         if endpoint_variant == "image_edits":
-            # Let httpx encode the matching multipart boundary, including when
-            # the connection carries a JSON Content-Type override.
+            # Let httpx set the matching JSON type or multipart boundary.
             headers = {
                 key: value for key, value in headers.items() if key.lower() != "content-type"
             }
@@ -906,7 +912,14 @@ class OpenAIProviderAdapter:
             image_payload: dict[str, Any] = {
                 "model": runtime_model_id,
                 "prompt": self._resolve_image_generation_prompt(options),
-                "_multipart_files": [
+            }
+            if self._uses_xai_json_image_edits():
+                encoded_image = base64.b64encode(image_bytes).decode("ascii")
+                image_payload["image"] = {
+                    "url": f"data:{image_mime_type.strip()};base64,{encoded_image}"
+                }
+            else:
+                image_payload["_multipart_files"] = [
                     (
                         "image",
                         (
@@ -915,9 +928,10 @@ class OpenAIProviderAdapter:
                             image_mime_type.strip(),
                         ),
                     )
-                ],
-            }
-            self._apply_image_edit_request_options(image_payload, options)
+                ]
+            self._apply_image_edit_request_options(
+                image_payload, options, xai_json=self._uses_xai_json_image_edits()
+            )
             return "/images/edits", image_payload
 
         if request.endpoint_variant == "image_generations":
@@ -1704,10 +1718,12 @@ class OpenAIProviderAdapter:
     def _apply_image_edit_request_options(
         payload: dict[str, Any],
         options: dict[str, Any],
+        *,
+        xai_json: bool,
     ) -> None:
         if isinstance(options.get("n"), int):
             payload["n"] = max(1, min(MAX_PROVIDER_IMAGE_COUNT, int(options["n"])))
-        for key in ("size", "quality", "user"):
+        for key in (("user",) if xai_json else ("size", "quality", "user")):
             value = options.get(key)
             if isinstance(value, str) and value.strip():
                 payload[key] = value.strip()
