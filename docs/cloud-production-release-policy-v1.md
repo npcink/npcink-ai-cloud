@@ -196,16 +196,8 @@ must use the digest-locked candidates recorded in
 2026-10-25 and were retired on 2026-10-27.
 
 Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-107496 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-107496 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-88823 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-88823 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95691 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95691 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95692 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
-Active image CVE exception: api CVE-2026-95692 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
 
-`release-security` owns the single-image exception set from #1439. The CPython
+`release-security` owns the single-image exception from #1439. The CPython
 CNA limits this regression to OpenSSL FIPS mode; the exact candidate's FIPS
 state has not been established. This is risk acceptance, not a finding of
 non-applicability. Stop if FIPS use is found or required, the candidate changes,
@@ -220,6 +212,12 @@ builds Redis/NGINX outputs with the available `zlib>=1.4-r0` fix and scans
 those exact built outputs. Upstream digest evidence is not substituted for
 the patched output identity. `api` and `frontend` retain their minimum-version
 in-image package upgrades.
+For the Alpine 3.24 Python runtime, the `libcrypto3` and `libssl3` floors are
+`3.5.9-r1`. The Alpine aports revision
+`0f4c7e8d0f5f7cebbdc2156eca4391080b732bf2` backports `CVE-2026-107496`,
+`CVE-2026-88823`, `CVE-2026-95691`, and `CVE-2026-95692`; none of these
+receives an allowlist exception. The exact Linux/AMD64 image scan still gates
+merge; a distro backport or a scanner database mismatch does not waive it.
 The Python `production` target excludes SQLite's APK library and CPython modules;
 the governed production database is PostgreSQL. All other Python base shared-library
 dependencies remain explicitly installed. The `runtime` and `development` targets
