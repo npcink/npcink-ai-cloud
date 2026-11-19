@@ -472,6 +472,13 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert '[ "$(id -g)" = "999" ]' in smoke
 
 
+def test_python_runtime_requires_alpine_openssl_backport() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    runtime = dockerfile.split(" AS runtime\n", 1)[1].split("\nFROM ", 1)[0]
+    for package in ("libcrypto3", "libssl3"):
+        assert f"'{package}>=3.5.9-r1'" in runtime
+
+
 def test_sqlite_removal_is_production_only_and_has_runtime_smoke() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     before, production = dockerfile.split("FROM runtime AS production\n", 1)
@@ -512,26 +519,16 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
         "generated_artifacts_must_not_be_committed": True,
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
-    expected_keys = {
-        ("api", "CVE-2026-119170", "python", "3.14.10"),
-        *{
-            ("api", vulnerability, package, "3.5.9-r1")
-            for vulnerability in (
-                "CVE-2026-107496",
-                "CVE-2026-88823",
-                "CVE-2026-95691",
-                "CVE-2026-95692",
-            )
-            for package in ("libcrypto3", "libssl3")
-        },
+    (entry,) = allowlist["entries"]
+    assert {key: entry[key] for key in entry if key != "reason"} == {
+        "image": "api",
+        "vulnerability_id": "CVE-2026-119170",
+        "package": "python",
+        "package_version": "3.14.10",
+        "owner": "release-security",
+        "expires_on": "2026-11-22",
     }
-    assert {
-        (entry["image"], entry["vulnerability_id"], entry["package"], entry["package_version"])
-        for entry in allowlist["entries"]
-    } == expected_keys
-    assert all(entry["owner"] == "release-security" for entry in allowlist["entries"])
-    assert all(entry["expires_on"] == "2026-11-22" for entry in allowlist["entries"])
-    assert "FIPS state has not been established" in allowlist["entries"][0]["reason"]
+    assert "FIPS state has not been established" in entry["reason"]
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
@@ -609,13 +606,6 @@ def test_active_release_contract_records_retired_openssl_exceptions() -> None:
             "Active image CVE exception: api CVE-2026-119170 python 3.14.10 "
             "through 2026-11-22 (UTC)." in surface
         )
-        for vulnerability in (
-            "CVE-2026-107496",
-            "CVE-2026-88823",
-            "CVE-2026-95691",
-            "CVE-2026-95692",
-        ):
-            assert f"Active image CVE exception: api {vulnerability} " in surface
         assert "2026-10-25" in surface
         assert "2026-10-27" in surface
     assert "images are active from 2026-10-11 until 2026-10-25" not in policy
@@ -673,21 +663,10 @@ def test_retired_openssl_finding_blocks_with_canonical_allowlist(
     )
     args.allowlist = str(allowlist_path)
     report = json.loads(Path(args.report).read_text())
-    canonical_allowlist = json.loads(allowlist_path.read_text())
-    report["matches"].extend(
-        {
-            "vulnerability": {
-                "id": entry["vulnerability_id"],
-                "severity": "high",
-                "fix": {"versions": [], "state": ""},
-            },
-            "artifact": {
-                "name": entry["package"],
-                "version": entry["package_version"],
-            },
-        }
-        for entry in canonical_allowlist["entries"]
-    )
+    report["matches"].append({
+        "vulnerability": {"id": "CVE-2026-119170", "severity": "high"},
+        "artifact": {"name": "python", "version": "3.14.10"},
+    })
     report["matches"][0]["vulnerability"]["id"] = "CVE-2026-14456"
     report["matches"][0]["artifact"] = {"name": package, "version": "3.5.7-r0"}
     _write_json(Path(args.report), report)
@@ -695,9 +674,7 @@ def test_retired_openssl_finding_blocks_with_canonical_allowlist(
     assert supply.evaluate_scan(args) == 1
     receipt = json.loads(Path(args.receipt).read_text())
     assert receipt["status"] == "failed"
-    assert receipt["allowlisted_blocking_finding_count"] == len(
-        json.loads(allowlist_path.read_text())["entries"]
-    )
+    assert receipt["allowlisted_blocking_finding_count"] == 1
     assert receipt["unallowlisted_blocking_findings"][0]["vulnerability_id"] == "CVE-2026-14456"
 
 
