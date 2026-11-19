@@ -1925,6 +1925,9 @@ test('M04 supplier draft survives cancelled back navigation and only discards af
   await page.goto('/admin');
   await page.locator('a[href="/admin/ai-resources"]').first().click();
   const dialog = await openReadySupplier(page);
+  // Opening the supplier replaces the current URL asynchronously.
+  const focusedSupplierUrl = /\/admin\/ai-resources\?focus=model_ready$/;
+  await expect(page).toHaveURL(focusedSupplierUrl);
   await dialog.getByLabel(/Display name|显示名称/).fill('Unsaved supplier draft');
   await page.evaluate(() => window.history.back());
   const confirm = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存/ });
@@ -1933,7 +1936,7 @@ test('M04 supplier draft survives cancelled back navigation and only discards af
   await page.keyboard.press('Escape');
   await expect(confirm).toBeHidden();
   await expect(dialog.getByLabel(/Display name|显示名称/)).toHaveValue('Unsaved supplier draft');
-  await expect(page).toHaveURL(/\/admin\/ai-resources/);
+  await expect(page).toHaveURL(focusedSupplierUrl);
   await page.evaluate(() => window.history.back());
   await confirm.getByRole('button', { name: /Discard and leave|放弃并离开/ }).click();
   await expect(page).toHaveURL(/\/admin$/);
