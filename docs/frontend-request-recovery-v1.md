@@ -29,6 +29,19 @@ Status: active correctness contract. No new auth authority or automatic retry.
 - Display localized, bounded error codes and support references. Never show
   credentials or arbitrary backend error bodies in recovery UI or receipts.
 
+## Client selection and navigation
+
+- Selection/filter state used only by the current client workspace must not
+  enqueue a server navigation. Keep the selected query parameter using Next's
+  integrated native `history.replaceState(null, '', href)`, preserving unrelated
+  search parameters and the hash. Skip an identical URL. Keep real cross-page
+  navigation in the router and preserve the existing dirty-draft guard.
+- Guard this behavior at request level as well as by the final URL: repeatedly
+  open/cancel a draft, assert that selection enqueues no RSC navigation, then
+  leave for the supplier page. A single successful URL assertion can miss a
+  late same-page replacement racing a later navigation. See the
+  [2026-11-19 follow-up](history/engineering/2026/runtime-profile-followups-2026-11-19.md).
+
 ## Capability-probe diagnosis and delivery checks
 
 - Correlate the request time/model, proxy duration and persisted capability

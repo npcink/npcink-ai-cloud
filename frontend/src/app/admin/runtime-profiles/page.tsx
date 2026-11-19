@@ -920,7 +920,11 @@ export default function RuntimeProfilesPage() {
     setActiveProfileId(profileId);
     const params = new URLSearchParams(window.location.search);
     params.set('profile', profileId);
-    router.replace(`/admin/runtime-profiles?${params.toString()}`, { scroll: false });
+    const href = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    if (href === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
+    // Selection is client-only state. A server navigation here can finish after
+    // a later supplier navigation and return the operator to this page.
+    window.history.replaceState(null, '', href);
   }
 
   function setCandidate(profileId: string, position: 0 | 1, instanceId: string) {
