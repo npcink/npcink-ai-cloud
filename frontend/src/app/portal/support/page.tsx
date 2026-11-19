@@ -125,22 +125,25 @@ function PortalSupportContent() {
   useLayoutEffect(() => {
     if (isLoading) return;
     const nextScope = { email: accountEmail, contextSiteId, linkKey };
-    const transition = supportDraftTransition(draftScopeRef.current, nextScope);
+    const previousScope = draftScopeRef.current;
+    const transition = supportDraftTransition(previousScope, nextScope);
     if (transition === 'preserve') return;
     draftScopeRef.current = isAuthenticated ? nextScope : null;
     const applyPrefill = isAuthenticated && transition === 'prefill'
       && (!initialSiteId || initialSiteIsVisible);
-    contextSiteIdRef.current = contextSiteId;
-    requestVersionRef.current += 1;
-    setItems([]);
-    setTotal(0);
-    setOffset(0);
-    setStatusFilter('');
-    setListError('');
-    setListErrorCode('');
+    if (!previousScope || transition === 'clear' || !isAuthenticated) {
+      contextSiteIdRef.current = contextSiteId;
+      requestVersionRef.current += 1;
+      setItems([]);
+      setTotal(0);
+      setOffset(0);
+      setStatusFilter('');
+      setListError('');
+      setListErrorCode('');
+      setIsListLoading(Boolean(isAuthenticated));
+    }
     setFormError('');
     setNotice('');
-    setIsListLoading(Boolean(isAuthenticated));
     setIsSubmitting(false);
     setShowForm(applyPrefill && shouldOpenForm);
     setTopic(
@@ -154,12 +157,12 @@ function PortalSupportContent() {
   }, [accountEmail, contextSiteId, initialDescription, initialTitle, initialSiteId, initialSiteIsVisible, initialTopic, isAuthenticated, isLoading, linkKey, shouldOpenForm]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isLoading || !isAuthenticated) return;
     void loadRequests();
     return () => {
       requestVersionRef.current += 1;
     };
-  }, [contextSiteId, isAuthenticated, loadRequests]);
+  }, [accountEmail, contextSiteId, isAuthenticated, isLoading, loadRequests]);
 
   const accountSites = getVisiblePortalSites(session?.sites || []);
   const visibleSites = accountSites;
