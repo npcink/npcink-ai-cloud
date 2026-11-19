@@ -196,8 +196,16 @@ must use the digest-locked candidates recorded in
 2026-10-25 and were retired on 2026-10-27.
 
 Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-107496 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-107496 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-88823 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-88823 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-95691 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-95691 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-95692 libcrypto3 3.5.9-r1 through 2026-11-22 (UTC).
+Active image CVE exception: api CVE-2026-95692 libssl3 3.5.9-r1 through 2026-11-22 (UTC).
 
-`release-security` owns the single-image exception from #1439. The CPython
+`release-security` owns the single-image exception set from #1439. The CPython
 CNA limits this regression to OpenSSL FIPS mode; the exact candidate's FIPS
 state has not been established. This is risk acceptance, not a finding of
 non-applicability. Stop if FIPS use is found or required, the candidate changes,
@@ -217,7 +225,7 @@ the governed production database is PostgreSQL. All other Python base shared-lib
 dependencies remain explicitly installed. The `runtime` and `development` targets
 retain SQLite for local fixtures. Production default and zilliz image smoke checks
 verify PostgreSQL DBAPI/app imports and SQLite absence; this does not waive any CVE
-finding or change the empty allowlist. The image smoke also scans the built zilliz
+finding or change the active exception set. The image smoke also scans the built zilliz
 dependency superset (or the default image when zilliz is explicitly excluded)
 before merge, using the canonical policy. A fresh exact-release scan is still required.
 Retiring exceptions does not establish that any image is fixed or deployed;
