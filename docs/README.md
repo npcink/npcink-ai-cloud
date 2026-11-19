@@ -391,6 +391,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Operations and Release
 
+- [Next.js security update — 2026-11-18](history/engineering/2026/next-security-update-2026-11-18.md) — dependency maintenance evidence, remaining upstream development-tool advisory and separate M4/production states.
+
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
 - [Production Host DNS and Certificate Recovery — 2026-10-07](history/production/2026/production-host-dns-and-certificate-recovery-2026-10-07.md) — dated host recovery evidence; original application version remains deployed, not Free trial release approval
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
