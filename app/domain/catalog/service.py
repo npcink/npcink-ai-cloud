@@ -30,6 +30,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
+    wordpress_ai_profile_supports_endpoint,
 )
 
 DEFAULT_RECOMMENDED_PROFILE_IDS = (
@@ -244,7 +245,9 @@ class CatalogService:
                         config.get("provider_id") or connection.connection_id or ""
                     ).strip()
                     if configured_provider_id == provider_id:
-                        snapshot = _merge_configured_catalog_candidates(connection, snapshot)
+                        snapshot = _merge_configured_catalog_candidates(
+                            connection, snapshot, adapter=adapter,
+                        )
                         break
                 repository.upsert_provider_snapshot(snapshot, revision)
                 refreshed.append(provider_id)
@@ -624,6 +627,26 @@ class CatalogService:
                     else None
                 ),
             )
+            if wp_ai_spec is not None:
+                # An image-generation route cannot satisfy the edit contract:
+                # it has no multipart reference-image field. Keep the hosted
+                # edit profile visibly unconfigured until an operator supplies
+                # a catalog instance explicitly marked endpoint_variant=image_edits.
+                candidate_instance_ids = [
+                    instance_id
+                    for instance_id in candidate_instance_ids
+                    if wordpress_ai_profile_supports_endpoint(
+                        profile_id,
+                        next(
+                            (
+                                instance.endpoint_variant
+                                for instance in instances
+                                if instance.instance_id == instance_id
+                            ),
+                            "",
+                        ),
+                    )
+                ]
             if wp_ai_spec is not None:
                 candidate_instance_ids = candidate_instance_ids[:2]
             default_policy_json: dict[str, object] = {

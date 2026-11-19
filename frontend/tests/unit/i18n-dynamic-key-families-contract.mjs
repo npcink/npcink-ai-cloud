@@ -105,6 +105,10 @@ export const FAMILY_SOURCES = {
     'src/app/admin/ai-resources/page.tsx aiText(); suffix-only literals plus directory query fields, prefix prepended inside the helper',
   'admin.model_test.':
     'src/features/admin/ai-resources/ModelTestDialog.tsx text(); bounded literal suffixes for model test labels and outcomes',
+  'admin.model_capabilities.':
+    'src/app/admin/ai-resources/page.tsx; bounded text/vision/embedding features and generation/editing image choices from model-capabilities.ts',
+  'admin.image_capabilities.':
+    'src/features/admin/ai-resources/ModelCapabilityFields.tsx; bounded image_generation/image_editing checkbox labels',
   'admin.coverage.reason.':
     'src/app/admin/coverage/page.tsx translateReasonCode; backend coverage reason codes (service_*)',
   'admin.coverage.action.':

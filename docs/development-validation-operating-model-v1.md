@@ -60,6 +60,17 @@ explicitly requested. Review or CI discoveries outside the change envelope go
 to backlog unless they directly block the requested lane's safety or
 correctness.
 
+**Development PR image checks.** A PR to `master` that changes only recognized
+feature, test, or documentation paths retains existing source checks and, when
+the full backend lane is selected, the locked Python image build and import
+smoke. It does not require Grype evidence for that image. Changes to Docker,
+dependency manifests and locks, deploy inputs, CI policy, or unclassified paths
+require the Linux/AMD64 API image scan. This routing does not alter secret scan,
+CodeQL, dependency audit, or regression checks. Non-static `production` PRs
+still scan the API image, and the exact production runtime bundle gate and
+manual deployment authorization are unchanged. A build-only result is not
+image security or production evidence.
+
 Plan the lane with the existing router:
 
 ```bash

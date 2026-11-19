@@ -28,7 +28,7 @@ from app.api.routes.customer_notifications_admin import (
 from app.api.routes.site_compliance_admin import router as site_compliance_admin_router
 from app.core.db import get_session
 from app.core.logging import get_logger
-from app.core.models import CatalogInstance, CatalogModel, RunRecord
+from app.core.models import CatalogInstance, CatalogModel, ProviderConnection, RunRecord
 from app.core.security import extract_trace_id
 from app.domain.advisor.availability import OPERATIONS_ADVISOR_PAUSED
 from app.domain.advisor.service import InternalAIAdvisorService
@@ -78,6 +78,9 @@ from app.domain.provider_connections.model_allowlist import (
 from app.domain.provider_connections.service import (
     ProviderConnectionAdminError,
     ProviderConnectionAdminService,
+    _image_delivery_probe_verification_inputs,
+    record_runtime_image_probe,
+    runtime_image_host_repair,
 )
 from app.domain.provider_resources import build_admin_ai_resource_projection
 from app.domain.runtime.availability import paused_runtime_feature
@@ -105,6 +108,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
     WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID,
+    wordpress_ai_profile_supports_endpoint,
 )
 from app.workers.ops_cadence import build_cadence_summary
 
@@ -1469,6 +1473,11 @@ def _build_hosted_runtime_profile_projection(
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         route_identities = repository.provider_route_identities()
+        image_host_repairs = {
+            repair["instance_id"]: (connection, repair)
+            for connection in repository.list_enabled_provider_connections()
+            if (repair := runtime_image_host_repair(connection)) is not None
+        }
         instances = repository.list_instances_for_provider()
         models = repository.list_models_by_ids([instance.model_id for instance in instances])
         models_by_id = {model.model_id: model for model in models}
@@ -1502,7 +1511,7 @@ def _build_hosted_runtime_profile_projection(
                 continue
             if model.feature not in available_instances_by_kind:
                 continue
-            available_instances_by_kind[model.feature].append(
+            projected_instance = (
                 # Evidence is only shown when it belongs to this exact route.
                 _serialize_hosted_runtime_instance(
                     instance,
@@ -1541,6 +1550,14 @@ def _build_hosted_runtime_profile_projection(
                     },
                 )
             )
+            repair_entry = image_host_repairs.get(instance.instance_id)
+            if model.feature == "image_generation" and repair_entry:
+                connection, repair = repair_entry
+                config = connection.config_json or {}
+                repair_provider_id = str(config.get("provider_id") or connection.connection_id)
+                if repair_provider_id == instance.provider_id:
+                    projected_instance["image_host_repair"] = repair
+            available_instances_by_kind[model.feature].append(projected_instance)
 
         profiles: list[dict[str, Any]] = []
         for spec in WP_AI_CONNECTOR_PROFILE_SPECS:
@@ -1562,6 +1579,10 @@ def _build_hosted_runtime_profile_projection(
                     continue
                 instance = instances_by_id[instance_id]
                 model = models_by_id.get(instance.model_id)
+                if not wordpress_ai_profile_supports_endpoint(
+                    spec.profile_id, instance.endpoint_variant
+                ):
+                    continue
                 if not _hosted_runtime_instance_is_routing_eligible(instance, model):
                     continue
                 if not provider_model_allowlist.allows(
@@ -1739,6 +1760,12 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
+                if not wordpress_ai_profile_supports_endpoint(
+                    profile_id, instance.endpoint_variant
+                ):
+                    return [], (
+                        f"profile {profile_id} cannot use endpoint {instance.endpoint_variant}"
+                    )
                 feature_compatible = model_supports_execution_kind(
                     model.feature, spec.execution_kind
                 )
@@ -6292,6 +6319,26 @@ async def probe_admin_hosted_runtime_capability(
         provider_id = instance.provider_id
         model_id = instance.model_id
         endpoint_variant = instance.endpoint_variant
+        image_connection_id = (
+            str(getattr(provider, "provider_connection_id", "") or "")
+            if payload.capability == "image_generation" and endpoint_variant != "image_edits"
+            else ""
+        )
+        image_connection = (
+            session.get(ProviderConnection, image_connection_id) if image_connection_id else None
+        )
+        image_connection_inputs = (
+            _image_delivery_probe_verification_inputs(image_connection)
+            if image_connection
+            else None
+        )
+        existing_image_repair = (
+            runtime_image_host_repair(image_connection) if image_connection else None
+        )
+        retrying_image_delivery = (
+            existing_image_repair is not None
+            and existing_image_repair["instance_id"] == payload.instance_id
+        )
         fingerprint_builder = {
             "vision": vision_probe_fingerprint,
             "embedding": embedding_probe_fingerprint,
@@ -6327,6 +6374,7 @@ async def probe_admin_hosted_runtime_capability(
                 "cache_hit": True,
             }
             if cached_evidence is not None
+            and not retrying_image_delivery
             and capability_evidence_is_current(
                 cached_evidence,
                 route_fingerprint=fingerprint,
@@ -6382,8 +6430,42 @@ async def probe_admin_hosted_runtime_capability(
     }[payload.capability]
     probe_result = await run_in_threadpool(partial(probe_function, **probe_kwargs))
     checked_at = datetime.now(UTC)
+    image_host_repair = None
     with get_session(services.settings.database_url) as session:
         repository = CatalogRepository(session)
+        if image_connection_id:
+            connection = session.get(ProviderConnection, image_connection_id, with_for_update=True)
+            current_instance = session.get(CatalogInstance, payload.instance_id)
+            if (
+                connection is None
+                or _image_delivery_probe_verification_inputs(connection) != image_connection_inputs
+                or current_instance is None
+                or (
+                    current_instance.provider_id,
+                    current_instance.model_id,
+                    current_instance.endpoint_variant,
+                )
+                != (provider_id, model_id, endpoint_variant)
+            ):
+                return JSONResponse(
+                    status_code=409,
+                    content=build_envelope(
+                        status="error",
+                        error_code="provider_connection.image_delivery_probe_stale",
+                        message="The image route changed during verification. Verify it again.",
+                        revision="m6",
+                    ),
+                )
+            image_host_repair = record_runtime_image_probe(
+                connection,
+                instance_id=payload.instance_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                probe_id=probe_run_id,
+                detected_host=probe_result.detected_image_host,
+                verified=probe_result.state == "verified",
+                now=checked_at,
+            )
         evidence = repository.upsert_capability_evidence(
             instance_id=payload.instance_id,
             capability=payload.capability,
@@ -6406,11 +6488,19 @@ async def probe_admin_hosted_runtime_capability(
         error_code=probe_result.error_code or "",
     )
 
-    status_code = 200 if probe_result.state == "verified" else 400
+    status_code = 400
+    if probe_result.state == "verified":
+        status_code = 200
+    elif probe_result.detected_image_host and image_host_repair:
+        status_code = 409
     return JSONResponse(
         status_code=status_code,
         content=build_envelope(
             status="ok" if probe_result.state == "verified" else "error",
+            error_code=(
+                "" if probe_result.state == "verified"
+                else probe_result.error_code or "capability_probe.verification_failed"
+            ),
             message=(
                 "Capability verification succeeded."
                 if probe_result.state == "verified"
@@ -6427,6 +6517,11 @@ async def probe_admin_hosted_runtime_capability(
                 "error_code": evidence.error_code,
                 "cache_hit": False,
                 "audit_event_id": (probe_audit or {}).get("audit_event_id"),
+                **(
+                    {"image_host_repair": image_host_repair}
+                    if payload.capability == "image_generation"
+                    else {}
+                ),
             },
             revision="m6",
         ),

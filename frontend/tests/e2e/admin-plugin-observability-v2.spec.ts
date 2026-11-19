@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
@@ -176,7 +178,8 @@ test('Chinese labels explain known events and retain original identifiers', asyn
   await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('云端增强插件');
 });
 
-test('successful report exposes linked execution separately from receipt time', async ({ page }) => {
+test('successful report exposes linked execution separately from receipt time', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installPluginObservabilityHarness(page, { ...pluginObservabilityData,
     recent_activity: [{ event_id: 'evt-linked', site_id: 'site_mvp',
@@ -189,11 +192,29 @@ test('successful report exposes linked execution separately from receipt time', 
   const activity = page.locator('[data-ui="plugin-recent-activity"]');
   await expect(activity).toContainText(/Succeeded|成功/);
   await expect(activity.getByText('run-linked', { exact: true })).not.toBeVisible();
-  await activity.getByText(/View linked run|查看对应运行/).click();
+  await expect(activity.getByRole('link', { name: /Inspect this run|查看此运行/ })).toBeVisible();
+  await expect(activity.locator('[data-ui="linked-run"] > p')).toContainText(/Succeeded|成功/);
+  await activity.getByText(/Run details|运行详情/, { exact: true }).click();
   await expect(activity.getByText('run-linked', { exact: true })).toBeVisible();
   await expect(activity).toContainText(/Execution started|实际开始/);
   await expect(activity).toContainText(/Report received|收到上报/);
-  await page.screenshot({ path: '/tmp/plugin-linked-run-preview.png', fullPage: true });
+  await activity.getByText(/Run details|运行详情/, { exact: true }).click();
+  for (const width of [1440, 1056]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 1050 : 900 });
+    await expect(activity.getByRole('link', { name: /Inspect this run|查看此运行/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await testInfo.attach(`linked-run-${width}`, { body: await page.screenshot({ path: testInfo.outputPath(`linked-run-${width}.png`) }), contentType: 'image/png' });
+  }
+  expect(browserEvidence.consoleErrors).toEqual([]);
+  writeFileSync(testInfo.outputPath('linked-run-review.json'), JSON.stringify({
+    route: '/admin/plugin-observability', page_model: 'diagnostic', scope: 'linked-run status and navigation only',
+    source_revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), source_dirty: true,
+    environment: process.env.NPCINK_CLOUD_FRONTEND_BASE_URL || 'local', data_mode: 'mocked', viewports: [{ width: 1440, height: 1050 }, { width: 1056, height: 900 }],
+    tested_states: ['ready', 'linked-run', 'technical-details-open-and-closed', 'pc-narrow'],
+    results: { direct_navigation: 'pass', visible_status: 'pass', technical_detail_retained: 'pass', no_horizontal_overflow: 'pass', human_visual_review: 'review_required' },
+    screenshot_paths: ['linked-run-1440.png', 'linked-run-1056.png'],
+    console_errors: browserEvidence.consoleErrors, network_failures: browserEvidence.networkFailures, human_acceptance: 'pending',
+  }, null, 2));
 });
 
 test('recent reports preview five without reordering and expand without fetching history', async ({ page }) => {

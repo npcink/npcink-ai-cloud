@@ -510,6 +510,23 @@ async function proxyAdminRequest(
     }
   }
 
+  // Capability probes include a bounded provider call. Keep the ordinary admin
+  // deadline short, but allow this exact route its declared execution budget.
+  let timeoutMs = 12_000;
+  if (method === 'POST' && routeResolution.backendPath === '/internal/service/admin/runtime-profiles/capability-probe') {
+    try {
+      const payload: unknown = JSON.parse(body || '{}');
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        const probeTimeout = 'timeout_ms' in payload ? payload.timeout_ms : 30_000;
+        if (typeof probeTimeout === 'number' && Number.isInteger(probeTimeout) && probeTimeout >= 1_000 && probeTimeout <= 120_000) {
+          timeoutMs = Math.max(timeoutMs, probeTimeout + 5_000);
+        }
+      }
+    } catch {
+      // Invalid bodies retain the ordinary deadline; the backend validates them.
+    }
+  }
+
   let response: Response;
   try {
     response = await fetch(buildBackendUrl(routeResolution.backendPath, request.nextUrl.search), {
@@ -517,7 +534,7 @@ async function proxyAdminRequest(
       headers,
       body,
       cache: 'no-store',
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]),
     });
   } catch {
     return buildErrorResponse(

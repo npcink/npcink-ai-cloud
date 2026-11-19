@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.core.models import MediaArtifact, ProviderConnection, RunRecord
+from app.domain.connector_runtime.contracts import CONNECTOR_RUNTIME_ABILITIES
 from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 from app.domain.image_generation.provider_fetch import (
     PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
@@ -142,6 +143,13 @@ def materialize_image_generation_candidates(
             "provider image output is invalid"
         )
     _validate_candidate_envelope(provider_output, media_candidates=media_candidates)
+    operation = (
+        "image.edit.v1"
+        if run.ability_name in CONNECTOR_RUNTIME_ABILITIES
+        and run.profile_id == "wp-ai.image-editing"
+        and run.execution_kind == "image_generation"
+        else IMAGE_GENERATION_OPERATION
+    )
 
     resolved_config = config or ImageGenerationMaterializationConfig()
     max_image_bytes = max(1, int(resolved_config.max_image_bytes))
@@ -231,7 +239,7 @@ def materialize_image_generation_candidates(
                                 max_image_bytes,
                                 max_run_bytes - (run_io_bytes - cleaned.byte_size),
                             ),
-                            metadata={"operation": IMAGE_GENERATION_OPERATION},
+                            metadata={"operation": operation},
                             cleanup_error_factory=_cleanup_error,
                         )
                     except ArtifactStorePublicationUncertainError as error:
@@ -253,6 +261,7 @@ def materialize_image_generation_candidates(
                         stored=stored,
                         cleaned=cleaned,
                         ttl_minutes=ttl_minutes,
+                        operation=operation,
                     )
                     artifacts.append(artifact)
                 finally:
@@ -310,7 +319,7 @@ def materialize_image_generation_candidates(
     return {
         "contract_version": IMAGE_GENERATION_RESULT_CONTRACT,
         "artifact_type": IMAGE_GENERATION_ARTIFACT_TYPE,
-        "operation": IMAGE_GENERATION_OPERATION,
+        "operation": operation,
         "artifacts": [_artifact_result(artifact) for artifact in artifacts],
         "suggestion_only": True,
         "requires_local_review": True,
@@ -603,13 +612,14 @@ def _create_image_generation_artifact(
     stored: ArtifactStorageMetadata,
     cleaned: CleanedProviderImage,
     ttl_minutes: int,
+    operation: str,
 ) -> MediaArtifact:
     artifact = MediaArtifact(
         artifact_id=f"art_{uuid4().hex}",
         run_id=run.run_id,
         site_id=run.site_id,
         media_kind="image",
-        operation=IMAGE_GENERATION_OPERATION,
+        operation=operation,
         content_type=cleaned.content_type,
         byte_size=stored.byte_size,
         storage_key=stored.storage_key,

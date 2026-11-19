@@ -4,6 +4,8 @@ import { formatUsdAmount } from '@/lib/format-usd';
 
 import Link from 'next/link';
 import { modelIdentityKeys, upstreamModelId } from '@/features/admin/ai-resources/model-reference-identity';
+import { ModelCapabilityFields } from '@/features/admin/ai-resources/ModelCapabilityFields';
+import { imageCapabilities, modelMetadataOverrides, imageCapabilityOverrideKey, saveImageCapabilities, updateModelFeature, updateImageCapabilities } from '@/features/admin/ai-resources/model-capabilities';
 import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -80,7 +82,6 @@ import {
   type ConnectionStatusFilter,
   type ProviderConnectionDeletePreflight,
   type ProviderConnectionTestResult,
-  type ProviderImageDeliveryProbeResult,
   type ProviderModelHealth,
   type SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
@@ -384,8 +385,6 @@ function AiResourcesContent() {
   const [modelTestTarget, setModelTestTarget] = useState<ModelTestTarget | null>(null);
   const [savingConnection, setSavingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [testingConnection, setTestingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [probingImageDelivery, setProbingImageDelivery] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
-  const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
   const [approvingImageHost, setApprovingImageHost] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [preflightingDelete, setPreflightingDelete] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [deletingConnection, setDeletingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
@@ -420,6 +419,10 @@ function AiResourcesContent() {
     confirmingModelBatch,
   } = providerWorkbench;
   const savedProviderConnection = data?.connections.find((connection) => connection.connection_id === providerConnectionForm.connectionId);
+  const modelNamespacePrefix = providerCatalogPreview?.model_namespace_prefix ?? savedProviderConnection?.model_namespace_prefix ?? (savedProviderConnection?.config && 'model_namespace_prefix' in savedProviderConnection.config
+    ? String(savedProviderConnection.config.model_namespace_prefix || '')
+    : ['openai', 'openai_compatible', 'openai-compatible'].includes(providerConnectionForm.kind) && providerConnectionForm.providerId !== 'openai'
+      ? providerConnectionForm.providerId : '');
   const catalogCredentialMissing = !providerConnectionForm.credential.trim()
     && !(providerFormMode === 'edit' && (savedProviderConnection?.configured || savedProviderConnection?.config?.secretless));
   const providerDraftDirty = hasProviderWorkbenchDraftChanges(providerWorkbench);
@@ -617,6 +620,7 @@ function AiResourcesContent() {
       model_ids: modelIds, model_id: modelIds[0] || '',
       image_response_format: providerConnectionForm.imageResponseFormat,
       image_output_hosts: imageOutputHosts,
+      model_metadata_overrides: saveImageCapabilities(providerConnectionForm.modelMetadataOverrides, modelIds, providerCatalogPreview?.models || [], modelNamespacePrefix),
     };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
@@ -827,10 +831,10 @@ function AiResourcesContent() {
     }
   }
 
-  async function approveDetectedImageHost(connection: Connection, probeId = '') {
+  async function approveDetectedImageHost(connection: Connection) {
     if (directoryStale || saveInFlight.current) return;
     const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
-    const evidenceProbeId = probeId || String(connection.image_delivery_repair?.probe_id || '');
+    const evidenceProbeId = String(connection.image_delivery_repair?.probe_id || '');
     if (!evidenceRunId && !evidenceProbeId) return;
     setApprovingImageHost(startAsyncOperation(connection.connection_id));
     setError('');
@@ -861,12 +865,9 @@ function AiResourcesContent() {
           ]).join(', '),
         });
       }
-      setImageDeliveryProbeResult((current) => current && current.probe_id === evidenceProbeId
-        ? { ...current, status: 'host_approved', host_approved: true }
-        : current);
       await loadResources();
       toast.success(
-        aiText('image_host_repair_success', 'Exact image host approved. Run the image delivery test again.'),
+        aiText('image_host_repair_success', 'Exact image host approved. Retry image generation.'),
         t('common.success')
       );
       setApprovingImageHost(succeedAsyncOperation(connection.connection_id));
@@ -877,47 +878,6 @@ function AiResourcesContent() {
       );
       setError(approvalMessage);
       setApprovingImageHost(failAsyncOperation(approvalMessage, connection.connection_id));
-    }
-  }
-
-  async function runImageDeliveryProbe(): Promise<void> {
-    const connectionId = providerConnectionForm.connectionId;
-    if (!canProbeImageDelivery || !connectionId) return;
-    setProbingImageDelivery(startAsyncOperation(connectionId));
-    setImageDeliveryProbeResult(null);
-    setError('');
-    try {
-      const response = await aiResourcesClient.request<ProviderImageDeliveryProbeResult & {
-        receipt?: AdminMutationReceiptPayload | null;
-      }>(
-        `/api/admin/provider-connections/${encodeURIComponent(connectionId)}/image-delivery-probes`,
-        { method: 'POST' }
-      );
-      setImageDeliveryProbeResult(response.data);
-      setLastReceipt(response.data.receipt || null);
-      await loadResources();
-      toast.success(
-        response.data.status === 'approval_required'
-          ? aiText('image_delivery_probe_host_detected', 'Image host detected. Approve the exact host to continue.')
-          : aiText('image_delivery_probe_passed', 'Image delivery test passed.'),
-        t('common.success')
-      );
-      setProbingImageDelivery(succeedAsyncOperation(connectionId));
-    } catch (probeError) {
-      const probeErrorCode = probeError instanceof ApiError ? probeError.errorCode : '';
-      const probeFallback = probeErrorCode === 'provider_connection.image_probe_model_required'
-        ? aiText('image_delivery_probe_model_required', 'Enable and save at least one image-generation model before testing delivery.')
-        : probeErrorCode === 'provider_connection.image_generation_not_enabled'
-          ? aiText('image_delivery_probe_capability_required', 'Enable image generation for this connection before testing delivery.')
-          : aiText('image_delivery_probe_failed', 'Image delivery test failed.');
-      const probeMessage = providerErrorMessage(
-        probeError,
-        probeFallback
-      );
-      setError(probeMessage);
-      setProbingImageDelivery(failAsyncOperation(probeMessage, connectionId));
-      await loadResources();
-
     }
   }
 
@@ -974,6 +934,7 @@ function AiResourcesContent() {
       model_ids: modelIds, model_id: modelIds[0] || '',
       image_response_format: providerConnectionForm.imageResponseFormat,
       image_output_hosts: imageOutputHosts,
+      model_metadata_overrides: providerConnectionForm.modelMetadataOverrides,
     };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
@@ -1154,8 +1115,6 @@ function AiResourcesContent() {
     if (directoryStale || saveInFlight.current) return;
     invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
-    setImageDeliveryProbeResult(null);
-    setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
     setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
@@ -1172,10 +1131,12 @@ function AiResourcesContent() {
 
   function editProviderConnection(connection: Connection) {
     if (directoryStale || saveInFlight.current) return;
+    if (providerDraftDirty && providerConnectionForm.connectionId === connection.connection_id) {
+      dispatchProviderWorkbench({ type: 'reopen_draft' });
+      return;
+    }
     invalidateCatalogRequest();
     setConfirmingDeleteConnectionId('');
-    setImageDeliveryProbeResult(null);
-    setProbingImageDelivery(IDLE_ASYNC_OPERATION);
     setProviderWorkbenchSection('connection');
     setProviderAdvancedPanel('');
     setShowUnconfirmedModels(false);
@@ -1200,7 +1161,6 @@ function AiResourcesContent() {
       return;
     }
     invalidateCatalogRequest();
-    setImageDeliveryProbeResult(null);
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
     setMessage('');
@@ -1451,10 +1411,6 @@ function AiResourcesContent() {
   const activeProviderConnection = data?.connections.find(
     (connection) => connection.connection_id === providerConnectionForm.connectionId
   );
-  const modelNamespacePrefix = providerCatalogPreview?.model_namespace_prefix ?? activeProviderConnection?.model_namespace_prefix ?? (activeProviderConnection?.config && 'model_namespace_prefix' in activeProviderConnection.config
-    ? String(activeProviderConnection.config.model_namespace_prefix || '')
-    : ['openai', 'openai_compatible', 'openai-compatible'].includes(providerConnectionForm.kind) && providerConnectionForm.providerId !== 'openai'
-      ? providerConnectionForm.providerId : '');
   const modelUsages = activeProviderConnection?.model_usage_references || [];
   const usageLabelKeys: Record<string, string> = {
       'wp-ai.short-text': 'profile_short_text', 'wp-ai.editorial': 'profile_editorial',
@@ -1468,26 +1424,7 @@ function AiResourcesContent() {
     const matches = (id: string) => [...modelIdentityKeys(id, modelNamespacePrefix)].some((key) => modelIdentityKeys(usage.model_id, modelNamespacePrefix).has(key));
     return (activeProviderConnection?.model_ids || []).some(matches) && !selectedProviderModelIds.some(matches);
   });
-  const activeImageDeliveryProbe = (imageDeliveryProbeResult?.connection_id === providerConnectionForm.connectionId
-    ? imageDeliveryProbeResult : null) || activeProviderConnection?.image_delivery_probe || null;
-  const activeImageDeliveryRepair = activeProviderConnection?.image_delivery_repair;
   const isSavingConnection = asyncOperationRunning(savingConnection);
-  const isProbingImageDelivery = asyncOperationRunning(probingImageDelivery, providerConnectionForm.connectionId);
-  const imageDeliveryFailed = activeImageDeliveryProbe?.status === 'failed'
-    || (probingImageDelivery.key === providerConnectionForm.connectionId && probingImageDelivery.status === 'failed');
-  const canProbeImageDelivery = providerFormMode === 'edit' && !providerDraftDirty
-    && providerConnectionForm.enabled && Boolean(activeProviderConnection?.configured)
-    && !isSavingConnection && !isProbingImageDelivery;
-  const imageDeliveryStatus = providerDraftDirty ? 'draft' : isProbingImageDelivery ? 'pending'
-    : imageDeliveryFailed ? 'failed' : activeImageDeliveryProbe?.status === 'ready' ? 'success'
-      : activeImageDeliveryProbe?.status === 'approval_required' ? 'warning' : 'inactive';
-  const imageDeliveryStatusLabel = providerDraftDirty
-    ? aiText('image_delivery_unsaved', 'Unsaved changes')
-    : isProbingImageDelivery ? aiText('image_delivery_probe_testing', 'Testing image delivery...')
-      : imageDeliveryFailed ? aiText('image_delivery_failed', 'Failed')
-        : activeImageDeliveryProbe?.status === 'ready' ? aiText('image_delivery_verified', 'Verified')
-          : activeImageDeliveryProbe?.status === 'approval_required' ? aiText('image_delivery_approval_required', 'Host approval required')
-            : aiText('image_delivery_not_verified', 'Not verified');
   const isLoadingModelReferences = asyncOperationRunning(loadingModelReferences);
   const isSyncingModelReferences = asyncOperationRunning(syncingModelReferences);
   const isFetchingProviderCatalog = asyncOperationRunning(fetchingProviderCatalog);
@@ -1541,6 +1478,7 @@ function AiResourcesContent() {
     manualLabel: aiText('model_source_manual', 'Previously saved'),
     sourceScope: 'account',
     namespacePrefix: modelNamespacePrefix,
+    metadataOverrides: providerConnectionForm.modelMetadataOverrides,
     enabledOnlyLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
   }).filter((row) => !showUnconfirmedModels || (row.selected && !row.catalog)), [
     showUnconfirmedModels,
@@ -1557,6 +1495,7 @@ function AiResourcesContent() {
     modelReferenceError,
     referenceNow,
     providerCatalogPreview,
+    providerConnectionForm.modelMetadataOverrides,
     selectedProviderModelIds,
   ]);
 
@@ -1813,7 +1752,7 @@ function AiResourcesContent() {
                             aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
                           />
                         )}
-                        detail={aiText('image_delivery_manual_host_note', 'Normally use the image delivery test. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.')}
+                        detail={aiText('image_delivery_manual_host_note', 'Verify the model in Runtime Profiles. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.')}
                       />
                     ) : null}
                   </AdminConfigurationTable>
@@ -2004,34 +1943,12 @@ function AiResourcesContent() {
                   <AdminConfigurationRow
                     rowId="image-delivery"
                     label={aiText('image_delivery_row_label', 'Image delivery')}
-                    value={(
-                      <span className="grid gap-1" role="status">
-                        <span><BackofficeStatusBadge label={imageDeliveryStatusLabel} status={imageDeliveryStatus} /></span>
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'ready' ? (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_verified_model', 'Tested model: {{model}}', {
-                              model: String(activeImageDeliveryProbe.model_id || '—'),
-                            })}
-                          </span>
-                        ) : null}
-                      </span>
-                    )}
+                    value={providerConnectionForm.imageResponseFormat === 'url' ? aiText('image_response_url', 'Image URL')
+                      : providerConnectionForm.imageResponseFormat === 'b64_json' ? aiText('image_response_base64', 'Base64 image')
+                        : aiText('image_response_provider_default', 'Provider / model default')}
                     detail={(
                       <span className="grid gap-2">
                         <span className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={!canProbeImageDelivery}
-                            onClick={() => void runImageDeliveryProbe()}
-                          >
-                            {isProbingImageDelivery
-                              ? aiText('image_delivery_probe_testing', 'Testing image delivery...')
-                              : aiText('image_delivery_probe_action', 'Generate test image')}
-                          </button>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_probe_cost_notice', 'Generates one test image and may incur a small provider charge.')}
-                          </span>
                           <button
                             ref={providerImageAdvancedTriggerRef}
                             data-ui="image-delivery-advanced-trigger"
@@ -2042,39 +1959,8 @@ function AiResourcesContent() {
                             {aiText('image_advanced_settings', 'Image delivery · Advanced settings')}
                           </button>
                         </span>
-                        {providerFormMode !== 'edit' || providerDraftDirty ? (
-                          <span className="text-xs text-amber-700 dark:text-amber-300">
-                            {aiText('image_delivery_probe_save_changes', 'Save your changes before generating a test image.')}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {aiText('image_delivery_test_not_proof_compact', 'Fetching the model catalog does not verify image generation.')}
-                          </span>
-                        )}
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'host_approved' ? (
-                          <span className="text-xs text-blue-700 dark:text-blue-300">
-                            {aiText('image_delivery_probe_host_approved', 'Exact host approved. Run the test again to validate the download.')}
-                          </span>
-                        ) : null}
-                        {!providerDraftDirty && activeImageDeliveryProbe?.status === 'approval_required' ? (
-                          <span role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <span>{aiText('image_delivery_probe_approval_required', 'Detected exact host: {{host}}', {
-                              host: String(activeImageDeliveryProbe.detected_host || ''),
-                            })}</span>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              disabled={isProbingImageDelivery || asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)}
-                              onClick={() => activeProviderConnection && void approveDetectedImageHost(
-                                activeProviderConnection,
-                                String(activeImageDeliveryProbe.probe_id || activeImageDeliveryRepair?.probe_id || '')
-                              )}
-                            >
-                              {asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)
-                                ? aiText('image_host_repair_approving', 'Approving...')
-                                : aiText('image_host_repair_action', 'Approve this exact host')}
-                            </button>
-                          </span>
+                        {providerConnectionForm.imageResponseFormat === 'url' && !providerConnectionForm.imageOutputHosts.trim() ? (
+                          <span className="text-xs text-amber-700 dark:text-amber-300">{aiText('provider_issue_image_output_hosts_missing', 'Missing image download hosts')}</span>
                         ) : null}
                       </span>
                     )}
@@ -2153,12 +2039,6 @@ function AiResourcesContent() {
                           placeholder={aiText('placeholder_search_models', 'model, family, provider')}
                         />
                       </label>
-                      <details data-ui="model-filters" className="text-xs text-slate-600 dark:text-slate-300">
-                        <summary className="cursor-pointer rounded-md border border-slate-200 px-3 py-3 font-semibold dark:border-slate-700">
-                          {aiText('model_filters', 'Filters')}{modelReferenceVisibilityFilter !== 'all' || modelReferenceFeatureFilter !== 'all' ? ' •' : ''}
-                        </summary>
-                        <div className="mt-2 flex flex-wrap gap-2">
-
                       <select
                         className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceVisibilityFilter}
@@ -2188,14 +2068,8 @@ function AiResourcesContent() {
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
-                        </div>
-                      </details>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-2 text-xs">
-                      {accountModelCount > MODEL_VISIBILITY_PAGE_SIZE ? (
-                      <details data-ui="model-maintenance-table">
-                        <summary className="w-fit cursor-pointer font-semibold text-slate-600 dark:text-slate-300">{aiText('model_more_operations', 'More operations')}</summary>
-                        <div className="mt-2 grid gap-3 border-l border-slate-200 pl-3 dark:border-slate-800">
+                    <div data-ui="model-maintenance-table" className="flex shrink-0 flex-wrap gap-3 text-xs">
                           <div className="flex flex-wrap items-center gap-3">{confirmingModelBatch ? (
                             <span className="grid gap-2">
                               <span className="text-amber-700 dark:text-amber-300">
@@ -2238,7 +2112,7 @@ function AiResourcesContent() {
                                 disabled={!filteredEnableModelIds.length || isSavingConnection}
                                 onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'enable' })}
                               >
-                                {aiText('action_enable_filtered_models', 'Enable matching')}
+                                {aiText('action_enable_filtered_models', 'Enable matching')} ({filteredEnableModelIds.length})
                               </button>
                               <button
                                 type="button"
@@ -2247,14 +2121,12 @@ function AiResourcesContent() {
                                 disabled={!filteredDisableModelIds.length || isSavingConnection}
                                 onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'disable' })}
                               >
-                                {aiText('action_disable_filtered_models', 'Disable matching')}
+                                {aiText('action_disable_filtered_models', 'Disable matching')} ({filteredDisableModelIds.length})
                               </button>
                             </span>
                           )}</div>
-                        </div>
-                      </details>
-                      ) : null}
                     </div>
+                    <p className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{t('admin.model_capabilities.scope')}</p>
 
                     {modelVisibilityRows.length ? (
                         <div data-ui="model-visibility-directory" className="flex min-h-0 flex-1 flex-col border-t border-slate-200 dark:border-slate-800">
@@ -2277,6 +2149,13 @@ function AiResourcesContent() {
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {modelVisibilityPageRows.map((row) => {
                                 const displayModelId = row.catalog?.upstream_model_id || upstreamModelId(row.modelId, row.sourceKind === 'reference' && !row.selected ? row.reference?.provider_id || '' : modelNamespacePrefix);
+                                const overrideKey = imageCapabilityOverrideKey(providerConnectionForm.modelMetadataOverrides, displayModelId, modelNamespacePrefix);
+                                const modelOverride = providerConnectionForm.modelMetadataOverrides[overrideKey];
+                                const savedOverrides = modelMetadataOverrides(activeProviderConnection?.config?.model_metadata_overrides);
+                                const savedOverride = savedOverrides[imageCapabilityOverrideKey(savedOverrides, displayModelId, modelNamespacePrefix)];
+                                const capabilityDraftDirty = modelOverride?.feature !== savedOverride?.feature
+                                  || JSON.stringify(modelOverride?.image_capabilities) !== JSON.stringify(savedOverride?.image_capabilities);
+                                const imageChoices = imageCapabilities(modelOverride, row.catalog?.image_capability_declarations, row.feature);
                                 const rowUsages = modelUsages.filter((usage) => [...modelIdentityKeys(usage.model_id, modelNamespacePrefix)].some((key) => modelIdentityKeys(row.modelId, modelNamespacePrefix).has(key)));
                                 const visibleUsageNames = [...new Set(rowUsages.filter((usage) => usageLabelKeys[usage.profile_id]).map((usage) => usageName(usage.profile_id)))];
                                 const tags = row.reference ? modelReferenceCapabilityTags(row.reference) : [];
@@ -2294,7 +2173,7 @@ function AiResourcesContent() {
                                   )
                                   : '';
                                 return (
-                                  <tr key={row.modelId} className="group">
+                                  <tr key={row.modelId} className="group align-top">
                                     <td className="px-3 py-2">
                                       <div className="flex flex-col gap-1">
                                         {row.sourceKind === 'reference' && !row.selected ? <span className="text-xs text-slate-500 dark:text-slate-400">{aiText('model_reference_readonly', 'Read only')}</span> : <button
@@ -2357,27 +2236,36 @@ function AiResourcesContent() {
                                       ) : null}
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {row.feature ? modelFeatureLabel(row.feature) : (
-                                        <span className="text-slate-400" title={aiText('model_feature_unknown', 'Unknown')}>—</span>
-                                      )}
-
+                                      {row.feature === 'image_generation'
+                                        ? (Object.entries(imageChoices).filter(([, enabled]) => enabled).map(([capability]) => t(`admin.model_capabilities.${capability}`)).join(' · ') || t('admin.model_capabilities.none'))
+                                        : ['text', 'vision', 'embedding'].includes(row.feature) ? t(`admin.model_capabilities.${row.feature}`) : row.feature ? modelFeatureLabel(row.feature) : '—'}
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                                      <details data-ui="model-reference-details">
+                                        <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
+                                          {['openai_compatible', 'openai', 'openai-compatible', 'text_provider', 'image_generation_provider'].includes(providerConnectionForm.kind) && (row.catalog || row.selected) ? t('admin.model_capabilities.details_edit') : aiText('model_details', 'Details')}
+                                        </summary>
+                                        <div className="mt-2 grid gap-3">
+                                          {['openai_compatible', 'openai', 'openai-compatible', 'text_provider', 'image_generation_provider'].includes(providerConnectionForm.kind) && (row.catalog || row.selected) ? <ModelCapabilityFields
+                                            modelId={displayModelId} feature={row.feature} capabilities={imageChoices}
+                                            disabled={isSavingConnection || directoryStale}
+                                            onFeatureChange={(feature) => dispatchProviderWorkbench({ type: 'patch_form', patch: {
+                                              modelMetadataOverrides: updateModelFeature(providerConnectionForm.modelMetadataOverrides, displayModelId, overrideKey, feature),
+                                            } })}
+                                            onImageChange={(capabilities) => dispatchProviderWorkbench({ type: 'patch_form', patch: {
+                                              modelMetadataOverrides: updateImageCapabilities(providerConnectionForm.modelMetadataOverrides, displayModelId, overrideKey, capabilities),
+                                            } })}
+                                          /> : null}
                                       {activeProviderConnection?.enabled && activeProviderConnection.configured && row.selected && row.catalog && ['text', 'vision'].includes(row.feature || '') && (activeProviderConnection.model_ids || []).some(id => [...modelIdentityKeys(id, modelNamespacePrefix)].some(key => modelIdentityKeys(row.modelId, modelNamespacePrefix).has(key))) ? <button
-                                        type="button" className="mb-2 block text-xs font-semibold text-blue-700 underline dark:text-blue-300"
+                                        type="button" disabled={capabilityDraftDirty || directoryStale} className="mb-2 block text-xs font-semibold text-blue-700 underline disabled:opacity-50 dark:text-blue-300"
                                         aria-label={t('admin.model_test.named', { name: displayModelId })}
                                         onClick={() => setModelTestTarget({ connectionId: activeProviderConnection.connection_id, supplierName: activeProviderConnection.display_name, modelId: row.catalog!.model_id, displayModelId, namespacePrefix: modelNamespacePrefix, capability: row.feature === 'vision' || row.catalog?.capability_tags?.includes('vision') ? 'vision' : 'text' })}
                                       >{t('admin.model_test.title')}</button> : null}
-                                      <details data-ui="model-reference-details">
-                                          <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
-                                            {aiText('model_details', 'Details')}
-                                          </summary>
                                           <div className="mt-2 grid gap-1 border-l border-slate-200 pl-3 text-[11px] leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
                                             {row.reference ? <p>{row.reference.source_label} · {aiText('reference_updated', 'Updated')}: {formatDate(row.reference.synced_at)}</p> : null}
                                             {!row.reference ? <p>{aiText('reference_missing_note', 'Reference data is unavailable; enabling and calling this model is unaffected.')}</p> : null}
                                             <div className="break-all">{aiText('model_internal_id', 'Internal ID')}: {row.catalog?.model_id || row.modelId}</div>
                                             {rowUsages.length ? <div className="break-all">{rowUsages.map((usage) => usage.profile_id).join(', ')}</div> : null}
-                                            {row.catalog ? <div>{aiText('model_catalog_declaration', 'Capabilities declared by the account catalog; verification is separate.')}</div> : null}
                                             <button type="button" className="w-fit font-semibold underline" onClick={() => { void navigator.clipboard.writeText(displayModelId).then(() => toast.success(t('common.copied'))).catch(() => toast.error(t('admin.troubleshooting.copy_failed'))); }}>{aiText('copy_request_model_id', 'Copy request model ID')}</button>
                                             {tagLabels.length ? <div>{tagLabels.join(' · ')}</div> : null}
                                             <div>
@@ -2389,7 +2277,8 @@ function AiResourcesContent() {
                                               <span>{referencePrice || aiText('model_reference_missing_price', 'No reference price')}{row.reference && hasReferencePrice(row.reference) ? ` · ${aiText('reference_price_unit', 'USD / 1M tokens (input / output)')}` : ''}</span>
                                             </div>
                                           </div>
-                                        </details>
+                                        </div>
+                                      </details>
                                     </td>
                                   </tr>
                                 );

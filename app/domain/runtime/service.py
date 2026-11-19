@@ -6115,9 +6115,20 @@ class RuntimeService:
     def _is_image_generation_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in IMAGE_GENERATION_ABILITIES
 
+    @staticmethod
+    def _is_wordpress_ai_image_editing_request(request: RuntimeRequest) -> bool:
+        return (
+            request.ability_name in CONNECTOR_RUNTIME_ABILITIES
+            and request.execution_kind == "image_generation"
+            and request.profile_id == "wp-ai.image-editing"
+        )
+
     def _validate_image_generation_artifact_storage(self, request: RuntimeRequest) -> None:
         if (
-            self._is_image_generation_request(request)
+            (
+                self._is_image_generation_request(request)
+                or self._is_wordpress_ai_image_editing_request(request)
+            )
             and str(request.storage_mode or RUNTIME_STORAGE_MODE_RESULT_ONLY).strip()
             == RUNTIME_STORAGE_MODE_NO_STORE
         ):
@@ -6169,7 +6180,14 @@ class RuntimeService:
         return str(run.ability_name or "") in IMAGE_SOURCE_ABILITIES
 
     def _is_image_generation_run(self, run: RunRecord) -> bool:
-        return str(run.ability_name or "") in IMAGE_GENERATION_ABILITIES
+        return (
+            str(run.ability_name or "") in IMAGE_GENERATION_ABILITIES
+            or (
+                str(run.ability_name or "") in CONNECTOR_RUNTIME_ABILITIES
+                and str(run.execution_kind or "") == "image_generation"
+                and str(run.profile_id or "") == "wp-ai.image-editing"
+            )
+        )
 
     def _is_audio_generation_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in AUDIO_GENERATION_ABILITIES

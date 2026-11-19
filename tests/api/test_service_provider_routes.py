@@ -622,6 +622,7 @@ def test_admin_provider_connection_catalog_preview_fetches_models_without_persis
         "verified": False,
         "upstream_model_id": "",
         "capability_tags": [],
+        "image_capability_declarations": {},
     }
     assert data["models"][1]["runtime_supported"] is False
     assert data["credential_value_exposure"] == "none"
@@ -2425,3 +2426,90 @@ def _mock_account_catalog(monkeypatch: pytest.MonkeyPatch, model_ids: list[str])
     monkeypatch.setattr(
         "app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog", fetch_catalog
     )
+
+
+def test_image_capability_config_survives_refresh_and_removes_disabled_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.adapters.providers.openai import OpenAIProviderAdapter
+    from app.core.models import CatalogCapabilityEvidence, CatalogInstance
+
+    database_url, client = _build_client(tmp_path)
+    model_id = 'gpt-image-2.5-flare'
+    partial = False
+
+    def fetch(adapter: OpenAIProviderAdapter) -> ProviderCatalogSnapshot:
+        ids = ['gpt-5.5'] if partial else [model_id, 'gpt-5.5']
+        return ProviderCatalogSnapshot(
+            provider_id=adapter.provider_id, display_name='Gateway', adapter_type='openai',
+            models=[adapter._build_catalog_model_seed({
+                'id': item, 'supported_endpoints': ['/v1/images/generations'],
+            }) for item in ids],
+        )
+
+    monkeypatch.setattr(OpenAIProviderAdapter, 'fetch_catalog', fetch)
+    payload = {
+        'connection_id': 'image_gateway', 'provider_id': 'openai',
+        'provider_type': 'openai_compatible', 'kind': 'openai_compatible',
+        'display_name': 'Images', 'enabled': True, 'base_url': 'https://images.example.test/v1',
+        'capability_ids': ['image_generation'],
+        'config': {'model_ids': [model_id]}, 'credential': 'test-only-key',
+    }
+    created = client.post('/internal/service/admin/provider-connections', json=payload,
+                          headers=build_internal_headers(idempotency_key='image-create'))
+    assert created.status_code == 200, created.text
+    overrides = {model_id: {
+        'image_capabilities': {'image_generation': False, 'image_editing': True},
+        'source': 'operator_admin', 'revision': 'image-capabilities-v1',
+    }}
+    payload['config'] = {'model_ids': [model_id], 'model_metadata_overrides': overrides}
+    payload.pop('credential')
+    saved = client.patch('/internal/service/admin/provider-connections/image_gateway', json=payload,
+                         headers=build_internal_headers(idempotency_key='image-update'))
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['data']['config']['model_metadata_overrides'] == overrides
+    # A partial upstream list must use the same declarations as the normal list.
+    for index, missing in enumerate((False, True, False)):
+        partial = missing
+        refreshed = client.post('/internal/service/admin/provider-connections/image_gateway/test',
+                                headers=build_internal_headers(idempotency_key=f'image-sync-{index}'))
+        assert refreshed.status_code == 200, refreshed.text
+        with get_session(database_url) as session:
+            row = session.get(ProviderConnection, 'image_gateway')
+            assert row.config_json['model_metadata_overrides'] == overrides
+            instances = list(session.scalars(select(CatalogInstance).where(
+                CatalogInstance.model_id == model_id,
+            )))
+            assert [item.endpoint_variant for item in instances] == ['image_edits']
+            assert list(session.scalars(select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id.in_([item.instance_id for item in instances]),
+            ))) == []
+
+
+@pytest.mark.parametrize('declaration', [
+    {'image_capabilities': {'image_editing': 'maybe'}, 'source': 'operator', 'revision': 'v1'},
+    {'image_capabilities': {'image_editing': True}},
+    {'image_capabilities': ['image_editing'], 'source': 'operator', 'revision': 'v1'},
+])
+def test_image_capability_api_rejects_invalid_declaration_before_catalog_fetch(
+    tmp_path: Path, declaration: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = _build_client(tmp_path)
+
+    def forbidden_fetch(*args: Any, **kwargs: Any) -> None:
+        pytest.fail('invalid declarations must fail before any upstream catalog request')
+
+    monkeypatch.setattr('app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog',
+                        forbidden_fetch)
+    response = client.post('/internal/service/admin/provider-connections',
+                           headers=build_internal_headers(idempotency_key='invalid-image-choice'),
+                           json={
+                               'connection_id': 'image_gateway', 'provider_id': 'openai',
+                               'provider_type': 'openai_compatible', 'kind': 'openai_compatible',
+                               'display_name': 'Images', 'enabled': True,
+                               'base_url': 'https://images.example.test/v1',
+                               'config': {'model_metadata_overrides': {'model': declaration}},
+                               'credential': 'test-only-key',
+                           })
+    assert response.status_code == 400, response.text
+    assert response.json()['error_code'] == 'provider_connection.image_capabilities_invalid'

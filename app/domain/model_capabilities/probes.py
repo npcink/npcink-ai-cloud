@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from app.adapters.providers.base import (
     ProviderAdapter,
@@ -14,6 +15,7 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
+from app.adapters.providers.openai import normalize_provider_image_output_hosts
 from app.core.db import get_session
 from app.domain.audio_generation.artifacts import (
     AUDIO_ARTIFACT_DEFAULT_MAX_BYTES,
@@ -24,6 +26,7 @@ from app.domain.audio_generation.artifacts import (
 from app.domain.image_generation.materialization import clean_provider_image
 from app.domain.image_generation.provider_fetch import (
     PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+    ProviderImageFetchError,
     fetch_provider_image_url,
 )
 from app.domain.model_capabilities.contracts import (
@@ -51,6 +54,7 @@ class CapabilityProbeResult:
     state: CapabilityEvidenceState
     error_code: str | None = None
     detail: str = ""
+    detected_image_host: str = ""
 
 
 def _execute_probe(
@@ -293,7 +297,16 @@ def probe_image_generation(
         trace_id=trace_id,
         input_payload={
             "prompt": "A simple solid blue square.",
-            "params": {"size": "256x256", "n": 1, "response_format": "b64_json"},
+            "params": (
+                {"n": 1}
+                if endpoint_variant != "image_edits"
+                else {
+                    "n": 1,
+                    "image_bytes": _PROBE_IMAGE,
+                    "image_mime_type": "image/png",
+                    "image_filename": "capability-probe.png",
+                }
+            ),
         },
         policy={"capability_probe": True, "paid_probe_confirmation": True},
         timeout_ms=timeout_ms,
@@ -356,11 +369,33 @@ def probe_image_generation(
                 fetched.close()
         else:
             raise ValueError("image candidate has no transient source")
-    except Exception as error:
+    except ProviderImageFetchError as error:
+        if (
+            endpoint_variant != "image_edits"
+            and error.reason_code == "host_not_allowlisted"
+            and candidate.source_url
+        ):
+            try:
+                host = normalize_provider_image_output_hosts(
+                    [urlsplit(candidate.source_url).hostname or ""]
+                )[0]
+            except (ValueError, IndexError):
+                host = ""
+            if host and len(host) <= 253:
+                return CapabilityProbeResult(
+                    state="verification_failed",
+                    error_code="runtime_profiles.image_host_approval_required",
+                    detected_image_host=host,
+                )
         return CapabilityProbeResult(
             state="verification_failed",
             error_code="capability_probe.image_invalid",
-            detail=str(error)[:500],
+            detail=error.reason_code,
+        )
+    except Exception:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.image_invalid",
         )
     return CapabilityProbeResult(state="verified")
 

@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${1:-}" = "--production-image-scan" ]; then
+	shift
+	# Only recognized feature, test, and documentation paths may defer the
+	# production API scan. New build/release inputs default to the strict lane.
+	if [ "$#" -eq 0 ]; then
+		printf '%s\n' true
+		exit 0
+	fi
+	for changed_file in "$@"; do
+		case "${changed_file}" in
+			Dockerfile*|*/Dockerfile*|*.dockerignore|*/docker-compose*|*/compose*.y*ml|*/pyproject.toml|*/uv.lock|*/requirements*.txt|*/package.json|*/pnpm-lock.yaml|*/pnpm-workspace.yaml|*/package-lock.json|*/yarn.lock|*/.npmrc|*/.pnpmfile.*)
+				;;
+			app/*|migrations/*|tests/*|frontend/src/*|frontend/public/*|frontend/tests/*|site/terms/*|docs/*.md|deploy/*.md|.github/*.md|README.md|AGENTS.md|CONTRIBUTING.md|SECURITY.md)
+				continue
+				;;
+		esac
+		printf '%s\n' true
+		exit 0
+	done
+	printf '%s\n' false
+	exit 0
+fi
+
 if [ "$#" -eq 0 ]; then
 	printf '%s\n' \
 		'deploy_required=true' \

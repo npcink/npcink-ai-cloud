@@ -494,6 +494,7 @@ jobs:
     outputs:
       deploy_required: ${{ steps.changed.outputs.deploy_required }}
       authoritative_cve_required: ${{ steps.changed.outputs.authoritative_cve_required }}
+      production_image_scan_required: ${{ steps.changed.outputs.production_image_scan_required }}
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
@@ -516,21 +517,26 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          # Include both sides of renames and surface failed diffs before classifying.
           if [ "${EVENT_NAME}" = "pull_request" ]; then
-            mapfile -t changed_files < <(
-              git diff --name-only --diff-filter=ACMRD "${BASE_SHA}...${HEAD_SHA}"
-            )
+            changed_paths="$(git diff --no-renames --name-only --diff-filter=ACMRD "${BASE_SHA}...${HEAD_SHA}")"
           elif [ -n "${BEFORE_SHA}" ] && [[ ! "${BEFORE_SHA}" =~ ^0+$ ]]; then
-            mapfile -t changed_files < <(
-              git diff --name-only --diff-filter=ACMRD "${BEFORE_SHA}...${HEAD_SHA}"
-            )
+            changed_paths="$(git diff --no-renames --name-only --diff-filter=ACMRD "${BEFORE_SHA}...${HEAD_SHA}")"
           else
-            mapfile -t changed_files < <(
-              git show --pretty='' --name-only --diff-filter=ACMRD "${HEAD_SHA}"
-            )
+            changed_paths="$(git show --no-renames --pretty='' --name-only --diff-filter=ACMRD "${HEAD_SHA}")"
+          fi
+          changed_files=()
+          if [ -n "${changed_paths}" ]; then
+            mapfile -t changed_files <<< "${changed_paths}"
           fi
 
           bash scripts/classify-ci-changes.sh "${changed_files[@]}" \
+            | tee -a "${GITHUB_OUTPUT}"
+
+          production_image_scan_required="$(
+            bash scripts/classify-ci-changes.sh --production-image-scan "${changed_files[@]}"
+          )"
+          echo "production_image_scan_required=${production_image_scan_required}" \
             | tee -a "${GITHUB_OUTPUT}"
 
           specialized_quality_required="$(
@@ -633,7 +639,7 @@ jobs:
   production-python-image-smoke:
     name: Python 3.14 Alpine production image smoke
     needs: [classify, backend-scope]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    if: github.event_name == 'pull_request' && needs.classify.outputs.static_terms_only != 'true' && (needs['backend-scope'].outputs.requires_full_backend == '1' || needs.classify.outputs.production_image_scan_required != 'false')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -651,7 +657,16 @@ jobs:
         run: python -m pip install uv==0.12.10
 
       - name: Build and verify Python 3.14 Alpine production images
-        run: bash scripts/production-python-extras-smoke.sh
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PRODUCTION_IMAGE_SCAN_REQUIRED: ${{ needs.classify.outputs.production_image_scan_required }}
+        run: |
+          set -euo pipefail
+          if [ "${PR_BASE_REF}" = "master" ] && [ "${PRODUCTION_IMAGE_SCAN_REQUIRED}" = "false" ]; then
+            bash scripts/production-python-extras-smoke.sh --build-only
+          else
+            bash scripts/production-python-extras-smoke.sh
+          fi
 
   backend-targeted:
     needs: [classify, backend-scope]
@@ -969,6 +984,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
           AUTHORITATIVE_CVE_REQUIRED: ${{ needs.classify.outputs.authoritative_cve_required }}
+          PRODUCTION_IMAGE_SCAN_REQUIRED: ${{ needs.classify.outputs.production_image_scan_required }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
           DOC_REACHABILITY_RESULT: ${{ needs['doc-reachability'].result }}
@@ -1061,7 +1077,7 @@ jobs:
               exit 1
           fi
 
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${REQUIRES_FULL_BACKEND}" = "1" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && { [ "${REQUIRES_FULL_BACKEND}" = "1" ] || [ "${PRODUCTION_IMAGE_SCAN_REQUIRED}" != "false" ]; }; then
             if [ "${PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT}" != "success" ]; then
               echo "Python 3.14 Alpine production image smoke did not pass" >&2
               exit 1

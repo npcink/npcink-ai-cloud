@@ -39,6 +39,14 @@ type CapabilityEvidence = {
   error_code: string;
 };
 
+type ImageHostRepair = {
+  instance_id: string;
+  connection_id: string;
+  probe_id: string;
+  detected_host: string;
+  status: 'pending' | 'approved';
+};
+
 type RuntimeInstance = {
   instance_id: string;
   provider_id: string;
@@ -57,6 +65,7 @@ type RuntimeInstance = {
   upstream_status: string;
   vision_evidence: CapabilityEvidence | null;
   capability_evidence: Record<string, CapabilityEvidence>;
+  image_host_repair: ImageHostRepair | null;
 };
 
 type RuntimeProfile = {
@@ -134,6 +143,7 @@ type CapabilityProbeSummary = {
 
 type CapabilityProbeEvidence = CapabilityEvidence & {
   capability: string;
+  image_host_repair: ImageHostRepair | null;
 };
 
 type MediaRecognitionPolicyForm = {
@@ -165,6 +175,15 @@ const DEFAULT_MEDIA_RECOGNITION_POLICY: MediaRecognitionPolicyForm = {
   daily_limit: '100',
 };
 
+function normalizeImageHostRepair(value: unknown): ImageHostRepair | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const item = value as Partial<ImageHostRepair>;
+  if ((item.status !== 'pending' && item.status !== 'approved')
+    || !item.instance_id || !item.connection_id || !item.probe_id || !item.detected_host
+    || [item.instance_id, item.connection_id, item.probe_id, item.detected_host].some((part) => typeof part !== 'string')) return null;
+  return { instance_id: item.instance_id, connection_id: item.connection_id, probe_id: item.probe_id, detected_host: item.detected_host, status: item.status };
+}
+
 function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Hosted runtime instance must be an object.');
@@ -192,6 +211,7 @@ function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
     upstream_model_id: String(item.upstream_model_id || item.model_id || ''),
     catalog_source: String(item.catalog_source || ''),
     upstream_status: String(item.upstream_status || 'current'),
+    image_host_repair: normalizeImageHostRepair(item.image_host_repair),
     vision_evidence: item.vision_evidence && typeof item.vision_evidence === 'object'
       ? {
         state: String((item.vision_evidence as Record<string, unknown>).state || ''),
@@ -505,6 +525,7 @@ function profileLabelKey(profile: RuntimeProfile): string {
     'wp-ai.classification': 'profile_classification',
     'vision.ai': 'profile_vision_understanding',
     'wp-ai.image-generation': 'profile_image_generation',
+    'wp-ai.image-editing': 'profile_image_editing',
     'wp-ai.audio-generation': 'profile_audio_generation',
   };
   return keys[profile.profile_id] || '';
@@ -541,6 +562,7 @@ function normalizeCapabilityProbeEvidence(value: unknown): CapabilityProbeEviden
     revision: String(item.revision || ''),
     checked_at: String(item.checked_at || ''),
     error_code: String(item.error_code || ''),
+    image_host_repair: normalizeImageHostRepair(item.image_host_repair),
   };
 }
 
@@ -844,7 +866,11 @@ export default function RuntimeProfilesPage() {
       .map((instanceId) => instancesById.get(instanceId))
       .filter((instance): instance is RuntimeInstance => Boolean(instance));
     const merged = [...selected, ...available.filter((item) => !selectedIds.includes(item.instance_id))];
-    return merged;
+    return merged.filter((instance) => {
+      if (editingProfile.profile_id === 'wp-ai.image-editing') return instance.endpoint_variant === 'image_edits';
+      if (editingProfile.profile_id === 'wp-ai.image-generation') return instance.endpoint_variant !== 'image_edits';
+      return true;
+    });
   }, [data, editingProfile, instancesById]);
   const candidates = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
@@ -925,6 +951,8 @@ export default function RuntimeProfilesPage() {
         ? {
           ...instance,
           vision_evidence: evidence.capability === 'vision' ? evidence : instance.vision_evidence,
+          image_host_repair: evidence.capability === 'image_generation'
+            ? evidence.image_host_repair : instance.image_host_repair,
           capability_evidence: {
             ...instance.capability_evidence,
             [evidence.capability]: evidence,
@@ -1092,8 +1120,42 @@ export default function RuntimeProfilesPage() {
       if (failedEvidence?.capability) {
         applyCapabilityEvidence(instance.instance_id, failedEvidence);
       }
-      setProbeError(probeFailureMessage(cause, instance));
+      if (failedEvidence?.error_code !== 'runtime_profiles.image_host_approval_required'
+        || failedEvidence.image_host_repair?.status !== 'pending') {
+        setProbeError(probeFailureMessage(cause, instance));
+      }
       await loadProbeSummary();
+    } finally {
+      operationRef.current = false;
+      setProbingInstanceId('');
+    }
+  }
+
+  async function approveImageHost(instance: RuntimeInstance) {
+    const repair = instance.image_host_repair;
+    if (!repair || repair.status !== 'pending' || repair.instance_id !== instance.instance_id || operationRef.current) return;
+    operationRef.current = true;
+    setProbingInstanceId(instance.instance_id);
+    setProbeError('');
+    try {
+      await runtimeProfilesClient.request(`/api/admin/provider-connections/${encodeURIComponent(repair.connection_id)}/approve-image-host`, {
+        method: 'POST',
+        body: { evidence_probe_id: repair.probe_id },
+      });
+      const evidence = capabilityEvidence(instance, 'image_generation');
+      applyCapabilityEvidence(instance.instance_id, {
+        source: evidence?.source ?? '', revision: evidence?.revision ?? '', checked_at: evidence?.checked_at ?? '',
+        state: 'unverified', error_code: '', capability: 'image_generation', image_host_repair: { ...repair, status: 'approved' },
+      });
+    } catch (cause) {
+      try {
+        const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles');
+        applyData(normalizeRuntimeProfilesData(response.data));
+      } catch {
+        setProbeError(copy('image_host_approval_failed', 'Could not confirm the approval. Reload the runtime configuration before retrying.'));
+        return;
+      }
+      setProbeError(resolveUiErrorMessage(cause, copy('image_host_approval_failed', 'Could not confirm the approval. Reload the runtime configuration before retrying.')));
     } finally {
       operationRef.current = false;
       setProbingInstanceId('');
@@ -1123,6 +1185,7 @@ export default function RuntimeProfilesPage() {
       editorial_notes: copy('task_editorial_notes', 'Suggest editorial improvements'),
       alt_text_suggest: copy('task_alt_text_suggest', 'Suggest image alternative text'),
       image_generation: copy('task_image_generation', 'Generate an image'),
+      image_editing: copy('task_image_editing', 'Edit an image with a reference'),
       article_narration: copy('task_article_narration', 'Generate article narration audio'),
       article_audio_summary: copy('task_article_audio_summary', 'Generate article summary audio'),
     };
@@ -1566,13 +1629,10 @@ export default function RuntimeProfilesPage() {
               </AdminConfigurationTable>
             ) : null}
             <div className={profileAdvancedOpen ? 'hidden' : 'contents'}>
-            <details data-ui="runtime-profile-tasks" className="shrink-0 text-xs text-slate-500">
-              <summary className="cursor-pointer">{copy('task_list', 'Applicable tasks')} · {editingProfile.tasks.length}</summary>
-              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-700 dark:text-slate-300">
-                {editingProfile.tasks.map(task => <li key={task} data-task-id={task} className="break-words">{taskLabel(task)}</li>)}
-              </ul>
-              <p className="mt-2">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p>
-            </details>
+            <div data-ui="runtime-profile-tasks" className="shrink-0 text-xs text-slate-500">
+              <p className="font-medium">{copy('task_list', 'Applicable tasks')}: {editingProfile.tasks.map(taskLabel).join(' · ') || '—'}</p>
+              <p className="mt-1">{copy('column_updated', 'Updated')}: {formatDate(editingProfile.updated_at) || '—'}</p>
+            </div>
             <div className="shrink-0 max-h-[45vh] overflow-y-auto">
               <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
@@ -1656,8 +1716,8 @@ export default function RuntimeProfilesPage() {
                   <table className="w-full min-w-[760px] table-auto text-left text-sm">
                     <colgroup>
                       <col className="w-[18%]" />
-                      <col className="w-[36%]" />
-                      <col className="w-[14%]" />
+                      <col className={editingProfile.profile_id === 'wp-ai.image-generation' ? 'w-[32%]' : 'w-[36%]'} />
+                      <col className={editingProfile.profile_id === 'wp-ai.image-generation' ? 'w-[18%]' : 'w-[14%]'} />
                       <col className="w-[10%]" />
                       <col className="w-[10%]" />
                       <col className="w-[12%]" />
@@ -1677,10 +1737,11 @@ export default function RuntimeProfilesPage() {
                         const primary = editingProfile.candidate_instance_ids[0] === instance.instance_id;
                         const fallback = editingProfile.candidate_instance_ids[1] === instance.instance_id;
                         const evidence = capabilityEvidence(instance, editingProfile.execution_kind);
+                        const imageRepair = instance.image_host_repair?.instance_id === instance.instance_id ? instance.image_host_repair : null;
                         const verificationFailed = requiresCapabilityVerification(editingProfile.execution_kind)
                           && evidence?.state !== 'verified'
                           && Boolean(evidence?.error_code);
-                        const tone = verificationFailed ? 'error' : instanceTone(instance, editingProfile.execution_kind);
+                        const tone = imageRepair ? 'warning' : verificationFailed ? 'error' : instanceTone(instance, editingProfile.execution_kind);
                         return (
                           <tr key={instance.instance_id} data-instance-id={instance.instance_id} className="bg-white dark:bg-slate-950">
                             <td className="px-3 py-2 align-middle">
@@ -1703,7 +1764,11 @@ export default function RuntimeProfilesPage() {
                             </th>
                             <td className="px-3 py-2 align-middle">
                               <BackofficeStatusBadge
-                                label={verificationFailed
+                                label={imageRepair?.status === 'pending'
+                                  ? copy('image_host_pending', 'Host approval required')
+                                  : imageRepair?.status === 'approved'
+                                    ? copy('image_host_retest', 'Host approved · Verify again')
+                                    : verificationFailed
                                   ? copy('candidate_status_failed', 'Verification failed')
                                   : tone === 'success'
                                     ? requiresCapabilityVerification(editingProfile.execution_kind) ? copy('candidate_status_verified', 'Capability verified') : instance.upstream_status === 'missing_from_latest_catalog' ? copy('catalog_unconfirmed', 'Catalog unconfirmed') : copy('candidate_status_configured', 'Configured')
@@ -1720,6 +1785,7 @@ export default function RuntimeProfilesPage() {
                                   ? 'warning'
                                   : tone}
                               />
+                              {imageRepair ? <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{imageRepair.detected_host}</p> : null}
                             </td>
                             <td className="min-w-24 whitespace-nowrap px-3 py-2 text-center align-middle">
                               <input
@@ -1742,15 +1808,19 @@ export default function RuntimeProfilesPage() {
                               />
                             </td>
                             <td className="px-3 py-2 text-center align-middle">
-                              {requiresCapabilityVerification(editingProfile.execution_kind)
-                                && capabilityEvidence(instance, editingProfile.execution_kind)?.state !== 'verified' ? (
+                              {imageRepair?.status === 'pending' ? (
+                                <button type="button" className="btn btn-secondary btn-sm whitespace-nowrap" disabled={Boolean(probingInstanceId)} onClick={() => void approveImageHost(instance)}>
+                                  {copy('image_host_approve', 'Approve this exact host')}
+                                </button>
+                              ) : requiresCapabilityVerification(editingProfile.execution_kind)
+                                && (imageRepair || capabilityEvidence(instance, editingProfile.execution_kind)?.state !== 'verified') ? (
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-sm min-w-16 whitespace-nowrap"
-                                  disabled={Boolean(probingInstanceId)}
+                                  disabled={Boolean(probingInstanceId) || (editingProfile.profile_id === 'wp-ai.image-generation' && !primary && !fallback)}
                                   onClick={() => void verifyInstance(instance, editingProfile.execution_kind, editingProfile.timeout_ms)}
                                 >
-                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy(`verify_${editingProfile.execution_kind}`, 'Verify capability')}
+                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy(`verify_${editingProfile.profile_id === 'wp-ai.image-editing' ? 'image_editing' : editingProfile.execution_kind}`, 'Verify capability')}
                                 </button>
                               ) : capabilityEvidence(instance, editingProfile.execution_kind)?.state === 'verified' ? (
                                 <span className="whitespace-nowrap text-xs text-emerald-600">{copy('verified', '已验证')}</span>

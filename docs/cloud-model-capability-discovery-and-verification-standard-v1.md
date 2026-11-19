@@ -129,6 +129,59 @@ Admin projections may expose `catalog_source` and `upstream_status` to explain
 why a model is visible. UI copy must distinguish "seen in the last upstream
 catalog" from current route verification.
 
+### 5.2 Independent image operation declarations
+
+Image generation and editing are separate endpoint declarations on one model,
+not mutually exclusive model categories. The runtime/evidence capability stays
+`image_generation`; `image_generations` (JSON) and `image_edits` (multipart)
+remain separate route fingerprints, candidate lists and verification results.
+
+In `/admin/ai-resources`, Configure → Model management → the model's
+Details / capabilities entry owns capability corrections for every supported
+model type. The existing `feature` override permits text, vision, embedding or
+image; it uses the existing operator source/revision fields, filled by the UI.
+Image models additionally expose two independent checkboxes: generation and
+editing. Switching to a non-image type explicitly clears both image flags, so
+stale provider metadata and legacy image endpoints cannot restore image routes.
+Conflicting upstream base capability tags are removed when an operator type
+is present. Other metadata and transport identities remain preserved.
+There is no image-only row entry, persistent automatic mode, or third-party
+known-model fallback table. The row shows compact capabilities; the shared
+scope note explains once that saving does not verify support. Text/vision
+model tests remain inside the same details entry, disabled while that model's
+capability draft differs from the saved configuration. Verification still
+uses saved configuration. Frequent filters and counted enable/disable actions
+remain visible; batch edits retain confirmation and only save with the supplier.
+
+Before the operator saves a model's image choices, a non-empty
+`supported_endpoints` list from the provider supplies the initial values.
+Existing adapter inference can still suggest generation for an image model;
+model names, image input, and broad OpenAI compatibility never imply editing.
+Without explicit editing metadata the editing checkbox starts unchecked.
+
+The supplier form's existing save action captures the selected image models'
+values in `config.model_metadata_overrides[model_id].image_capabilities`:
+
+```json
+{"image_generation": true, "image_editing": false}
+```
+
+These two saved booleans take precedence over later provider metadata. Refresh
+and partial catalogs keep the choices; there is no restore-auto control.
+New flags require neither a source/revision field nor a second registry.
+Existing price/context/response-format metadata and legacy endpoint declarations
+are retained. Legacy declarations still require their existing provenance;
+new boolean choices take precedence without altering legacy instance identity.
+The existing 100-model override bound applies.
+
+Checkboxes only permit an operation as a candidate. Verification remains
+separate for generation and editing, keyed by the exact route fingerprint.
+Only the existing verification flow can grant fresh verified evidence.
+An unchecked operation is removed on catalog refresh and blocked before any
+upstream dispatch when a stale binding remains. An enabled image model missing
+from a partial catalog remains unverified with unknown health. Generation and
+editing retain their existing instance identities when toggled independently.
+
 ## 6. Capability Probes
 
 Each capability has a minimal, bounded probe contract:

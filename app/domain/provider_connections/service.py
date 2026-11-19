@@ -24,6 +24,8 @@ from app.adapters.providers.base import (
 )
 from app.adapters.providers.openai import (
     ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
+    MAX_MODEL_METADATA_OVERRIDES,
+    OpenAIProviderAdapter,
     normalize_provider_image_output_hosts,
     normalize_provider_output_hosts,
 )
@@ -522,7 +524,9 @@ class ProviderConnectionAdminService:
             existing_hosts = list(normalize_provider_image_output_hosts(existing_hosts_input))
             if approved_host not in existing_hosts:
                 existing_hosts.append(approved_host)
-            config["image_response_format"] = "url"
+            # Runtime configuration verifies the saved format, not a format changed by approval.
+            if not evidence.get("instance_id"):
+                config["image_response_format"] = "url"
             config["image_output_hosts"] = existing_hosts
             capability_ids = _effective_capability_ids(config, row.provider_type)
             config["capability_ids"] = capability_ids
@@ -973,7 +977,7 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
-        snapshot = _merge_configured_catalog_candidates(row, snapshot)
+        snapshot = _merge_configured_catalog_candidates(row, snapshot, adapter=adapter)
         models = list(snapshot.models or [])
         catalog_sync = self._store_model_provider_catalog(row, snapshot)
         if catalog_sync.get("status") != "synced":
@@ -1235,6 +1239,23 @@ class ProviderConnectionAdminService:
         # This boolean is deliberately absent from the credential-redacted public
         # config. Editing/previewing a saved local connection must retain it.
         raw_config = _dict(payload.get("config"))
+        overrides = _dict(raw_config.get("model_metadata_overrides"))
+        for model_id, override in overrides.items():
+            if not isinstance(override, dict) or "image_capabilities" not in override:
+                continue
+            choices = override["image_capabilities"]
+            if (
+                len(overrides) > MAX_MODEL_METADATA_OVERRIDES
+                or not isinstance(model_id, str) or not model_id.strip() or len(model_id) > 191
+                or not isinstance(choices, dict)
+                or set(choices) != {"image_generation", "image_editing"}
+                or any(not isinstance(enabled, bool) for enabled in choices.values())
+            ):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_capabilities_invalid",
+                    "image capabilities require bounded model ids and two boolean flags "
+                    "(maximum 100 model overrides)",
+                )
         explicit_secretless = payload.get("secretless")
         secretless = (
             bool(raw_config.get("secretless"))
@@ -1323,6 +1344,11 @@ class ProviderConnectionAdminService:
                 "approved_at",
             ),
         )
+        repair_instance_id = _string(
+            _dict(metadata.get("image_delivery_repair")).get("instance_id")
+        )
+        if image_delivery_repair and repair_instance_id:
+            image_delivery_repair["instance_id"] = repair_instance_id
         image_delivery_probe = public_image_evidence(
             metadata,
             "image_delivery_probe",
@@ -1506,6 +1532,59 @@ def _image_delivery_probe_verification_inputs(row: ProviderConnection) -> dict[s
     }
 
 
+def runtime_image_host_repair(row: ProviderConnection) -> dict[str, str] | None:
+    evidence = _dict(_dict(row.metadata_json).get("image_delivery_repair"))
+    provider_id = _string(_dict(row.config_json).get("provider_id") or row.connection_id)
+    if (
+        evidence.get("evidence_kind") != "admin_probe"
+        or evidence.get("reason_code") != "host_not_allowlisted"
+        or evidence.get("status") not in ("pending", "approved")
+        or not all(evidence.get(key) for key in ("instance_id", "probe_id", "detected_host"))
+        or evidence.get("provider_id") != provider_id
+    ):
+        return None
+    return {
+        "connection_id": row.connection_id,
+        **{
+            key: _string(evidence[key])
+            for key in ("instance_id", "status", "probe_id", "detected_host")
+        },
+    }
+
+
+def record_runtime_image_probe(
+    row: ProviderConnection,
+    *,
+    instance_id: str,
+    provider_id: str,
+    model_id: str,
+    probe_id: str,
+    detected_host: str,
+    verified: bool,
+    now: datetime,
+) -> dict[str, str] | None:
+    metadata = dict(_dict(row.metadata_json))
+    if detected_host:
+        metadata["image_delivery_repair"] = {
+            "status": "pending",
+            "reason_code": "host_not_allowlisted",
+            "evidence_kind": "admin_probe",
+            "detected_host": detected_host,
+            "probe_id": probe_id,
+            "instance_id": instance_id,
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "observed_at": now.isoformat(),
+        }
+    elif verified:
+        repair = runtime_image_host_repair(row)
+        if repair and repair["instance_id"] == instance_id:
+            metadata.pop("image_delivery_repair")
+    row.metadata_json = metadata
+    repair = runtime_image_host_repair(row)
+    return repair if repair and repair["instance_id"] == instance_id else None
+
+
 def _select_image_delivery_probe_target(
     session: Any,
     row: ProviderConnection,
@@ -1585,6 +1664,8 @@ def _configured_model_namespace(config: dict[str, Any], provider_id: str) -> str
 def _merge_configured_catalog_candidates(
     row: ProviderConnection,
     snapshot: ProviderCatalogSnapshot,
+    *,
+    adapter: object = None,
 ) -> ProviderCatalogSnapshot:
     """Keep enabled models visible when an upstream catalog response is partial."""
 
@@ -1633,6 +1714,11 @@ def _merge_configured_catalog_candidates(
             ),
             {},
         )
+        if isinstance(adapter, OpenAIProviderAdapter):
+            candidate = adapter.build_configured_catalog_candidate(selected_model_id)
+            if candidate is not None and candidate.feature == "image_generation":
+                configured_candidates.append(candidate)
+                continue
         feature = _configured_candidate_feature(selected_model_id, preview_model)
         configured_candidates.append(
             CatalogModelSeed(
@@ -1880,6 +1966,9 @@ def _catalog_preview_model(model: Any) -> dict[str, Any]:
             _dict(getattr(model, "raw_json", {})).get("upstream_model_id") or ""
         ),
         "capability_tags": capability_tags,
+        "image_capability_declarations": _dict(
+            _dict(getattr(model, "raw_json", {})).get("image_capability_declarations")
+        ),
     }
 
 
