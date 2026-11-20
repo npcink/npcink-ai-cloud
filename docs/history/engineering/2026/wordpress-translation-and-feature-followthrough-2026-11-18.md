@@ -494,7 +494,14 @@ Cloud 本地两项签名回执接口测试和两项 Portal Chromium 用例通过
 取消仍保留原列表；没有提交工单。Toolbox 本地套件和 PHPStan 通过；自动审查因
 完整输入超过审查上限，在发出模型请求前退出，#410 保持草稿，未请求自动合并。
 Toolbox 首轮 CI 的 6 处格式告警已在 `3274e33` 修正，本地 PHPCS 通过且忽略
-空白后的源码无差异。
+空白后的源码无差异；该提交的 4 项 GitHub 检查均通过。跨仓质量矩阵中 Addon、
+Toolbox 的本地完整套件通过；Cloud 用干净的 `9315edfa` 集成工作树复核精确提交的
+GitHub 源码门禁，通过。
+
+本机 [magick-ai.local 后台](https://magick-ai.local/wp-admin/admin.php?page=npcink-cloud-addon)
+可到达登录页，AI 1.5.0、Addon 0.4.4 与 Toolbox 0.6.0 已启用。后两者的插件目录
+链接当前候选工作树，可登录预览；这仅确认本机挂载和启用状态，不代表已重新走过登录后的
+完整业务流程，也不代表已发版。
 
 共享 M4 `a9763851` 为干净、健康的开发候选，包含 #1438，
 但运行状态为 `candidate`，归属 `codex/runtime-profile-followups`。此前 #1443 的 M4
