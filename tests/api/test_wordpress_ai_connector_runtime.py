@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
 from typing import Any
 
+import httpx
 import pytest
+from anyio import to_thread
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
+from sqlalchemy.pool import QueuePool
 
 from app.adapters.providers.base import (
     CatalogInstanceSeed,
@@ -23,7 +28,7 @@ from app.adapters.providers.base import (
 )
 from app.api.main import create_app
 from app.core.config import Settings
-from app.core.db import get_session, init_schema
+from app.core.db import get_engine, get_session, init_schema
 from app.core.models import (
     CatalogCapabilityEvidence,
     CatalogInstance,
@@ -851,6 +856,72 @@ def _resolve(
         )
     )
     return client.post("/v1/runtime/resolve", content=body, headers=headers)
+
+
+@pytest.mark.asyncio
+async def test_inline_provider_wait_does_not_block_runtime_resolve(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    pool = get_engine(database_url).pool
+    assert isinstance(pool, QueuePool)
+    execute = provider.execute
+    provider_started = asyncio.Event()
+    release_provider = Event()
+    loop = asyncio.get_running_loop()
+
+    def delayed_execute(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        loop.call_soon_threadsafe(provider_started.set)
+        assert release_provider.wait(5), "fake provider was not released"
+        return execute(request)
+
+    def headers_for(path: str, key: str) -> dict[str, str]:
+        return merge_json_headers(
+            build_auth_headers(
+                "POST",
+                path,
+                body=body,
+                site_id="site_alpha",
+                idempotency_key=key,
+                nonce=f"nonce-{key}",
+            )
+        )
+
+    monkeypatch.setattr(provider, "execute", delayed_execute)
+    # Saturate the shared pool deterministically without a load test or traffic burst.
+    monkeypatch.setattr(to_thread.current_default_thread_limiter(), "total_tokens", 1)
+    body = json.dumps(_payload()).encode("utf-8")
+    execute_path, resolve_path = "/v1/runtime/execute", "/v1/runtime/resolve"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=client.app),
+        base_url="http://testserver",
+    ) as api:
+        async with asyncio.TaskGroup() as group:
+            pending = group.create_task(
+                api.post(
+                    execute_path,
+                    content=body,
+                    headers=headers_for(execute_path, "fake-execute"),
+                )
+            )
+            try:
+                await asyncio.wait_for(provider_started.wait(), timeout=2)
+                assert pool.checkedout() == 0
+                resolved = await asyncio.wait_for(
+                    api.post(
+                        resolve_path,
+                        content=body,
+                        headers=headers_for(resolve_path, "fake-resolve"),
+                    ),
+                    timeout=1,
+                )
+                assert resolved.status_code == 200, resolved.text
+                assert not pending.done()
+            finally:
+                release_provider.set()
+        assert pending.result().status_code == 200, pending.result().text
+        assert pending.result().json()["data"]["status"] == "succeeded"
 
 
 def _get_result(
