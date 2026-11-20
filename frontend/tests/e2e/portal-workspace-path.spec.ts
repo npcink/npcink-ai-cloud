@@ -2423,19 +2423,41 @@ test('account-level support stays available without a selected site context', as
 });
 
 test('a same-page support prefill keeps the loaded ticket list', async ({ page }) => {
-  await installPortalMocks(page, { withoutSelectedContext: true });
+  const calls = await installPortalMocks(page, { withoutSelectedContext: true });
   await page.goto('/portal/support');
   const ticket = page.locator('[data-portal-support="tickets-table"]')
     .getByText(/Payment order status looks wrong|支付订单状态看起来不对/i);
   await expect(ticket).toBeVisible();
 
-  await page.evaluate(() => {
-    window.history.pushState(null, '', '/portal/support?new=1&topic=site&title=Support+prefill');
-  });
+  const prefillPath = '/portal/support?new=1&topic=site&site=site_clear&title=Support+prefill&description=Fixture+details&view=all#main-content';
+  const openPrefill = () => page.evaluate((path) => window.history.pushState(null, '', path), prefillPath);
+  await openPrefill();
   const dialog = page.getByRole('dialog', { name: /Submit ticket|提交工单/i });
-  await expect(dialog.getByRole('textbox', { name: /Title|标题/i })).toHaveValue('Support prefill');
+  const title = dialog.getByRole('textbox', { name: /Title|标题/i });
+  await expect(title).toHaveValue('Support prefill');
+  await title.fill('Edited in this tab');
   await dialog.getByRole('button', { name: /Cancel|取消/i }).click();
   await expect(ticket).toBeVisible();
+  await expect(page).toHaveURL(/\/portal\/support\?view=all#main-content$/);
+
+  await page.locator('[data-portal-support="submit-ticket"]').click();
+  await expect(title).toHaveValue('Edited in this tab');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  await openPrefill();
+  await expect(title).toHaveValue('Support prefill');
+  await dialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/support\?view=all#main-content$/);
+
+  await page.reload();
+  await expect(ticket).toBeVisible();
+  await expect(dialog).toBeHidden();
+
+  await page.goto(prefillPath);
+  await expect(title).toHaveValue('Support prefill');
+  await expect(dialog.getByRole('combobox', { name: /Related site|关联站点/i })).toHaveValue('site_clear');
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
 });
 
 test('closed ticket makes the reopen-on-reply behavior explicit', async ({ page }) => {
