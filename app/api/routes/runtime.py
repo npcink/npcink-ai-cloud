@@ -764,7 +764,9 @@ async def execute_runtime(
     try:
         runtime_request = _build_runtime_request(request, payload, auth)
         # Keep long Provider waits off the shared limiter used by short reads.
-        limiter: CapacityLimiter | None = getattr(request.app.state, "runtime_execute_limiter", None)
+        limiter: CapacityLimiter | None = getattr(
+            request.app.state, "runtime_execute_limiter", None
+        )
         if limiter is None:
             limiter = CapacityLimiter(RUNTIME_EXECUTE_MAX_IN_FLIGHT)
             request.app.state.runtime_execute_limiter = limiter
