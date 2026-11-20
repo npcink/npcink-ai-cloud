@@ -177,6 +177,24 @@ function PortalSupportContent() {
     return t('portal.support_request_other_site', {}, 'Another site');
   };
 
+  const clearSupportPrefill = useCallback(() => {
+    const url = new URL(window.location.href);
+    const nextParams = url.searchParams;
+    if (!readSupportPrefill(nextParams).open) return;
+    ['new', 'topic', 'site', 'title', 'description'].forEach((key) => nextParams.delete(key));
+    // Keep this tab's draft while Next updates its search params after dismissal.
+    if (draftScopeRef.current) {
+      draftScopeRef.current = { ...draftScopeRef.current, linkKey: JSON.stringify(readSupportPrefill(nextParams)) };
+    }
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  const dismissForm = () => {
+    setFormError('');
+    setShowForm(false);
+    clearSupportPrefill();
+  };
+
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
   }
@@ -215,6 +233,7 @@ function PortalSupportContent() {
       setTitle('');
       setDescription('');
       setShowForm(false);
+      clearSupportPrefill();
     } catch (err) {
       if (requestContextSiteId !== contextSiteIdRef.current) return;
       if (err instanceof ApiError && err.errorCode === 'portal.site_selection_required') {
@@ -352,10 +371,7 @@ function PortalSupportContent() {
 
       <Modal
         isOpen={showForm}
-        onClose={() => {
-          setFormError('');
-          setShowForm(false);
-        }}
+        onClose={dismissForm}
         closeLabel={t('common.close', {}, 'Close')}
         size="lg"
         title={t('portal.support_request_form_title', {}, 'Submit ticket')}
@@ -440,10 +456,7 @@ function PortalSupportContent() {
               type="button"
               className="btn btn-secondary"
               disabled={isSubmitting}
-              onClick={() => {
-                setFormError('');
-                setShowForm(false);
-              }}
+              onClick={dismissForm}
             >
               {t('common.cancel', {}, 'Cancel')}
             </button>
