@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import uuid4
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -116,6 +117,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
 router = APIRouter(prefix="/v1/runtime", tags=["runtime"])
 logger = get_logger(__name__)
 
+RUNTIME_EXECUTE_MAX_IN_FLIGHT = 40
 MAX_RUNTIME_JSON_DEPTH = 8
 MAX_RUNTIME_SCHEMA_JSON_DEPTH = 12
 MAX_RUNTIME_DICT_KEYS = 100
@@ -761,7 +763,12 @@ async def execute_runtime(
     runtime_request: RuntimeRequest | None = None
     try:
         runtime_request = _build_runtime_request(request, payload, auth)
-        result = await run_in_threadpool(service.execute, runtime_request)
+        # Keep long Provider waits off the shared limiter used by short reads.
+        limiter: CapacityLimiter | None = getattr(request.app.state, "runtime_execute_limiter", None)
+        if limiter is None:
+            limiter = CapacityLimiter(RUNTIME_EXECUTE_MAX_IN_FLIGHT)
+            request.app.state.runtime_execute_limiter = limiter
+        result = await to_thread.run_sync(service.execute, runtime_request, limiter=limiter)
     except RoutingError as error:
         return _runtime_error_response(
             status_code=400,

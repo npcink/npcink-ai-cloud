@@ -421,6 +421,14 @@ class ProviderBudgetService:
         except (TypeError, ValueError):
             input_tokens = 1024
         output_tokens = max(1, int(request.policy.get("max_output_tokens") or 1024))
+        # Keep the policy floor. Adapters differ in which output field they use,
+        # so reserve against the largest bound carried by the dispatch payload.
+        params = request.input_payload.get("params")
+        for options in (request.input_payload, params if isinstance(params, dict) else {}):
+            for key in ("max_output_tokens", "max_completion_tokens", "max_tokens"):
+                value = options.get(key)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    output_tokens = max(output_tokens, value)
         estimate = estimate_token_cost(
             NormalizedProviderUsage(
                 total_input_tokens=input_tokens,

@@ -22,6 +22,81 @@ from app.domain.runtime.provider_budget import (
 )
 
 
+@pytest.mark.parametrize(
+    "payload, policy, daily_limit, allowed",
+    [
+        ({"max_output_tokens": 2_048}, {"max_output_tokens": 128}, 0.15, False),
+        ({"params": {"max_completion_tokens": 2_048}}, {}, 0.15, False),
+        ({"max_tokens": 2_048, "params": {"max_tokens": 128}}, {}, 0.15, False),
+        ({"max_tokens": 128}, {"max_output_tokens": 2_048}, 0.15, False),
+        ({"max_output_tokens": 2_048}, {}, 0.25, True),
+        ({}, {}, 0.15, True),
+    ],
+)
+def test_provider_budget_reserves_for_requested_output_bound(
+    tmp_path: Path,
+    payload: dict[str, object],
+    policy: dict[str, object],
+    daily_limit: float,
+    allowed: bool,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'provider-output-budget.sqlite3'}"
+    init_schema(database_url)
+    run = RunRecord(run_id="run-output-budget", site_id="site-budget")
+    request = ProviderExecutionRequest(
+        run_id=run.run_id,
+        site_id=run.site_id,
+        ability_name="wordpress.title.generate",
+        profile_id="profile-budget",
+        execution_kind="text",
+        model_id="priced-model",
+        instance_id="openai-default",
+        endpoint_variant="responses",
+        trace_id="trace-output-budget",
+        input_payload=payload,
+        policy=policy,
+        timeout_ms=1000,
+        price_input=1.0,
+        price_output=100.0,
+    )
+    with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id=SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+                setting_kind="runtime",
+                enabled=True,
+                status="ready",
+                config_json={
+                    "providers": {
+                        "openai": {
+                            "account_class": "paid",
+                            "daily_usd": daily_limit,
+                            "monthly_usd": 1.0,
+                        }
+                    }
+                },
+            )
+        )
+        session.flush()
+        service = ProviderBudgetService()
+        claim_args = dict(
+            session=session, run=run, provider_id="openai", model_id=request.model_id,
+            request=request,
+        )
+        if allowed:
+            receipt = service.claim_before_dispatch(**claim_args)
+            assert receipt is not None
+            assert receipt.estimated_cost_usd == pytest.approx(
+                0.2048 if payload else 0.1024,
+                abs=0.00002,
+            )
+        else:
+            with pytest.raises(ProviderExecutionError) as error:
+                service.claim_before_dispatch(**claim_args)
+            assert error.value.error_code == "provider.budget_exceeded"
+    dispose_engine(database_url)
+
+
 def test_provider_budget_claim_is_idempotent_and_fails_closed(tmp_path: Path) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'provider-budget.sqlite3'}"
     init_schema(database_url)
