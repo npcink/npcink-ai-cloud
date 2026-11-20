@@ -920,6 +920,12 @@ test('a superseded connector contract field is rejected instead of accepting dua
 test('cancel and close discard only the dialog draft without writing', async ({ page }) => {
   const writes = await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles?profile=route.classification');
+  const selectionNavigations: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === '/admin/runtime-profiles' && request.headers().rsc === '1'
+      && url.searchParams.has('profile')) selectionNavigations.push(url.pathname + url.search);
+  });
   const configure = profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i });
   for (const close of ['cancel', 'escape']) {
     await configure.click();
@@ -932,6 +938,7 @@ test('cancel and close discard only the dialog draft without writing', async ({ 
     await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/i })).not.toBeChecked();
     await page.keyboard.press('Escape');
   }
+  expect(selectionNavigations, 'dialog selection must not enqueue server navigations').toEqual([]);
   await page.getByRole('main').getByRole('link', { name: /Model suppliers|模型供应商/i }).click();
   await expect(page).toHaveURL(/\/admin\/ai-resources$/);
 });
