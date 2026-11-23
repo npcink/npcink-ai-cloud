@@ -32,7 +32,7 @@ in this audit.
 | Closeout documentation PR | `OPEN_BLOCKED` | PR #1451 contains this audit, is pushed and clean, but remains unmerged because `backend-docs` and the aggregate `backend` check fail on the expired CVE exception. Do not bypass required checks or merge with an override. |
 | Production | `WAITING_HUMAN_AUTHORITY` | `origin/production` remains a separate protected line. No production promotion was requested or performed here. |
 | Open upstream work | `OPEN_PR` | Dependabot PRs #1450, #1354, #1353, #1352 and #1351 remain open and behind. They are not silently folded into this closeout. |
-| Local worktrees | `WAITING_OWNER_CLEANUP` | Git has 31 registered worktrees; 21 registered paths are missing. The current isolated worktree and the primary checkout have changes. Locked or owner-retained worktrees are not bulk-pruned. |
+| Local worktrees | `WAITING_OWNER_CLEANUP` | Current inventory has 32 registered worktrees, 20 missing paths and 28 locked entries; all 20 missing paths remain locked, and `git worktree prune --dry-run` is empty. The current isolated worktree and the primary checkout have changes. Locked or owner-retained worktrees are not bulk-pruned. |
 
 ## CI Failure Diagnosis
 
