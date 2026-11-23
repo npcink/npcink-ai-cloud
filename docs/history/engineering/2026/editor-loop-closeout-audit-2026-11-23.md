@@ -52,6 +52,13 @@ watch reports the registry digest is unchanged from the lock and returns
 `candidate_adopted`, but explicitly says that this is not proof that the
 finding is fixed and requires a fresh release image scan.
 
+The watcher was re-run on 2026-11-23 at `03:38:08Z`: registry digest and pinned
+digest were both
+`sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67`,
+the reported Python version remained `3.14.10`, and `fixed_image_claimed` was
+`false`. The local Docker API was unavailable, so no local rebuild or image
+scan was claimed.
+
 An attempted local removal of the entry was reverted after the focused tests
 showed that the current contracts still model the active exception and that
 the simulated high-severity finding would then be unallowlisted. The correct
