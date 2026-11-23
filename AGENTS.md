@@ -102,6 +102,12 @@ Worktrees: [single-session-worktree-lifecycle-v1.md](docs/single-session-worktre
 Lanes (development / merge / release):
 [development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md).
 
+An image security blocker is not a development freeze. Continue independent
+work from current `origin/master`, including local checks, compatible M4
+source sync, and separate PRs. Do not replace the shared preview runtime with
+the blocked image or bypass required merge and release checks. Follow the
+[M4 image-blocker rules](docs/m4-preview-ai-development-standard-v1.md#continue-development-during-an-image-security-block).
+
 ## Definition of Done
 
 [docs/engineering/definition-of-done.md](docs/engineering/definition-of-done.md)

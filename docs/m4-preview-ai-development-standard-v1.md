@@ -147,7 +147,7 @@ Risk and command choice are related but not identical:
 - a documentation-only change may alter M4 governance contracts, but it does
   not need a runtime deployment unless runtime behavior is also being tested;
 - if `sync` detects a changed build/runtime fingerprint, it MUST fail closed
-  and the agent must use `deploy`;
+  and the agent must switch to the `deploy` lane only if its gates permit it;
 - an agent MUST NOT choose `deploy` merely as a substitute for understanding
   the changed files.
 
@@ -179,6 +179,27 @@ Use the full M4 gate only when the change is high risk, M4-specific, or GitHub
 CI cannot represent the required runtime evidence. Do not run the
 approximately nine-minute full gate after every small edit, before and after
 the same PR, or merely to duplicate a green GitHub gate for the same revision.
+
+### Continue development during an image security block
+
+An expired CVE exception, blocking scan result, or pending upstream fix does
+not freeze independent development. Keep the blocked image candidate in its
+own branch and draft PR. Start unrelated work from current `origin/master`,
+not from the image candidate. Apply the existing worktree and shared M4
+ownership rules.
+
+| Scenario | Required action |
+| --- | --- |
+| Independent business code, tests, or documentation | Continue focused local checks, commits, and PR publication. Merge only after that PR passes its own required checks and review. A shared CI policy failure can still block the merge. |
+| Ordinary Cloud source preview | Use `pnpm run m4:preview:sync` from the intended clean source checkout when M4 is healthy and the runtime inputs match. Verify the running revision and the target behavior before reporting a successful preview. |
+| Sync reports dependency, image, Compose, proxy, or orchestration drift | Stop and report the exact reason. Runtime-input changes belong in the `deploy` lane with its existing ownership and validation checks. Do not override fingerprints or relabel the change as source-only. |
+| Blocked image candidate | Keep it out of the shared M4 preview runtime and do not merge or release it. Isolated builds, smoke tests, and scans may continue. Resume rollout evaluation only after the exact candidate clears the required security checks. |
+| M4 ownership or connectivity failure | Report it separately from image security. Ollama ownership preflight for source operations applies to `deploy`, not ordinary `sync`. Never take over an unknown listener or use `sync` to evade a required `deploy`. |
+
+Do not extend an expired CVE exception, add findings to the allowlist, or
+weaken a required check just to restore a green result. PR publication, merge,
+M4 candidate preview, M4 accepted, and production are separate states.
+Production still requires separate, explicit operator authorization.
 
 ## 5. Candidate Development Loop
 
