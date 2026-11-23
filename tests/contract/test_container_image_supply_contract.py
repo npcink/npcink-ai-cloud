@@ -295,7 +295,7 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
     inputs = {record["key"]: record for record in lock["production_inputs"]}
 
     assert receipt["status"] == "passed"
-    assert inputs["python_runtime"]["tag"] == "python:3.14-alpine"
+    assert inputs["python_runtime"]["tag"] == "python:3.15.2-alpine3.24"
     assert inputs["uv_builder"]["reference"].startswith("ghcr.io/astral-sh/uv:0.12.10@sha256:")
     assert "postgres_base" not in inputs
     assert not (ROOT / "Dockerfile.postgres").exists()
@@ -449,7 +449,7 @@ def test_python_lock_and_extras_smoke_use_the_same_interpreter_line() -> None:
     smoke = (ROOT / "scripts" / "production-python-extras-smoke.sh").read_text()
 
     python_tag = inputs["python_runtime"]["tag"]
-    version_match = re.fullmatch(r"python:(\d+\.\d+)-alpine", python_tag)
+    version_match = re.fullmatch(r"python:(\d+\.\d+)(?:\.\d+)?-alpine(?:\d+\.\d+)?", python_tag)
     assert version_match is not None
     assert f'PYTHON_VERSION="{version_match.group(1)}"' in smoke
     assert '--python "${PYTHON_VERSION}"' in smoke

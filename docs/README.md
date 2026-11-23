@@ -18,6 +18,7 @@ product work or override the current Phase 1 expansion freeze.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 评估 Python 3.15.2 生产镜像候选与安全收口 | [Python 3.15.2 Alpine 镜像候选 — 2026-11-23](history/engineering/2026/python-3-15-2-image-candidate-2026-11-23.md) — 精确 digest、候选改动、未完成构建/扫描与后续门禁；不代表合并、M4 accepted 或生产授权 |
 | 修复 Cloud 成功但调用方没保存回执、重启后卡住的问题 | [跨系统回执与中断恢复要求](historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers) — 接受后保存失败/进程退出、真实 DB/cache、延迟 sender、恢复后推进及证据分层；Site Knowledge 实现见[运行时契约](site-knowledge-runtime-contract-v1.md#dispatch-receipt-recovery-2026-11-16-candidate) |
 | 核对能力验证超时修复与收尾 | [11 月 19 日合并与 M4 专项验收回执](history/engineering/2026/capability-probe-timeout-acceptance-2026-11-19.md) — #1443 已合并并部署 M4 accepted；关联[集成复盘](history/engineering/2026/capability-probe-timeout-integration-2026-11-19.md)，独立导航/上游问题及精确退休边界分别记账 |
 | 排查取消草稿导航与 Grok 旧失败 | [11 月 19 日后续处理](history/engineering/2026/runtime-profile-followups-2026-11-19.md) — 导航竞态修复、请求级反例与供应商只读排查；不把目录可读当作生图恢复 |

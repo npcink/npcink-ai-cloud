@@ -29,8 +29,8 @@ def test_adopted_candidate_still_requires_fresh_scan() -> None:
     status, action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "1" * 64,
-        python_version="3.14.7",
-        governed_version="3.14.7",
+        python_version="3.15.2",
+        governed_version="3.15.2",
         today=date(2026, 8, 12),
     )
 
@@ -44,15 +44,15 @@ def test_digest_or_version_change_requires_scan_review() -> None:
     digest_status, digest_action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "2" * 64,
-        python_version="3.14.7",
-        governed_version="3.14.7",
+        python_version="3.15.2",
+        governed_version="3.15.2",
         today=date(2026, 8, 12),
     )
     version_status, version_action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "1" * 64,
-        python_version="3.14.8",
-        governed_version="3.14.7",
+        python_version="3.15.3",
+        governed_version="3.15.2",
         today=date(2026, 8, 12),
     )
 
@@ -66,13 +66,13 @@ def test_watch_follows_the_committed_version_instead_of_a_retired_constant(tmp_p
     path = tmp_path / "deploy/image-lock/production-images.json"
     path.parent.mkdir(parents=True)
     digest = "sha256:" + "1" * 64
-    record = {"key": "python_runtime", "digest": digest, "python_version": "3.14.10"}
+    record = {"key": "python_runtime", "digest": digest, "python_version": "3.15.2"}
     path.write_text(json.dumps({"production_inputs": [record]}))
     version = module._governed_version(tmp_path, digest)
     status, _ = module.evaluate_status(
         pinned_digest=digest,
         registry_digest=digest,
-        python_version="3.14.10",
+        python_version="3.15.2",
         governed_version=version,
         today=date(2026, 11, 3),
     )
