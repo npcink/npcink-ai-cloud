@@ -29,6 +29,7 @@ in this audit.
 | WordPress title evidence | `EVIDENCE_PENDING` | Historical title adoption/save/run evidence exists; ten natural uses, complete failure recovery, duplicate-click charging behavior and broad feedback coverage are not reconciled. Keep selected-text rewrite queued. |
 | M4 preview | `WAITING_EXTERNAL_EVENT` | Docker previously stopped after `no space left on device`; temporary cache cleanup reclaimed about 1.4 GiB. The latest SSH probe timed out, so current service health is not claimed. Next action requires an operator maintenance window, then Docker/data-volume/Cloud health checks. |
 | Latest `master` CI | `WAITING_SECURITY_AUTHORITY` | `origin/master` is `2ea09edb` from PR #1449. Cloud CI run `45100424826` failed backend pytest shards 1 and 3 because the Python CVE exception expired on 2026-11-22. Do not renew or remove the exception without a fresh image scan and release-security decision. |
+| Closeout documentation PR | `OPEN_BLOCKED` | PR #1451 contains this audit, is pushed and clean, but remains unmerged because `backend-docs` and the aggregate `backend` check fail on the expired CVE exception. Do not bypass required checks or merge with an override. |
 | Production | `WAITING_HUMAN_AUTHORITY` | `origin/production` remains a separate protected line. No production promotion was requested or performed here. |
 | Open upstream work | `OPEN_PR` | Dependabot PRs #1450, #1354, #1353, #1352 and #1351 remain open and behind. They are not silently folded into this closeout. |
 | Local worktrees | `WAITING_OWNER_CLEANUP` | Git has 31 registered worktrees; 21 registered paths are missing. The current isolated worktree and the primary checkout have changes. Locked or owner-retained worktrees are not bulk-pruned. |
@@ -86,11 +87,12 @@ overall effort is not `RETIRED`. The minimum remaining rows are:
 
 1. security owner resolves the expired Python CVE exception with fresh scan
    evidence or a new bounded decision;
-2. operator maintenance restores or formally abandons the M4 preview, with a
+2. the closeout documentation PR passes the repository gates and is merged;
+3. operator maintenance restores or formally abandons the M4 preview, with a
    current health receipt;
-3. a separate owner-aware worktree ledger retires only missing registrations
+4. a separate owner-aware worktree ledger retires only missing registrations
    and closed worktrees whose locks and dirty files are proven disposable;
-4. after the above, the title baseline is rechecked before selected-text
+5. after the above, the title baseline is rechecked before selected-text
    rewrite is scheduled.
 
 Until those rows have an owner, trigger and next review point, this session may
