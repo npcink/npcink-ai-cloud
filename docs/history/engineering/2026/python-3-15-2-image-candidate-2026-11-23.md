@@ -91,6 +91,17 @@ The expired `CVE-2026-119170` entry was not removed or extended. The formal
 Linux/AMD64 CI scan remains required, and no merge, promotion, or production
 deployment is authorized by this record.
 
+The GitHub Actions run `45129221281` then exercised the candidate on Linux
+amd64. Both default and `[zilliz]` image builds completed their runtime smoke
+checks, including application import, dependency manifests, PostgreSQL DBAPI,
+and SQLite removal. The job stopped at the existing fail-closed policy check:
+`CVE-2026-119170` was expired on 2026-11-22, so the formal Syft/Grype release
+scan did not run. This confirms the CI failure is policy state, not a Python
+3.15 runtime failure. The same expired exception caused the two shard-1 and
+nine shard-3 contract-test failures; the other backend shards, frontend,
+static checks, dependency audit, CodeQL, and PostgreSQL cutover regression
+passed.
+
 ## Local Evidence
 
 Passed:
@@ -107,7 +118,10 @@ Passed:
 
 Not complete:
 
-- Formal Linux/AMD64 CI image scan: not run on this unpushed branch.
+- Formal Linux/AMD64 CI image scan: the candidate reached CI amd64 image
+  smoke, but the scan was intentionally blocked before execution by the
+  expired `CVE-2026-119170` exception; it must be rerun only after the
+  governed exception/remediation decision.
 - M4 candidate deploy: blocked before source transfer by the unmanaged Ollama
   ownership guard; no running M4 containers were changed by the failed deploy.
 - Production validation and deployment: separately gated and not authorized.
