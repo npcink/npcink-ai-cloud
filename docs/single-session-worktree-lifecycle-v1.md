@@ -42,6 +42,16 @@ source identity that produced it. If source changed after the last candidate
 dispatch, dispatch and verify the coherent checkpoint again before asking the
 operator to review it.
 
+### Verify source before describing current behavior
+
+Apply the same revision check before answering questions about current code or
+documentation. Compare `HEAD` with the verified GitHub `master` revision. A
+detached checkout of `origin/master` stays pinned when the branch advances.
+Read the current revision with `git show origin/master:<path>` after verifying
+that ref, or use a current clean worktree; preserve pending changes in the
+original checkout. A source revision still does not prove what a deployed
+environment is serving.
+
 ## Task Worktree Rule
 
 Reuse the current worktree when it is clean, current, and focused on the task.

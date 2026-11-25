@@ -5,7 +5,12 @@
 ## Scope
 
 - [ ] This change is limited to the stated Cloud module.
-- [ ] Public runtime API, capability contract, provider seam, deployment lifecycle, or product boundary docs were updated if changed.
+- [ ] Docs were reviewed for changes to documented behavior, defaults,
+      configuration, supported scope, compatibility, or product boundaries,
+      including public runtime APIs, capabilities, providers, and deployment.
+      Follow section 4.2 of `docs/repository-hygiene-and-documentation-lifecycle-standard-v1.md`
+      and list the affected documents below, or explain why this does not apply.
+- Documentation impact:
 - [ ] No unrelated generated files, local environment files, screenshots, or cross-repo worktree changes are included.
 - Focused module:
 - Explicit non-goals:

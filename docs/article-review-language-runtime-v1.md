@@ -1,12 +1,13 @@
 # Article language review runtime v1
 
-For the compatible logic/risk extension candidate, see [context runtime](article-review-context-runtime-v1.md). The language-only behavior below remains the compatibility baseline.
+Status: Cloud language-only compatibility baseline; merged as #1331 (`7002bd56`)
+on 2026-10-31. See the [context runtime](article-review-context-runtime-v1.md)
+for the later compatible logic/risk extension.
 
-Historical source checkpoint, 2026-10-30. Cloud backend only; not merged or
-production-deployed. Addon facade and Toolbox editor integration now exist on separate candidates;
-this document does not certify their installation or signed live acceptance.
-The broader consumer draft in Toolbox includes future logic/content-risk checks;
-this implementation accepts **only Chinese language checks**.
+This page describes the language-only slice and preserves the 2026-10-30
+candidate evidence. Statements about deferred checks and unmerged source below
+are scoped to that checkpoint. This page does not certify Addon/Toolbox
+installation, signed live acceptance, or production deployment.
 
 ## Product behavior and ownership
 
@@ -167,10 +168,11 @@ Focused source tests: `tests/domain/test_article_review_contract.py`,
 transport with a fake provider, verified/partial/failed output, private failure
 metadata, rejection before provider invocation and no-store idempotent replay.
 M4 candidate/accepted, merged, live-model interface, frontend and production
-states must be recorded separately. The Addon facade and Toolbox read-only
-report integration are now separate candidates. Next acceptance: exact-SHA CI,
-real signed Addon transport and bounded synthetic Chinese model checks.
-Logic and contextual content-risk evaluation remain disabled and deferred.
+states must be recorded separately. At this checkpoint, the Addon facade and
+Toolbox read-only report had separate candidates. The next checks proposed then
+were exact-SHA CI, real signed Addon transport and bounded synthetic Chinese
+model checks. Logic and contextual content-risk were outside the language-only
+slice.
 
 ### Candidate checkpoint — 2026-10-30
 
@@ -182,8 +184,6 @@ Logic and contextual content-risk evaluation remain disabled and deferred.
   `codex/article-review-language`; the candidate runtime and frontend were
   healthy. Focused M4 tests passed: 54 tests, one unrelated Starlette/httpx
   deprecation warning. The candidate remains unmerged and non-production.
-- At this historical checkpoint, no production operation, merge, Addon facade, editor connection, or new-task
-  live-provider smoke has occurred. Preserve the clean local candidate until
-  the runtime lane is available; then sync this revision and run the three
-  focused test files above. The earlier live-model screen cannot substitute
-  for this candidate check.
+- At this historical checkpoint, no production operation, merge, Addon facade,
+  editor connection, or new-task live-provider smoke had occurred. The earlier
+  live-model screen did not substitute for the candidate check.

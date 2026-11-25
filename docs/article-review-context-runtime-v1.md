@@ -1,8 +1,9 @@
 # Article review context extension v1
 
-Status: development source candidate, 2026-11-01; runtime, merge and model
-acceptance are separate evidence states. Extends the existing signed article
-review runtime and keeps language-only requests/results compatible.
+Status: Cloud source merged as #1335 (`b37618d8`) on 2026-11-01. This extends
+the existing signed article review runtime and keeps language-only requests and
+results compatible. The merge does not establish model acceptance, installation
+of the matching Addon/Toolbox consumers, or production deployment.
 
 ## Contract and compatibility
 

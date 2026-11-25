@@ -1,7 +1,8 @@
 # WordPress text input limits v1
 
-Status: active source contract; development candidate on 2026-11-17. Deployment
-and verification states below are separate from source behavior.
+Status: active source contract. Merged in Cloud #1438 (`637a6524`) and Addon
+#361 (`077f8c8c`). The development verification receipt below is dated
+2026-11-17; it does not prove acceptance of the merged revisions or deployment.
 
 ## Bounds and ownership
 

@@ -164,6 +164,10 @@ queue, registry, or vector store, or make SQL presence a vector-cleanliness proo
 
 ### Refresh safety and explicit withdrawal (2026-10-28 candidate)
 
+The behavior described here merged in Cloud #1304 (`d32e95ce`) and Addon #335
+(`fc9bdc8`). The heading retains the original checkpoint anchor. Source merge
+does not establish deployment of both components or the state of their indexes.
+
 `refresh` replaces only delivered, normalized and prepared sources. `post_ids`
 selects delivery context and never implies that an omitted source was withdrawn.
 Empty/partial/invalid collections, document or chunk quota skips, failed
@@ -975,6 +979,11 @@ the production profile or existing credential/rebuild contracts. See the
 
 
 ## Dispatch receipt recovery (2026-11-16 candidate)
+
+The runtime route and the matching Addon recovery merged in Cloud #1438
+(`637a6524`) and Addon #361 (`077f8c8c`). The heading retains the original
+checkpoint anchor. Use environment-specific evidence to verify recovery after
+installation.
 
 `GET /v1/runs/by-idempotency/{key}` is a signed `runtime:read` lookup of an
 existing durable run under the authenticated site. Keys use the runtime identifier

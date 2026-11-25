@@ -96,6 +96,10 @@ WordPress write owner. See [cloud-content-generation-boundary-v1.md](docs/cloud-
    `pnpm run check:changed -- --plan <expected-files...>` when useful
 4. State focused module, non-goals, and verification gate before editing
 
+Before answering what Cloud currently does, verify the source revision against
+GitHub `master` and verify deployed behavior separately when relevant. See the
+[revision check](docs/single-session-worktree-lifecycle-v1.md#verify-source-before-describing-current-behavior).
+
 Default: one session, one module. Multi-session only when the operator declares
 it: [parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md).
 Worktrees: [single-session-worktree-lifecycle-v1.md](docs/single-session-worktree-lifecycle-v1.md).

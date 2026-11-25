@@ -58,9 +58,16 @@ NPCINK_CLOUD_REQUIRED_PROVIDER_CAPABILITIES=text_generation,image_generation \
 
 ## Configure In Admin
 
-Open `/admin/ai-resources`, create or edit provider connections, and use the
-provider test action after each save. Credentials are masked in responses and
-stored encrypted at rest.
+Open `/admin/ai-resources` to create or edit a supplier connection and select
+the enabled models. Credentials are masked in responses and stored encrypted at
+rest. Connection and account-catalog checks do not verify model execution. Use
+the separate **Verify capability** action only when execution evidence is
+needed and the applicable live-check authorization is in place.
+
+Enabling a model makes it eligible for selection; it does not assign it to a
+WordPress usage. For Smart Ask and other `text.ai` callers, open **Runtime
+Profiles → Editorial (长文编辑)** to configure the shared candidates. This is
+separate from the embedding configuration. See the [current routing contract](cloud-hosted-runtime-profiles-v1.md#general-text-configuration-repair--2026-11-10).
 
 Minimum field mapping:
 

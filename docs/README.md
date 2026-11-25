@@ -297,10 +297,9 @@ deleting the old decision history.
 - [Refactor Master Plan](refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](refactor-deletion-inventory-v1.md)
 - [Deferred Engineering Triggers](deferred-engineering-triggers-v1.md) — 2026-09-18 trigger-gated deferrals with pre-declared trigger conditions: three architecture directions (Addon contract registry, capability-surface gap, quality-driven routing), the request-log identity deviation, the Addon hosted-profile literal, the 2026-09-19 M4 preview sync/deploy marker finding, the 2026-09-20 decision that production promotion remains paused indefinitely until an operator chooses to resume, and the 2026-10-21 inline run orphan whose root cause was never proved (its lockout symptom is already mitigated by the inline admission lease, PR #1171); not an authorization for early work
-- [Hosted Runtime Profiles](cloud-hosted-runtime-profiles-v1.md)
+- [Hosted Runtime Profiles](cloud-hosted-runtime-profiles-v1.md) — current model configuration, including how `text.ai` uses the editorial model candidates
 - [First-install Contract](cloud-first-install-contract-v1.md)
 - [AI Task Runtime Contract](ai-task-runtime-contract-v1.md)
-- [Text Hosted Routing Profile](text-ai-hosted-routing-profile-v1.md)
 - [Source Extraction Preview](source-extraction-preview-v1.md)
 - [Site Knowledge Runtime Contract](site-knowledge-runtime-contract-v1.md)
 - [Site Knowledge Search Architecture Standard](site-knowledge-search-architecture-standard-v1.md) — lexical, vector, and hybrid retrieval selection, Meilisearch admission gate, evaluation, and Cloud ownership rules

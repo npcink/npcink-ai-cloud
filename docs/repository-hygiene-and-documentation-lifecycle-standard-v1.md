@@ -90,14 +90,32 @@ complete README is contract-complete.
 
 ### 4.2 Moving or superseding documents
 
+When a change affects documented behavior, a default, a configuration entry
+point, supported scope, or a compatibility requirement, search for the affected
+identifiers and labels. Check the active contracts, README and docs index,
+operator runbooks, and compatibility matrix where they cover the same behavior.
+Resolve conflicting current claims in the same change. Record the affected
+documents or why the review did not apply in the PR Scope.
+
 - Update inbound links in the same change.
 - Preserve the document's original evidence claims and date.
 - Add a clear status and successor/current-authority pointer when needed.
+- In the change that replaces active behavior, update any superseded document
+  and its index entry. Keep dated evidence reachable through a historical link;
+  do not leave an old rule listed as current alongside its successor.
 - Do not delete old ADRs; add or update the successor relationship.
 - Do not rewrite historical commands as if they had run against the current
   revision.
 - Keep retired negative guards indexed when they prevent an old surface from
   returning.
+
+When correcting a current claim after a change has merged, cite the merged PR
+or source revision that supports the correction. Keep historical receipts scoped
+to the revision and environment they observed. A merge alone does not establish
+production behavior; cite evidence from the deployed environment or leave its
+status unverified. For example, when `text.ai` stopped using its standalone
+routing order, the old profile needed a superseded label and a link to the
+current editor routing contract, even though the old profile remained reachable.
 
 Run a tracked Markdown-link scan or equivalent path check after every move.
 

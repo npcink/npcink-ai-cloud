@@ -1,7 +1,9 @@
 # WordPress 文本预算落实与回归规范 — 2026-11-17
 
-状态：用户同意后，按输出预算、提问、编辑上下文、排版四步落实的开发候选。
-当前证据为本地源码、真实本地 WordPress 和 M4 candidate；不是已合入、M4 accepted 或生产发布。
+状态：现行源码契约。Cloud #1438（`637a6524`）、Addon #361（`077f8c8c`）
+及 Toolbox #411（`201ea51f`）、#412（`73d9caf6`）已分别合入主分支。
+下方本地 WordPress 和 M4 candidate 回执保留原检查点范围；合入不等于这些回执
+覆盖了合并后的版本，也不等于生产发布。跨仓部署边界见[兼容表](compatibility-matrix.md)。
 本规范接续 [限制审计](wordpress-input-limit-audit-2026-11-17.md)，不恢复任何暂停功能。
 
 ## 现行预算与行为

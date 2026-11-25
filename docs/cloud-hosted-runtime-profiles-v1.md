@@ -93,8 +93,11 @@ The read projection contains:
 
 - explicit platform and connector identity;
 - available runtime instances grouped by execution kind;
-- six supported WordPress profiles, ordered candidate instance IDs, and
-  `availability_state` (`active` or `paused`);
+- one row per supported WordPress profile, with ordered candidate instance IDs
+  and `availability_state` (`active` or `paused`). The current set includes
+  short text, editorial text, classification, vision, image generation, image
+  editing, and audio generation. The source of truth is
+  [`WP_AI_CONNECTOR_PROFILE_SPECS`](../app/domain/wordpress_ai_connector/routing_profiles.py);
 - `read_only_profiles` containing the effective `text.ai` candidate chain,
   source profile and readiness; this is not historical call evidence;
 - the Cloud/local ownership boundary.
@@ -111,8 +114,9 @@ failure retains input. Cancel, Escape, and close discard that draft. No page
 second save exists. Ordinary saves never trigger capability probes, including
 for the edited media usage: explicit **Verify capability** supplies existing
 required evidence before saving. Media recognition policy saves independently.
-`read_only_profiles` is never accepted by the write interface; the six-profile
-whitelist remain unchanged. `text.ai` follows the editorial chain as specified below.
+`read_only_profiles` is never accepted by the write interface. The supported
+WordPress profile IDs define the write allowlist. `text.ai` follows the editorial
+chain as specified below.
 
 For the development M4 Ollama connection, text and vision model declarations
 persist `endpoint_variant: ollama_chat` in the existing per-model operator
@@ -131,10 +135,11 @@ require an idempotency key and return an auditable operator receipt. Existing
 Cloud operator notes must round-trip unchanged when the page does not edit
 them.
 
-## Direct Cutover
+## Direct Cutover (July 2026)
 
-The project has no production users and no compatibility requirement. The
-following surfaces are deleted rather than aliased:
+The July 2026 cutover retired the following surfaces without aliases. This
+decision is limited to those routes and does not set today's compatibility
+policy; see the [compatibility matrix](compatibility-matrix.md) for that policy:
 
 - `/admin/ability-models`;
 - `GET /internal/service/admin/ability-models/runtime-projection`;
@@ -242,7 +247,7 @@ pnpm run lint
 - `vision` 是已有目录主分类，文本用途也可选择这类文本输出模型；界面显示
   “文本 · 支持图片输入”。目录声明不代表能力验证，视觉用途继续要求当前路由的
   独立验证证据。普通文本保存不发起媒体验证。
-- 此兼容修正不修改 `text.ai` 自动候选的规则、标签或顺序。
+- 这次兼容修正当时未调整 `text.ai` 路由；后续由下文的长文编辑共享配置替代旧自动选模。
 - 已保存但最新目录未返回的型号标为“已保存，目录未返回”，保留现有选择，
   不显示成参考资料自动启用。停用前展示存储用途引用与保存影响，提供用途配置入口。
 - 所有供应商预设只填连接信息，不能预填任何启用型号；Admin 不再提供自由输入
@@ -272,9 +277,10 @@ timeout/retry/fallback policy and consumer identity remain `text.ai`'s; this
 shares model configuration, not WordPress tasks, prompts or write authority.
 There is no new editable profile or model picker.
 
-This replaces the old `hosted-free` / `free-gpt55` automatic-only candidate
-rule, which could keep pointing at a model removed from the supplier allowlist
-while the operator had already configured a replacement for WordPress.
+This replaces the [historical `text.ai` routing rule](text-ai-hosted-routing-profile-v1.md),
+which selected candidates by `hosted-free` / `free-gpt55` tags and could keep
+pointing at a model removed from the supplier allowlist while the operator had
+already configured a replacement for WordPress.
 Catalog refresh no longer creates or updates a separate `text.ai` binding;
 old rows remain retained and are ignored at runtime. Catalog recommendations
 also use the editorial chain. No data migration or catalog refresh is required
@@ -290,5 +296,5 @@ only effective candidates, matching the editable editorial projection.
 
 The existing editorial row explains that Smart Ask shares its model. If no
 candidate is usable, the row says Smart Ask is unavailable and keeps its
-existing Configure action. No seventh table row, technical route selector or
-new standalone diagnostics section is introduced.
+existing Configure action. Smart Ask does not add a separate table row, technical
+route selector or standalone diagnostics section.

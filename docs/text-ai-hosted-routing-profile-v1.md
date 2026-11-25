@@ -1,8 +1,14 @@
 # Text AI Hosted Routing Profile V1
 
-Status: active local contract.
+Status: superseded on 2026-11-10 by [Hosted Runtime Profiles: General Text Configuration Repair](cloud-hosted-runtime-profiles-v1.md#general-text-configuration-repair--2026-11-10) (PR #1397).
 
 Date: 2026-06-09
+
+This document records the original routing design. For the current Cloud
+contract, use the replacement above: `text.ai` remains the caller-facing
+profile, and its model candidates come from `wp-ai.editorial` (Editorial /
+长文编辑). The historical `hosted-free` / `free-gpt55` ordering below no longer
+selects candidates for `text.ai`.
 
 ## Purpose
 
@@ -10,18 +16,18 @@ Date: 2026-06-09
 such as Toolbox hosted content support.
 
 It is not a model name, a package name, or a promise that Cloud will always use
-one specific upstream model. The current local catalog may resolve `text.ai` to
-`gpt-5.5`, but that is only the currently available hosted-free candidate.
+one specific upstream model. In the June 2026 local verification, the catalog
+resolved `text.ai` to `gpt-5.5` as a hosted-free candidate.
 
 ## Decision
 
-Cloud keeps two separate profile meanings:
+The original Cloud design distinguished two profile meanings:
 
 - `text.ai`: stable hosted text entry point for product callers.
 - `text.free-gpt55`: compatibility/current-offer profile for the existing
   free GPT 5.5 path.
 
-`text.ai` selects candidates by capability tags and routing policy:
+In that design, `text.ai` selected candidates by capability tags and routing policy:
 
 ```json
 {
@@ -30,9 +36,8 @@ Cloud keeps two separate profile meanings:
 }
 ```
 
-This means future hosted text candidates can replace or precede `gpt-5.5` by
-catalog metadata and capability tags, without requiring Toolbox or other local
-callers to change their profile id.
+This allowed the catalog to replace or precede `gpt-5.5` without requiring
+Toolbox or other local callers to change their profile id.
 
 ## Boundary
 
@@ -73,7 +78,7 @@ The local Toolbox hosted content-support path originally called Cloud with
 `profile_id=text.ai`, but Cloud did not yet seed that profile. After adding the
 profile, the next failure showed that Toolbox omitted `execution_kind=text`.
 
-The final shape is:
+The June 2026 fix was:
 
 1. Cloud seeds `text.ai` as a hosted text profile.
 2. `text.ai` uses `hosted-free` first, with `free-gpt55` as compatibility.
@@ -96,7 +101,7 @@ git diff --check
 ```
 
 The local Docker catalog was also refreshed. At the time of verification,
-`text.ai` resolved to the current hosted-free candidate:
+`text.ai` resolved to this hosted-free candidate:
 
 ```text
 profile_id=text.ai
@@ -105,8 +110,8 @@ ordered_tiers=["hosted-free","free-gpt55"]
 candidate_instance_ids=["openai-global-gpt-5-5"]
 ```
 
-The `gpt-5.5` candidate here is runtime state from the current provider catalog,
-not a hardcoded product contract.
+The `gpt-5.5` candidate here is runtime evidence from that local verification,
+not a hardcoded product contract or evidence of current model selection.
 
 ## Stop Rule
 

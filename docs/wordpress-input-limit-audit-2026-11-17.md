@@ -1,11 +1,11 @@
 # WordPress input limit audit — 2026-11-17
 
-Follow-through: the operator subsequently approved all four recommendations.
-Their current implementation and evidence are recorded in
+Status: historical audit. The operator subsequently approved all four
+recommendations. Their merged source and separate verification evidence are recorded in
 [the follow-through contract](wordpress-text-budget-followthrough-2026-11-17.md).
 The audit tables and 416-test receipt below describe the preceding checkpoint;
 the independent 12k output clipper and unrepaired Toolbox findings are superseded
-by that approved candidate.
+by the follow-through. Do not use this audit to set current text limits.
 
 Scope: source audit of the installed WordPress AI editor path, Addon text/image/
 article-review guards, Cloud validators/output normalization, and Toolbox editor/

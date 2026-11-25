@@ -32,6 +32,11 @@ A change is done only when all applicable items hold:
     safe delayed-sender handling and subsequent progress after verified evidence.
     Apply the [receipt and interruption rules](../historical-issue-closure-and-release-evidence-standard-v1.md#15-cross-system-receipts-and-interrupted-callers);
     distinguish incident recovery from recurrence prevention and retain unresolved windows.
+11. **Current documentation** reflects changes to documented behavior, defaults,
+    configuration, support, or compatibility. Follow the
+    [documentation lifecycle rules](../repository-hygiene-and-documentation-lifecycle-standard-v1.md#42-moving-or-superseding-documents)
+    to find conflicting guidance, mark superseded material, and keep historical
+    and deployed evidence separate.
 
 Phase 1 product Done for the editor loop additionally follows
 [wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md).
