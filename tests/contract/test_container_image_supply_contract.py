@@ -295,7 +295,7 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
     inputs = {record["key"]: record for record in lock["production_inputs"]}
 
     assert receipt["status"] == "passed"
-    assert inputs["python_runtime"]["tag"] == "python:3.14-alpine"
+    assert inputs["python_runtime"]["tag"] == "python:3.15.2-alpine3.24"
     assert inputs["uv_builder"]["reference"].startswith("ghcr.io/astral-sh/uv:0.12.10@sha256:")
     assert "postgres_base" not in inputs
     assert not (ROOT / "Dockerfile.postgres").exists()
@@ -449,7 +449,7 @@ def test_python_lock_and_extras_smoke_use_the_same_interpreter_line() -> None:
     smoke = (ROOT / "scripts" / "production-python-extras-smoke.sh").read_text()
 
     python_tag = inputs["python_runtime"]["tag"]
-    version_match = re.fullmatch(r"python:(\d+\.\d+)-alpine", python_tag)
+    version_match = re.fullmatch(r"python:(\d+\.\d+)(?:\.\d+)?-alpine(?:\d+\.\d+)?", python_tag)
     assert version_match is not None
     assert f'PYTHON_VERSION="{version_match.group(1)}"' in smoke
     assert '--python "${PYTHON_VERSION}"' in smoke
@@ -519,16 +519,7 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
         "generated_artifacts_must_not_be_committed": True,
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
-    (entry,) = allowlist["entries"]
-    assert {key: entry[key] for key in entry if key != "reason"} == {
-        "image": "api",
-        "vulnerability_id": "CVE-2026-119170",
-        "package": "python",
-        "package_version": "3.14.10",
-        "owner": "release-security",
-        "expires_on": "2026-11-22",
-    }
-    assert "FIPS state has not been established" in entry["reason"]
+    assert allowlist["entries"] == []
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
@@ -602,10 +593,8 @@ def test_active_release_contract_records_retired_openssl_exceptions() -> None:
         assert "HTTP/3" in surface
         assert "UDP" in surface
     for surface in (policy, checklist):
-        assert (
-            "Active image CVE exception: api CVE-2026-119170 python 3.14.10 "
-            "through 2026-11-22 (UTC)." in surface
-        )
+        assert "canonical CVE allowlist is empty" in surface
+        assert "`CVE-2026-119170` (#1439) expired on 2026-11-22 (UTC)" in surface
         assert "2026-10-25" in surface
         assert "2026-10-27" in surface
     assert "images are active from 2026-10-11 until 2026-10-25" not in policy
@@ -653,7 +642,7 @@ def test_high_unfixed_finding_blocks_and_exact_temporary_exception_is_audited(
 
 
 @pytest.mark.parametrize("package", ["libcrypto3", "libssl3"])
-def test_retired_openssl_finding_blocks_with_canonical_allowlist(
+def test_retired_python_and_openssl_findings_block_with_canonical_allowlist(
     tmp_path: Path, package: str
 ) -> None:
     supply = _supply_module()
@@ -674,8 +663,10 @@ def test_retired_openssl_finding_blocks_with_canonical_allowlist(
     assert supply.evaluate_scan(args) == 1
     receipt = json.loads(Path(args.receipt).read_text())
     assert receipt["status"] == "failed"
-    assert receipt["allowlisted_blocking_finding_count"] == 1
-    assert receipt["unallowlisted_blocking_findings"][0]["vulnerability_id"] == "CVE-2026-14456"
+    assert receipt["allowlisted_blocking_finding_count"] == 0
+    assert {
+        finding["vulnerability_id"] for finding in receipt["unallowlisted_blocking_findings"]
+    } == {"CVE-2026-14456", "CVE-2026-119170"}
 
 
 def test_expired_or_stale_allowlist_entry_fails_closed(tmp_path: Path) -> None:

@@ -2808,11 +2808,11 @@ prefetch_base_image() {
 # BEGIN M4 runtime image build recipe
 prefetch_python_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67' \
+		'm.daocloud.io/docker.io/library/python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd' \
 		"${python_base_image}" \
 		python \
-		'sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67' \
-		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67"
+		'sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd' \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"
 }
 
 prefetch_runtime_base_images() {
@@ -2835,13 +2835,13 @@ build_runtime_image() {
 			;;
 	esac
 	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67 AS builder' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67 AS runtime' Dockerfile
+	grep -Fq 'FROM python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd AS builder' Dockerfile
+	grep -Fq 'FROM python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd AS runtime' Dockerfile
 	echo '[m4-preview] using verified M4-local base aliases; pinned source digests remain unchanged'
 	tail -n +2 Dockerfile |
 		sed \
 			-e "s#ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500#${uv_base_image}#" \
-			-e "s#python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67#${python_base_image}#" \
+			-e "s#python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd#${python_base_image}#" \
 			-e 's#--timeout 60#--timeout 300#' |
 		docker build \
 			--pull=false \

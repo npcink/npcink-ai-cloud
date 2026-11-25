@@ -462,7 +462,7 @@ for production_path in deploy/nginx.prod.conf deploy/magick-domain-nginx.conf.te
 	reject_marker_case_insensitive "${production_path}" '/udp'
 done
 require_marker "deploy/image-lock/production-images.json" \
-	'python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67'
+	'python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd'
 require_marker "deploy/image-lock/production-images.json" \
 	'node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914'
 require_marker "deploy/OPS_PLAYBOOK.md" \
@@ -531,7 +531,7 @@ require_marker "docs/cloud-production-release-policy-v1.md" "022-one-time-cloud-
 require_marker ".github/workflows/ci.yml" "production-python-image-smoke:"
 require_marker ".github/workflows/ci.yml" "bash scripts/production-python-extras-smoke.sh"
 require_marker ".github/workflows/ci.yml" "PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT"
-require_marker ".github/workflows/ci.yml" "Python 3.14 Alpine production image smoke did not pass"
+require_marker ".github/workflows/ci.yml" "Python 3.15.2 Alpine production image smoke did not pass"
 require_marker ".github/workflows/ci.yml" "bash scripts/classify-ci-changes.sh"
 require_marker "scripts/classify-ci-changes.sh" "Dockerfile*|*/Dockerfile*"
 require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
@@ -540,7 +540,7 @@ reject_marker ".github/workflows/deploy-production.yml" "NPCINK_CLOUD_INCLUDE_EX
 reject_marker ".github/workflows/deploy-production.yml" "NPCINK_CLOUD_PACKAGE_EXTRAS"
 reject_marker ".github/workflows/ci.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
 reject_marker ".github/workflows/deploy-production.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
-require_marker "scripts/production-python-extras-smoke.sh" 'PYTHON_VERSION="3.14"'
+require_marker "scripts/production-python-extras-smoke.sh" 'PYTHON_VERSION="3.15"'
 require_marker "scripts/production-python-extras-smoke.sh" "--import-app"
 require_marker "scripts/production-python-extras-smoke.sh" "--check-manifest"
 require_marker "scripts/check-pr-backend-gate.sh" "Dockerfile*|*/Dockerfile*"

@@ -2911,7 +2911,7 @@ def test_m4_base_image_prefetch_is_cache_first_and_digest_locked() -> None:
     assert "grep -Eq '^config_digest=sha256:[0-9a-f]{64}$'" in prefetch
     assert "no verified registry source available" in prefetch
     assert (
-        '"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:'
+        f'"${{M4_DOCKER_HUB_FALLBACK_REGISTRY}}/library/{python_image["reference"]}'
         in source
     )
     assert (

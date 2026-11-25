@@ -221,7 +221,7 @@ def test_dockerfile_locks_supported_package_extras_and_rejects_unknown_values() 
 def test_runtime_image_installs_shell_contract_tools_only_for_dev_package_extras() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     runtime_stage, development_and_production = dockerfile.rsplit(
-        "FROM python:3.14-alpine@sha256:", maxsplit=1
+        "FROM python:3.15.2-alpine3.24@sha256:", maxsplit=1
     )[1].split("FROM runtime AS development", maxsplit=1)
     development_stage, production_stage = development_and_production.split(
         "FROM runtime AS production", maxsplit=1
