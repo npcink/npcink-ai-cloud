@@ -45,6 +45,31 @@ Cloud may execute a content-related runtime request only as a bounded hosted
 runtime task. WordPress writes and final publication decisions must return to
 the local plugin/Core path.
 
+### Reuse existing AI capabilities
+
+For a feature already in approved scope, start with the WordPress task and
+reuse one of the [seven existing model settings](cloud-hosted-runtime-profiles-v1.md)
+when inference is needed. WordPress owns data collection, permissions, task
+instructions, and result review. Cloud runs the configured model and records
+usage and diagnostics.
+
+| Need | Default path |
+| --- | --- |
+| Read the WordPress version or count pending comments | Query WordPress directly. |
+| Explain a site issue and suggest a next step | Reuse Toolbox Site Q&A via `text.ai`, which shares the `wp-ai.editorial` candidates. Send only the bounded context needed to answer. |
+| Draft a comment reply | Use the existing `comment_reply_suggest` task. Leave review and posting in WordPress. |
+
+If another task needs Site Q&A's bounded fallback, reuse the existing contract
+when it fits. If an independent caller needs the same behavior, share the
+internal execution rule: switch at most once for an eligible error and give the
+backup only the time left in the original request. Avoid adding a per-feature
+branch to the Cloud executor.
+
+Propose a separate model setting only when evidence shows that the existing
+settings cannot meet a specific capability, latency, or cost requirement.
+This guidance preserves the [Phase 1 scope](engineering/phase-1-scope.md)
+and does not activate paused features.
+
 ## 3. Allowed Content Assistance
 
 Allowed by default when routed through the existing runtime contract and local
