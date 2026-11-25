@@ -105,8 +105,14 @@ def set_challenge(request: Request, response: Response, challenge: RestrictedCha
     )
 
 
-def clear_challenge(response: Response) -> None:
-    response.delete_cookie(CHALLENGE_COOKIE, path="/", httponly=True, samesite="lax")
+def clear_challenge(response: Response, *, secure: bool = False) -> None:
+    response.delete_cookie(
+        CHALLENGE_COOKIE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+    )
 
 
 def restricted_response(
@@ -119,7 +125,7 @@ def restricted_response(
         if html
         else JSONResponse(build_envelope(status="ok", data=challenge.projection()))
     )
-    clear_portal_session_cookies(response)
+    clear_portal_session_cookies(response, secure=portal_cookie_secure(request))
     set_challenge(request, response, challenge)
     return response
 
@@ -224,7 +230,7 @@ async def _complete(request: Request, payload: ProofPayload, purpose: str) -> Re
         )
         data.update(result)
         response = JSONResponse(build_envelope(status="ok", data=data))
-        clear_challenge(response)
+        clear_challenge(response, secure=portal_cookie_secure(request))
         set_portal_session_cookies(request, response, issued=issued)
         return response
     except (CommercialServiceError, PortalBearerTokenError) as error:

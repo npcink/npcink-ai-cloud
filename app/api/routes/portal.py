@@ -58,6 +58,7 @@ from app.api.routes.service import (
     _service_error_response,
 )
 from app.core.db import get_session
+from app.core.logging import get_logger
 from app.core.models import PLATFORM_KIND_WORDPRESS, SITE_STATUS_ARCHIVED
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
@@ -80,6 +81,7 @@ from app.domain.commercial.identity import (
     USER_ALLOWED_ACTION_VIEW_BILLING,
     USER_ALLOWED_ACTION_VIEW_USAGE,
 )
+from app.domain.commercial.mixins._portal_mixin import _sanitize_portal_return_to
 from app.domain.customer_journey.api_contracts import CustomerJourneyBatchPayload
 from app.domain.customer_journey.contracts import CustomerJourneyContractViolation
 from app.domain.customer_journey.service import CustomerJourneyService
@@ -109,6 +111,7 @@ from app.domain.site_knowledge.metrics import (
 from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
+logger = get_logger(__name__)
 COOKIE_PORTAL_QQ_OAUTH_NONCE = "npcink_portal_qq_oauth_nonce"
 COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH = "/"
 PORTAL_LOGIN_CODE_RESEND_COOLDOWN_SECONDS = 60
@@ -1511,7 +1514,7 @@ def _portal_route_envelope(
         revision="m6",
     )
 
-def _portal_session_cleared_response() -> JSONResponse:
+def _portal_session_cleared_response(request: Request) -> JSONResponse:
     response = JSONResponse(
         status_code=200,
         content=_portal_route_envelope(
@@ -1519,7 +1522,7 @@ def _portal_session_cleared_response() -> JSONResponse:
             data={},
         ),
     )
-    clear_portal_session_cookies(response)
+    clear_portal_session_cookies(response, secure=portal_cookie_secure(request))
     return response
 
 
@@ -1569,7 +1572,7 @@ def _set_portal_qq_oauth_nonce_cookie(
     nonce: str,
     max_age: int,
 ) -> None:
-    _clear_portal_qq_oauth_nonce_cookie(response)
+    _clear_portal_qq_oauth_nonce_cookie(response, request)
     response.set_cookie(
         COOKIE_PORTAL_QQ_OAUTH_NONCE,
         nonce,
@@ -1581,8 +1584,14 @@ def _set_portal_qq_oauth_nonce_cookie(
     )
 
 
-def _clear_portal_qq_oauth_nonce_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE_PORTAL_QQ_OAUTH_NONCE, path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH)
+def _clear_portal_qq_oauth_nonce_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        COOKIE_PORTAL_QQ_OAUTH_NONCE,
+        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH,
+        httponly=True,
+        samesite="lax",
+        secure=portal_cookie_secure(request),
+    )
 
 
 def _build_qq_authorization_url(request: Request, *, state: str) -> str:
@@ -1612,9 +1621,15 @@ def _portal_oauth_return_response(
 ) -> RedirectResponse | None:
     if not _portal_prefers_html(request):
         return None
-    safe_return_to = return_to if return_to.startswith("/portal") else "/portal"
-    separator = "&" if "?" in safe_return_to else "?"
-    return RedirectResponse(f"{safe_return_to}{separator}qq={status}", status_code=303)
+    safe_return_to = _sanitize_portal_return_to(return_to)
+    path_and_query, fragment = (
+        safe_return_to.split("#", 1) if "#" in safe_return_to else (safe_return_to, "")
+    )
+    separator = "&" if "?" in path_and_query else "?"
+    target = f"{path_and_query}{separator}qq={status}"
+    if fragment:
+        target = f"{target}#{fragment}"
+    return RedirectResponse(target, status_code=303)
 
 
 def _parse_qq_query_response(value: str) -> dict[str, str]:
@@ -1926,7 +1941,7 @@ async def finish_qq_login_callback(
                 status="bound",
             )
             if redirect is not None:
-                _clear_portal_qq_oauth_nonce_cookie(redirect)
+                _clear_portal_qq_oauth_nonce_cookie(redirect, request)
                 return redirect
             response = JSONResponse(
                 status_code=200,
@@ -1935,12 +1950,12 @@ async def finish_qq_login_callback(
                     data={
                         "status": "bound",
                         "provider": "qq",
-                        "return_to": return_to,
+                        "return_to": _sanitize_portal_return_to(return_to),
                         "binding": _portal_identity_binding_response_data(binding),
                     },
                 ),
             )
-            _clear_portal_qq_oauth_nonce_cookie(response)
+            _clear_portal_qq_oauth_nonce_cookie(response, request)
             return response
         issuer = PortalSessionIssuer(
             get_cloud_services(request).settings,
@@ -1976,7 +1991,7 @@ async def finish_qq_login_callback(
             challenge_response = restricted_response(
                 request, primary_outcome, html=_portal_prefers_html(request)
             )
-            _clear_portal_qq_oauth_nonce_cookie(challenge_response)
+            _clear_portal_qq_oauth_nonce_cookie(challenge_response, request)
             return challenge_response
         issued = _issued_session(login)
         principal_id = str(login.get("principal_id") or "")
@@ -1998,7 +2013,7 @@ async def finish_qq_login_callback(
             registration_closed_response = RedirectResponse(
                 "/portal/register?reason=registration_closed", status_code=303
             )
-            _clear_portal_qq_oauth_nonce_cookie(registration_closed_response)
+            _clear_portal_qq_oauth_nonce_cookie(registration_closed_response, request)
             return registration_closed_response
         return _service_error_response(error, request=request)
     except httpx.HTTPError as error:
@@ -2010,7 +2025,7 @@ async def finish_qq_login_callback(
         )
 
     login_response = (
-        RedirectResponse(return_to, status_code=303)
+        RedirectResponse(_sanitize_portal_return_to(return_to), status_code=303)
         if _portal_prefers_html(request)
         else JSONResponse(
             status_code=200,
@@ -2021,7 +2036,7 @@ async def finish_qq_login_callback(
         )
     )
     set_portal_session_cookies(request, login_response, issued=issued)
-    _clear_portal_qq_oauth_nonce_cookie(login_response)
+    _clear_portal_qq_oauth_nonce_cookie(login_response, request)
     return login_response
 
 
@@ -2163,7 +2178,7 @@ async def bind_portal_qq_login(
             data={"binding": _portal_identity_binding_response_data(binding)},
         ),
     )
-    _clear_portal_qq_oauth_nonce_cookie(response)
+    _clear_portal_qq_oauth_nonce_cookie(response, request)
     return response
 
 
@@ -3074,6 +3089,7 @@ async def verify_portal_email_change_code(
         services.settings,
         database_url=services.settings.database_url,
     )
+    old_email_notice_delivered = False
     if email_sender is not None and str(changed.get("old_email") or "").strip():
         try:
             await run_in_threadpool(
@@ -3084,8 +3100,12 @@ async def verify_portal_email_change_code(
                 project_name=services.settings.project_name,
                 locale=resolve_portal_email_locale(request, ""),
             )
+            old_email_notice_delivered = True
         except PortalEmailDeliveryError:
-            pass
+            logger.warning(
+                "portal old-email change notice failed principal_id=%s",
+                auth.principal_id,
+            )
     response = JSONResponse(
         status_code=200,
         content=_portal_route_envelope(
@@ -3094,6 +3114,7 @@ async def verify_portal_email_change_code(
                 **data,
                 "old_email": str(changed.get("old_email") or ""),
                 "new_email": str(changed.get("new_email") or ""),
+                "old_email_notice_delivered": old_email_notice_delivered,
             },
         ),
     )
@@ -3273,7 +3294,7 @@ async def confirm_portal_account_deletion(
             },
         ),
     )
-    clear_portal_session_cookies(response)
+    clear_portal_session_cookies(response, secure=portal_cookie_secure(request))
     return response
 
 
@@ -3529,8 +3550,8 @@ async def logout_portal_session(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         if auth.status_code in {401, 403}:
-            return _portal_session_cleared_response()
-        clear_portal_session_cookies(auth)
+            return _portal_session_cleared_response(request)
+        clear_portal_session_cookies(auth, secure=portal_cookie_secure(request))
         return auth
     from sqlalchemy.exc import SQLAlchemyError
 
@@ -3543,12 +3564,12 @@ async def logout_portal_session(request: Request) -> Any:
             error_code="auth.portal_session_unavailable",
             message="session unavailable",
         )
-        clear_portal_session_cookies(response)
+        clear_portal_session_cookies(response, secure=portal_cookie_secure(request))
         return response
     except CommercialServiceError as error:
         if error.error_code != "auth.portal_session_revoked":
             return _service_error_response(error, request=request)
-    return _portal_session_cleared_response()
+    return _portal_session_cleared_response(request)
 
 
 @router.post("/session/revoke")
@@ -3571,7 +3592,7 @@ async def revoke_portal_session(request: Request) -> Any:
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    return _portal_session_cleared_response()
+    return _portal_session_cleared_response(request)
 
 
 @router.get("/account/plan-offers")

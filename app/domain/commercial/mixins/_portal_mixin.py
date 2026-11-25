@@ -5,7 +5,9 @@ from __future__ import annotations
 import secrets
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from posixpath import normpath
 from typing import Any, cast
+from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -100,15 +102,38 @@ def _normalize_identity_provider(provider: str) -> str:
     return normalized
 
 
+_PORTAL_RETURN_TO_MAX_LENGTH = 255
+
+
 def _sanitize_portal_return_to(value: str) -> str:
     raw = str(value or "").strip()
-    if not raw:
+    if not raw or "\\" in raw or raw.startswith("//") or "://" in raw:
         return "/portal"
-    if not raw.startswith("/portal"):
+    parsed = urlsplit(raw)
+    if parsed.scheme or parsed.netloc:
         return "/portal"
-    if raw.startswith("//") or "://" in raw:
+    path = parsed.path or ""
+    decoded = path
+    for _ in range(4):
+        next_decoded = unquote(decoded)
+        if next_decoded == decoded:
+            break
+        decoded = next_decoded
+    if "\\" in decoded or decoded.startswith("//"):
         return "/portal"
-    return raw[:255]
+    normalized = normpath(decoded)
+    if normalized != "/portal" and not normalized.startswith("/portal/"):
+        return "/portal"
+    if any(ord(char) < 32 for char in f"{normalized}{parsed.query}{parsed.fragment}"):
+        return "/portal"
+    candidate = normalized
+    if parsed.query:
+        candidate = f"{candidate}?{parsed.query}"
+    if parsed.fragment:
+        candidate = f"{candidate}#{parsed.fragment}"
+    if len(candidate) > _PORTAL_RETURN_TO_MAX_LENGTH:
+        return "/portal"
+    return candidate
 
 
 def _normalize_portal_oauth_intent(value: str) -> str:
