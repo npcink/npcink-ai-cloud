@@ -195,15 +195,11 @@ must use the digest-locked candidates recorded in
 `frontend`, and `nginx`. The seventeen redis/nginx exceptions expired on
 2026-10-25 and were retired on 2026-10-27.
 
-Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
-
-`release-security` owns the single-image exception from #1439. The CPython
-CNA limits this regression to OpenSSL FIPS mode; the exact candidate's FIPS
-state has not been established. This is risk acceptance, not a finding of
-non-applicability. Stop if FIPS use is found or required, the candidate changes,
-or the CNA broadens the affected scope. Remove the exception when moving to a
-fixed base digest and rerun the exact image scan. See the independent review
-requirement below. This exception does not authorize production promotion or deployment.
+The canonical CVE allowlist is empty. The Python 3.14.10 exception for
+`CVE-2026-119170` (#1439) expired on 2026-11-22 (UTC) and was removed with the
+Python base replacement. The original exception accepted risk while the exact
+image's OpenSSL FIPS state was unknown. A fresh scan must still pass on the
+exact replacement image before merge.
 
 The locked upstream bases carry OpenSSL 3.5.9-r0, pcre2 10.49-r0 and zlib
 1.3.2-r1 in nginx, and OpenSSL 3.3.7-r2 and zlib 1.3.2-r1 in redis.

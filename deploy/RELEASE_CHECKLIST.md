@@ -75,13 +75,11 @@ Every addition, update, or removal in
   expectations, executable gate, and release-policy markers describe the same
   active exception state
 
-Active image CVE exception: api CVE-2026-119170 python 3.14.10 through 2026-11-22 (UTC).
-
-Require the independent review record for #1439; stop if FIPS use is found or
-required, the candidate changes, or the CNA scope broadens. Remove this entry
-with the fixed base digest and rescan. The historic first-install CVE sets stay
-unchanged because they guard retired Python 3.14.6 and Node 22.23.1 approvals;
-this 3.14.10 exception does not revive those paths or authorize deployment.
+The canonical CVE allowlist is empty. The Python 3.14.10 exception for
+`CVE-2026-119170` (#1439) expired on 2026-11-22 (UTC) and was removed with the
+Python base replacement. Verify the exact replacement image in a fresh scan.
+The historic first-install CVE sets still guard retired Python 3.14.6 and
+Node 22.23.1 approvals and remain unchanged.
 
 Set `run_formal_release_smoke=true` only when every protected smoke credential
 is ready and the one-time Portal code will remain valid until the post-deploy

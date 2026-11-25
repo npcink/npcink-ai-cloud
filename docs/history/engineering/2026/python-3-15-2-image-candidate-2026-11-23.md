@@ -37,21 +37,20 @@ The checked Linux platform manifests were:
 - The authoritative non-affected Python metadata is keyed to the candidate
   package version and its lock hash is refreshed.
 
-## Explicitly Pending
+## Pending at Initial Candidate Build
 
-The existing `CVE-2026-119170` allowlist entry for the former `3.14.10` image
-is intentionally still present in this candidate branch; it is expired and
-must not be extended or silently removed. The candidate is not release-ready
-until the formal governed-platform scan has no blocking findings.
+The initial build still carried the `CVE-2026-119170` allowlist entry for
+the former `3.14.10` image. The candidate cannot merge until the formal
+governed-platform scan has no blocking findings.
 
 Before merge, the release lane must independently:
 
 1. Build the default and `[zilliz]` production variants for the governed
    platform.
-2. Run the exact image scan and prove `CVE-2026-119170` absent, with no new
+2. Remove the obsolete allowlist entry and update the active policy, checklist
+   and contract expectations in the same PR as the base replacement.
+3. Run the exact image scan and prove `CVE-2026-119170` absent, with no new
    blocking or unknown findings.
-3. Remove the obsolete allowlist entry and update the matching active policy,
-   checklist and contract expectations in the same atomic change.
 4. Pass CI, then run the separately authorized M4 candidate validation.
 
 None of these steps authorizes production promotion or deployment.
@@ -101,6 +100,13 @@ scan did not run. This confirms the CI failure is policy state, not a Python
 nine shard-3 contract-test failures; the other backend shards, frontend,
 static checks, dependency audit, CodeQL, and PostgreSQL cutover regression
 passed.
+
+## Exception Retirement for the Candidate Scan — 2026-11-25
+
+The former Python 3.14.10 exception is removed only on the draft branch that
+pins Python 3.15.2. This lets CI reach the full AMD64 image scan with no
+allowlisted findings. The earlier OpenSSL findings remain unresolved until
+the exact image scan says otherwise. No release gate is waived.
 
 ## Local Evidence
 
