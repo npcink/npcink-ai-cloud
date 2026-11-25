@@ -38,6 +38,7 @@ from app.core.models import (
     PAYMENT_ORDER_STATUS_PENDING,
     PAYMENT_ORDER_STATUS_REFUNDED,
     PAYMENT_REFUND_STATUS_SUCCEEDED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     SUBSCRIPTION_STATUS_ACTIVE,
     AccountSubscription,
     CreditLedgerEntry,
@@ -47,6 +48,8 @@ from app.core.models import (
     PaymentRefund,
 )
 from app.core.services import CloudServices
+from app.domain.commercial.errors import CommercialValidationError
+from app.domain.commercial.payment_gateways import AlipayPaymentGatewayProvider
 from app.domain.commercial.service import CommercialService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -422,6 +425,68 @@ def test_signed_success_notify_marks_credit_pack_order_paid_and_grants_credits(
     dispose_engine(database_url)
 
 
+def test_signed_success_notify_with_out_biz_no_still_settles_payment(
+    tmp_path: Path,
+) -> None:
+    """A payment TRADE_SUCCESS may also carry out_biz_no; that must not divert
+    the notify onto the refund branch, ACK success, and leave the order unpaid.
+    """
+    private_key, private_pem, public_pem = _alipay_test_keys()
+    database_url, client = _build_client(tmp_path, private_pem, public_pem)
+    _seed_paid_base_subscription(client, idem_prefix="notify-out-biz-no")
+    order = _create_credit_pack_order(client, idem_prefix="notify-out-biz-no")
+    order_id = str(order["order_id"])
+
+    notify = _signed_payment_notify(
+        private_key,
+        external_order_no=str(order["external_order_no"]),
+        notify_id="notify-matrix-out-biz-no-001",
+        extra_fields={"out_biz_no": "merchant-biz-payment-001"},
+    )
+    response = client.post(NOTIFY_PATH, data=notify)
+
+    assert response.status_code == 200, response.text
+    assert response.text == "success"
+    state = _credit_pack_state(database_url, order_id)
+    assert state["status"] == PAYMENT_ORDER_STATUS_PAID
+    assert state["provider_trade_no"] == "202609220000000101"
+    assert state["paid_at"] is not None
+    assert state["purchase_entry_count"] == 1
+    assert state["purchase_delta"] == PACK_AI_CREDITS
+    assert state["grant_remaining"] == PACK_AI_CREDITS
+    assert state["succeeded_refund_count"] == 0
+    dispose_engine(database_url)
+
+
+def test_wait_buyer_notify_is_acked_without_settling(
+    tmp_path: Path,
+) -> None:
+    private_key, private_pem, public_pem = _alipay_test_keys()
+    database_url, client = _build_client(tmp_path, private_pem, public_pem)
+    _seed_paid_base_subscription(client, idem_prefix="notify-wait-buyer")
+    order = _create_credit_pack_order(client, idem_prefix="notify-wait-buyer")
+    order_id = str(order["order_id"])
+
+    notify = _signed_payment_notify(
+        private_key,
+        external_order_no=str(order["external_order_no"]),
+        notify_id="notify-matrix-wait-buyer-001",
+        trade_status="WAIT_BUYER_PAY",
+        extra_fields={"out_biz_no": "merchant-biz-wait-buyer-001"},
+    )
+    response = client.post(NOTIFY_PATH, data=notify)
+
+    assert response.status_code == 200, response.text
+    assert response.text == "success"
+    state = _credit_pack_state(database_url, order_id)
+    assert state["status"] == PAYMENT_ORDER_STATUS_PENDING
+    assert state["paid_at"] is None
+    assert state["purchase_entry_count"] == 0
+    assert state["payment_event_count"] == 0
+    assert state["grant_original"] is None
+    dispose_engine(database_url)
+
+
 def test_duplicate_success_notify_replays_idempotently_without_double_grant(
     tmp_path: Path,
 ) -> None:
@@ -746,6 +811,71 @@ def test_refund_confirmation_replay_deducts_paid_credits_only_once(
     assert final_state["grant_refunded"] == PACK_AI_CREDITS
     assert final_state["grant_remaining"] == 0.0
     assert final_state["purchase_entry_count"] == 1
+    dispose_engine(database_url)
+
+
+def test_refund_success_notify_with_refund_status_settles_unknown_refund(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuine refund callback with refund_status must still take the refund
+    path, even when out_biz_no is also present.
+    """
+    def _raise_unknown(self: AlipayPaymentGatewayProvider, request: object) -> object:
+        raise CommercialValidationError(
+            "service.alipay_refund_status_unknown",
+            "gateway response could not be verified",
+        )
+
+    monkeypatch.setattr(AlipayPaymentGatewayProvider, "create_refund", _raise_unknown)
+
+    private_key, private_pem, public_pem = _alipay_test_keys()
+    database_url, client = _build_client(tmp_path, private_pem, public_pem)
+    _seed_paid_base_subscription(client, idem_prefix="notify-refund-status")
+    order = _create_credit_pack_order(client, idem_prefix="notify-refund-status")
+    order_id = str(order["order_id"])
+    _paid_credit_pack_order(
+        client,
+        private_key,
+        order=order,
+        notify_id="notify-matrix-refund-status-paid-001",
+    )
+
+    request_response = client.post(
+        f"/internal/service/payments/orders/{order_id}/refunds",
+        headers=build_internal_headers(idempotency_key="notify-matrix-refund-status-request"),
+        json={"amount": 99.0, "reason": "notify matrix unknown refund"},
+    )
+    assert request_response.status_code != 200
+    with get_session(database_url) as session:
+        refund = session.scalar(select(PaymentRefund).where(PaymentRefund.order_id == order_id))
+        assert refund is not None
+        assert refund.status == PAYMENT_REFUND_STATUS_UNKNOWN
+        refund_id = str(refund.refund_id)
+
+    refund_notify = {
+        "app_id": ALIPAY_APP_ID,
+        "out_trade_no": str(order["external_order_no"]),
+        "out_biz_no": refund_id,
+        "trade_no": "202609220000000199",
+        "notify_id": "notify-matrix-refund-status-001",
+        "refund_fee": PACK_AMOUNT_TEXT,
+        "refund_status": "REFUND_SUCCESS",
+        "gmt_refund_pay": _now_shanghai_text(),
+        "sign_type": "RSA2",
+    }
+    refund_notify["sign"] = _sign_alipay_payload(private_key, refund_notify)
+    response = client.post(NOTIFY_PATH, data=refund_notify)
+
+    assert response.status_code == 200, response.text
+    assert response.text == "success"
+    state = _credit_pack_state(database_url, order_id)
+    assert state["status"] == PAYMENT_ORDER_STATUS_REFUNDED
+    assert state["succeeded_refund_count"] == 1
+    assert state["adjustment_entry_count"] == 1
+    assert state["adjustment_delta"] == -PACK_AI_CREDITS
+    assert state["grant_refunded"] == PACK_AI_CREDITS
+    assert state["grant_remaining"] == 0.0
     dispose_engine(database_url)
 
 

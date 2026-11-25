@@ -19,6 +19,23 @@ from app.domain.site_compliance import SiteComplianceAdminService
 router = APIRouter(prefix="/open", tags=["open"])
 logger = get_logger(__name__)
 
+# Refund routing requires an explicit refund status or refund number.
+# A nonempty out_biz_no is not enough: Alipay payment notifies may also
+# carry that merchant business number, and those must still settle as
+# payments when trade_status is TRADE_SUCCESS or TRADE_FINISHED.
+_ALIPAY_REFUND_STATUS_KEYS = ("refund_status", "refund_state")
+_ALIPAY_REFUND_NUMBER_KEYS = ("out_refund_no",)
+
+
+def _is_alipay_refund_notify(raw_event: dict[str, object]) -> bool:
+    has_refund_status = any(
+        str(raw_event.get(key) or "").strip() for key in _ALIPAY_REFUND_STATUS_KEYS
+    )
+    has_refund_number = any(
+        str(raw_event.get(key) or "").strip() for key in _ALIPAY_REFUND_NUMBER_KEYS
+    )
+    return has_refund_status or has_refund_number
+
 
 def _public_dependency_error(*, surface: str, error: Exception) -> JSONResponse:
     logger.error(
@@ -142,11 +159,7 @@ async def receive_open_alipay_payment_notify(request: Request) -> Any:
         raw_event = {str(key): str(value) for key, value in request.query_params.items()}
     try:
         service = _get_commercial_service(request)
-        is_refund_callback = any(
-            str(raw_event.get(key) or "").strip()
-            for key in ("refund_status", "refund_state", "out_refund_no", "out_biz_no")
-        )
-        if is_refund_callback:
+        if _is_alipay_refund_notify(raw_event):
             result = service.process_payment_gateway_refund_callback(
                 provider="alipay",
                 raw_event=raw_event,
