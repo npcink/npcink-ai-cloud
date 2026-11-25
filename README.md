@@ -145,7 +145,20 @@ a focused M4 test does not automatically replace a broader gate.
 
 Requirements:
 
-- Python 3.12
+- Python version support matrix (do not force every environment onto the same minor):
+  - Minimum supported language, local development, and CI toolchain: Python 3.12
+    (`requires-python = ">=3.12"`, mypy `python_version = "3.12"`,
+    `uv sync --python 3.12 --extra dev --locked`, and GitHub Actions
+    `python-version: "3.12"`).
+  - Production application image: the `python:3.14-alpine` digest pinned in
+    `Dockerfile`. A 3.12 local checkout is still a supported way to develop
+    and test.
+  - Host release tooling may use a different interpreter; see
+    `deploy/OPS_PLAYBOOK.md`. Host Python is not the application runtime.
+  - Minimal version checks: `python3 --version` or `.venv/bin/python --version`
+    after `make bootstrap-dev`, plus the CI job
+    "Python 3.14 Alpine production image smoke" for the production image.
+    These checks do not prove production traffic or payment safety.
 - Node.js and the repository-pinned pnpm version
 - Docker for local runtime work
 

@@ -2261,6 +2261,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "resolver 127.0.0.11" in nginx_prod_conf
     assert 'set $npcink_ai_cloud_frontend "frontend:3000";' in nginx_prod_conf
     assert "map $http_x_forwarded_proto $npcink_forwarded_proto" in nginx_prod_conf
+    assert "default $http_x_forwarded_proto;" not in nginx_prod_conf
+    assert "default $scheme;" in nginx_prod_conf
+    assert "~*^https(?:\\s*,.*)?$ https;" in nginx_prod_conf
     assert "map $http_x_forwarded_host $npcink_forwarded_host" in nginx_prod_conf
     assert "proxy_set_header X-Forwarded-Host $host;" not in nginx_prod_conf
     assert "proxy_set_header X-Forwarded-Proto $npcink_forwarded_proto;" in nginx_prod_conf

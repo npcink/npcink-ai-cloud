@@ -102,8 +102,11 @@ contracts:
 - release tooling on the host uses
   `NPCINK_CLOUD_RELEASE_TOOL_PYTHON=/usr/bin/python3.11` and requires Python
   `>=3.11`;
-- the Cloud application runs only inside the exact release image and requires
-  Python `>=3.12`; host Python must never be treated as an application runtime.
+- the Cloud application runs only inside the exact release image, currently
+  the `python:3.14-alpine` digest pinned in `Dockerfile`, and requires Python
+  `>=3.12` as the language floor. Local development and CI stay on 3.12 and
+  must not be forced onto the production image's minor version. Host Python
+  must never be treated as an application runtime.
 
 Set `NPCINK_CLOUD_DEPLOY_HOST_PYTHON=/usr/bin/python3.11`, or pass
 `--host-python /usr/bin/python3.11`, for the production SSH deploy. The deploy
@@ -139,13 +142,22 @@ client -> operator-owned TLS Edge -> 127.0.0.1:8010 bundled NGINX -> Gunicorn
 The external Edge owns public `80/443`, certificates, TLS policy, DNS, and any
 WAF/source restriction. It must replace client-supplied `X-Real-IP`,
 `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, and
-`X-Forwarded-Port` values. The bundled NGINX trusts client-address evidence
-only from the gateway frozen in the protected per-release runtime network
-state and sets the upstream `X-Forwarded-For` to `$remote_addr`; Gunicorn
-trusts forwarded headers only from the proxy IPv4 address frozen in that same
-state. A fresh managed network defaults to `172.28.0.1` and `172.28.0.10`, but
-an existing managed Compose network is discovered and retained rather than
-renumbered during deployment.
+`X-Forwarded-Port` values. The bundled NGINX only forwards canonical
+`http`/`https` proto values from that Edge header and otherwise uses
+`$scheme`; this is a defense against garbage or unexpected proto strings, not
+proof that a production cookie was ever harmed, and it does not replace the
+Edge's duty to overwrite client headers. The bundled NGINX trusts
+client-address evidence only from the gateway frozen in the protected
+per-release runtime network state and sets the upstream `X-Forwarded-For` to
+`$remote_addr`; Gunicorn trusts forwarded headers only from the proxy IPv4
+address frozen in that same state. A fresh managed network defaults to
+`172.28.0.1` and `172.28.0.10`, but an existing managed Compose network is
+discovered and retained rather than renumbered during deployment.
+
+The RFC1918 and loopback allowlists on `/internal/` and `/health/ready` are
+only a network face. The application still requires `X-Npcink-Internal-Token`
+for internal routes; allowing a private-network client is not unauthenticated
+access.
 
 The exact-bundle smoke may replay the artifact through loopback NGINX over
 plain HTTP. That is a local verification exception, never a production public

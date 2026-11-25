@@ -75,7 +75,7 @@ Verified smoke baselines (Asia/Shanghai 2026-10-20, read-only, **no unpause**):
 
 | Key | Cloud `PAUSED_RUNTIME_FEATURES` | Addon `$paused_runtime_features` | Toolbox `$paused_cloud_features` | State |
 | --- | --- | --- | --- | --- |
-| `cloud_inspection` | Nightly / site-ops markers; `runtime.feature_paused` **409** | Same key + markers; Hosted Runtime entitlement forced paused/hidden | `true`; hide Cloud analysis entry; Provider **409**; local Site Check kept | All three paused |
+| `cloud_inspection` | Nightly / site-ops markers; `runtime.feature_paused` **409**. Projection fields may still be present: paused means new Cloud nightly/site-ops execution is fail-closed, not that the field was deleted, local Site Check was removed, or Operations Advisor was restored. | Same key + markers; Hosted Runtime entitlement forced paused/hidden | `true`; hide Cloud analysis entry; Provider **409**; local Site Check kept | All three paused |
 | `audio_generation` | `generate-audio`; intents `article_narration` / `article_audio_summary` | Same key; pre-sign reject | `true`; both intents paused; editor entries removed; existing players kept | All three paused |
 | `advanced_media` | `plan-media-derivative-batch` / `audit-media-governance` etc. | Same key; transport / plan reject | `true`; withdraw batch optimize; omit `build-media-derivative-handoff`; backup restore kept | All three paused |
 
@@ -94,7 +94,7 @@ Verified smoke baselines (Asia/Shanghai 2026-10-20, read-only, **no unpause**):
 2. Do not force Toolbox to grow a 10-id task array — map to “entry hidden + whole-surface reject.”
 3. Keep the three error-code families distinct in logs and tests.
 4. Addon `ACTIVE=false` unpauses SEO **and** all three runtime keys at once; restore one face by editing the list/map only.
-5. Tables above are source-policy truth; live sites must match the deployed SHA. This document does **not** authorize unfreeze.
+5. Tables above are source-policy truth; live sites must match the deployed SHA. The Cloud source set is `PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection", "audio_generation", "advanced_media"})` in `app/domain/runtime/availability.py`, covered by `tests/domain/test_runtime_feature_pauses.py`. This document does **not** authorize unfreeze.
 
 ### Pause smoke matrix v1 (row map)
 

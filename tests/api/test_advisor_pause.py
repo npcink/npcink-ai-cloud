@@ -43,7 +43,16 @@ def test_paused_advisor_never_constructs_service(
         assert response.status_code == 409
         assert response.json()["error_code"] == "advisor.feature_paused"
         assert response.json()["data"]["retryable"] is False
-        assert client.get(url).status_code in {401, 403, 405}
+        unauthenticated = client.get(url)
+        if path == "ops-summary-review":
+            assert unauthenticated.status_code == 405
+            unauthenticated_post = client.post(
+                url,
+                json={"cache_key": "retained-summary-cache", "review_status": "human_confirmed"},
+            )
+            assert unauthenticated_post.status_code == 401
+        else:
+            assert unauthenticated.status_code == 401
     finally:
         client.close()
         dispose_engine(database_url)
