@@ -402,6 +402,7 @@ def set_portal_session_cookies(
         httponly=True,
         secure=portal_cookie_secure(request),
         samesite="lax",
+        path="/",
         max_age=remaining,
     )
 
@@ -452,8 +453,18 @@ def resolve_portal_login_session_ttl_seconds(request: Request, *, remember_me: b
     return resolve_portal_session_ttl_seconds(settings)
 
 
-def clear_portal_session_cookies(response: JSONResponse | RedirectResponse) -> None:
-    response.delete_cookie(COOKIE_PORTAL_SESSION_TOKEN)
+def clear_portal_session_cookies(
+    response: JSONResponse | RedirectResponse | Response,
+    *,
+    secure: bool = False,
+) -> None:
+    response.delete_cookie(
+        COOKIE_PORTAL_SESSION_TOKEN,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+    )
 
 
 def _has_portal_request_headers(request: Request) -> bool:

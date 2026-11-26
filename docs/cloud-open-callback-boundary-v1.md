@@ -27,6 +27,18 @@ Current path contract:
 /open/payments/wechat/notify
 ```
 
+## Public read projections
+
+The `/open` prefix also serves two anonymous **read-only** projections used by
+the public frontend. They are not provider callbacks and must not be removed
+merely because an earlier callback-only list omitted them:
+
+- `GET /open/plan-catalog` — public plan catalog projection
+- `GET /open/compliance` — public site compliance projection
+
+These endpoints do not accept anonymous writes, runtime execution, or
+payment/session mutation.
+
 ## Auth Callback Rules
 
 Authentication callbacks use provider-specific paths under `/open/auth`.

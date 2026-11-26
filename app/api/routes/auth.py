@@ -310,7 +310,13 @@ def _set_admin_session_cookie(response: Response, request: Request, token: str) 
     secure = portal_cookie_secure(request)
     ttl_seconds = max(60, int(get_cloud_services(request).settings.admin_session_ttl_seconds or 0))
     expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
-    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/admin")
+    response.delete_cookie(
+        ADMIN_SESSION_COOKIE,
+        path="/admin",
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+    )
     response.set_cookie(
         ADMIN_SESSION_COOKIE,
         token,
@@ -323,9 +329,15 @@ def _set_admin_session_cookie(response: Response, request: Request, token: str) 
     )
 
 
-def _clear_admin_session_cookie(response: RedirectResponse) -> None:
-    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/")
-    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/admin")
+def _clear_admin_session_cookie(response: RedirectResponse, *, secure: bool = False) -> None:
+    for cookie_path in ("/", "/admin"):
+        response.delete_cookie(
+            ADMIN_SESSION_COOKIE,
+            path=cookie_path,
+            httponly=True,
+            samesite="lax",
+            secure=secure,
+        )
 
 
 def _admin_session_json_error(
@@ -618,8 +630,9 @@ async def web_admin_session(request: Request) -> Any:
 
 
 @router.get("/admin/logout")
-async def web_admin_logout() -> RedirectResponse:
+async def web_admin_logout(request: Request) -> RedirectResponse:
     response = RedirectResponse(url="/admin/login", status_code=303)
-    _clear_admin_session_cookie(response)
-    _clear_browser_session_cookies(response)
+    secure = portal_cookie_secure(request)
+    _clear_admin_session_cookie(response, secure=secure)
+    _clear_browser_session_cookies(response, secure=secure)
     return response

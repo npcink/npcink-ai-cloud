@@ -334,13 +334,19 @@ class WordPressOperationRuntime:
                 "Return only the description itself."
             ),
             "title_generation": (
-                "Generate exactly one concise title faithful to the main topic. For Chinese, "
-                "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Do not copy or return the exact wording of any "
-                "existing title or heading in the scene input; write a meaningfully "
-                "different alternative. Keep the title under 80 characters, use normal "
-                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
-                "or numbers absent from the scene input. Return only the title text."
+                "Generate exactly one concise title faithful to the main topic of the "
+                "source content. For Chinese, prefer no more than 36 characters; for "
+                "other languages, prefer no more than 12 words. Those length preferences "
+                "must not cause you to drop identifiers, names, dates, numbers, or scope "
+                "or uncertainty qualifiers that appear in the source content. Do not copy "
+                "or return the exact wording of any existing title or heading in the scene "
+                "input; write a meaningfully different alternative. Difference means new "
+                "wording, not omitting salient source facts. When the source content "
+                "includes a distinctive identifier, a date or number, or a qualifier that "
+                "limits or hedges the claim, retain those facts in the new title. Keep the "
+                "title under 80 characters, use normal punctuation, avoid vague filler, "
+                "and do not invent names, versions, dates, or numbers absent from the "
+                "scene input. Return only the title text."
             ),
             "slug_generation": (
                 "Generate concise readable URL slug suggestions and return strict JSON "
@@ -361,14 +367,20 @@ class WordPressOperationRuntime:
 
         if task == "title_generation" and title_output_schema:
             task_instruction = (
-                "Generate exactly one concise title faithful to the main topic. For Chinese, "
-                "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Do not copy or return the exact wording of any "
-                "existing title or heading in the scene input; write a meaningfully "
-                "different alternative. Return one strict JSON object with exactly one "
-                "string field named `title`. Keep the title under 80 characters, use normal "
-                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
-                "or numbers absent from the scene input. Do not return bare title text."
+                "Generate exactly one concise title faithful to the main topic of the "
+                "source content. For Chinese, prefer no more than 36 characters; for "
+                "other languages, prefer no more than 12 words. Those length preferences "
+                "must not cause you to drop identifiers, names, dates, numbers, or scope "
+                "or uncertainty qualifiers that appear in the source content. Do not copy "
+                "or return the exact wording of any existing title or heading in the scene "
+                "input; write a meaningfully different alternative. Difference means new "
+                "wording, not omitting salient source facts. When the source content "
+                "includes a distinctive identifier, a date or number, or a qualifier that "
+                "limits or hedges the claim, retain those facts in the new title. Return "
+                "one strict JSON object with exactly one string field named `title`. Keep "
+                "the title under 80 characters, use normal punctuation, avoid vague filler, "
+                "and do not invent names, versions, dates, or numbers absent from the "
+                "scene input. Do not return bare title text."
             )
 
         fragments = [task_instruction]
@@ -394,7 +406,9 @@ class WordPressOperationRuntime:
                 "Existing WordPress title: "
                 + existing_title
                 + ". Do not return this title or a trivially unchanged version; provide a "
-                "meaningfully different alternative."
+                "meaningfully different alternative. Difference means new wording, not "
+                "dropping identifiers, dates, numbers, or qualifiers that also appear in "
+                "the source content."
             )
         if task != "slug_generation":
             fragments.append(
@@ -1996,8 +2010,9 @@ class WordPressOperationRuntime:
                     return ""
         # Translation is a structure-preserving operation. Do not run it
         # through the Markdown cleanup used by short suggestions: that would
-        # remove underscores, collapse code formatting, and alter HTML-facing
-        # content before the structure gate can assess it.
+        # collapse code formatting and alter HTML-facing content before the
+        # structure gate can assess it. Identifier underscores are kept by
+        # that cleanup, but translation still skips it for markup safety.
         text = (
             raw_text
             if task == "content_translation"
@@ -2449,11 +2464,21 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _strip_markdown(output_text: str) -> str:
+        """Remove suggestion markdown without destroying identifier characters.
+
+        A previous character-class wipe of [*_`]+ stripped underscores inside
+        tokens such as NPCINK_ACCEPTANCE_PHASE1_20261126. Unwrap paired
+        markdown and drop leftover asterisks or backticks only.
+        """
         text = output_text.strip()
         text = re.sub(r"^```(?:json|text|markdown)?\s*", "", text, flags=re.I)
         text = re.sub(r"\s*```$", "", text)
         text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
-        text = re.sub(r"[*_`]+", "", text)
+        text = re.sub(r"`([^`]+)`", r"\1", text)
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+        text = re.sub(r"(?<![A-Za-z0-9])\*(?!\*)([^*]+?)\*(?![A-Za-z0-9*])", r"\1", text)
+        text = re.sub(r"(?<![A-Za-z0-9])_(?!_)([^_]+?)_(?![A-Za-z0-9_])", r"\1", text)
+        text = re.sub(r"[*`]+", "", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 

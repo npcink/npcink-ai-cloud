@@ -284,6 +284,7 @@ class FakePortalEmailSender(PortalEmailSender):
     def __init__(self) -> None:
         self.messages: list[dict[str, object]] = []
         self.support_update_error = ""
+        self.email_changed_notice_error = ""
 
     def send_test_email(
         self,
@@ -382,6 +383,8 @@ class FakePortalEmailSender(PortalEmailSender):
         project_name: str,
         locale: str = "zh-CN",
     ) -> None:
+        if self.email_changed_notice_error:
+            raise PortalEmailDeliveryError(self.email_changed_notice_error)
         self.messages.append(
             {
                 "kind": "email_changed_notice",
@@ -4290,6 +4293,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
     assert verify_data["email"] == "new-email@example.com"
     assert verify_data["old_email"] == "old-email@example.com"
     assert verify_data["new_email"] == "new-email@example.com"
+    assert verify_data["old_email_notice_delivered"] is True
     assert "principal_id" not in verify_data
     assert fake_sender.messages[-1]["kind"] == "email_changed_notice"
     assert fake_sender.messages[-1]["recipient_email"] == "old-email@example.com"

@@ -12,6 +12,15 @@ from app.domain.runtime.service import RuntimeService
 from tests.api.test_cloud_batch_runtime import _build_client, _get_result, _payload, _post_execute
 
 
+def test_paused_runtime_features_match_the_declared_release_set() -> None:
+    # Source-policy truth for the current SHA. This does not unpause anything
+    # and is not a second control plane.
+    assert availability.PAUSED_RUNTIME_FEATURES == frozenset(
+        {"cloud_inspection", "audio_generation", "advanced_media"}
+    )
+    assert set(availability._FEATURE_MARKERS) == availability.PAUSED_RUNTIME_FEATURES
+
+
 @pytest.mark.parametrize("marker", sorted(set().union(*availability._FEATURE_MARKERS.values())))
 @pytest.mark.parametrize(
     "field", ["ability_name", "execution_kind", "contract_version", "profile_id"]

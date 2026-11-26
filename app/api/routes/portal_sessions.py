@@ -17,6 +17,7 @@ from app.api.envelope import build_envelope
 from app.api.portal_session import (
     authenticated_session,
     clear_portal_session_cookies,
+    portal_cookie_secure,
     portal_idempotency_replay_response,
     portal_json_error,
     resolve_portal_request_context,
@@ -191,7 +192,7 @@ async def _revoke(request: Request, target: str | None) -> Response:
         )
         response = _response(request, {"revoked_count": result.revoked_count})
         if result.is_current:
-            clear_portal_session_cookies(response)
+            clear_portal_session_cookies(response, secure=portal_cookie_secure(request))
         return response
     except (CommercialServiceError, PortalBearerTokenError) as error:
         return _error(request, error)

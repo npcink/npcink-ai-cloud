@@ -144,3 +144,20 @@ Keep current pricing, shared trial limits and the separate production gate.
 ## Loop checklist
 
 [wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md)
+
+## Editor acceptance evidence (not user-value proof)
+
+Natural title, summary, and selected-text rewrite acceptance still has to be
+judged by a human. Existing helpers include
+`scripts/wordpress_editor_acceptance.py` and
+`scripts/remote-editor-acceptance.mjs`. A passing automated, CI, or M4 path
+does not prove Phase 1 user value (time saved, adoption, or less rework).
+
+Acceptance rules for a real editing task:
+
+- facts in the source text must be retained;
+- uncertainty in the source text must be retained (do not upgrade guesses
+  into definite claims);
+- unselected text must not be rewritten by mistake.
+
+Do not create paid Provider samples to manufacture evidence.
