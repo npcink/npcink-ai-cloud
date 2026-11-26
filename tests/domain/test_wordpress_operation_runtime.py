@@ -1527,6 +1527,102 @@ def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> 
     )
 
 
+def test_title_generation_prompt_retains_source_identifiers_and_qualifiers() -> None:
+    runtime = _runtime()
+    source = (
+        "<content>2026年11月，NPCINK_ACCEPTANCE_PHASE1_20261126 的标题观察"
+        "（仅用于本机，不能外推到生产）。</content>"
+    )
+    existing = (
+        "2026年11月本地验收：NPCINK_ACCEPTANCE_PHASE1_20261126 的标题与摘要观察"
+        "（仅用于本机，不能外推到生产）"
+    )
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="title_generation",
+            request={"source_text": source, "existing_title": existing},
+        )
+    )
+    prompt = provider_input["input"]
+    assert "Do not copy or return the exact wording" in prompt
+    assert "meaningfully different alternative" in prompt
+    assert "do not invent names, versions, dates, or numbers absent" in prompt
+    assert "under 80 characters" in prompt
+    assert "prefer no more than 36 characters" in prompt
+    assert "normally use no more than 36 characters" not in prompt
+    assert "must not cause you to drop identifiers" in prompt
+    assert "retain those facts in the new title" in prompt
+    assert "not omitting salient source facts" in prompt
+    assert "not dropping identifiers, dates, numbers, or qualifiers" in prompt
+    # Generation from content, not a rewrite of the current title.
+    assert "rewrite the existing title" not in prompt.lower()
+    assert "copy the existing title" not in prompt.lower()
+
+
+def test_title_generation_schema_prompt_retains_source_facts() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="title_generation",
+            request={
+                "source_text": (
+                    "<content>NPCINK_ACCEPTANCE_PHASE1_20261126 于 2026年11月验收，"
+                    "仅用于本机。</content>"
+                ),
+                "existing_title": "旧标题",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}},
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        )
+    )
+    prompt = provider_input["input"]
+    assert "must not cause you to drop identifiers" in prompt
+    assert "retain those facts in the new title" in prompt
+    assert "Return one strict JSON object with exactly one string field named `title`" in prompt
+    assert "prefer no more than 36 characters" in prompt
+    assert "not dropping identifiers, dates, numbers, or qualifiers" in prompt
+
+
+def test_title_generation_normalize_keeps_identifier_date_and_qualifier() -> None:
+    runtime = _runtime()
+    source = (
+        "2026年11月本地验收：NPCINK_ACCEPTANCE_PHASE1_20261126 的标题观察"
+        "（仅用于本机，不能外推到生产）。"
+    )
+    generated = (
+        "NPCINK_ACCEPTANCE_PHASE1_20261126：2026年11月本机标题验收（不能外推到生产）"
+    )
+    normalized = runtime._normalize_plain_text_output(
+        generated,
+        limit=80,
+        strip_explanation=True,
+        source_text=source,
+        task="title_generation",
+    )
+    assert "NPCINK_ACCEPTANCE_PHASE1_20261126" in normalized
+    assert "2026年11月" in normalized
+    assert "不能外推到生产" in normalized
+    reasons = runtime.title_quality_reasons(
+        input_payload={"metadata": {"task": "title_generation"}, "text": source},
+        provider_output={"output_text": generated},
+    )
+    assert "title_length_exceeded" not in reasons
+    assert "title_unsupported_claim" not in reasons
+    assert "title_unchanged" not in reasons
+    assert runtime.blocking_title_quality_reasons(reasons) == ()
+
+
 @pytest.mark.parametrize(
     ("provider_text", "expected_reason"),
     [
