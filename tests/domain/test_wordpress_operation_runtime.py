@@ -1651,6 +1651,51 @@ def test_content_rewrite_preserves_non_wrapper_suggestion_phrases(
     assert result["output_text"] == provider_text
 
 
+def test_content_rewrite_preserves_underscored_identifiers() -> None:
+    runtime = _runtime()
+    source = (
+        "NPCINK_ACCEPTANCE_PHASE1_20261126 连接检查通过，只说明连接层面的检查结果。"
+        "它不能保证每个任务都能运行，也不承诺 AI 自动保证事实正确。"
+        "本轮观察里的示例数字是 3 段正文、1 处选中改写。"
+    )
+    # Provider kept the identifier and paraphrased the rest. The former
+    # markdown wipe would have saved NPCINKACCEPTANCEPHASE120261126.
+    paraphrased = (
+        "NPCINK_ACCEPTANCE_PHASE1_20261126 连接检查已通过，这仅代表连接层面的检查结果，"
+        "并不意味着每个任务都能运行，也不承诺 AI 会自动确保事实准确。"
+        "本轮观察中的示例数字为 3 段正文、1 处选中改写。"
+    )
+
+    result = runtime.normalize_provider_output(
+        {"output_text": paraphrased},
+        input_payload={
+            "metadata": {"task": "content_rewrite", "rewrite_action": "rephrase"},
+            "text": f"<block-content>{source}</block-content>",
+        },
+    )
+
+    assert result["output_text"] == paraphrased
+    assert "NPCINK_ACCEPTANCE_PHASE1_20261126" in result["output_text"]
+    assert "NPCINKACCEPTANCEPHASE120261126" not in result["output_text"]
+
+
+def test_strip_markdown_unwraps_markers_but_keeps_identifier_underscores() -> None:
+    runtime = _runtime()
+
+    assert runtime._strip_markdown(
+        "**这段文字现在更加清晰。**"
+    ) == "这段文字现在更加清晰。"
+    assert runtime._strip_markdown(
+        "`NPCINK_ACCEPTANCE_PHASE1_20261126` 连接检查已通过。"
+    ) == "NPCINK_ACCEPTANCE_PHASE1_20261126 连接检查已通过。"
+    assert runtime._strip_markdown(
+        "_hello_ NPCINK_ACCEPTANCE_PHASE1_20261126 and __init__."
+    ) == "hello NPCINK_ACCEPTANCE_PHASE1_20261126 and __init__."
+    assert runtime._strip_markdown(
+        "```text\nNPCINK_ACCEPTANCE_PHASE1_20261126 passed\n```"
+    ) == "NPCINK_ACCEPTANCE_PHASE1_20261126 passed"
+
+
 def test_content_rewrite_output_preserves_long_selection_within_source_limit() -> None:
     runtime = _runtime()
     source_text = "<block-content>" + ("原始选中文本需要清晰改写。" * 120) + "</block-content>"

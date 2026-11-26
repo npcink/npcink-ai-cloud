@@ -1996,8 +1996,9 @@ class WordPressOperationRuntime:
                     return ""
         # Translation is a structure-preserving operation. Do not run it
         # through the Markdown cleanup used by short suggestions: that would
-        # remove underscores, collapse code formatting, and alter HTML-facing
-        # content before the structure gate can assess it.
+        # collapse code formatting and alter HTML-facing content before the
+        # structure gate can assess it. Identifier underscores are kept by
+        # that cleanup, but translation still skips it for markup safety.
         text = (
             raw_text
             if task == "content_translation"
@@ -2449,11 +2450,21 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _strip_markdown(output_text: str) -> str:
+        """Remove suggestion markdown without destroying identifier characters.
+
+        A previous character-class wipe of [*_`]+ stripped underscores inside
+        tokens such as NPCINK_ACCEPTANCE_PHASE1_20261126. Unwrap paired
+        markdown and drop leftover asterisks or backticks only.
+        """
         text = output_text.strip()
         text = re.sub(r"^```(?:json|text|markdown)?\s*", "", text, flags=re.I)
         text = re.sub(r"\s*```$", "", text)
         text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
-        text = re.sub(r"[*_`]+", "", text)
+        text = re.sub(r"`([^`]+)`", r"\1", text)
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+        text = re.sub(r"(?<![A-Za-z0-9])\*(?!\*)([^*]+?)\*(?![A-Za-z0-9*])", r"\1", text)
+        text = re.sub(r"(?<![A-Za-z0-9])_(?!_)([^_]+?)_(?![A-Za-z0-9_])", r"\1", text)
+        text = re.sub(r"[*`]+", "", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
