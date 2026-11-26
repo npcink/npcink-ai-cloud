@@ -272,6 +272,14 @@ timeout/retry/fallback policy and consumer identity remain `text.ai`'s; this
 shares model configuration, not WordPress tasks, prompts or write authority.
 There is no new editable profile or model picker.
 
+In the shared runtime candidate executor, the timeout is a single Provider
+execution budget. The clock starts at the first Provider dispatch. Any
+subsequent retry or fallback receives only the remaining time; when the budget
+is exhausted, the executor stops before dispatch and reports `provider.timeout`.
+This does not change which errors allow a retry or fallback. Site Q&A supplies
+a separate budget for each request: 15 seconds for selecting sources and 45
+seconds for generating an answer, with no same-model retries.
+
 This replaces the old `hosted-free` / `free-gpt55` automatic-only candidate
 rule, which could keep pointing at a model removed from the supplier allowlist
 while the operator had already configured a replacement for WordPress.

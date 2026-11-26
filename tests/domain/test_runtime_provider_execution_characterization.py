@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import select
 
 from app.adapters.providers.base import (
@@ -17,12 +18,15 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
+from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import ProviderCallRecord, UsageMeterEvent
 from app.domain.catalog.service import CatalogService
+from app.domain.runtime import provider_execution
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
+from app.domain.wordpress_ai_connector.routing_profiles import WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
 from tests.conftest import seed_site_auth
 
 SITE_ID = "site_provider_characterization"
@@ -420,6 +424,109 @@ def test_fallback_eligible_error_moves_to_next_candidate_without_losing_result(
             "error_stage": "",
             "retryable": False,
         }
+
+
+@pytest.mark.parametrize(
+    ("timeout_seconds", "storage_mode", "elapsed_ms", "preflight_ms", "retry_max", "expected"),
+    [
+        (15, "no_store", 4_000, 0, 0, ("backup", 11_000)),
+        (45, "result_only", 4_000, 0, 0, ("backup", 41_000)),
+        (15, "no_store", 15_000, 0, 0, "provider.timeout"),
+        (15, "no_store", 14_000, 1_000, 0, "provider.timeout"),
+        (45, "result_only", 45_000, 0, 1, "provider.timeout"),
+        (45, "result_only", 4_000, 0, 1, ("primary", 41_000)),
+        (45, "result_only", 4_000, 0, 0, "provider.invalid_request"),
+    ],
+)
+def test_site_qa_candidates_share_the_provider_time_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    timeout_seconds: int,
+    storage_mode: str,
+    elapsed_ms: int,
+    preflight_ms: int,
+    retry_max: int,
+    expected: tuple[str, int] | str,
+) -> None:
+    now_ns = 0
+    monkeypatch.setattr(provider_execution, "monotonic_ns", lambda: now_ns)
+    calls: list[tuple[str, int]] = []
+    if preflight_ms:
+        execution_service = provider_execution.RuntimeProviderExecutionService
+        original_preflight = execution_service.enforce_context_budget
+
+        def slow_backup_preflight(request: ProviderExecutionRequest) -> dict[str, object] | None:
+            nonlocal now_ns
+            if request.model_id == "backup":
+                now_ns += preflight_ms * 1_000_000
+            return original_preflight(request)
+
+        monkeypatch.setattr(
+            execution_service, "enforce_context_budget", staticmethod(slow_backup_preflight)
+        )
+
+    class TimedAdapter(RecordingProviderAdapter):
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            nonlocal now_ns
+            calls.append((request.model_id, request.timeout_ms))
+            if len(calls) == 1:
+                now_ns += elapsed_ms * 1_000_000
+            return super().execute(request)
+
+    answer: dict[str, object] = {"output": {"output_text": "site answer"}}
+    primary_error = (
+        "provider.invalid_request" if expected == "provider.invalid_request"
+        else "provider.upstream_unavailable"
+    )
+    primary = TimedAdapter(
+        provider_id="primary",
+        model_id="primary",
+        instance_id="primary",
+        tier="balanced",
+        outcomes=[{"error_code": primary_error}, answer],
+    )
+    backup = TimedAdapter(
+        provider_id="backup",
+        model_id="backup",
+        instance_id="backup",
+        tier="economy",
+        outcomes=[answer],
+    )
+    with runtime_harness(tmp_path, [primary, backup]) as harness:
+        with get_session(harness.database_url) as session:
+            CatalogRepository(session).upsert_routing_binding(
+                profile_id=WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
+                candidate_instance_ids=[primary.instance_id, backup.instance_id],
+                selection_policy_json={"mode": "ordered"},
+                revision="site-qa-time-budget",
+            )
+            session.commit()
+        response = harness.service.execute(
+            replace(
+                runtime_request(
+                    idempotency_key="site-qa-time-budget",
+                    allow_fallback=True,
+                    retry_max=retry_max,
+                    ability_name="npcink-toolbox/ai-content-support",
+                ),
+                profile_id="text.ai",
+                contract_version="hosted_ai_content_support.v1",
+                storage_mode=storage_mode,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+
+        assert calls[0] == ("primary", timeout_seconds * 1_000)
+        assert calls[1:] == ([expected] if isinstance(expected, tuple) else [])
+        assert response.provider_call_count == len(calls)
+        assert response.fallback_used is (isinstance(expected, tuple) and expected[0] == "backup")
+        if isinstance(expected, str):
+            assert response.status == "failed"
+            assert response.model_id == "primary"
+            assert response.error_code == expected
+        else:
+            assert response.status == "succeeded"
+            assert response.result["output_text"] == "site answer"
 
 
 def test_non_fallbackable_error_stops_immediately_and_preserves_usage_evidence(
