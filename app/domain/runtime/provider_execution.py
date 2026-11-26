@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from time import monotonic_ns
 from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
@@ -339,9 +340,9 @@ class RuntimeProviderExecutionService:
         last_error_code = "runtime.execute_failed"
         last_error_message = "runtime execution failed"
         last_fallback_used = False
-        last_provider_id = ""
-        last_model_id = ""
-        last_instance_id = ""
+        last_candidate: ProviderCandidate | None = None
+        remaining_ms = timeout_ms
+        deadline_ns: int | None = None
 
         if self.run_controller.cancel_if_requested(repository=repository, run=run):
             return
@@ -351,12 +352,13 @@ class RuntimeProviderExecutionService:
             for retry_count in range(max_retries + 1):
                 if self.run_controller.cancel_if_requested(repository=repository, run=run):
                     return
-                last_fallback_used = fallback_used
-                last_provider_id = candidate.provider_id
-                last_model_id = candidate.model_id
-                last_instance_id = candidate.instance_id
+                if deadline_ns is not None:
+                    remaining_ms = (deadline_ns - monotonic_ns()) // 1_000_000
+                    if remaining_ms <= 0:
+                        break
                 provider = self.providers.get(candidate.provider_id)
                 if provider is None:
+                    last_candidate, last_fallback_used = candidate, fallback_used
                     last_error_code = "runtime.provider_not_configured"
                     last_error_message = (
                         f"provider adapter is not configured for {candidate.provider_id}"
@@ -387,7 +389,7 @@ class RuntimeProviderExecutionService:
                     trace_id=run.trace_id,
                     input_payload=input_payload,
                     policy=policy,
-                    timeout_ms=timeout_ms,
+                    timeout_ms=remaining_ms,
                     contract_version=run.contract_version or "",
                     context_window=getattr(candidate, "context_window", None),
                     price_input=candidate.price_input,
@@ -407,6 +409,7 @@ class RuntimeProviderExecutionService:
                             request=provider_request,
                         )
                     except ProviderExecutionError as error:
+                        last_candidate, last_fallback_used = candidate, fallback_used
                         self._sanitize_review_error(run, error)
                         last_error_code = error.error_code
                         last_error_message = self._safe_error_message(run, error.message)
@@ -430,8 +433,22 @@ class RuntimeProviderExecutionService:
                     # Checkpoint admission, reservations and earlier attempt evidence;
                     # the open Session acquires a new connection only after Provider I/O.
                     repository.session.commit()
+                    now_ns = monotonic_ns()
+                    if deadline_ns is None:
+                        deadline_ns = now_ns + timeout_ms * 1_000_000
+                    remaining_ms = (deadline_ns - now_ns) // 1_000_000
+                    if remaining_ms <= 0:
+                        if self.budget_guard is not None and budget_claim is not None:
+                            self.budget_guard.reconcile(
+                                session=repository.session,
+                                claim_ids=budget_claim.claim_ids,
+                                actual_cost_usd=0.0,
+                            )
+                        break
+                    provider_request.timeout_ms = remaining_ms
                     provider_result = provider.execute(provider_request)
                 except ProviderExecutionError as error:
+                    last_candidate, last_fallback_used = candidate, fallback_used
                     response_status = (error.usage_context or {}).get("response_status")
                     if response_status in {
                         "incomplete",
@@ -461,7 +478,7 @@ class RuntimeProviderExecutionService:
                         candidate=candidate,
                         retry_count=retry_count,
                         fallback_used=fallback_used,
-                        timeout_ms=timeout_ms,
+                        timeout_ms=provider_request.timeout_ms,
                         error=error,
                         budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                     )
@@ -499,6 +516,7 @@ class RuntimeProviderExecutionService:
                     finish_reason=provider_result.finish_reason,
                 )
                 if not decision.accepted:
+                    last_candidate, last_fallback_used = candidate, fallback_used
                     last_error_code = decision.error_code
                     last_error_message = self._safe_error_message(run, decision.error_message)
                     self._record_attempt_result(
@@ -577,17 +595,20 @@ class RuntimeProviderExecutionService:
                     fallback_used=fallback_used,
                 )
                 return
-            if not allow_fallback:
+            if remaining_ms <= 0 or not allow_fallback:
                 break
 
+        if remaining_ms <= 0:
+            last_error_code = "provider.timeout"
+            last_error_message = "provider execution time budget exhausted"
         self.run_controller.fail_run(
             repository,
             run,
             error_code=last_error_code,
             error_message=last_error_message,
-            provider_id=last_provider_id or None,
-            model_id=last_model_id or None,
-            instance_id=last_instance_id or None,
+            provider_id=last_candidate.provider_id if last_candidate else None,
+            model_id=last_candidate.model_id if last_candidate else None,
+            instance_id=last_candidate.instance_id if last_candidate else None,
             fallback_used=last_fallback_used,
         )
 
