@@ -30,6 +30,47 @@ test('preflight blocks model requests, saves, batch writes and external traffic'
   assert.equal(p.abilityRequests, 0); assert.equal(p.saveRequests, 0);
 });
 
+test('WordPress REST schema probe and GET/HEAD OPTIONS do not authorize writes', () => {
+  const p = new RequestBoundary(target, 'preflight');
+  const origin = { origin: target.site_url };
+  const probe = target.site_url + '/wp-json/wp/v2/posts/?context=edit&_locale=user';
+  assert.equal(p.allow(probe, 'OPTIONS', null, origin), true);
+  const plain = target.site_url + '/?rest_route=%2Fwp%2Fv2%2Fposts%2F&context=edit';
+  assert.equal(p.allow(plain, 'OPTIONS', null, origin), true);
+  for (const method of ['GET', 'HEAD']) {
+    assert.equal(p.allow(save, 'OPTIONS', null, { ...origin, 'access-control-request-method': method }), true);
+  }
+  assert.equal(p.violations, 0);
+  assert.equal(p.allow(save, 'POST', { id: 42, content: 'reviewed' }), false);
+  assert.equal(p.abilityRequests, 0);
+  assert.equal(p.saveRequests, 0);
+});
+
+test('OPTIONS stays fail-closed outside read routes and never permits preflights for writes', () => {
+  const p = new RequestBoundary(target, 'execute');
+  p.phase = 'saving';
+  const origin = { origin: target.site_url };
+  const read = { ...origin, 'access-control-request-method': 'GET' };
+  const probe = target.site_url + '/wp-json/wp/v2/posts/?context=edit';
+  const denied = [
+    [save, null, { ...origin, 'access-control-request-method': 'POST' }],
+    [ability, null, read],
+    [target.site_url + '/wp-json/wp-abilities/v1/abilities/example/generate', null, read],
+    [target.site_url + '/wp-json/npcink/v1/editor/content-support', null, read],
+    [target.site_url + '/wp-admin/admin-ajax.php', null, read],
+    ['https://other.example.test/wp-json/wp/v2/posts/', null, read],
+    [probe, null, { origin: 'https://other.example.test' }],
+    [probe, null, { ...origin, 'X-HTTP-Method-Override': 'POST' }],
+    [probe + '&_method=POST', null, origin],
+    [probe, 'unexpected body', origin],
+    [save, null, origin],
+  ];
+  for (const [url, body, headers] of denied) assert.equal(p.allow(url, 'OPTIONS', body, headers), false);
+  assert.equal(p.violations, denied.length);
+  assert.equal(p.abilityRequests, 0);
+  assert.equal(p.saveRequests, 0);
+});
+
 test('execution admits one exact rephrase and blocks retries or other abilities', () => {
   const p = new RequestBoundary(target, 'execute');
   assert.equal(p.allow(ability, 'POST', input), false);

@@ -63,6 +63,19 @@ export class RequestBoundary {
       return reject(!avatar);
     }
     const path = restPath(url);
+    const isRest = u.pathname.startsWith('/wp-json/') || u.searchParams.has('rest_route');
+    const isEditorRest = /^\/(?:wp\/v2|wp-block-editor\/v1|wp-abilities\/v1)(?:\/|$)/.test(path);
+    const isAction = /\/(?:run|execute|generate|test|verify)(?:\/|$)/i.test(path);
+    if (method === 'OPTIONS') {
+      const requestedMethod = headers['access-control-request-method'];
+      // Gutenberg also uses a direct OPTIONS fetch (no preflight method header)
+      // to discover the posts collection schema in edit context.
+      const schemaProbe = requestedMethod === undefined && /^\/wp\/v2\/posts\/?$/.test(path)
+        && u.searchParams.get('context') === 'edit';
+      return (this.mode !== 'login' && isRest && isEditorRest && !isAction && body === null
+        && headers.origin === this.target.site_url
+        && (schemaProbe || requestedMethod === 'GET' || requestedMethod === 'HEAD')) || reject(true);
+    }
     const ability = /\/wp-abilities\/v1\/abilities\/.*\/run$/.test(path);
     if (ability) {
       if (this.mode !== 'execute' || this.phase !== 'generating' || method !== 'POST'
@@ -88,11 +101,8 @@ export class RequestBoundary {
         if (!allowedEdit) return reject(true);
       }
       // Do not allow generative GET shortcuts or unrelated REST/plugin RPCs.
-      if (/\/(?:run|execute|generate|test|verify)(?:\/|$)/i.test(path)) return reject(true);
-      if (u.pathname.startsWith('/wp-json/') || u.searchParams.has('rest_route')) {
-        return /^\/(?:wp\/v2|wp-block-editor\/v1|wp-abilities\/v1)(?:\/|$)/.test(path)
-          || reject();
-      }
+      if (isAction) return reject(true);
+      if (isRest) return isEditorRest || reject();
       return true;
     }
     if (this.mode === 'login' && u.pathname === '/wp-login.php' && method === 'POST'
@@ -208,8 +218,9 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
     ability_requests: 0, draft_save_requests: 0, billing_status: 'not_verified', timings_ms: {} };
   await context.route('**/*', async (route) => {
     const request = route.request();
-    let body;
-    try { body = request.postDataJSON(); } catch { body = null; }
+    let body = null;
+    if (request.method() === 'OPTIONS') body = request.postData();
+    else try { body = request.postDataJSON(); } catch { /* Only parsed bodies can authorize writes. */ }
     if (!boundary.allow(request.url(), request.method(), body, request.headers(), request.resourceType())) return route.abort('blockedbyclient');
     return transport ? transport(route) : route.continue();
   });
