@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import get_session
+from app.domain.content_formatting import code_preview
 from app.domain.content_formatting.engine import (
     MAX_CONTENT_BYTES,
     MAX_CONTENT_CHARS,
@@ -79,17 +80,25 @@ def _validate(request: RuntimeRequest) -> tuple[str, str]:
 def execute_formatting(
     service: RuntimeService, request: RuntimeRequest
 ) -> RuntimeExecutionResponse:
-    source, source_format = _validate(request)
-    model_id = (
-        "deterministic-structure-v2"
-        if request.contract_version == "content_format_request.v2"
-        else "deterministic-spacing-v1"
-    )
+    code_args: tuple[str, str, str] | None = None
+    if (
+        request.ability_name == code_preview.ABILITY
+        or request.contract_version == code_preview.REQUEST_CONTRACT
+    ):
+        code_args = code_preview.validate_code_preview(request, service.settings.environment)
+        model_id = "deterministic-code-v1"
+    else:
+        source, source_format = _validate(request)
+        model_id = (
+            "deterministic-structure-v2"
+            if request.contract_version == "content_format_request.v2"
+            else "deterministic-spacing-v1"
+        )
     trace_id = request.trace_id or uuid4().hex
     run_id = f"run_{uuid4().hex}"
     policy = service._apply_runtime_controls({"allow_fallback": False}, request)
     policy["execution_contract"] = {
-        "ability_name": ABILITY,
+        "ability_name": request.ability_name,
         "contract_version": request.contract_version,
         "storage_mode": "no_store",
         "execution_pattern": "inline",
@@ -128,6 +137,10 @@ def execute_formatting(
         )
         service._enforce_batch_limits(request=request, commercial_decision=decision)
         policy = service._apply_commercial_policy_overrides(policy, commercial_decision=decision)
+        # The opt-in subprocess can fail; do not create an accepted run for that failure.
+        code_result: dict[str, Any] | None = None
+        if code_args is not None:
+            code_result = code_preview.format_code_preview(*code_args)
         run = service.run_lifecycle_service.create_durable_run(
             repository=repository,
             command=RuntimeRunCreationCommand(
@@ -162,11 +175,14 @@ def execute_formatting(
         )
         service.commercial_service.record_run_acceptance(session=session, run=run)
         try:
-            result = (
-                format_structure(source)
-                if request.contract_version == "content_format_request.v2"
-                else format_candidate(source, source_format)
-            )
+            if code_result is not None:
+                result = code_result
+            else:
+                result = (
+                    format_structure(source)
+                    if request.contract_version == "content_format_request.v2"
+                    else format_candidate(source, source_format)
+                )
         except ValueError as error:
             raise RuntimeExecutionContractError(
                 "content_format.output_too_large", "formatting result exceeds its bounded contract"

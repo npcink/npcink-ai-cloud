@@ -153,6 +153,7 @@ deleting the old decision history.
 
 - [WordPress AI Unified Plan](wordpress-ai-unified-delivery-plan-2026-09-07.md) - current disposition followed by historical proposals; no automatic model calls.
 - [WordPress Formatting History](history/wordpress-content-formatting-summary-2026-09-08.md) - requirements, open-source lessons, implementation tradeoffs and paused research.
+- [Code Block Format Pilot](code-block-format-pilot-v1.md) - opt-in development contract for one editor code block.
 - [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
 - [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
 - [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
