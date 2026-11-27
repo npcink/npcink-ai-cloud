@@ -66,6 +66,7 @@ from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
     sum_provider_call_usage_tokens,
 )
+from app.domain.content_formatting import code_preview
 from app.domain.content_formatting.runtime import ABILITY as CONTENT_FORMAT_ABILITY
 from app.domain.content_formatting.runtime import execute_formatting
 from app.domain.hosted_model_defaults import (
@@ -466,7 +467,10 @@ class RuntimeService:
         ):
             article_review.validate_request(request)
         self.contract_validator.validate_runtime_data_handling_contract(request)
-        if request.ability_name == CONTENT_FORMAT_ABILITY:
+        if (
+            request.ability_name in {CONTENT_FORMAT_ABILITY, code_preview.ABILITY}
+            or request.contract_version == code_preview.REQUEST_CONTRACT
+        ):
             return execute_formatting(self, request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
